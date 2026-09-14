@@ -1,0 +1,12 @@
+{
+  "name": "cricket-lk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ball-by-ball cricket scoring — installable PWA, single HTML file.",
+  "scripts": {
+    "dev": "python3 -m http.server 8080 || npx serve ."
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.0"
+  }
+}
