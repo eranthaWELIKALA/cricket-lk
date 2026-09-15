@@ -13,123 +13,319 @@
 <meta name="mobile-web-app-capable" content="yes">
 <style>
   :root{
-    --bg:#0B2E22; --panel:#0F3B2B; --panel-2:#124533; --line:#1D5B41;
-    --text:#F1F6F2; --muted:#9FC2AF; --accent:#F2C744; --accent-2:#5FB98C;
-    --danger:#C0392B; --wicket:#D9534F;
+    --bg:#050B0A; --bg-2:#0A1613;
+    --panel:rgba(255,255,255,.05); --panel-2:rgba(255,255,255,.07);
+    --panel-solid:#101E1B; --line:rgba(255,255,255,.10); --line-strong:rgba(255,255,255,.20);
+    --text:#F4F8F6; --muted:#8FA9A0;
+    --accent:#FFC247; --accent-rgb:255,194,71; --accent-light:#FFD873; --accent-dim:#B4791C; --accent-ink:#231200;
+    --accent-2:#33E29B; --accent-2-rgb:51,226,155; --accent-2-light:#5FF0AE; --accent-2-dim:#1C8F63; --accent-2-ink:#022417;
+    --danger:#FF5D70; --wicket:#FF4D63; --info:#5FC7FF;
+    --radius-lg:22px; --radius-md:16px; --radius-sm:11px;
+    --shadow-card:0 10px 32px -14px rgba(0,0,0,.6), 0 1px 0 rgba(255,255,255,.03) inset;
+    --shadow-btn:0 8px 18px -8px rgba(0,0,0,.55);
+    --shadow-glow-gold:0 0 0 1px rgba(var(--accent-rgb),.35), 0 8px 24px -8px rgba(var(--accent-rgb),.35);
+    --shadow-glow-green:0 0 0 1px rgba(var(--accent-2-rgb),.35), 0 8px 24px -8px rgba(var(--accent-2-rgb),.35);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
-    background:var(--bg); color:var(--text);
+    background:
+      radial-gradient(900px 480px at 12% -8%, rgba(var(--accent-2-rgb),.16), transparent 60%),
+      radial-gradient(760px 420px at 108% 6%, rgba(var(--accent-rgb),.12), transparent 58%),
+      radial-gradient(820px 560px at 50% 115%, rgba(95,199,255,.07), transparent 62%),
+      linear-gradient(180deg, var(--bg-2), var(--bg) 45%);
+    background-attachment:fixed;
+    color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     -webkit-tap-highlight-color:transparent;
   }
-  #app{max-width:520px;margin:0 auto;padding:16px 16px calc(24px + env(safe-area-inset-bottom));min-height:100vh;}
-  h1,h2,h3{margin:0 0 8px;}
-  h1{font-size:1.6rem;}
+  #app{max-width:520px;margin:0 auto;padding:16px 16px calc(24px + env(safe-area-inset-bottom));min-height:100vh;position:relative;}
+  h1,h2,h3{margin:0 0 8px;letter-spacing:-.01em;}
+  h1{font-size:1.7rem;font-weight:800;}
+  h2{font-weight:800;}
   p{margin:0 0 12px;color:var(--muted);}
   .tagline{margin-top:-4px;}
   label{display:block;font-size:.85rem;color:var(--muted);margin-bottom:12px;}
-  input[type=text],input[type=number],input:not([type]){
-    display:block;width:100%;margin-top:4px;padding:11px 12px;border-radius:10px;
+  input[type=text],input[type=number],input:not([type]),select{
+    display:block;width:100%;margin-top:4px;padding:12px 13px;border-radius:var(--radius-sm);
     border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:1rem;
+    transition:border-color .15s ease, box-shadow .15s ease, background .15s ease;
   }
-  input:focus{outline:2px solid var(--accent-2);}
-  fieldset{border:1px solid var(--line);border-radius:10px;margin-bottom:12px;padding:10px 12px;}
-  legend{color:var(--muted);font-size:.85rem;padding:0 4px;}
+  input::placeholder{color:var(--muted);opacity:.7;}
+  input:focus,select:focus{outline:none;border-color:var(--accent-2);box-shadow:0 0 0 3px rgba(var(--accent-2-rgb),.18);background:rgba(255,255,255,.09);}
+  input[type=color]{margin-top:4px;padding:2px;height:44px;width:100%;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--panel-2);cursor:pointer;}
+  fieldset{border:1px solid var(--line);border-radius:var(--radius-md);margin-bottom:12px;padding:12px 14px;}
+  legend{color:var(--muted);font-size:.8rem;padding:0 4px;text-transform:uppercase;letter-spacing:.04em;}
   fieldset label{display:inline-flex;align-items:center;gap:6px;margin:4px 12px 4px 0;color:var(--text);}
   button{font:inherit;cursor:pointer;}
   button.primary{
-    width:100%;padding:13px;border:none;border-radius:12px;background:var(--accent);
-    color:#1A1400;font-weight:700;font-size:1.02rem;margin-top:6px;
+    width:100%;padding:14px;border:none;border-radius:var(--radius-md);
+    background:linear-gradient(160deg,var(--accent-light),var(--accent) 55%,var(--accent-dim));
+    color:var(--accent-ink);font-weight:800;font-size:1.02rem;margin-top:6px;
+    box-shadow:var(--shadow-btn),var(--shadow-glow-gold);
   }
   button.ghost{
-    padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--text);
+    padding:10px 14px;border-radius:var(--radius-sm);border:1px solid var(--line-strong);
+    background:var(--panel-2);color:var(--text);
+    -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
   }
   button.link-btn{
     display:block;width:100%;text-align:center;background:none;border:none;color:var(--accent-2);
-    padding:10px;font-size:.9rem;
+    padding:10px;font-size:.9rem;font-weight:600;
   }
-  button:disabled{opacity:.4;cursor:not-allowed;}
+  button:disabled{opacity:.4;cursor:not-allowed;box-shadow:none;}
 
   .screen{padding-top:4px;}
-  .form-error{color:var(--wicket);font-size:.85rem;min-height:0;margin-bottom:4px;}
+  .form-error{color:var(--wicket);font-size:.85rem;min-height:0;margin-bottom:4px;font-weight:600;}
   .form-error:empty{display:none;}
 
   .score-header{margin-bottom:4px;}
-  .teams{font-size:1rem;}
+  .teams{font-size:1.02rem;font-weight:600;}
   .vs{color:var(--muted);font-weight:400;}
-  .target-line{color:var(--accent-2);font-size:.85rem;margin-top:2px;}
-  .score-big{font-size:2.6rem;font-weight:800;line-height:1.1;margin:6px 0 0;}
-  .score-big .overs{font-size:1.1rem;color:var(--muted);font-weight:500;}
-  .rate-line{color:var(--muted);font-size:.9rem;margin-bottom:8px;}
+  .target-line{color:var(--accent-2);font-size:.85rem;margin-top:2px;font-weight:600;}
+  .score-big{
+    font-size:2.8rem;font-weight:800;line-height:1.1;margin:8px 0 0;letter-spacing:-.02em;
+    font-variant-numeric:tabular-nums;
+    background:linear-gradient(180deg,#fff,#D8E8E1 70%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    text-shadow:0 18px 40px rgba(var(--accent-2-rgb),.18);
+  }
+  .score-big .overs{font-size:1.1rem;color:var(--muted);font-weight:600;-webkit-text-fill-color:var(--muted);}
+  .rate-line{color:var(--muted);font-size:.9rem;margin-bottom:8px;font-variant-numeric:tabular-nums;}
   .freehit-badge{
-    display:inline-block;background:var(--accent);color:#1A1400;font-weight:700;
-    font-size:.75rem;padding:3px 9px;border-radius:20px;margin-bottom:8px;letter-spacing:.03em;
+    display:inline-block;background:linear-gradient(120deg,var(--accent-light),var(--accent));color:var(--accent-ink);font-weight:800;
+    font-size:.75rem;padding:4px 11px;border-radius:20px;margin-bottom:8px;letter-spacing:.04em;
+    box-shadow:var(--shadow-glow-gold);
   }
 
-  .players-card{background:var(--panel);border-radius:14px;padding:10px 14px;margin-bottom:12px;}
-  .player-row{display:flex;justify-content:space-between;padding:6px 0;font-size:.95rem;border-bottom:1px solid var(--line);}
+  .players-card,.innings-summary,.roster-card,.preset-form,.motm-card{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);
+    -webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);box-shadow:var(--shadow-card);
+  }
+  .players-card{padding:12px 16px;margin-bottom:12px;}
+  .player-row{display:flex;justify-content:space-between;padding:7px 0;font-size:.95rem;border-bottom:1px solid var(--line);}
   .player-row:last-child{border-bottom:none;}
-  .player-row.on-strike .name{color:var(--accent);font-weight:700;}
+  .player-row.on-strike .name{color:var(--accent);font-weight:800;}
   .player-row.bowler-row{color:var(--muted);}
-  .figs{color:var(--muted);}
-  .player-row.on-strike .figs{color:var(--text);}
+  .figs{color:var(--muted);font-variant-numeric:tabular-nums;}
+  .player-row.on-strike .figs{color:var(--text);font-weight:600;}
 
   .this-over{margin-bottom:14px;}
-  .this-over .label{display:block;font-size:.8rem;color:var(--muted);margin-bottom:4px;}
-  .chips{display:flex;flex-wrap:wrap;gap:6px;}
+  .this-over .label{display:block;font-size:.8rem;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;}
   .chip{
-    min-width:30px;height:30px;padding:0 6px;border-radius:8px;background:var(--panel-2);
-    display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:600;
+    min-width:32px;height:32px;padding:0 7px;border-radius:9px;background:var(--panel-2);border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700;
   }
-  .chip.wicket{background:var(--wicket);color:#fff;}
-  .chip.empty{color:var(--muted);background:none;}
+  .chip.wicket{background:linear-gradient(160deg,#FF7A8A,var(--wicket));color:#fff;border-color:transparent;box-shadow:0 4px 14px -4px rgba(255,77,99,.6);}
+  .chip.empty{color:var(--muted);background:none;border-style:dashed;}
 
   .run-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;}
   .run-pad.small{grid-template-columns:repeat(4,1fr);}
   .run-btn{
-    padding:16px 0;border-radius:12px;border:none;background:var(--panel-2);color:var(--text);
-    font-size:1.3rem;font-weight:700;
+    padding:17px 0;border-radius:var(--radius-md);border:1px solid var(--line);background:var(--panel-2);color:var(--text);
+    font-size:1.3rem;font-weight:800;
   }
-  .run-btn.r4{background:var(--accent-2);color:#04241A;}
-  .run-btn.r6{background:var(--accent);color:#1A1400;}
-  .run-btn.active{outline:2px solid var(--accent);}
+  .run-btn.r4{background:linear-gradient(160deg,var(--accent-2-light),var(--accent-2));color:var(--accent-2-ink);border-color:transparent;box-shadow:var(--shadow-glow-green);}
+  .run-btn.r6{background:linear-gradient(160deg,var(--accent-light),var(--accent));color:var(--accent-ink);border-color:transparent;box-shadow:var(--shadow-glow-gold);}
+  .run-btn.active{outline:2px solid var(--accent);outline-offset:1px;}
 
   .extra-pad{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px;}
   .extra-pad button{
-    padding:10px 2px;border-radius:10px;border:1px solid var(--line);background:var(--panel);
-    color:var(--text);font-size:.82rem;
+    padding:10px 2px;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--panel);
+    color:var(--text);font-size:.82rem;font-weight:600;
   }
-  .extra-pad button.active{background:var(--accent);color:#1A1400;border-color:var(--accent);font-weight:700;}
+  .extra-pad button.active{background:linear-gradient(160deg,var(--accent-light),var(--accent));color:var(--accent-ink);border-color:transparent;font-weight:800;}
   .extra-hint{font-size:.8rem;color:var(--accent);margin-bottom:8px;}
 
   .action-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;margin-bottom:10px;}
-  .wicket-btn{padding:13px 0;border-radius:12px;border:none;background:var(--danger);color:#fff;font-weight:700;font-size:1rem;}
+  .wicket-btn{
+    padding:14px 0;border-radius:var(--radius-md);border:none;
+    background:linear-gradient(160deg,#FF8393,var(--wicket));color:#fff;font-weight:800;font-size:1rem;
+    box-shadow:var(--shadow-btn),0 8px 24px -8px rgba(255,77,99,.45);
+  }
 
   table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:.85rem;}
-  th,td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--line);}
-  th{color:var(--muted);font-weight:600;font-size:.75rem;}
+  th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;}
+  th{color:var(--muted);font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;}
   td.status{color:var(--muted);font-size:.78rem;}
   .extras-line,.fow{font-size:.8rem;color:var(--muted);margin-bottom:10px;}
-  .innings-summary{background:var(--panel);border-radius:14px;padding:12px 14px;margin-bottom:14px;overflow-x:auto;}
-  .innings-summary .ov{color:var(--muted);font-weight:500;font-size:1rem;}
+  .innings-summary{padding:14px 16px;margin-bottom:14px;overflow-x:auto;}
+  .innings-summary .ov{color:var(--muted);font-weight:600;font-size:1rem;}
 
-  .target-note{color:var(--accent-2);}
+  .target-note{color:var(--accent-2);font-weight:600;}
 
   .modal-backdrop{
-    position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;
-    justify-content:center;z-index:50;
+    position:fixed;inset:0;background:rgba(2,6,5,.65);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+    display:flex;align-items:flex-end;justify-content:center;z-index:50;
   }
   .modal{
-    background:var(--panel);width:100%;max-width:520px;border-radius:18px 18px 0 0;
-    padding:20px 18px calc(20px + env(safe-area-inset-bottom));max-height:88vh;overflow-y:auto;
+    position:relative;background:var(--panel-solid);width:100%;max-width:520px;border-radius:24px 24px 0 0;
+    border:1px solid var(--line-strong);border-bottom:none;
+    padding:22px 18px calc(20px + env(safe-area-inset-bottom));max-height:88vh;overflow-y:auto;
+    box-shadow:0 -20px 60px -20px rgba(0,0,0,.65);
+  }
+  .modal::before{
+    content:"";position:absolute;top:10px;left:50%;transform:translateX(-50%);
+    width:40px;height:4px;border-radius:4px;background:var(--line-strong);
   }
   .wicket-types{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}
   .wicket-types button{
-    padding:14px 4px;border-radius:12px;border:none;background:var(--panel-2);color:var(--text);font-weight:600;
+    padding:15px 4px;border-radius:var(--radius-md);border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-weight:700;
   }
   .hint{font-size:.85rem;color:var(--muted);}
+
+  /* --- animation: every render replaces innerHTML wholesale, so these
+     keyframes simply replay on every re-render without any JS bookkeeping.
+     Every render() call replaces the whole .screen wholesale — including on
+     rapid, same-screen updates like each ball scored — so this needs to stay
+     a fast, shallow settle (never fully transparent) rather than a full
+     fade-in, or the live-scoring screen visibly flickers on every tap. --- */
+  @keyframes screenIn{ from{ opacity:.72; transform:translateY(3px); } to{ opacity:1; transform:translateY(0); } }
+  @keyframes backdropIn{ from{ opacity:0; } to{ opacity:1; } }
+  @keyframes modalUp{ from{ opacity:0; transform:translateY(24px); } to{ opacity:1; transform:translateY(0); } }
+  @keyframes chipPop{ from{ opacity:0; transform:scale(.5); } to{ opacity:1; transform:scale(1); } }
+  @keyframes scorePulse{ 0%{ transform:scale(.96); } 60%{ transform:scale(1.02); } 100%{ transform:scale(1); } }
+  @keyframes badgePulse{ 0%,100%{ opacity:1; } 50%{ opacity:.6; } }
+
+  .screen{ animation:screenIn .15s ease; }
+  .modal-backdrop{ animation:backdropIn .2s ease; }
+  .modal{ animation:modalUp .28s cubic-bezier(.16,1,.3,1); }
+  .chip{ animation:chipPop .22s cubic-bezier(.34,1.56,.64,1); }
+  .score-big{ animation:scorePulse .3s ease; }
+  .freehit-badge{ animation:badgePulse 1.6s ease-in-out infinite; }
+  button{ transition:transform .12s ease, background-color .15s ease, border-color .15s ease, opacity .15s ease, box-shadow .15s ease; }
+  button:active:not(:disabled){ transform:scale(.96); }
+  .home-card, .list-row, .preset-chip{ transition:transform .12s ease, border-color .15s ease, box-shadow .15s ease; }
+  .home-card:active, .list-row:active{ transform:scale(.98); }
+
+  /* --- sound toggle --- */
+  .sound-toggle{
+    position:fixed;top:calc(14px + env(safe-area-inset-top));right:14px;z-index:40;
+    width:38px;height:38px;padding:0;border-radius:50%;
+    background:var(--panel-2);border:1px solid var(--line-strong);color:var(--text);font-size:1rem;
+    -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);box-shadow:var(--shadow-card);
+    display:flex;align-items:center;justify-content:center;
+  }
+
+  /* --- home --- */
+  .home-logo{ width:56px; height:56px; border-radius:var(--radius-md); object-fit:cover; margin-bottom:8px; border:1px solid var(--line); }
+  .back-bar{ display:inline-block; background:none; border:none; color:var(--accent-2); font-size:.9rem; padding:4px 0; margin-bottom:10px; font-weight:600; }
+  .home-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px; }
+  .home-card{
+    display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left;
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg); padding:16px; color:var(--text);
+    -webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);box-shadow:var(--shadow-card);
+  }
+  .home-card.primary-card{
+    background:linear-gradient(150deg,var(--accent-2-light),var(--accent-2) 55%,var(--accent-2-dim));
+    color:var(--accent-2-ink); border-color:transparent; box-shadow:var(--shadow-btn),var(--shadow-glow-green);
+  }
+  .home-card-icon{ font-size:1.7rem; }
+  .home-card-title{ font-weight:800; font-size:.98rem; margin-top:6px; }
+  .home-card-sub{ font-size:.78rem; color:var(--muted); }
+  .home-card.primary-card .home-card-sub{ color:var(--accent-2-ink); opacity:.7; }
+  .home-section{ margin-top:6px; }
+  .home-section h3{ color:var(--muted); font-size:.85rem; text-transform:uppercase; letter-spacing:.06em; margin-bottom:8px; }
+
+  .list-row{
+    display:flex; justify-content:space-between; align-items:center; width:100%;
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-md);
+    padding:13px 15px; margin-bottom:8px; color:var(--text); text-align:left; font-size:.95rem;
+    -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+  }
+  .list-row.active{ border-color:var(--accent-2); box-shadow:0 0 0 1px var(--accent-2) inset; }
+  .list-row .chevron{ color:var(--muted); }
+  .list-row .muted{ color:var(--muted); font-size:.8rem; }
+
+  /* --- presets / tabs / shared form bits --- */
+  .preset-picker{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+  .preset-chip{ padding:9px 15px; border-radius:20px; border:1px solid var(--line); background:var(--panel); color:var(--text); font-size:.85rem; font-weight:600; }
+  .preset-chip.active{ background:linear-gradient(150deg,var(--accent-2-light),var(--accent-2)); color:var(--accent-2-ink); border-color:transparent; font-weight:800; box-shadow:var(--shadow-glow-green); }
+
+  .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .check-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .inline-num{ display:inline-block; width:54px !important; margin:0 !important; padding:6px 8px !important; }
+
+  .tab-row{ display:flex; gap:0; margin-bottom:14px; border-bottom:1px solid var(--line); }
+  .tab-btn{ background:none; border:none; color:var(--muted); padding:8px 4px; margin-right:18px; font-size:.9rem; font-weight:600; border-bottom:2px solid transparent; }
+  .tab-btn.active{ color:var(--text); border-bottom-color:var(--accent); font-weight:800; }
+
+  .preset-list{ margin-bottom:10px; }
+  .preset-row{
+    display:flex; justify-content:space-between; align-items:flex-start; gap:8px;
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-md); padding:13px 15px; margin-bottom:8px;
+    -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+  }
+  .preset-row .muted{ color:var(--muted); font-size:.78rem; margin-top:2px; }
+  .row-actions{ display:flex; gap:6px; flex-shrink:0; }
+  .preset-form{ padding:16px; margin-top:10px; }
+
+  .appearance-tab{ padding-top:2px; }
+  .logo-row{ display:flex; align-items:center; gap:14px; margin-bottom:18px; }
+  .logo-preview{ width:64px; height:64px; border-radius:var(--radius-md); object-fit:cover; border:1px solid var(--line); background:var(--panel-2); flex-shrink:0; }
+  .logo-placeholder{ width:64px; height:64px; border-radius:var(--radius-md); border:1px dashed var(--line-strong); display:flex; align-items:center; justify-content:center; font-size:1.6rem; background:var(--panel); flex-shrink:0; }
+  .logo-actions{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .file-label{
+    display:inline-block; padding:8px 12px; border-radius:var(--radius-sm); border:1px solid var(--line-strong);
+    background:var(--panel-2); color:var(--text); font-size:.8rem; font-weight:600; cursor:pointer;
+    -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  }
+
+  /* --- teams & players --- */
+  .roster-card{ padding:16px; margin-top:12px; }
+  .roster-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .roster-row{ align-items:center; }
+  .roster-actions{ display:flex; gap:6px; align-items:center; }
+  .roster-actions select{ width:auto; margin:0; padding:6px 8px; font-size:.8rem; }
+
+  /* --- standings / fixtures / leaderboards --- */
+  .standings-table td, .standings-table th{ text-align:center; }
+  .standings-table td:first-child, .standings-table th:first-child{ text-align:left; }
+  .fixtures{ margin-bottom:14px; }
+  .fixture-row{
+    display:flex; justify-content:space-between; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-sm);
+    padding:11px 13px; margin-bottom:6px; font-size:.9rem; -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+  }
+  .fixture-result{ color:var(--accent-2); font-weight:600; }
+  .leaderboard{ margin-bottom:18px; }
+  .leaderboard h3{ font-size:.95rem; margin-bottom:6px; }
+
+  /* --- MVP / MOTM / share --- */
+  .mvp-callout{
+    background:linear-gradient(150deg,var(--accent-light),var(--accent) 60%,var(--accent-dim)); color:var(--accent-ink);
+    border-radius:var(--radius-lg); padding:16px; display:flex; flex-direction:column; gap:2px; margin-bottom:16px;
+    box-shadow:var(--shadow-btn),var(--shadow-glow-gold);
+  }
+  .mvp-label{ font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; opacity:.75; font-weight:700; }
+  .mvp-name{ font-size:1.35rem; font-weight:800; }
+  .mvp-points{ font-size:.85rem; font-weight:700; }
+  .motm-card{ padding:16px; margin-bottom:16px; display:flex; flex-direction:column; gap:4px; }
+  .motm-label{ font-size:.75rem; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; font-weight:700; }
+  .motm-name{
+    font-size:1.25rem; font-weight:800; background:linear-gradient(120deg,var(--accent-light),var(--accent));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .motm-card .inline-form{ margin-top:4px; margin-bottom:0; }
+  .share-row{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 0; }
+
+  .inline-form{ display:flex; gap:8px; margin-bottom:14px; }
+  .inline-form input, .inline-form select{ margin:0; flex:1; }
+  .inline-form button{ flex-shrink:0; margin-top:0; width:auto; white-space:nowrap; }
+
+  button.small{ padding:8px 12px; font-size:.8rem; border-radius:var(--radius-sm); }
+  button.primary.small{ width:auto; }
+
+  /* --- print: "Export PDF" is window.print() on the result screen --- */
+  @media print{
+    body{ background:#fff; color:#000; }
+    #modal-root, .share-row, .motm-card form, button, .sound-toggle{ display:none !important; }
+    .innings-summary, .motm-card{ background:#fff; border:1px solid #ccc; color:#000; box-shadow:none; }
+    .motm-name{ -webkit-text-fill-color:#000; color:#000; }
+    .score-big{ -webkit-text-fill-color:#000; color:#000; text-shadow:none; }
+    table, th, td{ border-color:#ccc; color:#000; }
+    th{ color:#555; }
+  }
 </style>
 </head>
 <body>
@@ -144,12 +340,40 @@ const WICKET_LABELS = {
   stumped: "stumped", hitwicket: "hit wicket", runout: "run out"
 };
 
+/* Fixed MVP/MOTM point formula — not user-tunable in v1 (see README). */
+const MVP_POINTS = {
+  perRun: 1, perFour: 1, perSix: 2, fifty: 8, century: 16, notOut: 4,
+  perWicket: 25, perMaiden: 8, perCatch: 8, perRunOut: 8
+};
+
+const DEFAULT_MATCH_PRESETS = [
+  { id: "preset-t20", name: "T20 (6-ball overs)", ballsPerOver: 6, oversLimit: 20, playersPerSide: 11,
+    wide: { enabled: true, runs: 1 }, noBall: { enabled: true, runs: 1 }, freeHitOnNoBall: true,
+    requireFielderOnCatch: false, requireFielderOnRunout: false },
+  { id: "preset-t10", name: "T10 (6-ball overs)", ballsPerOver: 6, oversLimit: 10, playersPerSide: 11,
+    wide: { enabled: true, runs: 1 }, noBall: { enabled: true, runs: 1 }, freeHitOnNoBall: true,
+    requireFielderOnCatch: false, requireFielderOnRunout: false },
+  { id: "preset-tape5", name: "Tape-ball (5-ball overs)", ballsPerOver: 5, oversLimit: 8, playersPerSide: 7,
+    wide: { enabled: true, runs: 1 }, noBall: { enabled: true, runs: 1 }, freeHitOnNoBall: true,
+    requireFielderOnCatch: false, requireFielderOnRunout: false }
+];
+
+const DEFAULT_TOURNAMENT_PRESETS = [
+  { id: "tpreset-standard", name: "Standard league (2/1/0, NRR)", matchPresetId: "preset-t20",
+    pointsForWin: 2, pointsForTie: 1, pointsForLoss: 0, useNRR: true }
+];
+
 /* ============================================================
    2. ENGINE — pure functions, zero DOM access.
    ============================================================ */
-function createInnings(battingTeam, bowlingTeam, target, playersPerSide, oversLimit){
+function createInnings(battingTeam, bowlingTeam, target, playersPerSide, oversLimit, config){
+  const cfg = config || {};
   return {
     battingTeam, bowlingTeam, target, oversLimit,
+    ballsPerOver: cfg.ballsPerOver || 6,
+    wideBaseRuns: cfg.wideRuns != null ? cfg.wideRuns : 1,
+    noBallBaseRuns: cfg.noBallRuns != null ? cfg.noBallRuns : 1,
+    freeHitOnNoBall: cfg.freeHitOnNoBall !== false,
     maxWickets: playersPerSide - 1,
     runs: 0, wickets: 0, legalBalls: 0,
     extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0 },
@@ -158,6 +382,7 @@ function createInnings(battingTeam, bowlingTeam, target, playersPerSide, oversLi
     overs: [],
     batting: { order: [], stats: {} },
     bowling: { order: [], stats: {} },
+    fielding: { order: [], stats: {} },
     striker: null, nonStriker: null, bowler: null, lastOverBowler: null,
     fallOfWickets: [],
     complete: false, completeReason: null
@@ -178,20 +403,30 @@ function ensureBowler(inn, name){
   }
 }
 
-function oversDisplay(legalBalls){
-  return `${Math.floor(legalBalls / 6)}.${legalBalls % 6}`;
+function ensureFielder(inn, name){
+  if (!inn.fielding.stats[name]){
+    inn.fielding.stats[name] = { catches: 0, runouts: 0 };
+    inn.fielding.order.push(name);
+  }
 }
 
-function runRate(runs, legalBalls){
-  return legalBalls > 0 ? (runs / (legalBalls / 6)) : 0;
+function oversDisplay(legalBalls, ballsPerOver){
+  const bpo = ballsPerOver || 6;
+  return `${Math.floor(legalBalls / bpo)}.${legalBalls % bpo}`;
+}
+
+function runRate(runs, legalBalls, ballsPerOver){
+  const bpo = ballsPerOver || 6;
+  return legalBalls > 0 ? (runs / (legalBalls / bpo)) : 0;
 }
 
 function requiredRunRate(inn){
   if (inn.target == null) return null;
-  const ballsLeft = inn.oversLimit * 6 - inn.legalBalls;
+  const bpo = inn.ballsPerOver || 6;
+  const ballsLeft = inn.oversLimit * bpo - inn.legalBalls;
   if (ballsLeft <= 0) return null;
   const runsNeeded = inn.target - inn.runs;
-  return runsNeeded / (ballsLeft / 6);
+  return runsNeeded / (ballsLeft / bpo);
 }
 
 function swapStrike(inn){
@@ -206,15 +441,18 @@ function pendingBatsmanSlot(inn){
 }
 
 function checkInningsComplete(inn){
+  const bpo = inn.ballsPerOver || 6;
   if (inn.target != null && inn.runs >= inn.target){ inn.complete = true; inn.completeReason = "target"; }
   else if (inn.wickets >= inn.maxWickets){ inn.complete = true; inn.completeReason = "allout"; }
-  else if (inn.legalBalls >= inn.oversLimit * 6){ inn.complete = true; inn.completeReason = "overs"; }
+  else if (inn.legalBalls >= inn.oversLimit * bpo){ inn.complete = true; inn.completeReason = "overs"; }
 }
 
 /* event: { kind: 'run'|'wide'|'noball'|'bye'|'legbye'|'wicket',
-            runs, wicketType, endComingIn }
+            runs, wicketType, endComingIn, fielder }
    A wicket is always recorded as happening on a legal delivery — run-outs
-   off a wide/no-ball are a known simplification, not modelled here. */
+   off a wide/no-ball are a known simplification, not modelled here.
+   `fielder` is optional on wicketType 'caught'/'runout' and credits a
+   fielding-side player with a catch/run-out for stats/MVP purposes. */
 function recordBall(inn, event){
   const bat = inn.batting.stats;
   const bwl = inn.bowling.stats[inn.bowler];
@@ -230,13 +468,13 @@ function recordBall(inn, event){
     rotate = event.runs % 2 === 1;
     display = String(event.runs);
   } else if (event.kind === "wide"){
-    ballRuns = 1 + (event.runs || 0);
+    ballRuns = inn.wideBaseRuns + (event.runs || 0);
     inn.extras.wides += ballRuns;
     display = event.runs ? `Wd+${event.runs}` : "Wd";
   } else if (event.kind === "noball"){
     const off = event.runs || 0;
-    ballRuns = 1 + off;
-    inn.extras.noBalls += 1;
+    ballRuns = inn.noBallBaseRuns + off;
+    inn.extras.noBalls += inn.noBallBaseRuns;
     bat[inn.striker].balls += 1;
     if (off > 0){
       bat[inn.striker].runs += off;
@@ -257,17 +495,22 @@ function recordBall(inn, event){
       bat[inn.striker].runs += ballRuns;
       bat[inn.striker].balls += 1;
       const outName = inn[event.endComingIn];
-      bat[outName].out = true; bat[outName].howOut = "run out";
+      bat[outName].out = true;
+      bat[outName].howOut = event.fielder ? `run out (${event.fielder})` : "run out";
       inn.wickets += 1;
       inn[event.endComingIn] = null;
+      if (event.fielder){ ensureFielder(inn, event.fielder); inn.fielding.stats[event.fielder].runouts += 1; }
       display = ballRuns ? `${ballRuns}+Ro` : "Ro";
     } else {
       bat[inn.striker].balls += 1;
       bat[inn.striker].out = true;
-      bat[inn.striker].howOut = `${WICKET_LABELS[event.wicketType]} b ${inn.bowler}`;
+      bat[inn.striker].howOut = (event.wicketType === "caught" && event.fielder)
+        ? `c ${event.fielder} b ${inn.bowler}`
+        : `${WICKET_LABELS[event.wicketType]} b ${inn.bowler}`;
       bwl.wickets += 1;
       inn.wickets += 1;
       inn.striker = null;
+      if (event.wicketType === "caught" && event.fielder){ ensureFielder(inn, event.fielder); inn.fielding.stats[event.fielder].catches += 1; }
       display = "W";
     }
   }
@@ -276,18 +519,18 @@ function recordBall(inn, event){
   if (legal){ inn.legalBalls += 1; bwl.legalBalls += 1; bwl.curOverLegal += 1; }
   if (event.kind !== "bye" && event.kind !== "legbye"){ bwl.runs += ballRuns; bwl.curOverRuns += ballRuns; }
   if (event.kind === "wicket"){
-    inn.fallOfWickets.push({ score: inn.runs, wicket: inn.wickets, over: oversDisplay(inn.legalBalls) });
+    inn.fallOfWickets.push({ score: inn.runs, wicket: inn.wickets, over: oversDisplay(inn.legalBalls, inn.ballsPerOver) });
   }
 
   inn.currentOverEvents.push({ display, isWicket: event.kind === "wicket" });
 
   if (legal) inn.freeHit = false;
-  if (event.kind === "noball") inn.freeHit = true;
+  if (event.kind === "noball" && inn.freeHitOnNoBall) inn.freeHit = true;
   if (rotate) swapStrike(inn);
 
   checkInningsComplete(inn);
 
-  const overCompleted = legal && inn.legalBalls % 6 === 0;
+  const overCompleted = legal && inn.legalBalls % inn.ballsPerOver === 0;
   if (overCompleted){
     if (bwl.curOverRuns === 0) bwl.maidens += 1;
     inn.overs.push({ bowler: inn.bowler, events: inn.currentOverEvents });
@@ -301,12 +544,28 @@ function recordBall(inn, event){
   }
 }
 
-function createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst }){
+function createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst, ballsPerOver, wideRuns, noBallRuns, wideEnabled, noBallEnabled, freeHitOnNoBall, requireFielderOnCatch, requireFielderOnRunout, presetId, presetName, tournamentId }){
+  const cfg = {
+    ballsPerOver: ballsPerOver || 6,
+    wideRuns: wideRuns != null ? wideRuns : 1,
+    noBallRuns: noBallRuns != null ? noBallRuns : 1,
+    freeHitOnNoBall: freeHitOnNoBall !== false
+  };
   return {
     teamA, teamB, oversLimit, playersPerSide, battingFirst,
-    innings: [createInnings(battingFirst, battingFirst === "A" ? "B" : "A", null, playersPerSide, oversLimit)],
+    ballsPerOver: cfg.ballsPerOver,
+    wideEnabled: wideEnabled !== false,
+    noBallEnabled: noBallEnabled !== false,
+    freeHitOnNoBall: cfg.freeHitOnNoBall,
+    requireFielderOnCatch: !!requireFielderOnCatch,
+    requireFielderOnRunout: !!requireFielderOnRunout,
+    presetId: presetId || null,
+    presetName: presetName || null,
+    tournamentId: tournamentId || null,
+    innings: [createInnings(battingFirst, battingFirst === "A" ? "B" : "A", null, playersPerSide, oversLimit, cfg)],
     status: "opening",
-    result: null
+    result: null,
+    motm: null
   };
 }
 
@@ -317,16 +576,18 @@ function teamName(match, key){ return key === "A" ? match.teamA : match.teamB; }
 function startSecondInnings(match){
   const i1 = match.innings[0];
   const target = i1.runs + 1;
-  match.innings.push(createInnings(i1.bowlingTeam, i1.battingTeam, target, match.playersPerSide, match.oversLimit));
+  const cfg = { ballsPerOver: match.ballsPerOver, wideRuns: i1.wideBaseRuns, noBallRuns: i1.noBallBaseRuns, freeHitOnNoBall: i1.freeHitOnNoBall };
+  match.innings.push(createInnings(i1.bowlingTeam, i1.battingTeam, target, match.playersPerSide, match.oversLimit, cfg));
   match.status = "opening";
 }
 
 function matchResult(match){
   const [i1, i2] = match.innings;
+  const bpo = match.ballsPerOver || 6;
   if (i2.runs >= i2.target){
     const wl = i2.maxWickets - i2.wickets;
-    const ballsLeft = i2.oversLimit * 6 - i2.legalBalls;
-    return `${teamName(match, i2.battingTeam)} won by ${wl} wicket${wl === 1 ? "" : "s"} (${oversDisplay(ballsLeft)} overs left)`;
+    const ballsLeft = i2.oversLimit * bpo - i2.legalBalls;
+    return `${teamName(match, i2.battingTeam)} won by ${wl} wicket${wl === 1 ? "" : "s"} (${oversDisplay(ballsLeft, bpo)} overs left)`;
   }
   if (i2.runs === i1.runs) return "Match tied";
   const margin = i1.runs - i2.runs;
@@ -341,11 +602,172 @@ function afterBall(match){
   }
 }
 
+/* Ends the match immediately, at any point (before openers are even
+   named, mid-innings, at the break — wherever), with the other team
+   declared the winner. Deliberately separate from matchResult/afterBall:
+   there's no runs margin or chase to compute, and match.innings[1] may
+   not exist yet. */
+function forfeitMatch(match, forfeitingTeamKey){
+  const winnerKey = forfeitingTeamKey === "A" ? "B" : "A";
+  match.forfeited = true;
+  match.forfeitedBy = forfeitingTeamKey;
+  match.status = "complete";
+  match.result = `${teamName(match, winnerKey)} won — ${teamName(match, forfeitingTeamKey)} forfeited the match`;
+}
+
+/* --- cross-match aggregation: MVP/MOTM, leaderboards, standings ---
+   Pure functions over one or more completed matches, kept DOM-free like
+   the rest of the engine so they're directly unit-testable. */
+function calcPlayerPoints(bat, bowl, field){
+  let pts = 0;
+  if (bat){
+    pts += bat.runs * MVP_POINTS.perRun;
+    pts += bat.fours * MVP_POINTS.perFour;
+    pts += bat.sixes * MVP_POINTS.perSix;
+    if (bat.runs >= 100) pts += MVP_POINTS.century;
+    else if (bat.runs >= 50) pts += MVP_POINTS.fifty;
+    if (bat.balls > 0 && !bat.out) pts += MVP_POINTS.notOut;
+  }
+  if (bowl){
+    pts += bowl.wickets * MVP_POINTS.perWicket;
+    pts += bowl.maidens * MVP_POINTS.perMaiden;
+  }
+  if (field){
+    pts += field.catches * MVP_POINTS.perCatch;
+    pts += field.runouts * MVP_POINTS.perRunOut;
+  }
+  return pts;
+}
+
+function emptyPlayerTotal(name){
+  return {
+    name, runs: 0, balls: 0, fours: 0, sixes: 0, notOuts: 0, innings: 0,
+    wickets: 0, legalBalls: 0, runsConceded: 0, maidens: 0,
+    catches: 0, runouts: 0, points: 0, matches: 0
+  };
+}
+
+function foldInningsIntoTotals(totals, inn){
+  inn.batting.order.forEach(name => {
+    const s = inn.batting.stats[name];
+    const t = totals[name] || (totals[name] = emptyPlayerTotal(name));
+    t.runs += s.runs; t.balls += s.balls; t.fours += s.fours; t.sixes += s.sixes;
+    t.innings += 1;
+    if (!s.out) t.notOuts += 1;
+    t.points += calcPlayerPoints(s, null, null);
+  });
+  inn.bowling.order.forEach(name => {
+    const b = inn.bowling.stats[name];
+    const t = totals[name] || (totals[name] = emptyPlayerTotal(name));
+    t.wickets += b.wickets; t.legalBalls += b.legalBalls; t.runsConceded += b.runs; t.maidens += b.maidens;
+    t.points += calcPlayerPoints(null, b, null);
+  });
+  inn.fielding.order.forEach(name => {
+    const f = inn.fielding.stats[name];
+    const t = totals[name] || (totals[name] = emptyPlayerTotal(name));
+    t.catches += f.catches; t.runouts += f.runouts;
+    t.points += calcPlayerPoints(null, null, f);
+  });
+}
+
+function matchPlayerNames(match){
+  const names = new Set();
+  match.innings.forEach(inn => {
+    inn.batting.order.forEach(n => names.add(n));
+    inn.bowling.order.forEach(n => names.add(n));
+    inn.fielding.order.forEach(n => names.add(n));
+  });
+  return names;
+}
+
+function aggregatePlayerStats(matches){
+  const totals = {};
+  matches.forEach(match => {
+    match.innings.forEach(inn => foldInningsIntoTotals(totals, inn));
+    matchPlayerNames(match).forEach(name => { if (totals[name]) totals[name].matches += 1; });
+  });
+  return Object.values(totals).sort((a, b) => b.points - a.points);
+}
+
+function pickMatchMOTM(match){
+  const totals = {};
+  match.innings.forEach(inn => foldInningsIntoTotals(totals, inn));
+  const ranked = Object.values(totals).sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    if (b.runs !== a.runs) return b.runs - a.runs;
+    return b.wickets - a.wickets;
+  });
+  return ranked.length ? ranked[0].name : null;
+}
+
+function computeStandings(matches, tournamentPreset){
+  const teams = {};
+  function ensureTeam(name){
+    return teams[name] || (teams[name] = {
+      name, played: 0, won: 0, lost: 0, tied: 0, points: 0,
+      runsFor: 0, oversFor: 0, runsAgainst: 0, oversAgainst: 0
+    });
+  }
+  matches.forEach(match => {
+    const nameA = teamName(match, "A"), nameB = teamName(match, "B");
+    if (match.forfeited){
+      // Counts for points, but deliberately excluded from NRR — the
+      // innings that were played (if any) weren't played to a finish,
+      // so folding their runs/overs in would skew run rate.
+      ensureTeam(nameA); ensureTeam(nameB);
+      ensureTeam(nameA).played += 1; ensureTeam(nameB).played += 1;
+      const winner = teamName(match, match.forfeitedBy === "A" ? "B" : "A");
+      const loser = winner === nameA ? nameB : nameA;
+      teams[winner].won += 1; teams[loser].lost += 1;
+      teams[winner].points += tournamentPreset.pointsForWin;
+      teams[loser].points += tournamentPreset.pointsForLoss;
+      return;
+    }
+    const [i1, i2] = match.innings;
+    if (!i2 || !i2.complete) return; // only fully-played two-innings matches count
+    ensureTeam(nameA); ensureTeam(nameB);
+    const bpo = match.ballsPerOver || 6;
+    match.innings.forEach(inn => {
+      const bt = ensureTeam(teamName(match, inn.battingTeam));
+      const bwt = ensureTeam(teamName(match, inn.bowlingTeam));
+      const oversFaced = inn.completeReason === "allout" ? inn.oversLimit : inn.legalBalls / bpo;
+      bt.runsFor += inn.runs; bt.oversFor += oversFaced;
+      bwt.runsAgainst += inn.runs; bwt.oversAgainst += oversFaced;
+    });
+    ensureTeam(nameA).played += 1; ensureTeam(nameB).played += 1;
+    if (i2.runs === i1.runs){
+      teams[nameA].tied += 1; teams[nameB].tied += 1;
+      teams[nameA].points += tournamentPreset.pointsForTie; teams[nameB].points += tournamentPreset.pointsForTie;
+    } else {
+      const winner = i2.runs > i1.runs ? teamName(match, i2.battingTeam) : teamName(match, i1.battingTeam);
+      const loser = winner === nameA ? nameB : nameA;
+      teams[winner].won += 1; teams[loser].lost += 1;
+      teams[winner].points += tournamentPreset.pointsForWin;
+      teams[loser].points += tournamentPreset.pointsForLoss;
+    }
+  });
+  const standings = Object.values(teams).map(t => ({
+    ...t,
+    nrr: (t.oversFor > 0 && t.oversAgainst > 0) ? (t.runsFor / t.oversFor) - (t.runsAgainst / t.oversAgainst) : 0
+  }));
+  standings.sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    if (tournamentPreset.useNRR && b.nrr !== a.nrr) return b.nrr - a.nrr;
+    return 0;
+  });
+  return standings;
+}
+
 /* ============================================================
    3. STORAGE — DB wrapper: window.storage -> localStorage -> memory.
+   Schema v2 adds teams/players/presets/tournaments/history alongside
+   the original { match, snapshots }; v1 saves are migrated in place
+   the first time a v2-aware build loads them.
    ============================================================ */
-const DB = (() => {
-  const KEY = "cricket.lk.v1";
+var STORAGE_KEY = "cricket.lk.v2";
+var LEGACY_KEY = "cricket.lk.v1";
+
+var DB = (() => {
   let mem = {};
   function backend(){
     if (typeof window !== "undefined" && window.storage && typeof window.storage.getItem === "function") return window.storage;
@@ -359,56 +781,1014 @@ const DB = (() => {
   }
   const store = backend();
   return {
-    load(){
+    load(key){
       try {
-        const raw = store ? store.getItem(KEY) : mem[KEY];
+        const raw = store ? store.getItem(key) : mem[key];
         return raw ? JSON.parse(raw) : null;
       } catch (_){ return null; }
     },
-    save(data){
+    save(key, data){
       const raw = JSON.stringify(data);
-      try { if (store) store.setItem(KEY, raw); else mem[KEY] = raw; }
-      catch (_){ mem[KEY] = raw; }
+      try { if (store) store.setItem(key, raw); else mem[key] = raw; }
+      catch (_){ mem[key] = raw; }
     },
-    clear(){
-      try { if (store) store.removeItem(KEY); } catch (_){}
-      delete mem[KEY];
-    }
+    clear(key){
+      try { if (store) store.removeItem(key); } catch (_){}
+      delete mem[key];
+    },
+    // Exposes the same window.storage -> localStorage -> null tier DB itself
+    // resolved, so other things (the Supabase auth session adapter) can
+    // follow the identical backend choice instead of re-detecting it.
+    rawBackend: store
   };
 })();
 
+function genId(prefix){
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function defaultState(){
+  const matchPresets = {}; DEFAULT_MATCH_PRESETS.forEach(p => { matchPresets[p.id] = p; });
+  const tournamentPresets = {}; DEFAULT_TOURNAMENT_PRESETS.forEach(p => { tournamentPresets[p.id] = p; });
+  return {
+    match: null, snapshots: [],
+    view: "home",
+    players: {}, teams: {},
+    matchPresets, tournamentPresets,
+    tournaments: {}, matchHistory: {},
+    activeTournamentId: null,
+    activeClubId: null, // which club (if any) Home's quick-action cards currently target -- see the CLOUD "clubs" section
+    soundEnabled: true,
+    branding: { name: "", logo: null, accent: null, accent2: null }
+  };
+}
+
 /* ============================================================
-   4. UI
+   4. CLOUD — Supabase client, auth session, and the platform-wide
+   admin flag. Everything here is additive: with SUPABASE_URL/
+   SUPABASE_ANON_KEY unset, `supabaseClient` stays null and every
+   cloud-gated screen/action just falls back to "sign in required" —
+   local guest scoring never depends on any of this, and no network
+   request happens at all on an unconfigured deployment.
+   Session/profile/isAdmin are deliberately plain top-level `let`
+   vars, NOT fields on `state` or `ui`: `state` is JSON-persisted via
+   DB.save() (a Supabase session object doesn't belong in that blob,
+   supabase-js manages its own persistence) and `ui` gets wholesale
+   reset (`ui = defaultUi()`) at points like finishing a match, which
+   would otherwise wipe sign-in status out from under the user.
+   The supabase-js library is loaded dynamically (not a static
+   <script> tag) so a slow/blocked CDN fetch can never delay booting
+   the core scorer — see loadSupabaseLib() below.
    ============================================================ */
-var state = { match: null, snapshots: [] };
-function defaultUi(){ return { pendingExtra: null, wicketFlow: null, runoutRuns: 0, showFullScorecard: false }; }
+const SUPABASE_URL = "https://xfsaldtvvcuyondayjjw.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_jDfjBu62WssP3fKEbbfVKw_ZyoxCXUm";  // publishable key -- safe to expose, access is enforced by RLS
+const SUPABASE_JS_CDN_URL = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js";
+
+function loadSupabaseLib(){
+  if (typeof window.supabase !== "undefined") return Promise.resolve(window.supabase);
+  return new Promise((resolve, reject) => {
+    const el = document.createElement("script");
+    el.src = SUPABASE_JS_CDN_URL;
+    el.onload = () => resolve(window.supabase);
+    el.onerror = () => reject(new Error("Failed to load supabase-js"));
+    document.head.appendChild(el);
+  });
+}
+
+function makeCloudAuthStorage(){
+  const backend = DB.rawBackend; // same window.storage -> localStorage -> null tier as DB
+  const mem = {};
+  return {
+    getItem: (key) => Promise.resolve(backend ? backend.getItem(key) : (key in mem ? mem[key] : null)),
+    setItem: (key, value) => {
+      try { if (backend) backend.setItem(key, value); else mem[key] = value; }
+      catch (_){ mem[key] = value; }
+      return Promise.resolve();
+    },
+    removeItem: (key) => {
+      try { if (backend) backend.removeItem(key); } catch (_){}
+      delete mem[key];
+      return Promise.resolve();
+    }
+  };
+}
+
+let supabaseClient = null; // set by initAuth() once supabase-js has loaded, if configured
+let session = null;  // current Supabase auth session, or null when signed out / cloud unavailable
+let profile = null;  // { id, display_name } row from `profiles` for the signed-in user
+let isAdmin = false;  // whether the signed-in user has a row in `admin_users`
+
+async function refreshProfileAndAdmin(){
+  profile = null; isAdmin = false;
+  if (!supabaseClient || !session) return;
+  const [{ data: profileRow }, { data: adminRow }] = await Promise.all([
+    supabaseClient.from("profiles").select("id, display_name").eq("id", session.user.id).maybeSingle(),
+    supabaseClient.from("admin_users").select("user_id").eq("user_id", session.user.id).maybeSingle()
+  ]);
+  profile = profileRow || null;
+  isAdmin = !!adminRow;
+}
+
+async function initAuth(){
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return; // cloud not configured on this deployment
+  let lib;
+  try { lib = await loadSupabaseLib(); } catch (_){ return; } // offline/blocked CDN — stay in guest mode
+  supabaseClient = lib.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { storage: makeCloudAuthStorage(), persistSession: true, autoRefreshToken: true }
+  });
+  const { data } = await supabaseClient.auth.getSession();
+  session = data.session || null;
+  await refreshProfileAndAdmin();
+  render();
+  supabaseClient.auth.onAuthStateChange((_event, newSession) => {
+    session = newSession;
+    refreshProfileAndAdmin().then(render);
+  });
+}
+
+async function handleSignOut(){
+  if (!supabaseClient) return;
+  await supabaseClient.auth.signOut();
+  state.view = "home";
+  state.activeClubId = null;
+  ui.myClubs = null; ui.club = null; ui.currentClubId = null; // don't leak the previous account's clubs to whoever signs in next
+  save(); render();
+}
+
+/* --- clubs (Milestone 2): a signed-in user's clubs, roster, and synced
+   matches. Players are global (see supabase/002_clubs.sql) -- a club's
+   "roster" is just a club_rosters join, not a copy of the player. There
+   is deliberately no synced "team" entity for a club's own matches; see
+   CLAUDE.md's "Cloud accounts & Supabase" section. ------------------- */
+
+async function fetchMyClubs(){
+  if (!supabaseClient || !session) { ui.myClubs = []; return; }
+  const { data, error } = await supabaseClient
+    .from("club_members")
+    .select("role, clubs(id, name)")
+    .eq("user_id", session.user.id);
+  ui.myClubs = error ? [] : data.map(r => ({ id: r.clubs.id, name: r.clubs.name, role: r.role }));
+}
+
+async function createClub(name){
+  if (!supabaseClient || !session) return null;
+  const { data: club, error } = await supabaseClient
+    .from("clubs").insert({ name, created_by: session.user.id }).select().single();
+  if (error) return { error: error.message };
+  const { error: memberError } = await supabaseClient
+    .from("club_members").insert({ club_id: club.id, user_id: session.user.id, role: "owner" });
+  if (memberError) return { error: memberError.message };
+  return { club };
+}
+
+async function fetchClubDetail(clubId){
+  ui.clubBusy = true;
+  const [{ data: club }, { data: members }, { data: roster }, { data: matches }, { data: tournaments }] = await Promise.all([
+    supabaseClient.from("clubs").select("id, name").eq("id", clubId).single(),
+    supabaseClient.from("club_members").select("user_id, role, profiles_public(display_name)").eq("club_id", clubId),
+    supabaseClient.from("club_rosters").select("player_id, players_public(id, name)").eq("club_id", clubId),
+    supabaseClient.from("matches").select("id, match_type, data, played_at").eq("club_id", clubId).order("played_at", { ascending: false }).limit(50),
+    supabaseClient.from("tournaments").select("id, name, created_at").eq("organizer_club_id", clubId).order("created_at", { ascending: false })
+  ]);
+  ui.club = {
+    id: clubId,
+    name: club ? club.name : "",
+    members: (members || []).map(m => ({ userId: m.user_id, role: m.role, displayName: (m.profiles_public && m.profiles_public.display_name) || "—" })),
+    roster: (roster || []).map(r => r.players_public).filter(Boolean),
+    matches: matches || [],
+    tournaments: tournaments || []
+  };
+  ui.clubBusy = false;
+}
+
+async function createClubTournament(clubId, name, tournamentPreset){
+  if (!supabaseClient || !session) return null;
+  const { data, error } = await supabaseClient
+    .from("tournaments")
+    .insert({ name, organizer_club_id: clubId, tournament_preset: tournamentPreset, created_by: session.user.id })
+    .select().single();
+  return error ? { error: error.message } : { tournament: data };
+}
+
+async function fetchClubTournamentDetail(tournamentId){
+  const [{ data: tournament }, { data: matches }] = await Promise.all([
+    supabaseClient.from("tournaments").select("id, name, organizer_club_id, tournament_preset").eq("id", tournamentId).single(),
+    supabaseClient.from("matches").select("id, data, played_at").eq("tournament_id", tournamentId).order("played_at", { ascending: false })
+  ]);
+  ui.clubTournament = tournament ? { ...tournament, matches: matches || [] } : null;
+}
+
+async function addPlayerToClub(clubId, name){
+  const trimmed = (name || "").trim();
+  if (!trimmed) return;
+  const { data: existing } = await supabaseClient
+    .from("players_public").select("id, name").ilike("name", trimmed).limit(1);
+  let playerId;
+  if (existing && existing.length){
+    playerId = existing[0].id;
+  } else {
+    const { data: created, error } = await supabaseClient
+      .from("players").insert({ name: trimmed, created_by: session.user.id }).select().single();
+    if (error) return { error: error.message };
+    playerId = created.id;
+  }
+  const { error: rosterError } = await supabaseClient
+    .from("club_rosters").insert({ club_id: clubId, player_id: playerId });
+  if (rosterError && rosterError.code !== "23505") return { error: rosterError.message }; // ignore "already on roster"
+  return { ok: true };
+}
+
+async function inviteClubAdmin(clubId, email){
+  const { data, error } = await supabaseClient.rpc("invite_club_admin", { _club_id: clubId, _email: email });
+  if (error) return { error: error.message };
+  return { result: data }; // "ok" | "not_found" | "already_member"
+}
+
+async function syncMatchToCloud(match, archived){
+  if (!supabaseClient || !session || !match.clubId) return;
+  try {
+    await supabaseClient.from("matches").upsert({
+      id: archived.id,
+      club_id: match.clubId,
+      match_type: match.matchType || "practice",
+      level: "local",
+      opponent_name: match.opponentName || null,
+      tournament_id: match.tournamentId || null,
+      created_by: session.user.id,
+      data: archived,
+      played_at: new Date(archived.completedAt).toISOString()
+    });
+  } catch (_){ /* best-effort -- the match is already safely archived locally either way */ }
+}
+
+/* --- Premier: a cross-club, public players/stats/(eventually teams)
+   browse screen, and player claiming ("this is me"). Claiming works
+   today even though Premier tournaments (organizing, multi-club) don't
+   exist yet -- players are already global (Milestone 2), so there's a
+   real identity to claim regardless. Approval is admin-only, enforced
+   server-side by the approve_claim/reject_claim RPCs (see
+   supabase/004_premier_claims.sql), never by the isAdmin flag alone. */
+async function fetchPremierData(){
+  const [{ data: players }, { data: premierMatches }, pendingClaims] = await Promise.all([
+    supabaseClient.from("players_public").select("id, name, claimed_by").order("name"),
+    supabaseClient.from("matches").select("id, data").eq("level", "premier"),
+    isAdmin
+      ? supabaseClient.from("claim_requests").select("id, player_id, requested_by, claimed_phone, note, created_at").eq("status", "pending")
+      : Promise.resolve({ data: [] })
+  ]);
+  ui.premier = {
+    players: players || [],
+    premierMatches: premierMatches || [],
+    pendingClaims: (pendingClaims && pendingClaims.data) || []
+  };
+}
+
+async function requestClaim(playerId, phone, note){
+  const { error } = await supabaseClient.from("claim_requests").insert({
+    player_id: playerId, requested_by: session.user.id, claimed_phone: phone || null, note: note || null
+  });
+  return error ? { error: error.message } : { ok: true };
+}
+
+async function approveClaimRequest(requestId){
+  const { error } = await supabaseClient.rpc("approve_claim", { _request_id: requestId });
+  return error ? { error: error.message } : { ok: true };
+}
+
+async function rejectClaimRequest(requestId){
+  const { error } = await supabaseClient.rpc("reject_claim", { _request_id: requestId });
+  return error ? { error: error.message } : { ok: true };
+}
+
+/* ============================================================
+   5. UI
+   ============================================================ */
+var state = defaultState();
+function defaultUi(){
+  return {
+    pendingExtra: null, wicketFlow: null, runoutRuns: 0, showFullScorecard: false, forfeitFlow: false,
+    matchSetupPresetId: null,
+    tournamentSetupPresetId: null, tournamentSetupTeamIds: [],
+    tournamentTab: "standings",
+    selectedTeamId: null,
+    presetsTab: "match", editingMatchPreset: null, editingTournamentPreset: null,
+    // cloud clubs (see CLOUD section) -- caches of fetched data, not persisted;
+    // re-fetched whenever their screen is opened.
+    myClubs: null, myClubsLoading: false, currentClubId: null, club: null, clubBusy: false, clubInviteMessage: null,
+    clubMatchSetupType: null, // "practice" | "friendly" | "tournament", set when entering club match setup
+    clubTournamentSetupPresetId: null, currentTournamentId: null, clubTournament: null,
+    premier: null, // { players, premierMatches, pendingClaims } -- see fetchPremierData()
+    claimingPlayerId: null, // which player's "This is me" form is open on the Premier screen
+    claimMessage: null
+  };
+}
 var ui = defaultUi();
 
-function save(){ DB.save({ match: state.match, snapshots: state.snapshots }); }
-function load(){
-  const data = DB.load();
-  if (data && data.match){ state.match = data.match; state.snapshots = data.snapshots || []; }
+function save(){ DB.save(STORAGE_KEY, state); }
+
+function migrateLegacy(){
+  const legacy = DB.load(LEGACY_KEY);
+  if (!legacy || !legacy.match) return null;
+  const fresh = defaultState();
+  fresh.match = legacy.match;
+  fresh.snapshots = legacy.snapshots || [];
+  return fresh;
 }
+
+function load(){
+  const data = DB.load(STORAGE_KEY);
+  if (data){ state = Object.assign(defaultState(), data); applyTheme(); return; }
+  state = migrateLegacy() || defaultState();
+  applyTheme();
+  save();
+}
+
 function pushSnapshot(){
   state.snapshots.push(JSON.parse(JSON.stringify(state.match)));
   if (state.snapshots.length > 80) state.snapshots.shift();
 }
 
-/* --- setup screen --- */
-function renderSetup(){
+/* --- teams & players (persistent, swappable rosters; name autocomplete) --- */
+function findOrCreatePlayer(name){
+  const trimmed = (name || "").trim();
+  const existing = Object.values(state.players).find(p => p.name.toLowerCase() === trimmed.toLowerCase());
+  if (existing) return existing;
+  const player = { id: genId("player"), name: trimmed };
+  state.players[player.id] = player;
+  return player;
+}
+
+function allPlayerNames(){ return Object.values(state.players).map(p => p.name); }
+
+function createTeam(name){
+  const team = { id: genId("team"), name: (name || "").trim(), playerIds: [] };
+  state.teams[team.id] = team;
+  return team;
+}
+
+function deleteTeam(teamId){ delete state.teams[teamId]; }
+
+function addPlayerToTeam(teamId, name){
+  const player = findOrCreatePlayer(name);
+  const team = state.teams[teamId];
+  if (team && !team.playerIds.includes(player.id)) team.playerIds.push(player.id);
+  return player;
+}
+
+function removePlayerFromTeam(teamId, playerId){
+  const team = state.teams[teamId];
+  if (team) team.playerIds = team.playerIds.filter(id => id !== playerId);
+}
+
+function movePlayerToTeam(playerId, fromTeamId, toTeamId){
+  removePlayerFromTeam(fromTeamId, playerId);
+  const team = state.teams[toTeamId];
+  if (team && !team.playerIds.includes(playerId)) team.playerIds.push(playerId);
+}
+
+/* --- presets --- */
+function saveMatchPreset(preset){
+  const id = preset.id || genId("preset");
+  state.matchPresets[id] = Object.assign({}, preset, { id });
+  return state.matchPresets[id];
+}
+function deleteMatchPreset(id){ delete state.matchPresets[id]; }
+
+function saveTournamentPreset(preset){
+  const id = preset.id || genId("tpreset");
+  state.tournamentPresets[id] = Object.assign({}, preset, { id });
+  return state.tournamentPresets[id];
+}
+function deleteTournamentPreset(id){ delete state.tournamentPresets[id]; }
+
+/* --- tournaments & match history --- */
+function createTournament({ name, tournamentPresetId, teamIds }){
+  const tournament = { id: genId("tourney"), name: (name || "").trim(), tournamentPresetId, teamIds: (teamIds || []).slice(), matchIds: [] };
+  state.tournaments[tournament.id] = tournament;
+  return tournament;
+}
+
+function archiveMatch(match){
+  const archived = JSON.parse(JSON.stringify(match));
+  archived.id = genId("match");
+  archived.completedAt = Date.now();
+  state.matchHistory[archived.id] = archived;
+  if (match.tournamentId && state.tournaments[match.tournamentId]){
+    state.tournaments[match.tournamentId].matchIds.push(archived.id);
+  }
+  return archived;
+}
+
+function escapeHtml(s){
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* --- THEME: a user's chosen accent/accent-2 hex (state.branding, set
+   in Presets → Appearance) is the only thing stored — everything else
+   (the rgb triple used by rgba() overlays, a lightened gradient-stop
+   shade, a darkened "dim" shade, and a light/dark "ink" text color)
+   is derived from it and pushed onto :root as CSS custom properties.
+   Leaving a color uncustomized (hex is null) removes the override so
+   the hardcoded :root defaults in <style> — the single source of
+   truth for the built-in palette — show through untouched. --- */
+function hexToRgb(hex){
+  const clean = String(hex || "").replace("#", "");
+  const full = clean.length === 3 ? clean.split("").map(c => c + c).join("") : clean;
+  const n = parseInt(full, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function rgbToHex(r, g, b){
+  return "#" + [r, g, b].map(c => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, "0")).join("");
+}
+function shadeColor(hex, amount){
+  const [r, g, b] = hexToRgb(hex);
+  const target = amount < 0 ? 0 : 255;
+  const p = Math.abs(amount);
+  const mix = c => c + (target - c) * p;
+  return rgbToHex(mix(r), mix(g), mix(b));
+}
+function inkForColor(hex){
+  const [r, g, b] = hexToRgb(hex);
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return shadeColor(hex, luminance > 0.5 ? -0.88 : 0.88);
+}
+function applyAccentVars(root, prefix, hex){
+  if (!hex){
+    ["", "-rgb", "-dim", "-light", "-ink"].forEach(suffix => root.removeProperty(`--${prefix}${suffix}`));
+    return;
+  }
+  root.setProperty(`--${prefix}`, hex);
+  root.setProperty(`--${prefix}-rgb`, hexToRgb(hex).join(","));
+  root.setProperty(`--${prefix}-dim`, shadeColor(hex, -0.35));
+  root.setProperty(`--${prefix}-light`, shadeColor(hex, 0.35));
+  root.setProperty(`--${prefix}-ink`, inkForColor(hex));
+}
+function applyTheme(){
+  const b = state.branding || {};
+  const root = document.documentElement.style;
+  applyAccentVars(root, "accent", b.accent);
+  applyAccentVars(root, "accent-2", b.accent2);
+}
+
+/* --- SFX: tiny synthesized sound effects via Web Audio API, no audio
+   files — keeps the single-file/no-dependency/offline constraints.
+   Muted via state.soundEnabled (persisted, toggled by the sound-toggle
+   button rendered on every screen). AudioContext is created lazily on
+   the first sound-triggering call, which is always inside a click
+   handler, satisfying browsers' user-gesture autoplay requirement. --- */
+const SFX = (() => {
+  let ctx = null;
+  function ensureCtx(){
+    if (!ctx){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC){ try { ctx = new AC(); } catch (_){ ctx = null; } }
+    }
+    if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
+    return ctx;
+  }
+  function tone(freq, { duration = .12, type = "sine", gain = .18, delay = 0, glideTo = null } = {}){
+    if (!state.soundEnabled) return;
+    const c = ensureCtx();
+    if (!c) return;
+    const t0 = c.currentTime + delay;
+    const osc = c.createOscillator();
+    const g = c.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    if (glideTo) osc.frequency.exponentialRampToValueAtTime(glideTo, t0 + duration);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(gain, t0 + .012);
+    g.gain.exponentialRampToValueAtTime(.0001, t0 + duration);
+    osc.connect(g); g.connect(c.destination);
+    osc.start(t0); osc.stop(t0 + duration + .03);
+  }
+  return {
+    dot(){ tone(300, { duration: .06, gain: .09 }); },
+    single(){ tone(430, { duration: .09, gain: .12 }); },
+    two(){ tone(430, { duration: .08, gain: .12 }); tone(540, { duration: .09, gain: .12, delay: .07 }); },
+    three(){ tone(430, { duration: .07, gain: .11 }); tone(520, { duration: .07, gain: .11, delay: .06 }); tone(620, { duration: .09, gain: .12, delay: .12 }); },
+    four(){ tone(660, { duration: .16, type: "triangle", gain: .18 }); tone(880, { duration: .22, type: "triangle", gain: .14, delay: .05 }); },
+    six(){ tone(660, { duration: .14, type: "triangle", gain: .2 }); tone(880, { duration: .14, type: "triangle", gain: .18, delay: .06 }); tone(1108, { duration: .3, type: "triangle", gain: .16, delay: .12 }); },
+    extra(){ tone(300, { duration: .1, type: "square", gain: .07 }); },
+    wicket(){ tone(190, { duration: .38, type: "sawtooth", gain: .2, glideTo: 65 }); },
+    win(){ tone(523, { duration: .15, gain: .16 }); tone(659, { duration: .15, gain: .16, delay: .14 }); tone(784, { duration: .32, gain: .18, delay: .28 }); },
+    tap(){ tone(520, { duration: .05, gain: .08 }); },
+    runs(n){
+      if (n === 0) this.dot();
+      else if (n === 1) this.single();
+      else if (n === 2) this.two();
+      else if (n === 3) this.three();
+      else if (n === 4) this.four();
+      else if (n === 6) this.six();
+      else this.single();
+    }
+  };
+})();
+
+function renderPlayersDatalist(){
+  return `<datalist id="players-datalist">${allPlayerNames().map(n => `<option value="${escapeHtml(n)}">`).join("")}</datalist>`;
+}
+function renderTeamsDatalist(){
+  return `<datalist id="teams-datalist">${Object.values(state.teams).map(t => `<option value="${escapeHtml(t.name)}">`).join("")}</datalist>`;
+}
+function renderBackBar(label, view){
+  return `<button data-action="go-view" data-view="${view}" class="back-bar">‹ ${label}</button>`;
+}
+function renderSoundToggle(){
+  return `<button data-action="toggle-sound" class="sound-toggle" aria-label="${state.soundEnabled ? "Mute sound" : "Unmute sound"}">${state.soundEnabled ? "🔊" : "🔇"}</button>`;
+}
+function activeTournament(){ return state.activeTournamentId ? state.tournaments[state.activeTournamentId] : null; }
+
+/* --- home --- */
+function renderHome(){
+  const matchCount = Object.keys(state.matchHistory).length;
+  const teamCount = Object.keys(state.teams).length;
+  const tournaments = Object.values(state.tournaments);
+  const b = state.branding || {};
+
+  // A club acting as Home's quick-action target, toggled from the
+  // switcher below -- resets itself if the club list loads and no
+  // longer contains it (e.g. the user left/was removed from it).
+  if (state.activeClubId && ui.myClubs && !ui.myClubs.some(c => c.id === state.activeClubId)){
+    state.activeClubId = null;
+  }
+  const activeClub = state.activeClubId ? (ui.myClubs || []).find(c => c.id === state.activeClubId) : null;
+
+  return `
+    <div class="screen home">
+      ${b.logo ? `<img src="${b.logo}" class="home-logo" alt="${escapeHtml(b.name || "Logo")}">` : ""}
+      <h1>${b.logo ? "" : "🏏 "}${escapeHtml(b.name) || "Cricket.lk"}</h1>
+      <p class="tagline">Ball-by-ball live scorer.</p>
+      <div class="club-switcher">
+        <label>Acting as
+          <select id="home-club-switcher">
+            <option value="">Guest (no club)</option>
+            ${session ? (ui.myClubs || []).map(c => `<option value="${c.id}" ${c.id === state.activeClubId ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("") : ""}
+            <option value="__premier__">🏆 Premier</option>
+          </select>
+        </label>
+      </div>
+      <div class="home-grid">
+        ${activeClub ? `
+          <button data-action="go-club-match-setup" data-type="practice" class="home-card primary-card">
+            <span class="home-card-icon">🏏</span><span class="home-card-title">Practice match</span>
+            <span class="home-card-sub">${escapeHtml(activeClub.name)} · home vs home</span>
+          </button>
+          <button data-action="go-club-match-setup" data-type="friendly" class="home-card">
+            <span class="home-card-icon">🤝</span><span class="home-card-title">Friendly match</span>
+            <span class="home-card-sub">${escapeHtml(activeClub.name)} · home vs visitors</span>
+          </button>
+          <button data-action="go-club-tournament-setup" class="home-card">
+            <span class="home-card-icon">🏆</span><span class="home-card-title">New tournament</span>
+            <span class="home-card-sub">${escapeHtml(activeClub.name)} · Local tier</span>
+          </button>
+        ` : `
+          <button data-action="go-match-setup" class="home-card primary-card">
+            <span class="home-card-icon">🏏</span><span class="home-card-title">New match</span>
+            <span class="home-card-sub">Score a one-off match</span>
+          </button>
+          <button data-action="go-tournament-setup" class="home-card">
+            <span class="home-card-icon">🏆</span><span class="home-card-title">New tournament</span>
+            <span class="home-card-sub">Teams, fixtures, standings</span>
+          </button>
+        `}
+        <button data-action="go-my-clubs" class="home-card">
+          <span class="home-card-icon">🏛️</span><span class="home-card-title">My clubs</span>
+          <span class="home-card-sub">${session ? `${(ui.myClubs || []).length} club${(ui.myClubs || []).length === 1 ? "" : "s"}` : "Sign in to create one"}</span>
+        </button>
+        <button data-action="go-view" data-view="teams" class="home-card">
+          <span class="home-card-icon">👥</span><span class="home-card-title">Teams & players</span>
+          <span class="home-card-sub">${teamCount} team${teamCount === 1 ? "" : "s"}</span>
+        </button>
+        <button data-action="go-view" data-view="presets" class="home-card">
+          <span class="home-card-icon">⚙️</span><span class="home-card-title">Presets</span>
+          <span class="home-card-sub">Playing conditions</span>
+        </button>
+        <button data-action="go-view" data-view="stats" class="home-card">
+          <span class="home-card-icon">📊</span><span class="home-card-title">Stats</span>
+          <span class="home-card-sub">${matchCount} match${matchCount === 1 ? "" : "es"} played</span>
+        </button>
+        <button data-action="go-account" class="home-card">
+          <span class="home-card-icon">👤</span><span class="home-card-title">${session ? "Account" : "Sign in"}</span>
+          <span class="home-card-sub">${session ? escapeHtml(profile?.display_name || session.user.email) : "Clubs & tournaments"}</span>
+        </button>
+      </div>
+      ${tournaments.length ? `
+        <div class="home-section">
+          <h3>Tournaments</h3>
+          ${tournaments.map(t => `
+            <button data-action="open-tournament" data-id="${t.id}" class="list-row">
+              <span>${escapeHtml(t.name)}</span><span class="chevron">›</span>
+            </button>
+          `).join("")}
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+/* --- sign in / sign up / account --- */
+function renderSignIn(){
+  return `
+    <div class="screen">
+      ${renderBackBar("Home", "home")}
+      <h1>Sign in</h1>
+      ${!supabaseClient ? `<p class="hint">Cloud features aren't configured on this deployment yet.</p>` : `
+        <form id="sign-in-form">
+          <div class="form-error"></div>
+          <label>Email<input name="email" type="email" required autocomplete="email"></label>
+          <label>Password<input name="password" type="password" required autocomplete="current-password"></label>
+          <button type="submit" class="primary">Sign in</button>
+        </form>
+        <p class="hint">No account yet? <button type="button" data-action="go-view" data-view="signUp" class="link-btn">Sign up</button></p>
+      `}
+    </div>
+  `;
+}
+
+function renderSignUp(){
+  return `
+    <div class="screen">
+      ${renderBackBar("Home", "home")}
+      <h1>Sign up</h1>
+      ${!supabaseClient ? `<p class="hint">Cloud features aren't configured on this deployment yet.</p>` : `
+        <form id="sign-up-form">
+          <div class="form-error"></div>
+          <label>Display name<input name="displayName" required maxlength="40"></label>
+          <label>Email<input name="email" type="email" required autocomplete="email"></label>
+          <label>Password<input name="password" type="password" required minlength="6" autocomplete="new-password"></label>
+          <button type="submit" class="primary">Sign up</button>
+        </form>
+        <p class="hint">Already have an account? <button type="button" data-action="go-view" data-view="signIn" class="link-btn">Sign in</button></p>
+      `}
+    </div>
+  `;
+}
+
+function renderAccount(){
+  if (!session) return renderSignIn();
+  return `
+    <div class="screen">
+      ${renderBackBar("Home", "home")}
+      <h1>Account</h1>
+      <p class="mvp-name">${escapeHtml(profile?.display_name || "—")}</p>
+      <p class="muted">${escapeHtml(session.user.email || "")}</p>
+      ${isAdmin ? `<p class="hint">Signed in as platform admin.</p>` : ""}
+      <button data-action="go-my-clubs" class="primary">My clubs</button>
+      <button data-action="sign-out" class="ghost">Sign out</button>
+    </div>
+  `;
+}
+
+function handleSignInSubmit(e){
+  e.preventDefault();
+  if (!supabaseClient) return;
+  const form = e.target;
+  const f = new FormData(form);
+  const email = (f.get("email") || "").trim();
+  const password = f.get("password") || "";
+  supabaseClient.auth.signInWithPassword({ email, password }).then(({ data, error }) => {
+    if (error){ showFormError(form, error.message); return; }
+    session = data.session;
+    ui.myClubs = null; // force a fresh fetch under the newly-signed-in account
+    refreshProfileAndAdmin().then(() => {
+      state.view = "account";
+      save(); render();
+    });
+  });
+}
+
+function handleSignUpSubmit(e){
+  e.preventDefault();
+  if (!supabaseClient) return;
+  const form = e.target;
+  const f = new FormData(form);
+  const displayName = (f.get("displayName") || "").trim();
+  const email = (f.get("email") || "").trim();
+  const password = f.get("password") || "";
+  supabaseClient.auth.signUp({
+    email, password,
+    options: { data: { display_name: displayName } }
+  }).then(({ data, error }) => {
+    if (error){ showFormError(form, error.message); return; }
+    if (!data.session){
+      // Email confirmation is required before a session exists.
+      state.view = "signIn";
+      save(); render();
+      return;
+    }
+    session = data.session;
+    refreshProfileAndAdmin().then(() => {
+      state.view = "account";
+      save(); render();
+    });
+  });
+}
+
+/* --- clubs --- */
+// The name for ui.currentClubId, without requiring a full fetchClubDetail
+// first -- Home's quick-action cards jump straight into these setup
+// screens (see "go-club-match-setup"/"go-club-tournament-setup"), so
+// ui.club may not be loaded (or may still hold a *different* club's
+// detail from an earlier visit). ui.myClubs (fetched for the Home
+// switcher) already has the name; prefer the richer ui.club only when
+// it's actually for the right club.
+function currentClubName(){
+  if (ui.club && ui.club.id === ui.currentClubId) return ui.club.name;
+  const fromList = (ui.myClubs || []).find(c => c.id === ui.currentClubId);
+  return fromList ? fromList.name : "";
+}
+
+function renderMyClubs(){
+  if (!session) return renderSignIn();
+  return `
+    <div class="screen">
+      ${renderBackBar("Account", "account")}
+      <h1>My clubs</h1>
+      <form id="create-club-form" class="inline-form">
+        <div class="form-error"></div>
+        <input name="name" placeholder="Club name" required maxlength="40">
+        <button type="submit" class="primary">Create</button>
+      </form>
+      ${ui.myClubs === null ? `<p class="hint">Loading…</p>` : ui.myClubs.length ? ui.myClubs.map(c => `
+        <button data-action="open-club" data-id="${c.id}" class="list-row">
+          <span>${escapeHtml(c.name)}</span><span class="muted">${escapeHtml(c.role)}</span>
+        </button>
+      `).join("") : `<p class="hint">No clubs yet — create one above.</p>`}
+    </div>
+  `;
+}
+
+function renderClubHome(){
+  if (!session) return renderSignIn();
+  const club = ui.club;
+  return `
+    <div class="screen">
+      ${renderBackBar("My clubs", "myClubs")}
+      ${ui.clubBusy || !club ? `<p class="hint">Loading…</p>` : `
+        <h1>${escapeHtml(club.name)}</h1>
+        <p class="hint">To start a practice/friendly match or a new tournament for this club, pick it from the switcher on <button data-action="go-view" data-view="home" class="link-btn">Home</button>.</p>
+
+        <h3>Tournaments</h3>
+        ${club.tournaments.length ? club.tournaments.map(t => `
+          <button data-action="open-club-tournament" data-id="${t.id}" class="list-row">
+            <span>${escapeHtml(t.name)}</span><span class="chevron">›</span>
+          </button>
+        `).join("") : `<p class="hint">No tournaments yet — e.g. group everything played on one day into one.</p>`}
+
+        <h3>Roster</h3>
+        <form id="club-add-player-form" class="inline-form">
+          <input name="name" placeholder="Player name" required maxlength="24">
+          <button type="submit" class="primary small">Add</button>
+        </form>
+        <div class="chips">
+          ${club.roster.length ? club.roster.map(p => `<span class="chip" style="width:auto;padding:0 12px;">${escapeHtml(p.name)}</span>`).join("") : `<p class="hint">No players yet.</p>`}
+        </div>
+
+        <h3>Admins</h3>
+        ${club.members.map(m => `<div class="list-row"><span>${escapeHtml(m.displayName)}</span><span class="muted">${escapeHtml(m.role)}</span></div>`).join("")}
+        <form id="club-invite-admin-form" class="inline-form">
+          <input name="email" type="email" placeholder="Email to add as admin" required>
+          <button type="submit" class="ghost small">Invite</button>
+        </form>
+        ${ui.clubInviteMessage ? `<p class="hint">${escapeHtml(ui.clubInviteMessage)}</p>` : ""}
+
+        <h3>Matches</h3>
+        ${club.matches.length ? club.matches.map(m => `
+          <div class="list-row"><span>${escapeHtml(m.data.teamA)} v ${escapeHtml(m.data.teamB)}</span><span class="muted">${escapeHtml(m.data.result || "")}</span></div>
+        `).join("") : `<p class="hint">No matches yet — play one above.</p>`}
+
+        ${club.matches.length ? `<h3>Leaderboard</h3>${renderLeaderboards(aggregatePlayerStats(club.matches.map(m => m.data)))}` : ""}
+      `}
+    </div>
+  `;
+}
+
+function handleCreateClubSubmit(e){
+  e.preventDefault();
+  const form = e.target;
+  const name = (new FormData(form).get("name") || "").trim();
+  if (!name) return;
+  if (name.toLowerCase() === "premier"){
+    // "PREMIER" is reserved for the cross-club Home switcher entry -- also
+    // enforced server-side (clubs_name_not_reserved), this just avoids a
+    // round trip for the common case.
+    showFormError(form, `"Premier" is reserved and can't be used as a club name.`);
+    return;
+  }
+  createClub(name).then(result => {
+    if (result && result.error){ showFormError(form, result.error); return; }
+    fetchMyClubs().then(render);
+  });
+}
+
+function handleClubAddPlayerSubmit(e){
+  e.preventDefault();
+  const form = e.target;
+  const name = (new FormData(form).get("name") || "").trim();
+  if (!name) return;
+  addPlayerToClub(ui.currentClubId, name).then(result => {
+    if (result && result.error){ showFormError(form, result.error); return; }
+    fetchClubDetail(ui.currentClubId).then(render);
+  });
+}
+
+function handleClubInviteAdminSubmit(e){
+  e.preventDefault();
+  const form = e.target;
+  const email = (new FormData(form).get("email") || "").trim();
+  if (!email) return;
+  inviteClubAdmin(ui.currentClubId, email).then(result => {
+    if (result && result.error){ showFormError(form, result.error); return; }
+    ui.clubInviteMessage = result.result === "ok" ? "Added." : result.result === "already_member" ? "Already an admin." : "No account found with that email.";
+    fetchClubDetail(ui.currentClubId).then(render);
+  });
+}
+
+/* --- club (Local-tier) tournaments: group a club's own matches -- e.g.
+   everything played on one day -- under one tournament with standings,
+   with no external registration and no persistent team entity (see
+   CLAUDE.md). Reuses the same renderStandingsTable/computeStandings/
+   renderLeaderboards/aggregatePlayerStats as the local guest tournament
+   feature, fed cloud-fetched matches instead of state.matchHistory. --- */
+function renderClubTournamentSetup(){
+  if (!session) return renderSignIn();
+  const clubName = currentClubName();
+  const presets = Object.values(state.tournamentPresets);
+  if (!ui.clubTournamentSetupPresetId){
+    ui.clubTournamentSetupPresetId = presets.length ? presets[0].id : null;
+  }
   return `
     <div class="screen setup">
-      <h1>🏏 Cricket.lk</h1>
-      <p class="tagline">Ball-by-ball live scorer.</p>
-      <form id="setup-form">
-        <label>Team A name<input name="teamA" required maxlength="24" placeholder="e.g. Lions"></label>
-        <label>Team B name<input name="teamB" required maxlength="24" placeholder="e.g. Tigers"></label>
-        <label>Overs per innings<input name="overs" type="number" min="1" max="50" value="20" required></label>
-        <label>Players per side<input name="players" type="number" min="2" max="11" value="11" required></label>
+      ${renderBackBar(clubName || "Club", "home")}
+      <h1>🏆 New tournament</h1>
+      <p class="tagline">Group this club's own matches -- e.g. everything played on one day -- under one tournament with standings.</p>
+      <form id="club-tournament-setup-form">
+        <label>Tournament name<input name="name" required maxlength="40" placeholder="e.g. Sunday 12 Oct"></label>
+        <input type="hidden" name="tournamentPresetId" value="${ui.clubTournamentSetupPresetId || ""}">
+        ${presets.length ? `
+          <div class="preset-picker">
+            ${presets.map(p => `<button type="button" data-action="pick-club-tournament-preset" data-id="${p.id}" class="preset-chip ${p.id === ui.clubTournamentSetupPresetId ? "active" : ""}">${escapeHtml(p.name)}</button>`).join("")}
+          </div>
+        ` : ""}
+        <button type="submit" class="primary">Create tournament</button>
+      </form>
+    </div>
+  `;
+}
+
+function handleClubTournamentSetupSubmit(e){
+  e.preventDefault();
+  const form = e.target;
+  const f = new FormData(form);
+  const name = (f.get("name") || "").trim();
+  const preset = state.tournamentPresets[f.get("tournamentPresetId") || ui.clubTournamentSetupPresetId];
+  if (!name || !preset) return;
+  createClubTournament(ui.currentClubId, name, preset).then(result => {
+    if (result && result.error){ showFormError(form, result.error); return; }
+    ui.currentTournamentId = result.tournament.id;
+    ui.clubTournamentSetupPresetId = null;
+    state.view = "clubTournamentDashboard";
+    save(); render();
+    fetchClubTournamentDetail(result.tournament.id).then(render);
+  });
+}
+
+function renderClubTournamentDashboard(){
+  if (!session) return renderSignIn();
+  const t = ui.clubTournament;
+  const clubName = currentClubName();
+  return `
+    <div class="screen tournament">
+      ${renderBackBar(clubName || "Club", "clubHome")}
+      ${!t ? `<p class="hint">Loading…</p>` : `
+        <h1>🏆 ${escapeHtml(t.name)}</h1>
+        <button data-action="go-club-tournament-match-setup" class="primary">Start match</button>
+        ${t.matches.length ? renderStandingsTable(computeStandings(t.matches.map(m => m.data), t.tournament_preset), t.tournament_preset.useNRR) : `<p class="hint">No matches yet -- start one above.</p>`}
+        ${t.matches.length ? `<h3>Leaderboard</h3>${renderLeaderboards(aggregatePlayerStats(t.matches.map(m => m.data)))}` : ""}
+      `}
+    </div>
+  `;
+}
+
+/* --- Premier: cross-club players/stats + claiming --- */
+function renderPremierScreen(){
+  const p = ui.premier;
+  return `
+    <div class="screen">
+      ${renderBackBar("Home", "home")}
+      <h1>🏆 Premier</h1>
+      <p class="tagline">Cross-club players and stats. Once Premier tournaments (organized, open to any club) exist, they'll show here too.</p>
+      ${!p ? `<p class="hint">Loading…</p>` : `
+        ${p.premierMatches.length
+          ? `<h3>Leaderboard</h3>${renderLeaderboards(aggregatePlayerStats(p.premierMatches.map(m => m.data)))}`
+          : `<p class="hint">No Premier tournaments yet.</p>`}
+
+        ${isAdmin && p.pendingClaims.length ? `
+          <h3>Pending claim requests</h3>
+          ${p.pendingClaims.map(c => {
+            const pl = p.players.find(x => x.id === c.player_id);
+            return `
+              <div class="list-row">
+                <span>${escapeHtml(pl ? pl.name : c.player_id)}${c.claimed_phone ? ` · ${escapeHtml(c.claimed_phone)}` : ""}</span>
+                <span class="action-row">
+                  <button data-action="approve-claim" data-id="${c.id}" class="ghost small">Approve</button>
+                  <button data-action="reject-claim" data-id="${c.id}" class="ghost small">Reject</button>
+                </span>
+              </div>
+            `;
+          }).join("")}
+        ` : ""}
+
+        <h3>Players</h3>
+        ${p.players.length ? p.players.map(pl => `
+          <div class="list-row">
+            <span>${escapeHtml(pl.name)}</span>
+            ${pl.claimed_by
+              ? `<span class="muted">${session && pl.claimed_by === session.user.id ? "Claimed by you" : "Claimed"}</span>`
+              : session
+                ? (ui.claimingPlayerId === pl.id ? "" : `<button data-action="open-claim-form" data-id="${pl.id}" class="ghost small">This is me</button>`)
+                : `<span class="muted">Unclaimed</span>`}
+          </div>
+          ${!pl.claimed_by && session && ui.claimingPlayerId === pl.id ? `
+            <form id="claim-request-form" class="inline-form" data-player-id="${pl.id}">
+              <div class="form-error"></div>
+              <input name="phone" placeholder="Your phone (optional)" maxlength="20">
+              <button type="submit" class="primary small">Send request</button>
+              <button type="button" data-action="close-claim-form" class="ghost small">Cancel</button>
+            </form>
+          ` : ""}
+        `).join("") : `<p class="hint">No players yet.</p>`}
+        ${ui.claimMessage ? `<p class="hint">${escapeHtml(ui.claimMessage)}</p>` : ""}
+      `}
+    </div>
+  `;
+}
+
+function handleClaimRequestSubmit(e){
+  e.preventDefault();
+  const form = e.target;
+  const playerId = form.dataset.playerId;
+  const phone = (new FormData(form).get("phone") || "").trim();
+  requestClaim(playerId, phone, null).then(result => {
+    if (result && result.error){ showFormError(form, result.error); return; }
+    ui.claimingPlayerId = null;
+    ui.claimMessage = "Claim requested — a platform admin will review it.";
+    fetchPremierData().then(render);
+  });
+}
+
+/* --- match setup --- */
+function renderMatchSetup(){
+  const clubMode = ui.currentClubId && ui.clubMatchSetupType; // set via "go-club-match-setup"
+  const presets = Object.values(state.matchPresets);
+  if (!ui.matchSetupPresetId){
+    ui.matchSetupPresetId = presets.length ? presets[0].id : null;
+  }
+  const preset = state.matchPresets[ui.matchSetupPresetId] || {};
+  const clubName = clubMode ? currentClubName() : "";
+  const inTournament = clubMode && ui.clubMatchSetupType === "tournament";
+  const tournamentName = inTournament && ui.clubTournament ? ui.clubTournament.name : "";
+  const headings = { practice: "🏏 Practice match", friendly: "🤝 Friendly match", tournament: `🏆 Tournament match` };
+  const taglines = {
+    practice: `${escapeHtml(clubName)} vs itself — an intra-club scrimmage.`,
+    friendly: `${escapeHtml(clubName)} vs a visiting team.`,
+    tournament: `Counts toward ${escapeHtml(tournamentName)}.`
+  };
+  return `
+    <div class="screen setup">
+      ${inTournament ? renderBackBar(tournamentName, "clubTournamentDashboard") : clubMode ? renderBackBar(clubName || "Home", "home") : renderBackBar("Home", "home")}
+      <h1>${clubMode ? headings[ui.clubMatchSetupType] : "🏏 New match"}</h1>
+      <p class="tagline">${clubMode ? taglines[ui.clubMatchSetupType] : "Pick a preset, tweak anything, start scoring."}</p>
+      ${presets.length ? `
+        <div class="preset-picker">
+          ${presets.map(p => `<button type="button" data-action="pick-match-preset" data-id="${p.id}" class="preset-chip ${p.id === ui.matchSetupPresetId ? "active" : ""}">${escapeHtml(p.name)}</button>`).join("")}
+        </div>
+      ` : ""}
+      <form id="match-setup-form">
+        <input type="hidden" name="presetId" value="${preset.id || ""}">
+        <label>${clubMode && ui.clubMatchSetupType === "friendly" ? "Home team name" : "Team A name"}<input name="teamA" required maxlength="24" value="${clubMode && ui.clubMatchSetupType === "friendly" ? escapeHtml(clubName) : ""}" placeholder="e.g. Lions" list="teams-datalist"></label>
+        <label>${clubMode && ui.clubMatchSetupType === "friendly" ? "Visiting team name" : "Team B name"}<input name="teamB" required maxlength="24" placeholder="e.g. Tigers" list="teams-datalist"></label>
+        <div class="field-row">
+          <label>Balls per over<input name="ballsPerOver" type="number" min="1" max="10" value="${preset.ballsPerOver ?? 6}" required></label>
+          <label>Overs per innings<input name="overs" type="number" min="1" max="50" value="${preset.oversLimit ?? 20}" required></label>
+        </div>
+        <label>Players per side<input name="players" type="number" min="2" max="11" value="${preset.playersPerSide ?? 11}" required></label>
         <fieldset>
           <legend>Who bats first?</legend>
           <label><input type="radio" name="battingFirst" value="A" checked> Team A</label>
           <label><input type="radio" name="battingFirst" value="B"> Team B</label>
+        </fieldset>
+        <fieldset>
+          <legend>Extras</legend>
+          <label class="check-row"><input type="checkbox" name="wideEnabled" ${preset.wide ? (preset.wide.enabled ? "checked" : "") : "checked"}> Wides count, worth <input name="wideRuns" type="number" min="0" max="6" value="${preset.wide ? preset.wide.runs : 1}" class="inline-num"> run(s)</label>
+          <label class="check-row"><input type="checkbox" name="noBallEnabled" ${preset.noBall ? (preset.noBall.enabled ? "checked" : "") : "checked"}> No-balls count, worth <input name="noBallRuns" type="number" min="0" max="6" value="${preset.noBall ? preset.noBall.runs : 1}" class="inline-num"> run(s)</label>
+          <label class="check-row"><input type="checkbox" name="freeHitOnNoBall" ${preset.freeHitOnNoBall !== false ? "checked" : ""}> No-ball gives a free hit</label>
+        </fieldset>
+        <fieldset>
+          <legend>Fielder credit</legend>
+          <label class="check-row"><input type="checkbox" name="requireFielderOnCatch" ${preset.requireFielderOnCatch ? "checked" : ""}> Require a catch taker</label>
+          <label class="check-row"><input type="checkbox" name="requireFielderOnRunout" ${preset.requireFielderOnRunout ? "checked" : ""}> Require a run-out taker</label>
         </fieldset>
         <button type="submit" class="primary">Start match</button>
       </form>
@@ -416,15 +1796,37 @@ function renderSetup(){
   `;
 }
 
-function handleSetupSubmit(e){
+function handleMatchSetupSubmit(e){
   e.preventDefault();
   const f = new FormData(e.target);
   const teamA = (f.get("teamA") || "").trim() || "Team A";
   const teamB = (f.get("teamB") || "").trim() || "Team B";
   const oversLimit = Math.max(1, parseInt(f.get("overs"), 10) || 20);
   const playersPerSide = Math.max(2, parseInt(f.get("players"), 10) || 11);
+  const ballsPerOver = Math.max(1, parseInt(f.get("ballsPerOver"), 10) || 6);
   const battingFirst = f.get("battingFirst") || "A";
-  state.match = createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst });
+  const wideEnabled = f.get("wideEnabled") === "on";
+  const noBallEnabled = f.get("noBallEnabled") === "on";
+  const wideRuns = Math.max(0, parseInt(f.get("wideRuns"), 10) || 0);
+  const noBallRuns = Math.max(0, parseInt(f.get("noBallRuns"), 10) || 0);
+  const freeHitOnNoBall = f.get("freeHitOnNoBall") === "on";
+  const requireFielderOnCatch = f.get("requireFielderOnCatch") === "on";
+  const requireFielderOnRunout = f.get("requireFielderOnRunout") === "on";
+  const preset = state.matchPresets[f.get("presetId")];
+  const inTournament = ui.currentClubId && ui.clubMatchSetupType === "tournament";
+  state.match = createMatch({
+    teamA, teamB, oversLimit, playersPerSide, battingFirst, ballsPerOver,
+    wideEnabled, noBallEnabled, wideRuns, noBallRuns, freeHitOnNoBall,
+    requireFielderOnCatch, requireFielderOnRunout,
+    presetId: preset ? preset.id : null, presetName: preset ? preset.name : null,
+    tournamentId: inTournament ? ui.currentTournamentId : null
+  });
+  if (ui.currentClubId && ui.clubMatchSetupType){
+    // Extra, UI-only fields on top of the engine's match object (like
+    // tournamentId already is) -- recordBall etc. never look at these.
+    state.match.clubId = ui.currentClubId;
+    state.match.matchType = ui.clubMatchSetupType;
+  }
   state.snapshots = [];
   save(); render();
 }
@@ -435,14 +1837,31 @@ function renderOpeningModal(match){
   return `
     <div class="modal-backdrop">
       <div class="modal">
-        <h2>${teamName(match, inn.battingTeam)} — opening players</h2>
+        <h2>${escapeHtml(teamName(match, inn.battingTeam))} — opening players</h2>
         <form id="opening-form">
           <div class="form-error"></div>
-          <label>Striker<input name="striker" required maxlength="24"></label>
-          <label>Non-striker<input name="nonStriker" required maxlength="24"></label>
-          <label>${teamName(match, inn.bowlingTeam)} bowler<input name="bowler" required maxlength="24"></label>
+          <label>Striker<input name="striker" required maxlength="24" list="players-datalist"></label>
+          <label>Non-striker<input name="nonStriker" required maxlength="24" list="players-datalist"></label>
+          <label>${escapeHtml(teamName(match, inn.bowlingTeam))} bowler<input name="bowler" required maxlength="24" list="players-datalist"></label>
           <button type="submit" class="primary">Start innings</button>
         </form>
+        <button type="button" data-action="open-forfeit" class="link-btn">Forfeit match instead</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderForfeitModal(match){
+  return `
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2>Forfeit match</h2>
+        <p class="hint">Pick which team is forfeiting — the other team is recorded as the winner and the match ends immediately. This can't be resumed.</p>
+        <div class="action-row">
+          <button data-action="confirm-forfeit" data-team="A" class="ghost">${escapeHtml(match.teamA)} forfeits</button>
+          <button data-action="confirm-forfeit" data-team="B" class="ghost">${escapeHtml(match.teamB)} forfeits</button>
+        </div>
+        <button data-action="close-forfeit-modal" class="ghost">Cancel</button>
       </div>
     </div>
   `;
@@ -461,6 +1880,7 @@ function handleOpeningSubmit(e){
   pushSnapshot();
   const inn = currentInnings(state.match);
   ensureBatsman(inn, striker); ensureBatsman(inn, nonStriker); ensureBowler(inn, bowler);
+  findOrCreatePlayer(striker); findOrCreatePlayer(nonStriker); findOrCreatePlayer(bowler);
   inn.striker = striker; inn.nonStriker = nonStriker; inn.bowler = bowler;
   state.match.status = "live";
   save(); render();
@@ -474,7 +1894,7 @@ function renderNewBatsmanModal(inn, slot){
         <h2>New batsman (${endLabel} end)</h2>
         <form id="new-batsman-form">
           <div class="form-error"></div>
-          <label>Name<input name="name" required maxlength="24" autofocus></label>
+          <label>Name<input name="name" required maxlength="24" autofocus list="players-datalist"></label>
           <button type="submit" class="primary">Confirm</button>
         </form>
       </div>
@@ -499,6 +1919,7 @@ function handleNewBatsmanSubmit(e){
   }
   pushSnapshot();
   ensureBatsman(inn, name);
+  findOrCreatePlayer(name);
   inn[slot] = name;
   save(); render();
 }
@@ -507,11 +1928,11 @@ function renderNewBowlerModal(inn){
   return `
     <div class="modal-backdrop">
       <div class="modal">
-        <h2>Over ${Math.floor(inn.legalBalls / 6) + 1} — new bowler</h2>
+        <h2>Over ${Math.floor(inn.legalBalls / inn.ballsPerOver) + 1} — new bowler</h2>
         <form id="new-bowler-form">
           <div class="form-error"></div>
-          <label>Bowler<input name="name" required maxlength="24" autofocus></label>
-          ${inn.lastOverBowler ? `<p class="hint">Can't be ${inn.lastOverBowler} — bowled the over before.</p>` : ""}
+          <label>Bowler<input name="name" required maxlength="24" autofocus list="players-datalist"></label>
+          ${inn.lastOverBowler ? `<p class="hint">Can't be ${escapeHtml(inn.lastOverBowler)} — bowled the over before.</p>` : ""}
           <button type="submit" class="primary">Confirm</button>
         </form>
       </div>
@@ -531,6 +1952,7 @@ function handleNewBowlerSubmit(e){
   }
   pushSnapshot();
   ensureBowler(inn, name);
+  findOrCreatePlayer(name);
   inn.bowler = name;
   save(); render();
 }
@@ -540,26 +1962,37 @@ function showFormError(form, msg){
   if (el) el.textContent = msg;
 }
 
-/* --- wicket modal --- */
+/* --- wicket modal (caught / run-out both capture an optional-or-required fielder) --- */
 function renderWicketModal(inn){
-  if (ui.wicketFlow === "runout"){
+  const match = state.match;
+  if (ui.wicketFlow === "runout" || ui.wicketFlow === "caught"){
+    const isRunout = ui.wicketFlow === "runout";
+    const required = isRunout ? match.requireFielderOnRunout : match.requireFielderOnCatch;
     return `
       <div class="modal-backdrop">
         <div class="modal">
-          <h2>Run out</h2>
-          <label>Runs completed</label>
-          <div class="run-pad small">
-            ${[0, 1, 2, 3].map(n => `<button data-action="runout-runs" data-runs="${n}" class="run-btn ${ui.runoutRuns === n ? "active" : ""}">${n}</button>`).join("")}
-          </div>
-          <fieldset>
-            <legend>Who's out?</legend>
-            <label><input type="radio" name="end" value="striker" checked> ${inn.striker}</label>
-            <label><input type="radio" name="end" value="nonStriker"> ${inn.nonStriker}</label>
-          </fieldset>
-          <div class="action-row">
-            <button data-action="confirm-runout" class="primary">Confirm</button>
-            <button data-action="close-wicket-modal" class="ghost">Cancel</button>
-          </div>
+          <h2>${isRunout ? "Run out" : "Caught"}</h2>
+          ${isRunout ? `
+            <label>Runs completed</label>
+            <div class="run-pad small">
+              ${[0, 1, 2, 3].map(n => `<button type="button" data-action="runout-runs" data-runs="${n}" class="run-btn ${ui.runoutRuns === n ? "active" : ""}">${n}</button>`).join("")}
+            </div>
+          ` : ""}
+          <form id="wicket-fielder-form">
+            <div class="form-error"></div>
+            ${isRunout ? `
+              <fieldset>
+                <legend>Who's out?</legend>
+                <label><input type="radio" name="end" value="striker" checked> ${escapeHtml(inn.striker)}</label>
+                <label><input type="radio" name="end" value="nonStriker"> ${escapeHtml(inn.nonStriker)}</label>
+              </fieldset>
+            ` : ""}
+            <label>${isRunout ? "Run-out taker" : "Catch taken by"}${required ? "" : " (optional)"}<input name="fielder" list="players-datalist" maxlength="24" ${required ? "required" : ""}></label>
+            <div class="action-row">
+              <button type="submit" class="primary">Confirm</button>
+              <button type="button" data-action="close-wicket-modal" class="ghost">Cancel</button>
+            </div>
+          </form>
         </div>
       </div>
     `;
@@ -584,23 +2017,56 @@ function renderWicketModal(inn){
   `;
 }
 
+function maybeArchiveCompletedMatch(match){
+  if (match.status === "complete" && !match.archivedId){
+    match.motm = pickMatchMOTM(match);
+    const archived = archiveMatch(match);
+    match.archivedId = archived.id;
+    SFX.win();
+    if (match.clubId) syncMatchToCloud(match, archived);
+  }
+}
+
 function confirmWicket(type){
   pushSnapshot();
   const inn = currentInnings(state.match);
   recordBall(inn, { kind: "wicket", wicketType: type });
   afterBall(state.match);
+  maybeArchiveCompletedMatch(state.match);
+  SFX.wicket();
   ui.wicketFlow = null;
   save(); render();
 }
 
-function confirmRunout(){
-  const end = document.querySelector('input[name="end"]:checked').value;
-  pushSnapshot();
-  const inn = currentInnings(state.match);
-  recordBall(inn, { kind: "wicket", wicketType: "runout", runs: ui.runoutRuns, endComingIn: end });
-  afterBall(state.match);
-  ui.wicketFlow = null; ui.runoutRuns = 0;
-  save(); render();
+function handleWicketFielderSubmit(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const fielder = (f.get("fielder") || "").trim();
+  const match = state.match;
+  if (ui.wicketFlow === "runout"){
+    if (match.requireFielderOnRunout && !fielder){ showFormError(e.target, "This preset requires naming the run-out taker."); return; }
+    const end = f.get("end") || "striker";
+    pushSnapshot();
+    const inn = currentInnings(match);
+    recordBall(inn, { kind: "wicket", wicketType: "runout", runs: ui.runoutRuns, endComingIn: end, fielder: fielder || undefined });
+    if (fielder) findOrCreatePlayer(fielder);
+    afterBall(match);
+    maybeArchiveCompletedMatch(match);
+    SFX.wicket();
+    ui.wicketFlow = null; ui.runoutRuns = 0;
+    save(); render();
+  } else if (ui.wicketFlow === "caught"){
+    if (match.requireFielderOnCatch && !fielder){ showFormError(e.target, "This preset requires naming the catch taker."); return; }
+    pushSnapshot();
+    const inn = currentInnings(match);
+    recordBall(inn, { kind: "wicket", wicketType: "caught", fielder: fielder || undefined });
+    if (fielder) findOrCreatePlayer(fielder);
+    afterBall(match);
+    maybeArchiveCompletedMatch(match);
+    SFX.wicket();
+    ui.wicketFlow = null;
+    save(); render();
+  }
 }
 
 /* --- live screen --- */
@@ -611,6 +2077,8 @@ function handleBallClick(runs){
   pushSnapshot();
   recordBall(inn, { kind, runs });
   afterBall(state.match);
+  maybeArchiveCompletedMatch(state.match);
+  if (kind === "run") SFX.runs(runs); else SFX.extra();
   ui.pendingExtra = null;
   save(); render();
 }
@@ -618,16 +2086,19 @@ function handleBallClick(runs){
 function handleUndo(){
   if (!state.snapshots.length) return;
   state.match = state.snapshots.pop();
-  ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0;
+  ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0; ui.forfeitFlow = false;
   save(); render();
 }
 
 function renderLive(match){
   const inn = currentInnings(match);
+  const bpo = inn.ballsPerOver;
   const battingName = teamName(match, inn.battingTeam);
   const bowlingName = teamName(match, inn.bowlingTeam);
-  const crr = runRate(inn.runs, inn.legalBalls).toFixed(2);
+  const crr = runRate(inn.runs, inn.legalBalls, bpo).toFixed(2);
   const rrr = requiredRunRate(inn);
+  const ballsLeft = Math.max(match.oversLimit * bpo - inn.legalBalls, 0);
+  const oversLeft = oversDisplay(ballsLeft, bpo);
   const strikerStats = inn.striker ? inn.batting.stats[inn.striker] : null;
   const nonStrikerStats = inn.nonStriker ? inn.batting.stats[inn.nonStriker] : null;
   const bowlerStats = inn.bowler ? inn.bowling.stats[inn.bowler] : null;
@@ -635,25 +2106,25 @@ function renderLive(match){
   return `
     <div class="screen live">
       <header class="score-header">
-        <div class="teams">${battingName} <span class="vs">batting</span> · vs ${bowlingName}</div>
-        ${inn.target != null ? `<div class="target-line">Target ${inn.target} · need ${Math.max(inn.target - inn.runs, 0)} off ${Math.max(match.oversLimit * 6 - inn.legalBalls, 0)} balls</div>` : ""}
+        <div class="teams">${escapeHtml(battingName)} <span class="vs">batting</span> · vs ${escapeHtml(bowlingName)}</div>
+        ${inn.target != null ? `<div class="target-line">Target ${inn.target} · need ${Math.max(inn.target - inn.runs, 0)} off ${ballsLeft} balls</div>` : ""}
       </header>
-      <div class="score-big">${inn.runs}/${inn.wickets} <span class="overs">(${oversDisplay(inn.legalBalls)} ov)</span></div>
-      <div class="rate-line">CRR ${crr}${rrr != null ? ` · RRR ${rrr.toFixed(2)}` : ""}</div>
+      <div class="score-big">${inn.runs}/${inn.wickets} <span class="overs">(${oversDisplay(inn.legalBalls, bpo)} ov)</span></div>
+      <div class="rate-line">CRR ${crr}${rrr != null ? ` · RRR ${rrr.toFixed(2)}` : ""} · ${oversLeft} ov left</div>
       ${inn.freeHit ? `<div class="freehit-badge">FREE HIT</div>` : ""}
 
       <div class="players-card">
         <div class="player-row on-strike">
-          <span class="name">${inn.striker || "—"} *</span>
+          <span class="name">${escapeHtml(inn.striker) || "—"} *</span>
           <span class="figs">${strikerStats ? `${strikerStats.runs} (${strikerStats.balls})` : ""}</span>
         </div>
         <div class="player-row">
-          <span class="name">${inn.nonStriker || "—"}</span>
+          <span class="name">${escapeHtml(inn.nonStriker) || "—"}</span>
           <span class="figs">${nonStrikerStats ? `${nonStrikerStats.runs} (${nonStrikerStats.balls})` : ""}</span>
         </div>
         <div class="player-row bowler-row">
-          <span class="name">${inn.bowler || "—"}</span>
-          <span class="figs">${bowlerStats ? `${oversDisplay(bowlerStats.legalBalls)}-${bowlerStats.maidens}-${bowlerStats.runs}-${bowlerStats.wickets}` : ""}</span>
+          <span class="name">${escapeHtml(inn.bowler) || "—"}</span>
+          <span class="figs">${bowlerStats ? `${oversDisplay(bowlerStats.legalBalls, bpo)}-${bowlerStats.maidens}-${bowlerStats.runs}-${bowlerStats.wickets}` : ""}</span>
         </div>
       </div>
 
@@ -667,8 +2138,8 @@ function renderLive(match){
           ${[0, 1, 2, 3, 4, 6].map(n => `<button data-action="ball" data-runs="${n}" class="run-btn r${n}">${n}</button>`).join("")}
         </div>
         <div class="extra-pad">
-          <button data-action="toggle-extra" data-extra="wide" class="${ui.pendingExtra === "wide" ? "active" : ""}">Wide</button>
-          <button data-action="toggle-extra" data-extra="noball" class="${ui.pendingExtra === "noball" ? "active" : ""}">No-ball</button>
+          ${match.wideEnabled ? `<button data-action="toggle-extra" data-extra="wide" class="${ui.pendingExtra === "wide" ? "active" : ""}">Wide</button>` : ""}
+          ${match.noBallEnabled ? `<button data-action="toggle-extra" data-extra="noball" class="${ui.pendingExtra === "noball" ? "active" : ""}">No-ball</button>` : ""}
           <button data-action="toggle-extra" data-extra="bye" class="${ui.pendingExtra === "bye" ? "active" : ""}">Bye</button>
           <button data-action="toggle-extra" data-extra="legbye" class="${ui.pendingExtra === "legbye" ? "active" : ""}">Leg-bye</button>
         </div>
@@ -681,28 +2152,30 @@ function renderLive(match){
 
       <button data-action="toggle-scorecard" class="link-btn">${ui.showFullScorecard ? "Hide" : "Show"} full scorecard</button>
       ${ui.showFullScorecard ? renderInningsSummary(match, inn) : ""}
+      <button data-action="open-forfeit" class="link-btn">Forfeit match</button>
     </div>
   `;
 }
 
 /* --- scorecards / innings break / result --- */
 function renderInningsSummary(match, inn){
+  const bpo = inn.ballsPerOver;
   const battingName = teamName(match, inn.battingTeam);
   const battingRows = inn.batting.order.map(name => {
     const s = inn.batting.stats[name];
     const sr = s.balls ? ((s.runs / s.balls) * 100).toFixed(1) : "0.0";
-    const status = s.out ? s.howOut : (name === inn.striker || name === inn.nonStriker ? "not out" : "not out");
-    return `<tr><td>${name}</td><td class="status">${status}</td><td>${s.runs}</td><td>${s.balls}</td><td>${s.fours}</td><td>${s.sixes}</td><td>${sr}</td></tr>`;
+    const status = s.out ? s.howOut : "not out";
+    return `<tr><td>${escapeHtml(name)}</td><td class="status">${escapeHtml(status)}</td><td>${s.runs}</td><td>${s.balls}</td><td>${s.fours}</td><td>${s.sixes}</td><td>${sr}</td></tr>`;
   }).join("");
   const bowlingRows = inn.bowling.order.map(name => {
     const b = inn.bowling.stats[name];
-    const econ = b.legalBalls ? (b.runs / (b.legalBalls / 6)).toFixed(2) : "0.00";
-    return `<tr><td>${name}</td><td>${oversDisplay(b.legalBalls)}</td><td>${b.maidens}</td><td>${b.runs}</td><td>${b.wickets}</td><td>${econ}</td></tr>`;
+    const econ = b.legalBalls ? (b.runs / (b.legalBalls / bpo)).toFixed(2) : "0.00";
+    return `<tr><td>${escapeHtml(name)}</td><td>${oversDisplay(b.legalBalls, bpo)}</td><td>${b.maidens}</td><td>${b.runs}</td><td>${b.wickets}</td><td>${econ}</td></tr>`;
   }).join("");
   const extrasTotal = inn.extras.wides + inn.extras.noBalls + inn.extras.byes + inn.extras.legByes;
   return `
     <div class="innings-summary">
-      <h3>${battingName} ${inn.runs}/${inn.wickets} <span class="ov">(${oversDisplay(inn.legalBalls)} ov)</span></h3>
+      <h3>${escapeHtml(battingName)} ${inn.runs}/${inn.wickets} <span class="ov">(${oversDisplay(inn.legalBalls, bpo)} ov)</span></h3>
       <table class="bat-table">
         <thead><tr><th>Batter</th><th></th><th>R</th><th>B</th><th>4s</th><th>6s</th><th>SR</th></tr></thead>
         <tbody>${battingRows}</tbody>
@@ -724,19 +2197,581 @@ function renderInningsBreak(match){
     <div class="screen break">
       <h2>Innings break</h2>
       ${renderInningsSummary(match, i1)}
-      <p class="target-note">${battingNext} need ${i1.runs + 1} to win from ${match.oversLimit} overs.</p>
+      <p class="target-note">${escapeHtml(battingNext)} need ${i1.runs + 1} to win from ${match.oversLimit} overs.</p>
       <button data-action="start-second-innings" class="primary">Start 2nd innings</button>
+      <button data-action="open-forfeit" class="link-btn">Forfeit match</button>
     </div>
   `;
 }
 
 function renderResult(match){
+  const allNames = Array.from(matchPlayerNames(match));
+  const motmName = match.motm || pickMatchMOTM(match);
   return `
     <div class="screen result">
-      <h2>${match.result}</h2>
+      <h2>${escapeHtml(match.result)}</h2>
+      <div class="motm-card">
+        <span class="motm-label">Man of the Match</span>
+        <span class="motm-name">${escapeHtml(motmName || "—")}</span>
+        ${allNames.length ? `
+          <form id="motm-form" class="inline-form">
+            <select name="motm">${allNames.map(n => `<option value="${escapeHtml(n)}" ${n === motmName ? "selected" : ""}>${escapeHtml(n)}</option>`).join("")}</select>
+            <button type="submit" class="ghost small">Change</button>
+          </form>
+        ` : ""}
+      </div>
       ${renderInningsSummary(match, match.innings[0])}
-      ${renderInningsSummary(match, match.innings[1])}
-      <button data-action="new-match" class="primary">New match</button>
+      ${match.innings[1] ? renderInningsSummary(match, match.innings[1]) : ""}
+      <div class="share-row">
+        <button data-action="share-image" class="ghost">Share image</button>
+        <button data-action="export-pdf" class="ghost">Export PDF</button>
+      </div>
+      <button data-action="finish-match" class="primary">${match.tournamentId ? "Back to tournament" : match.clubId ? "Back to club" : "New match"}</button>
+    </div>
+  `;
+}
+
+function handleMotmSubmit(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const motm = f.get("motm");
+  state.match.motm = motm;
+  if (state.match.archivedId && state.matchHistory[state.match.archivedId]){
+    state.matchHistory[state.match.archivedId].motm = motm;
+  }
+  save(); render();
+}
+
+/* --- share / export (dependency-free: canvas PNG, print-to-PDF) --- */
+function renderScorecardCanvas(match){
+  const W = 1080, pad = 48;
+  function battingLines(inn){
+    return inn.batting.order.map(name => {
+      const s = inn.batting.stats[name];
+      return `${name}  ${s.runs} (${s.balls})`;
+    });
+  }
+  function bowlingLines(inn){
+    return inn.bowling.order.map(name => {
+      const b = inn.bowling.stats[name];
+      return `${name}  ${oversDisplay(b.legalBalls, inn.ballsPerOver)}-${b.maidens}-${b.runs}-${b.wickets}`;
+    });
+  }
+  const lines = [];
+  lines.push({ text: `${match.teamA} vs ${match.teamB}`, size: 44, weight: "800" });
+  lines.push({ text: match.result || "", size: 26, weight: "600", color: "#5FB98C" });
+  lines.push({ size: 10 });
+  match.innings.forEach(inn => {
+    lines.push({ text: `${teamName(match, inn.battingTeam)}  ${inn.runs}/${inn.wickets}  (${oversDisplay(inn.legalBalls, inn.ballsPerOver)} ov)`, size: 30, weight: "700" });
+    battingLines(inn).forEach(t => lines.push({ text: t, size: 22 }));
+    lines.push({ size: 8 });
+    bowlingLines(inn).forEach(t => lines.push({ text: t, size: 20, color: "#9FC2AF" }));
+    lines.push({ size: 16 });
+  });
+  if (match.motm) lines.push({ text: `Man of the Match: ${match.motm}`, size: 24, weight: "700", color: "#F2C744" });
+
+  const H = pad * 2 + lines.reduce((sum, l) => sum + (l.size + 14), 0);
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#0B2E22"; ctx.fillRect(0, 0, W, H);
+  let y = pad;
+  lines.forEach(l => {
+    if (l.text){
+      ctx.fillStyle = l.color || "#F1F6F2";
+      ctx.font = `${l.weight || "400"} ${l.size}px -apple-system, sans-serif`;
+      ctx.fillText(l.text, pad, y + l.size);
+    }
+    y += l.size + 14;
+  });
+  return canvas;
+}
+
+async function shareScorecardImage(match){
+  const canvas = renderScorecardCanvas(match);
+  canvas.toBlob(async (blob) => {
+    if (!blob) return;
+    const file = new File([blob], "cricket-lk-scorecard.png", { type: "image/png" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })){
+      try { await navigator.share({ files: [file], title: "Cricket.lk scorecard", text: match.result || "" }); return; }
+      catch (_){ /* user cancelled, or share failed — fall through to a plain download */ }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "cricket-lk-scorecard.png";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }, "image/png");
+}
+
+/* --- teams & players --- */
+function renderTeamsScreen(){
+  const teams = Object.values(state.teams);
+  const selected = ui.selectedTeamId ? state.teams[ui.selectedTeamId] : null;
+  return `
+    <div class="screen teams">
+      ${renderBackBar("Home", "home")}
+      <h1>👥 Teams & players</h1>
+      <form id="new-team-form" class="inline-form">
+        <input name="name" required maxlength="30" placeholder="New team name">
+        <button type="submit" class="primary small">Add team</button>
+      </form>
+      <div class="team-list">
+        ${teams.map(t => `
+          <button data-action="select-team" data-id="${t.id}" class="list-row ${selected && selected.id === t.id ? "active" : ""}">
+            <span>${escapeHtml(t.name)}</span><span class="muted">${t.playerIds.length} player${t.playerIds.length === 1 ? "" : "s"}</span>
+          </button>
+        `).join("") || `<p class="hint">No teams yet — add one above.</p>`}
+      </div>
+      ${selected ? renderTeamRoster(selected, teams) : ""}
+    </div>
+  `;
+}
+
+function renderTeamRoster(team, allTeams){
+  const otherTeams = allTeams.filter(t => t.id !== team.id);
+  return `
+    <div class="roster-card">
+      <div class="roster-header">
+        <h3>${escapeHtml(team.name)}</h3>
+        <button data-action="delete-team" data-id="${team.id}" class="ghost small">Delete team</button>
+      </div>
+      <form id="add-player-form" data-team="${team.id}" class="inline-form">
+        <input name="name" required maxlength="24" placeholder="Add player" list="players-datalist">
+        <button type="submit" class="primary small">Add</button>
+      </form>
+      ${team.playerIds.map(pid => {
+        const p = state.players[pid];
+        if (!p) return "";
+        return `
+          <div class="player-row roster-row">
+            <span class="name">${escapeHtml(p.name)}</span>
+            <span class="roster-actions">
+              ${otherTeams.length ? `
+                <select data-role="move-target">${otherTeams.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("")}</select>
+                <button data-action="move-player" data-player="${p.id}" data-from="${team.id}" class="ghost small">Move</button>
+              ` : ""}
+              <button data-action="remove-player" data-player="${p.id}" data-team="${team.id}" class="ghost small">Remove</button>
+            </span>
+          </div>
+        `;
+      }).join("") || `<p class="hint">No players yet.</p>`}
+    </div>
+  `;
+}
+
+function handleNewTeamSubmit(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const name = (f.get("name") || "").trim();
+  if (!name) return;
+  const team = createTeam(name);
+  ui.selectedTeamId = team.id;
+  save(); render();
+}
+
+function handleAddPlayerSubmit(e){
+  e.preventDefault();
+  const teamId = e.target.dataset.team;
+  const f = new FormData(e.target);
+  const name = (f.get("name") || "").trim();
+  if (!name) return;
+  addPlayerToTeam(teamId, name);
+  save(); render();
+}
+
+/* --- presets --- */
+function renderPresetsScreen(){
+  const tab = ui.presetsTab || "match";
+  return `
+    <div class="screen presets">
+      ${renderBackBar("Home", "home")}
+      <h1>⚙️ Presets</h1>
+      <div class="tab-row">
+        <button data-action="switch-presets-tab" data-tab="match" class="tab-btn ${tab === "match" ? "active" : ""}">Match presets</button>
+        <button data-action="switch-presets-tab" data-tab="tournament" class="tab-btn ${tab === "tournament" ? "active" : ""}">Tournament presets</button>
+        <button data-action="switch-presets-tab" data-tab="appearance" class="tab-btn ${tab === "appearance" ? "active" : ""}">Appearance</button>
+      </div>
+      ${tab === "match" ? renderMatchPresetsTab() : tab === "tournament" ? renderTournamentPresetsTab() : renderAppearanceTab()}
+    </div>
+  `;
+}
+
+function renderMatchPresetsTab(){
+  const editing = ui.editingMatchPreset;
+  return `
+    <div class="preset-list">
+      ${Object.values(state.matchPresets).map(p => `
+        <div class="preset-row">
+          <div>
+            <b>${escapeHtml(p.name)}</b>
+            <div class="muted">${p.ballsPerOver}-ball overs · ${p.oversLimit} overs · ${p.playersPerSide}-a-side · wide ${p.wide.enabled ? p.wide.runs : "off"} · nb ${p.noBall.enabled ? p.noBall.runs : "off"}${p.freeHitOnNoBall === false ? " (no free hit)" : ""}${p.requireFielderOnCatch ? " · catch taker required" : ""}${p.requireFielderOnRunout ? " · run-out taker required" : ""}</div>
+          </div>
+          <div class="row-actions">
+            <button data-action="edit-match-preset" data-id="${p.id}" class="ghost small">Edit</button>
+            <button data-action="delete-match-preset" data-id="${p.id}" class="ghost small">Delete</button>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+    ${editing ? renderMatchPresetForm(editing) : `<button data-action="new-match-preset" class="link-btn">+ New match preset</button>`}
+  `;
+}
+
+function renderMatchPresetForm(p){
+  return `
+    <form id="match-preset-form" class="preset-form">
+      <input type="hidden" name="id" value="${p.id || ""}">
+      <label>Name<input name="name" required maxlength="30" value="${escapeHtml(p.name || "")}"></label>
+      <div class="field-row">
+        <label>Balls/over<input name="ballsPerOver" type="number" min="1" max="10" value="${p.ballsPerOver ?? 6}" required></label>
+        <label>Overs<input name="oversLimit" type="number" min="1" max="50" value="${p.oversLimit ?? 20}" required></label>
+      </div>
+      <label>Players/side<input name="playersPerSide" type="number" min="2" max="11" value="${p.playersPerSide ?? 11}" required></label>
+      <label class="check-row"><input type="checkbox" name="wideEnabled" ${!p.wide || p.wide.enabled ? "checked" : ""}> Wides count, worth <input name="wideRuns" type="number" min="0" max="6" value="${p.wide ? p.wide.runs : 1}" class="inline-num"></label>
+      <label class="check-row"><input type="checkbox" name="noBallEnabled" ${!p.noBall || p.noBall.enabled ? "checked" : ""}> No-balls count, worth <input name="noBallRuns" type="number" min="0" max="6" value="${p.noBall ? p.noBall.runs : 1}" class="inline-num"></label>
+      <label class="check-row"><input type="checkbox" name="freeHitOnNoBall" ${p.freeHitOnNoBall !== false ? "checked" : ""}> No-ball gives a free hit</label>
+      <label class="check-row"><input type="checkbox" name="requireFielderOnCatch" ${p.requireFielderOnCatch ? "checked" : ""}> Require catch taker</label>
+      <label class="check-row"><input type="checkbox" name="requireFielderOnRunout" ${p.requireFielderOnRunout ? "checked" : ""}> Require run-out taker</label>
+      <div class="action-row">
+        <button type="submit" class="primary">Save preset</button>
+        <button type="button" data-action="cancel-preset-edit" class="ghost">Cancel</button>
+      </div>
+    </form>
+  `;
+}
+
+function renderTournamentPresetsTab(){
+  const editing = ui.editingTournamentPreset;
+  return `
+    <div class="preset-list">
+      ${Object.values(state.tournamentPresets).map(p => `
+        <div class="preset-row">
+          <div>
+            <b>${escapeHtml(p.name)}</b>
+            <div class="muted">${escapeHtml((state.matchPresets[p.matchPresetId] || {}).name || "—")} · ${p.pointsForWin}/${p.pointsForTie}/${p.pointsForLoss} pts${p.useNRR ? " · NRR" : ""}</div>
+          </div>
+          <div class="row-actions">
+            <button data-action="edit-tournament-preset" data-id="${p.id}" class="ghost small">Edit</button>
+            <button data-action="delete-tournament-preset" data-id="${p.id}" class="ghost small">Delete</button>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+    ${editing ? renderTournamentPresetForm(editing) : `<button data-action="new-tournament-preset" class="link-btn">+ New tournament preset</button>`}
+  `;
+}
+
+function renderTournamentPresetForm(p){
+  return `
+    <form id="tournament-preset-form" class="preset-form">
+      <input type="hidden" name="id" value="${p.id || ""}">
+      <label>Name<input name="name" required maxlength="30" value="${escapeHtml(p.name || "")}"></label>
+      <label>Match preset<select name="matchPresetId">${Object.values(state.matchPresets).map(mp => `<option value="${mp.id}" ${mp.id === p.matchPresetId ? "selected" : ""}>${escapeHtml(mp.name)}</option>`).join("")}</select></label>
+      <div class="field-row">
+        <label>Win pts<input name="pointsForWin" type="number" min="0" max="10" value="${p.pointsForWin ?? 2}" required></label>
+        <label>Tie pts<input name="pointsForTie" type="number" min="0" max="10" value="${p.pointsForTie ?? 1}" required></label>
+        <label>Loss pts<input name="pointsForLoss" type="number" min="0" max="10" value="${p.pointsForLoss ?? 0}" required></label>
+      </div>
+      <label class="check-row"><input type="checkbox" name="useNRR" ${p.useNRR !== false ? "checked" : ""}> Rank ties on NRR</label>
+      <div class="action-row">
+        <button type="submit" class="primary">Save preset</button>
+        <button type="button" data-action="cancel-preset-edit" class="ghost">Cancel</button>
+      </div>
+    </form>
+  `;
+}
+
+function handleMatchPresetSubmit(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const preset = {
+    id: f.get("id") || undefined,
+    name: (f.get("name") || "").trim() || "Untitled preset",
+    ballsPerOver: Math.max(1, parseInt(f.get("ballsPerOver"), 10) || 6),
+    oversLimit: Math.max(1, parseInt(f.get("oversLimit"), 10) || 20),
+    playersPerSide: Math.max(2, parseInt(f.get("playersPerSide"), 10) || 11),
+    wide: { enabled: f.get("wideEnabled") === "on", runs: Math.max(0, parseInt(f.get("wideRuns"), 10) || 0) },
+    noBall: { enabled: f.get("noBallEnabled") === "on", runs: Math.max(0, parseInt(f.get("noBallRuns"), 10) || 0) },
+    freeHitOnNoBall: f.get("freeHitOnNoBall") === "on",
+    requireFielderOnCatch: f.get("requireFielderOnCatch") === "on",
+    requireFielderOnRunout: f.get("requireFielderOnRunout") === "on"
+  };
+  saveMatchPreset(preset);
+  ui.editingMatchPreset = null;
+  save(); render();
+}
+
+function handleTournamentPresetSubmit(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const preset = {
+    id: f.get("id") || undefined,
+    name: (f.get("name") || "").trim() || "Untitled preset",
+    matchPresetId: f.get("matchPresetId"),
+    pointsForWin: Math.max(0, parseInt(f.get("pointsForWin"), 10) || 0),
+    pointsForTie: Math.max(0, parseInt(f.get("pointsForTie"), 10) || 0),
+    pointsForLoss: Math.max(0, parseInt(f.get("pointsForLoss"), 10) || 0),
+    useNRR: f.get("useNRR") === "on"
+  };
+  saveTournamentPreset(preset);
+  ui.editingTournamentPreset = null;
+  save(); render();
+}
+
+/* --- appearance: a personal-space settings blob (state.branding) —
+   name, logo data URL, and two accent hex colors. Not a preset list
+   like match/tournament presets, just one editable object, so its
+   fields always render (no add/edit/delete flow). See THEME above
+   for how the two colors turn into the rest of the palette.
+   Deliberately not a submit-a-form flow: the name/color fields
+   auto-save on "change" (see the delegated change listener) instead,
+   because logo upload saves+renders independently and asynchronously
+   (FileReader + Image decode) — if these fields lived behind a Save
+   button, that in-between render would wipe out whatever the user had
+   typed but not yet submitted. Auto-apply also doubles as instant
+   live preview, which a color picker wants anyway. --- */
+function renderAppearanceTab(){
+  const b = state.branding || {};
+  return `
+    <div class="appearance-tab">
+      <p class="hint">Personalize this installation with your own name, logo, and colors — changes apply immediately and are stored on this device only.</p>
+      <div class="logo-row">
+        ${b.logo ? `<img src="${b.logo}" class="logo-preview" alt="Logo">` : `<div class="logo-placeholder">🏏</div>`}
+        <div class="logo-actions">
+          <label class="file-label">Upload logo<input type="file" id="logo-upload-input" accept="image/*" hidden></label>
+          ${b.logo ? `<button type="button" data-action="remove-logo" class="ghost small">Remove</button>` : ""}
+        </div>
+      </div>
+      <div class="preset-form">
+        <label>Space name<input type="text" id="branding-name-input" maxlength="40" placeholder="Cricket.lk" value="${escapeHtml(b.name || "")}"></label>
+        <div class="field-row">
+          <label>Primary color<input type="color" id="branding-accent-input" value="${b.accent || "#ffc247"}"></label>
+          <label>Secondary color<input type="color" id="branding-accent2-input" value="${b.accent2 || "#33e29b"}"></label>
+        </div>
+        <button type="button" data-action="reset-appearance" class="ghost">Reset to default</button>
+      </div>
+    </div>
+  `;
+}
+
+function resizeImageToDataUrl(file, maxDim){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/png"));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function handleLogoFileChange(e){
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  resizeImageToDataUrl(file, 160).then(dataUrl => {
+    state.branding.logo = dataUrl;
+    save(); render();
+  }).catch(() => {});
+}
+
+/* --- tournament setup & dashboard --- */
+function renderTournamentSetup(){
+  const presets = Object.values(state.tournamentPresets);
+  if (!ui.tournamentSetupPresetId){
+    ui.tournamentSetupPresetId = presets.length ? presets[0].id : null;
+  }
+  const teams = Object.values(state.teams);
+  return `
+    <div class="screen setup">
+      ${renderBackBar("Home", "home")}
+      <h1>🏆 New tournament</h1>
+      ${teams.length < 2 ? `<p class="hint">You need at least 2 saved teams. <button data-action="go-view" data-view="teams" class="link-btn">Add teams</button></p>` : ""}
+      <form id="tournament-setup-form">
+        <label>Tournament name<input name="name" required maxlength="40" placeholder="e.g. Sunday League 2026"></label>
+        <input type="hidden" name="tournamentPresetId" value="${ui.tournamentSetupPresetId || ""}">
+        ${presets.length ? `
+          <div class="preset-picker">
+            ${presets.map(p => `<button type="button" data-action="pick-tournament-preset" data-id="${p.id}" class="preset-chip ${p.id === ui.tournamentSetupPresetId ? "active" : ""}">${escapeHtml(p.name)}</button>`).join("")}
+          </div>
+        ` : ""}
+        <fieldset>
+          <legend>Teams in this tournament</legend>
+          ${teams.map(t => `<label class="check-row"><input type="checkbox" name="teamIds" value="${t.id}" ${ui.tournamentSetupTeamIds.includes(t.id) ? "checked" : ""}> ${escapeHtml(t.name)}</label>`).join("") || `<p class="hint">No saved teams yet.</p>`}
+        </fieldset>
+        <button type="submit" class="primary" ${teams.length < 2 ? "disabled" : ""}>Create tournament</button>
+      </form>
+    </div>
+  `;
+}
+
+function handleTournamentSetupSubmit(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const name = (f.get("name") || "").trim();
+  const tournamentPresetId = f.get("tournamentPresetId") || ui.tournamentSetupPresetId;
+  const teamIds = f.getAll("teamIds");
+  if (!name || teamIds.length < 2 || !tournamentPresetId) return;
+  const tournament = createTournament({ name, tournamentPresetId, teamIds });
+  state.activeTournamentId = tournament.id;
+  ui.tournamentSetupTeamIds = [];
+  ui.tournamentSetupPresetId = null;
+  state.view = "tournamentDashboard";
+  ui.tournamentTab = "standings";
+  save(); render();
+}
+
+function renderTournamentDashboard(){
+  const t = activeTournament();
+  if (!t) return renderHome();
+  const preset = state.tournamentPresets[t.tournamentPresetId] || DEFAULT_TOURNAMENT_PRESETS[0];
+  const matchPreset = state.matchPresets[preset.matchPresetId] || DEFAULT_MATCH_PRESETS[0];
+  const matches = t.matchIds.map(id => state.matchHistory[id]).filter(Boolean);
+  const standings = computeStandings(matches, preset);
+  const tab = ui.tournamentTab || "standings";
+  const teams = t.teamIds.map(id => state.teams[id]).filter(Boolean);
+
+  return `
+    <div class="screen tournament">
+      ${renderBackBar("Home", "home")}
+      <h1>🏆 ${escapeHtml(t.name)}</h1>
+      <p class="tagline">${escapeHtml(matchPreset.name)} · ${preset.pointsForWin}/${preset.pointsForTie}/${preset.pointsForLoss} pts${preset.useNRR ? " · NRR" : ""}</p>
+      <div class="tab-row">
+        <button data-action="switch-tournament-tab" data-tab="standings" class="tab-btn ${tab === "standings" ? "active" : ""}">Standings</button>
+        <button data-action="switch-tournament-tab" data-tab="fixtures" class="tab-btn ${tab === "fixtures" ? "active" : ""}">Fixtures</button>
+        <button data-action="switch-tournament-tab" data-tab="stats" class="tab-btn ${tab === "stats" ? "active" : ""}">Stats</button>
+      </div>
+      ${tab === "standings" ? renderStandingsTable(standings, preset.useNRR) : ""}
+      ${tab === "fixtures" ? renderTournamentFixtures(matches, teams) : ""}
+      ${tab === "stats" ? renderTournamentStats(matches) : ""}
+    </div>
+  `;
+}
+
+function renderStandingsTable(standings, useNRR){
+  if (!standings.length) return `<p class="hint">No completed matches yet.</p>`;
+  return `
+    <table class="standings-table">
+      <thead><tr><th>Team</th><th>P</th><th>W</th><th>L</th><th>T</th><th>Pts</th>${useNRR ? "<th>NRR</th>" : ""}</tr></thead>
+      <tbody>${standings.map(s => `<tr><td>${escapeHtml(s.name)}</td><td>${s.played}</td><td>${s.won}</td><td>${s.lost}</td><td>${s.tied}</td><td><b>${s.points}</b></td>${useNRR ? `<td>${s.nrr >= 0 ? "+" : ""}${s.nrr.toFixed(3)}</td>` : ""}</tr>`).join("")}</tbody>
+    </table>
+  `;
+}
+
+function renderTournamentFixtures(matches, teams){
+  const results = matches.map(m => `
+    <div class="fixture-row">
+      <span>${escapeHtml(teamName(m, "A"))} vs ${escapeHtml(teamName(m, "B"))}</span>
+      <span class="fixture-result">${escapeHtml(m.result || "")}</span>
+    </div>
+  `).join("") || `<p class="hint">No matches played yet.</p>`;
+
+  const startForm = state.match ? `<p class="hint">Finish the current match before starting another.</p>` : `
+    <form id="tournament-start-match-form">
+      <div class="form-error"></div>
+      <label>Team A<select name="teamAId" required>${teams.map(tm => `<option value="${tm.id}">${escapeHtml(tm.name)}</option>`).join("")}</select></label>
+      <label>Team B<select name="teamBId" required>${teams.map((tm, i) => `<option value="${tm.id}" ${i === 1 ? "selected" : ""}>${escapeHtml(tm.name)}</option>`).join("")}</select></label>
+      <fieldset>
+        <legend>Who bats first?</legend>
+        <label><input type="radio" name="battingFirst" value="A" checked> Team A</label>
+        <label><input type="radio" name="battingFirst" value="B"> Team B</label>
+      </fieldset>
+      <button type="submit" class="primary" ${teams.length < 2 ? "disabled" : ""}>Start match</button>
+    </form>
+  `;
+
+  return `<div class="fixtures">${results}</div><h3>Start a match</h3>${startForm}`;
+}
+
+function renderTournamentStats(matches){
+  const totals = aggregatePlayerStats(matches);
+  if (!totals.length) return `<p class="hint">No stats yet.</p>`;
+  const mvp = totals[0];
+  return `
+    <div class="mvp-callout"><span class="mvp-label">Tournament MVP</span><span class="mvp-name">${escapeHtml(mvp.name)}</span><span class="mvp-points">${mvp.points} pts</span></div>
+    ${renderLeaderboards(totals)}
+  `;
+}
+
+function handleTournamentStartMatchSubmit(e){
+  e.preventDefault();
+  const t = activeTournament();
+  if (!t) return;
+  const f = new FormData(e.target);
+  const teamAId = f.get("teamAId"), teamBId = f.get("teamBId");
+  if (!teamAId || !teamBId || teamAId === teamBId){
+    showFormError(e.target, "Pick two different teams."); return;
+  }
+  const preset = state.tournamentPresets[t.tournamentPresetId];
+  const matchPreset = state.matchPresets[preset.matchPresetId] || DEFAULT_MATCH_PRESETS[0];
+  const battingFirst = f.get("battingFirst") || "A";
+  state.match = createMatch({
+    teamA: state.teams[teamAId].name,
+    teamB: state.teams[teamBId].name,
+    oversLimit: matchPreset.oversLimit,
+    playersPerSide: matchPreset.playersPerSide,
+    ballsPerOver: matchPreset.ballsPerOver,
+    wideEnabled: matchPreset.wide.enabled, wideRuns: matchPreset.wide.runs,
+    noBallEnabled: matchPreset.noBall.enabled, noBallRuns: matchPreset.noBall.runs,
+    freeHitOnNoBall: matchPreset.freeHitOnNoBall,
+    requireFielderOnCatch: matchPreset.requireFielderOnCatch,
+    requireFielderOnRunout: matchPreset.requireFielderOnRunout,
+    battingFirst,
+    presetId: matchPreset.id, presetName: matchPreset.name,
+    tournamentId: t.id
+  });
+  state.snapshots = [];
+  save(); render();
+}
+
+/* --- stats (all-time leaderboards, shared with the tournament stats tab) --- */
+function renderLeaderboards(totals){
+  const byRuns = [...totals].sort((a, b) => b.runs - a.runs).slice(0, 10);
+  const byWickets = [...totals].filter(t => t.legalBalls > 0).sort((a, b) => b.wickets - a.wickets || a.runsConceded - b.runsConceded).slice(0, 10);
+  const byFielding = [...totals].filter(t => (t.catches + t.runouts) > 0).sort((a, b) => (b.catches + b.runouts) - (a.catches + a.runouts)).slice(0, 10);
+  const byPoints = totals.slice(0, 10);
+  return `
+    <div class="leaderboard">
+      <h3>Most runs</h3>
+      <table><thead><tr><th>Player</th><th>M</th><th>R</th><th>Avg</th></tr></thead>
+      <tbody>${byRuns.map(t => `<tr><td>${escapeHtml(t.name)}</td><td>${t.matches}</td><td>${t.runs}</td><td>${t.innings ? (t.runs / t.innings).toFixed(1) : "0.0"}</td></tr>`).join("")}</tbody></table>
+    </div>
+    <div class="leaderboard">
+      <h3>Most wickets</h3>
+      <table><thead><tr><th>Player</th><th>M</th><th>W</th><th>Econ</th></tr></thead>
+      <tbody>${byWickets.map(t => `<tr><td>${escapeHtml(t.name)}</td><td>${t.matches}</td><td>${t.wickets}</td><td>${t.legalBalls ? (t.runsConceded / (t.legalBalls / 6)).toFixed(2) : "0.00"}</td></tr>`).join("")}</tbody></table>
+    </div>
+    <div class="leaderboard">
+      <h3>Most catches / run-outs</h3>
+      <table><thead><tr><th>Player</th><th>Ct</th><th>RO</th></tr></thead>
+      <tbody>${byFielding.map(t => `<tr><td>${escapeHtml(t.name)}</td><td>${t.catches}</td><td>${t.runouts}</td></tr>`).join("")}</tbody></table>
+    </div>
+    <div class="leaderboard">
+      <h3>MVP points</h3>
+      <table><thead><tr><th>Player</th><th>Pts</th></tr></thead>
+      <tbody>${byPoints.map(t => `<tr><td>${escapeHtml(t.name)}</td><td><b>${t.points}</b></td></tr>`).join("")}</tbody></table>
+    </div>
+  `;
+}
+
+function renderStatsScreen(){
+  const matches = Object.values(state.matchHistory);
+  return `
+    <div class="screen stats">
+      ${renderBackBar("Home", "home")}
+      <h1>📊 All-time stats</h1>
+      ${matches.length ? renderLeaderboards(aggregatePlayerStats(matches)) : `<p class="hint">Play and finish a match to see stats here.</p>`}
     </div>
   `;
 }
@@ -745,16 +2780,55 @@ function renderResult(match){
 function render(){
   const root = document.getElementById("app");
   const m = state.match;
+  // Home's club switcher needs ui.myClubs; fetch it once, lazily, rather
+  // than on every screen -- guarded so a pending fetch never re-fires.
+  if (!m && state.view === "home" && session && ui.myClubs === null && !ui.myClubsLoading){
+    ui.myClubsLoading = true;
+    fetchMyClubs().then(() => { ui.myClubsLoading = false; render(); });
+  }
   let html;
-  if (!m) html = renderSetup();
-  else if (m.status === "innings_break") html = renderInningsBreak(m);
-  else if (m.status === "complete") html = renderResult(m);
-  else html = renderLive(m);
-  root.innerHTML = html;
+  if (m && m.status !== "complete"){
+    html = m.status === "innings_break" ? renderInningsBreak(m) : renderLive(m);
+  } else if (m && m.status === "complete"){
+    html = renderResult(m);
+  } else if (state.view === "teams"){
+    html = renderTeamsScreen();
+  } else if (state.view === "presets"){
+    html = renderPresetsScreen();
+  } else if (state.view === "matchSetup"){
+    html = renderMatchSetup();
+  } else if (state.view === "tournamentSetup"){
+    html = renderTournamentSetup();
+  } else if (state.view === "tournamentDashboard"){
+    html = renderTournamentDashboard();
+  } else if (state.view === "stats"){
+    html = renderStatsScreen();
+  } else if (state.view === "signIn"){
+    html = renderSignIn();
+  } else if (state.view === "signUp"){
+    html = renderSignUp();
+  } else if (state.view === "account"){
+    html = renderAccount();
+  } else if (state.view === "myClubs"){
+    html = renderMyClubs();
+  } else if (state.view === "clubHome"){
+    html = renderClubHome();
+  } else if (state.view === "clubTournamentSetup"){
+    html = renderClubTournamentSetup();
+  } else if (state.view === "clubTournamentDashboard"){
+    html = renderClubTournamentDashboard();
+  } else if (state.view === "premier"){
+    html = renderPremierScreen();
+  } else {
+    html = renderHome();
+  }
+  root.innerHTML = html + renderPlayersDatalist() + renderTeamsDatalist() + renderSoundToggle();
 
   const modalRoot = document.getElementById("modal-root");
   let modalHtml = "";
-  if (m && m.status === "opening"){
+  if (m && m.status !== "complete" && ui.forfeitFlow){
+    modalHtml = renderForfeitModal(m);
+  } else if (m && m.status === "opening"){
     modalHtml = renderOpeningModal(m);
   } else if (m && m.status === "live"){
     const inn = currentInnings(m);
@@ -775,26 +2849,182 @@ document.addEventListener("click", (e) => {
   else if (action === "open-wicket"){ ui.wicketFlow = "menu"; render(); }
   else if (action === "close-wicket-modal"){ ui.wicketFlow = null; ui.runoutRuns = 0; render(); }
   else if (action === "pick-wicket"){
-    if (btn.dataset.type === "runout"){ ui.wicketFlow = "runout"; render(); }
+    if (btn.dataset.type === "runout" || btn.dataset.type === "caught"){ ui.wicketFlow = btn.dataset.type; render(); }
     else confirmWicket(btn.dataset.type);
   }
   else if (action === "runout-runs"){ ui.runoutRuns = parseInt(btn.dataset.runs, 10); render(); }
-  else if (action === "confirm-runout") confirmRunout();
+  else if (action === "open-forfeit"){ ui.forfeitFlow = true; render(); }
+  else if (action === "close-forfeit-modal"){ ui.forfeitFlow = false; render(); }
+  else if (action === "confirm-forfeit"){
+    pushSnapshot();
+    forfeitMatch(state.match, btn.dataset.team);
+    maybeArchiveCompletedMatch(state.match);
+    ui.forfeitFlow = false;
+    save(); render();
+  }
   else if (action === "undo") handleUndo();
   else if (action === "toggle-scorecard"){ ui.showFullScorecard = !ui.showFullScorecard; render(); }
   else if (action === "start-second-innings"){ pushSnapshot(); startSecondInnings(state.match); save(); render(); }
-  else if (action === "new-match"){ DB.clear(); state.match = null; state.snapshots = []; ui = defaultUi(); render(); }
+  else if (action === "share-image") shareScorecardImage(state.match);
+  else if (action === "export-pdf") window.print();
+  else if (action === "finish-match"){
+    const tournamentId = state.match.tournamentId;
+    const clubId = state.match.clubId;
+    state.match = null; state.snapshots = []; ui = defaultUi();
+    if (clubId && tournamentId){
+      // a club's own Local-tier tournament -- tournamentId is a cloud
+      // `tournaments` row here, NOT a key into local state.tournaments.
+      ui.currentClubId = clubId; ui.currentTournamentId = tournamentId; state.view = "clubTournamentDashboard";
+      fetchClubTournamentDetail(tournamentId).then(render);
+    }
+    else if (clubId){ ui.currentClubId = clubId; state.view = "clubHome"; fetchClubDetail(clubId).then(render); }
+    else if (tournamentId){ state.activeTournamentId = tournamentId; state.view = "tournamentDashboard"; }
+    else state.view = "home";
+    save(); render();
+  }
+  else if (action === "toggle-sound"){
+    state.soundEnabled = !state.soundEnabled;
+    save(); render();
+    if (state.soundEnabled) SFX.tap();
+  }
+  else if (action === "go-view"){
+    state.view = btn.dataset.view;
+    // Self-healing: "clubHome" can now be reached (via back-bars) without
+    // ever having gone through "open-club" first -- e.g. back from a
+    // tournament created directly off Home -- so make sure ui.club
+    // actually matches before rendering it, instead of showing stale data.
+    if (state.view === "clubHome" && ui.currentClubId && (!ui.club || ui.club.id !== ui.currentClubId)){
+      ui.club = null; render();
+      fetchClubDetail(ui.currentClubId).then(render);
+    } else render();
+  }
+  else if (action === "go-account"){ state.view = session ? "account" : "signIn"; render(); }
+  else if (action === "sign-out"){ handleSignOut(); }
+  else if (action === "go-match-setup"){ ui.matchSetupPresetId = null; ui.clubMatchSetupType = null; state.view = "matchSetup"; render(); }
+  else if (action === "go-my-clubs"){ state.view = "myClubs"; render(); fetchMyClubs().then(render); }
+  else if (action === "open-club"){
+    ui.currentClubId = btn.dataset.id; ui.club = null; state.view = "clubHome"; render();
+    fetchClubDetail(btn.dataset.id).then(render);
+  }
+  else if (action === "go-club-match-setup"){
+    // Reached from Home's quick-action cards -- ui.currentClubId here
+    // always follows the switcher (state.activeClubId), not whatever
+    // club page (if any) was last viewed.
+    ui.currentClubId = state.activeClubId;
+    ui.matchSetupPresetId = null; ui.clubMatchSetupType = btn.dataset.type; state.view = "matchSetup"; render();
+  }
+  else if (action === "go-club-tournament-setup"){
+    ui.currentClubId = state.activeClubId;
+    ui.clubTournamentSetupPresetId = null; state.view = "clubTournamentSetup"; render();
+  }
+  else if (action === "pick-club-tournament-preset"){ ui.clubTournamentSetupPresetId = btn.dataset.id; render(); }
+  else if (action === "open-club-tournament"){
+    ui.currentTournamentId = btn.dataset.id; ui.clubTournament = null; state.view = "clubTournamentDashboard"; render();
+    fetchClubTournamentDetail(btn.dataset.id).then(render);
+  }
+  else if (action === "go-club-tournament-match-setup"){
+    ui.matchSetupPresetId = null; ui.clubMatchSetupType = "tournament"; state.view = "matchSetup"; render();
+  }
+  else if (action === "open-claim-form"){ ui.claimingPlayerId = btn.dataset.id; ui.claimMessage = null; render(); }
+  else if (action === "close-claim-form"){ ui.claimingPlayerId = null; render(); }
+  else if (action === "approve-claim"){
+    approveClaimRequest(btn.dataset.id).then(result => {
+      ui.claimMessage = result && result.error ? result.error : "Approved.";
+      fetchPremierData().then(render);
+    });
+  }
+  else if (action === "reject-claim"){
+    rejectClaimRequest(btn.dataset.id).then(result => {
+      ui.claimMessage = result && result.error ? result.error : "Rejected.";
+      fetchPremierData().then(render);
+    });
+  }
+  else if (action === "go-tournament-setup"){ ui.tournamentSetupPresetId = null; ui.tournamentSetupTeamIds = []; state.view = "tournamentSetup"; render(); }
+  else if (action === "pick-match-preset"){ ui.matchSetupPresetId = btn.dataset.id; render(); }
+  else if (action === "pick-tournament-preset"){ ui.tournamentSetupPresetId = btn.dataset.id; render(); }
+  else if (action === "open-tournament"){ state.activeTournamentId = btn.dataset.id; state.view = "tournamentDashboard"; ui.tournamentTab = "standings"; render(); }
+  else if (action === "switch-tournament-tab"){ ui.tournamentTab = btn.dataset.tab; render(); }
+  else if (action === "select-team"){ ui.selectedTeamId = btn.dataset.id; render(); }
+  else if (action === "delete-team"){
+    if (!confirm("Delete this team? Past match history is unaffected.")) return;
+    deleteTeam(btn.dataset.id);
+    if (ui.selectedTeamId === btn.dataset.id) ui.selectedTeamId = null;
+    save(); render();
+  }
+  else if (action === "remove-player"){ removePlayerFromTeam(btn.dataset.team, btn.dataset.player); save(); render(); }
+  else if (action === "move-player"){
+    const row = btn.closest(".roster-row");
+    const toId = row.querySelector('[data-role="move-target"]').value;
+    movePlayerToTeam(btn.dataset.player, btn.dataset.from, toId);
+    save(); render();
+  }
+  else if (action === "switch-presets-tab"){ ui.presetsTab = btn.dataset.tab; ui.editingMatchPreset = null; ui.editingTournamentPreset = null; render(); }
+  else if (action === "new-match-preset"){ ui.editingMatchPreset = {}; render(); }
+  else if (action === "edit-match-preset"){ ui.editingMatchPreset = Object.assign({}, state.matchPresets[btn.dataset.id]); render(); }
+  else if (action === "delete-match-preset"){
+    if (!confirm("Delete this match preset?")) return;
+    deleteMatchPreset(btn.dataset.id); save(); render();
+  }
+  else if (action === "new-tournament-preset"){ ui.editingTournamentPreset = {}; render(); }
+  else if (action === "edit-tournament-preset"){ ui.editingTournamentPreset = Object.assign({}, state.tournamentPresets[btn.dataset.id]); render(); }
+  else if (action === "delete-tournament-preset"){
+    if (!confirm("Delete this tournament preset?")) return;
+    deleteTournamentPreset(btn.dataset.id); save(); render();
+  }
+  else if (action === "cancel-preset-edit"){ ui.editingMatchPreset = null; ui.editingTournamentPreset = null; render(); }
+  else if (action === "remove-logo"){ state.branding.logo = null; save(); render(); }
+  else if (action === "reset-appearance"){
+    state.branding = { name: "", logo: null, accent: null, accent2: null };
+    applyTheme();
+    save(); render();
+  }
 });
 
 document.addEventListener("submit", (e) => {
-  if (e.target.id === "setup-form") handleSetupSubmit(e);
-  else if (e.target.id === "opening-form") handleOpeningSubmit(e);
-  else if (e.target.id === "new-batsman-form") handleNewBatsmanSubmit(e);
-  else if (e.target.id === "new-bowler-form") handleNewBowlerSubmit(e);
+  const id = e.target.id;
+  if (id === "match-setup-form") handleMatchSetupSubmit(e);
+  else if (id === "opening-form") handleOpeningSubmit(e);
+  else if (id === "new-batsman-form") handleNewBatsmanSubmit(e);
+  else if (id === "new-bowler-form") handleNewBowlerSubmit(e);
+  else if (id === "wicket-fielder-form") handleWicketFielderSubmit(e);
+  else if (id === "motm-form") handleMotmSubmit(e);
+  else if (id === "tournament-setup-form") handleTournamentSetupSubmit(e);
+  else if (id === "tournament-start-match-form") handleTournamentStartMatchSubmit(e);
+  else if (id === "new-team-form") handleNewTeamSubmit(e);
+  else if (id === "add-player-form") handleAddPlayerSubmit(e);
+  else if (id === "match-preset-form") handleMatchPresetSubmit(e);
+  else if (id === "tournament-preset-form") handleTournamentPresetSubmit(e);
+  else if (id === "sign-in-form") handleSignInSubmit(e);
+  else if (id === "sign-up-form") handleSignUpSubmit(e);
+  else if (id === "create-club-form") handleCreateClubSubmit(e);
+  else if (id === "club-add-player-form") handleClubAddPlayerSubmit(e);
+  else if (id === "club-invite-admin-form") handleClubInviteAdminSubmit(e);
+  else if (id === "club-tournament-setup-form") handleClubTournamentSetupSubmit(e);
+  else if (id === "claim-request-form") handleClaimRequestSubmit(e);
+});
+
+document.addEventListener("change", (e) => {
+  if (e.target.name === "teamIds"){
+    const id = e.target.value;
+    if (e.target.checked){ if (!ui.tournamentSetupTeamIds.includes(id)) ui.tournamentSetupTeamIds.push(id); }
+    else { ui.tournamentSetupTeamIds = ui.tournamentSetupTeamIds.filter(x => x !== id); }
+  }
+  else if (e.target.id === "logo-upload-input") handleLogoFileChange(e);
+  else if (e.target.id === "branding-name-input"){ state.branding.name = e.target.value.trim(); save(); }
+  else if (e.target.id === "branding-accent-input"){ state.branding.accent = e.target.value; applyTheme(); save(); }
+  else if (e.target.id === "branding-accent2-input"){ state.branding.accent2 = e.target.value; applyTheme(); save(); }
+  else if (e.target.id === "home-club-switcher"){
+    const v = e.target.value;
+    if (v === "__premier__"){
+      state.view = "premier"; save(); render();
+      fetchPremierData().then(render);
+    } else { state.activeClubId = v || null; save(); render(); }
+  }
 });
 
 load();
 render();
+initAuth();
 
 if ("serviceWorker" in navigator){
   navigator.serviceWorker.register("sw.js").catch(() => {});
