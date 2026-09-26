@@ -4,7 +4,7 @@
   "private": true,
   "description": "Ball-by-ball cricket scoring — installable PWA, single HTML file.",
   "scripts": {
-    "dev": "python3 -m http.server 8080 || npx serve ."
+    "dev": "python3 -m http.server 8081 || npx serve ."
   },
   "devDependencies": {
     "jsdom": "^25.0.0"

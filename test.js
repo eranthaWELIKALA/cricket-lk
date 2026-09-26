@@ -93,6 +93,140 @@ async function main(){
     assert(inn.runs === 2, "runs completed before the run-out are credited");
   }
 
+  // --- 5b. currentOverEvents/fallOfWickets carry the raw numbers the live
+  // scoring screen's over-totals and partnership counter need, not just
+  // display strings ---
+  {
+    const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    const inn = currentInnings(m);
+    win.ensureBatsman(inn, "A1"); win.ensureBatsman(inn, "A2"); win.ensureBowler(inn, "B1");
+    inn.striker = "A1"; inn.nonStriker = "A2"; inn.bowler = "B1";
+    recordBall(inn, { kind: "run", runs: 4 });
+    recordBall(inn, { kind: "bye", runs: 2 });
+    assert(inn.currentOverEvents[0].runs === 4, "a run event's raw runs are on the event, not just its display string");
+    assert(inn.currentOverEvents[1].runs === 2, "a bye event's raw runs are on the event too");
+    recordBall(inn, { kind: "wicket", wicketType: "bowled" });
+    assert(inn.fallOfWickets[0].balls === inn.legalBalls, "a fall-of-wickets entry records legalBalls at the fall, for the partnership-balls counter");
+    assert(inn.fallOfWickets[0].batsman === "A1", "a normal dismissal's fall-of-wickets entry names the striker who was out, for the new-batsman modal's dismissal banner");
+  }
+
+  // --- 5c. same, for a run-out (the other branch that sets `outName`) ---
+  {
+    const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    const inn = currentInnings(m);
+    win.ensureBatsman(inn, "A1"); win.ensureBatsman(inn, "A2"); win.ensureBowler(inn, "B1");
+    inn.striker = "A1"; inn.nonStriker = "A2"; inn.bowler = "B1";
+    recordBall(inn, { kind: "wicket", wicketType: "runout", runs: 1, endComingIn: "nonStriker" });
+    assert(inn.fallOfWickets[0].batsman === "A2", "a run-out's fall-of-wickets entry names the batsman at the vacated end, not the striker");
+  }
+
+  // --- 5d. a player can't be on both teams in one match ---
+  {
+    const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    const inn = currentInnings(m);
+    win.ensureBatsman(inn, "A1"); win.ensureBatsman(inn, "A2"); win.ensureBowler(inn, "B1");
+    inn.striker = "A1"; inn.nonStriker = "A2"; inn.bowler = "B1";
+    assert(win.playerTeamInMatch(m, "a1") === "A", "a batter belongs to the batting team (case-insensitive)");
+    assert(win.playerTeamInMatch(m, "B1") === "B", "a bowler belongs to the bowling team");
+    assert(win.playerTeamInMatch(m, "Nobody") === null, "an unseen name has no side yet");
+    assert(win.playerSideConflict(m, "B1", "A") !== null, "a bowler can't then bat for the other team");
+    assert(win.playerSideConflict(m, "A1", "B") !== null, "a batter can't then bowl for the other team");
+    assert(win.playerSideConflict(m, "A1", "A") === null, "the same name on their own team is fine");
+    inn.fielding.order.push("B2"); inn.fielding.stats["B2"] = { catches: 1, runouts: 0 };
+    assert(win.playerTeamInMatch(m, "B2") === "B", "a fielder belongs to the bowling team");
+    // after the innings swap the same person may bowl for their own team but not switch sides
+    startSecondInnings(m);
+    assert(win.playerSideConflict(m, "A1", "A") === null, "a first-innings batter can bowl in the 2nd innings for the same team");
+    assert(win.playerSideConflict(m, "A1", "B") !== null, "...but can't bat for the other team in the 2nd innings");
+    assert(win.playerSideConflict(m, "B1", "B") === null, "a first-innings bowler can bat in the 2nd innings for the same team");
+  }
+
+  // --- 5e. leaked club names are purged from the guest player table, guest data is kept ---
+  {
+    const mk = (clubId, names) => { const m = createMatch({ teamA: "X", teamB: "Y", oversLimit: 1, playersPerSide: 4, battingFirst: "A" }); if (clubId) m.clubId = clubId;
+      const inn = currentInnings(m); names.forEach(n => win.ensureBatsman(inn, n)); return m; };
+    const pl = n => ({ id: "p_" + n, name: n });
+    const st = {
+      players: { p_Leak: pl("Leak"), p_Both: pl("Both"), p_Guest: pl("Guest"), p_Roster: pl("Rostered"), p_Typed: pl("TypedOnly") },
+      teams: { t1: { id: "t1", name: "T", playerIds: ["p_Roster"] } },
+      matchHistory: { a: Object.assign(mk("club-1", ["Leak", "both", "Rostered"]), { id: "a" }), b: Object.assign(mk(null, ["Both", "Guest"]), { id: "b" }) },
+      match: null
+    };
+    const removed = win.purgeLeakedClubPlayers(st);
+    assert(removed.join() === "Leak", "only a name seen solely in club matches is purged, got: " + removed.join());
+    assert(!st.players.p_Leak, "the leaked club player is gone from the guest table");
+    assert(st.players.p_Both && st.players.p_Guest, "names also used in a guest match are kept (case-insensitive)");
+    assert(st.players.p_Roster, "a player on a saved local team is kept");
+    assert(st.players.p_Typed, "a guest player never seen in any club match is untouched");
+  }
+
+  // --- 5f. player profile field rules + career fold ---
+  {
+    assert(win.isValidNic("") && win.isValidNic("  "), "a blank NIC is allowed (optional)");
+    assert(win.isValidNic("901234567v") && win.isValidNic("901234567X"), "old-format NIC (9 digits + V/X, any case) is valid");
+    assert(win.isValidNic("199012345678") && win.isValidNic("1990 1234 5678"), "new-format NIC (12 digits, spaces ignored) is valid");
+    assert(!win.isValidNic("12345") && !win.isValidNic("9012345678") && !win.isValidNic("90123456Z"), "malformed NICs are rejected");
+    assert(win.normalizeNic(" 90 1234567 v ") === "901234567V", "NIC is normalised to upper-case without spaces");
+    assert(win.isValidPhone("") && win.isValidPhone("0771234567") && win.isValidPhone("+94 77 123 4567"), "blank, local and +94 contact numbers are valid");
+    assert(!win.isValidPhone("123") && !win.isValidPhone("07x1234567") && !win.isValidPhone("+94-77-1234567"), "too-short or non-numeric contact numbers are rejected");
+    const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    const inn = currentInnings(m);
+    win.ensureBatsman(inn, "A1"); win.ensureBatsman(inn, "A2"); win.ensureBowler(inn, "B1");
+    inn.striker = "A1"; inn.nonStriker = "A2"; inn.bowler = "B1";
+    recordBall(inn, { kind: "run", runs: 4 }); recordBall(inn, { kind: "run", runs: 2 }); recordBall(inn, { kind: "wicket", wicketType: "bowled" });
+    const c = win.playerCareer("a1", [m]);
+    assert(c && c.runs === 6 && c.balls === 3 && c.innings === 1, "career folds a player's batting across the given matches (case-insensitive name)");
+    assert(c.average === 6 && Math.round(c.strikeRate) === 200, "career average is runs per dismissal and strike rate is runs per 100 balls");
+    assert(win.playerCareer("B1", [m]).wickets === 1, "career folds bowling too");
+    assert(win.playerCareer("Nobody", [m]) === null, "a player with no appearances has no career line");
+    // a richer two-innings fixture for the per-discipline numbers
+    const m2 = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    const i1 = currentInnings(m2);
+    win.ensureBatsman(i1, "Star"); win.ensureBatsman(i1, "Duck"); win.ensureBowler(i1, "Ace"); win.ensureBowler(i1, "Ace2");
+    i1.batting.stats.Star = { runs: 63, balls: 40, fours: 5, sixes: 2, out: false, howOut: null };
+    i1.batting.stats.Duck = { runs: 0, balls: 2, fours: 0, sixes: 0, out: true, howOut: "bowled b Ace" };
+    i1.bowling.stats.Ace = { legalBalls: 24, runs: 30, wickets: 3, maidens: 1, curOverRuns: 0, curOverLegal: 0 };
+    i1.fielding.order.push("Star"); i1.fielding.stats.Star = { catches: 2, runouts: 1 };
+    const i2 = win.createInnings("B", "A", 60, 11, 5, {});
+    m2.innings.push(i2);
+    win.ensureBatsman(i2, "Star"); i2.batting.stats.Star = { runs: 102, balls: 60, fours: 9, sixes: 4, out: true, howOut: "c X b Y" };
+    win.ensureBowler(i2, "Ace"); i2.bowling.stats.Ace = { legalBalls: 12, runs: 9, wickets: 3, maidens: 0, curOverRuns: 0, curOverLegal: 0 };
+    const s1 = win.playerCareer("Star", [m2]);
+    assert(s1.highScore.runs === 102 && s1.highScore.out === true && s1.hundreds === 1 && s1.fifties === 1, "batting: highest score, one 100 and one 50 (a 100 isn't also counted as a 50)");
+    assert(win.playerCareer("Duck", [m2]).ducks === 1, "batting: a dismissal for 0 is a duck");
+    assert(s1.fieldDismissals === 3 && s1.catches === 2 && s1.runouts === 1, "fielding: catches + run-outs total");
+    const a1 = win.playerCareer("Ace", [m2]);
+    assert(a1.bowlInnings === 2 && a1.best.wickets === 3 && a1.best.runs === 9, "bowling: best figures pick the most wickets, then fewest runs");
+    assert(a1.wickets === 6 && a1.bowlAverage === 6.5 && a1.bowlStrikeRate === 6, "bowling: average is runs per wicket, strike rate is balls per wicket");
+    assert(win.playerCareer("Ace2", [m2]).bowlInnings === 0, "a bowler who was listed but never bowled a ball has no bowling innings");
+    // merged profiles: stats recorded under an alias fold into the survivor's career
+    const m3 = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    const j1 = currentInnings(m3);
+    win.ensureBatsman(j1, "Star"); win.ensureBatsman(j1, "S. Star"); win.ensureBowler(j1, "Ace");
+    j1.batting.stats.Star = { runs: 40, balls: 30, fours: 4, sixes: 0, out: true, howOut: "bowled b Ace" };
+    j1.batting.stats["S. Star"] = { runs: 30, balls: 20, fours: 2, sixes: 1, out: false, howOut: null };
+    const both = win.playerCareer(["Star", "s. star"], [m2, m3]);
+    assert(both.innings === 4 && both.runs === 63 + 102 + 40 + 30 && both.matches === 3, "career folds every alias's matches and innings together");
+    assert(both.highScore.runs === 102 && both.hundreds === 1, "merged career keeps the best single innings across names");
+    assert(both.notOuts === 2 && Math.abs(both.average - (both.runs / 2)) < 1e-9, "merged average is recomputed over combined dismissals, not averaged from the parts");
+    assert(win.playerCareer(["Nobody", "Star"], [m2]).runs === 165 && win.playerCareer(["Nobody", "Nope"], [m2]) === null, "unknown aliases are ignored; no appearances under any name is still null");
+    assert(win.playerCareer(["Star", "STAR"], [m2]).runs === 165, "a duplicated name isn't counted twice");
+  }
+
+  // --- 5g. optional player details: labels, validation, safe photo ---
+  {
+    assert(win.formatBatting("right") === "Right-hand bat" && win.formatBatting("left") === "Left-hand bat" && win.formatBatting("") === "", "batting hand labels (blank when unset)");
+    assert(win.formatBowling("right", "fast") === "Right-arm fast", "bowling: arm + style");
+    assert(win.formatBowling("left", "orthodox") === "Left-arm orthodox spin", "bowling: multi-word style");
+    assert(win.formatBowling("", "medium") === "Medium" && win.formatBowling("left", "") === "Left-arm" && win.formatBowling("", "") === "", "bowling: either half alone, or nothing");
+    assert(win.playerDetailsError({ batting_hand: "right", bowling_arm: "left", bowling_type: "fast", city: "Kandy" }) === null, "valid details pass");
+    assert(win.playerDetailsError({ batting_hand: "both" }) !== null && win.playerDetailsError({ bowling_type: "yorker" }) !== null, "unknown hand/style values are rejected");
+    assert(win.playerDetailsError({ city: "x".repeat(41) }) !== null, "a city over 40 characters is rejected");
+    const ok = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
+    assert(win.safePhoto(ok) === ok, "a base64 jpeg data URL is accepted");
+    assert(win.safePhoto("data:image/svg+xml;base64,PHN2Zz4=") === "" && win.safePhoto("https://evil.example/x.png") === "" && win.safePhoto('data:image/png;base64,AA" onerror="x') === "", "svg, remote and attribute-breaking values are refused");
+  }
+
   // --- 6. all-out ends the innings even mid-over ---
   {
     const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 20, playersPerSide: 2, battingFirst: "A" });

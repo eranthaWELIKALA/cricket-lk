@@ -19,8 +19,9 @@ Numbered sections, in order, findable by searching for the heading text:
 
 1. **`REFERENCE DATA`** — `WICKET_LABELS` (dismissal display strings),
    `MVP_POINTS` (the fixed MOTM/MVP point formula — see "Stats & MVP"
-   below), and `DEFAULT_MATCH_PRESETS`/`DEFAULT_TOURNAMENT_PRESETS`, the
-   built-in presets seeded into storage on first run.
+   below), `DEFAULT_MATCH_PRESETS`/`DEFAULT_TOURNAMENT_PRESETS`, the
+   built-in presets seeded into storage on first run, and `THEME_PRESETS`
+   (the Settings screen's theme gallery — see "Theme & sound" below).
 2. **`ENGINE`** — pure functions, zero DOM access: `createInnings`,
    `createMatch`, `recordBall`, `checkInningsComplete`,
    `startSecondInnings`, `matchResult`, `afterBall`, small utilities
@@ -119,6 +120,26 @@ next ball). The UI reads `inn.freeHit` to hide every dismissal type
 except run-out in the wicket modal — don't add a separate free-hit flag
 in the UI layer, it'll drift from this one.
 
+**Both `inn.currentOverEvents` entries and `inn.fallOfWickets` entries
+carry a raw number (or name) alongside their display string**: each
+`currentOverEvents` push includes `runs` (that ball's `ballRuns`, bat +
+extras, whatever it was worth), and each `fallOfWickets` push includes
+`balls` (`inn.legalBalls` at the moment of the wicket) and `batsman`
+(the name of whoever was actually given out — `outName`, a local set in
+both branches of `recordBall`'s wicket handling *before* the slot gets
+nulled, since the null slot only says which end is vacant, not who was
+there). None of these are used by `display`/`over`/`howOut` (the
+pre-existing display strings) — they exist so the live-scoring screen
+can compute an over's run total and the current partnership's
+runs/balls (`inn.runs`/`inn.legalBalls` minus the last `fallOfWickets`
+entry's `score`/`balls`, or minus zero if none have fallen yet) without
+re-parsing a display string, and so the new-batsman modal's dismissal
+banner (`c NAME b BOWLER · runs (balls)`) can look up
+`inn.batting.stats[fallOfWickets.at(-1).batsman]` directly instead of
+guessing from batting order. If you add a new event kind, give it a
+`runs` value too, even if it's 0 — don't leave it `undefined`, since the
+over-total is a plain sum.
+
 **Innings-completion priority is target → all-out → overs-complete**
 (`checkInningsComplete`), checked in that order after every ball. This
 matters for the rare case where a boundary that reaches the target and
@@ -185,6 +206,28 @@ points-table config (`pointsForWin/Tie/Loss`, `useNRR`). A tournament's
 matches all inherit its preset's match preset — there's no per-match
 override once a tournament exists.
 
+## A player can't be on both teams in one match
+
+A match stores no rosters (names are typed freely), so a name's side is
+*inferred* by `playerTeamInMatch(match, name)` from where it has already
+been used: batters belong to that innings' batting team, bowlers and
+fielders to its bowling team (case-insensitive). `playerSideConflict(match,
+name, teamKey)` turns that into an error string, and every place a name is
+entered calls it before recording anything: openers and the first bowler
+(`handleOpeningSubmit`, which also rejects one name typed as both batter
+and bowler in the same form), `handleNewBatsmanSubmit`,
+`handleNewBowlerSubmit`, and the catch/run-out taker in
+`handleWicketFielderSubmit` (checked against the *bowling* team). Both
+helpers live in ENGINE and are covered in `test.js`. If you add another
+place a name can be typed, run it through `playerSideConflict` too — and
+note the quick-pick bowler rows (`confirmNewBowler`) skip it only because
+they list this innings' own bowlers by construction.
+
+Not covered: the saved Teams screen (`state.teams[x].playerIds`) still
+lets one player sit on two saved teams, and `#players-datalist` still
+suggests everyone regardless of side — the check fires on submit, not while
+typing.
+
 ## Stats & MVP
 
 `calcPlayerPoints` is a fixed, documented formula (see `MVP_POINTS`) —
@@ -224,19 +267,42 @@ at any time. Two consequences worth remembering if you touch this:
   innings would skew it). If you change how standings fold in normal
   matches, check the forfeited branch still makes sense alongside it.
 
+`renderForfeitModal()` is the one place in the app where picking an
+option and confirming are deliberately two separate taps
+(`ui.forfeitTeam`, reset alongside `ui.forfeitFlow` in every place that
+already reset it, plus `pick-forfeit-team`/`confirm-forfeit`) rather
+than firing on the first tap — unlike the wicket modal's simple types,
+a forfeit has no working undo path in practice: `pushSnapshot()` does
+run first, but the Result screen it lands on has no Undo control, so
+there's no way to actually walk it back once it lands. `forfeitTeamLine()`
+(next to it) reports each team as `"Batting · R-W"` (the current,
+in-progress innings), `"Bowling · R-W[ all out]"` (a team that has a
+past, completed innings — including at the break, where they're
+prospectively bowling next), or `"Yet to bat"` (no `innings` entry for
+that team key at all) — this one function covers every point
+`forfeitMatch` can fire from, so don't special-case "at the break"
+separately from "mid-second-innings."
+
 ## Navigation: `state.view` vs `match.status`
 
 Screen selection in `render()` checks `state.match` *first*: if a match
-exists and isn't `"complete"`, you always get the live/innings-break
-screen, full stop — there is currently no way to navigate to
-Home/Teams/Presets/Stats while a match is in progress (same
-single-track-at-a-time spirit as the original app, just extended).
-Only when there's no in-progress match does `state.view` (`"home"`,
-`"teams"`, `"presets"`, `"matchSetup"`, `"tournamentSetup"`,
-`"tournamentDashboard"`, `"stats"`) pick the screen. If you add a new
-top-level screen, it only needs a `state.view` case — don't try to make
-it reachable mid-match unless you also decide what "pause a live match
-to go look at stats" should mean (it currently isn't supported).
+is in progress (`status !== "complete"`) you get the live/innings-break
+screen — **unless `ui.awayFromMatch` is set**, in which case the normal
+`state.view` chain runs instead. The menu (☰) stays in the top bar during
+a live match; tapping any side-menu item sets `ui.awayFromMatch` (in the
+`click` handler, next to the code that closes the drawer), and the match
+is resumed via the top bar's green "Live · A v B" pill, a "Live match"
+side-menu item, or Home's "Resume live match" card (all `resume-match`).
+`awayFromMatch` lives in `ui`, deliberately **not** persisted: a reload
+always lands back on the match, so a scorer can never be stranded on
+another screen with a match silently running underneath. While away,
+`render()` suppresses every match modal (opening/batsman/bowler/wicket/
+forfeit), the forfeit icon is hidden, and match creation is blocked —
+`renderMatchSetup` shows a "Match in progress" card and
+`handleMatchSetupSubmit` returns early, so nothing can overwrite
+`state.match`. Result (`status === "complete"`) is unchanged: it still
+has no menu and exits only through its own "New match"/"Back to…" button.
+If you add another path that calls `createMatch`, guard it the same way.
 
 ## Share & export
 
@@ -251,37 +317,298 @@ a plain `<a download>` of the PNG blob. "Export PDF" is just
 keep them dependency-free; that was a deliberate choice, not an
 oversight.
 
+## Live scoring screen
+
+**It is one fixed viewport — no page scroll.** `render()` toggles a
+`live-mode` class on `#app` (in-progress, not away, not innings break):
+`#app` becomes a `100dvh` flex column, the top bar and cards keep their
+natural height, and the run pad (the only flexible child,
+`flex:1 0 100px` with `grid-auto-rows:1fr`) stretches to fill what's
+left. Two `max-height` media queries (760px, 700px, scoped under
+`#app.live-mode` so they beat the later component rules) drop the
+previous-over row and partnership row and shrink paddings so it still
+fits on 640–667px phones; the "Show full scorecard" expansion is the one
+thing allowed to outgrow the screen, so `.screen.live` scrolls
+internally. The top bar is `position:relative` in live mode — `sticky`
+inside an `overflow:hidden` container offsets by the container's padding
+and overlaps the first card. If you add content to this screen, re-check
+it at 360×640 and 375×667, not just a tall phone.
+
+`renderLive()`'s run pad is `[0,1,2,3,4,5,6]` plus an `UNDO` tile, laid
+out as a 4-column `.run-pad.small` grid (8 tiles, 2 rows) — `5` was
+added and the old separate "Wicket + Undo" `.action-row` pair was
+folded into this one grid (`UNDO` is just another tile now, styled with
+`.run-btn.undo`). **There is deliberately no "7+" custom-runs tile yet**
+— a Design-canvas mockup for this screen included one, but entering an
+arbitrary run count needs a small input flow the app doesn't have at
+all today (no way to record, say, "8 off the bat" from an overthrow);
+don't wire a `data-runs="7"` button to `handleBallClick` as a
+stand-in, that would silently record the wrong number. Build a real
+custom-runs input first if this is ever added.
+
+`renderOverRow()` (next to `ordinalSuffix()`, just above `renderLive`)
+draws one row of the ball-by-over rail — the *current* over from
+`inn.currentOverEvents`, and the *previous* one (dimmed) from
+`inn.overs[inn.overs.length - 1].events` when it exists. It always pads
+to `inn.ballsPerOver` slots (dashed placeholders past whatever's been
+bowled), so an 8-ball preset renders 8 slots with no other change. The
+extras row (`Wide`/`No ball`/`Bye`/`Leg bye`) also adapts its own
+column count to however many are enabled for the match (`match.wideEnabled`/
+`noBallEnabled`; bye/leg-bye are always offered), rather than a fixed
+4-up grid with a gap when one's disabled.
+
+## Innings break screen
+
+`renderInningsHighlights(match, inn)` (next to `renderInningsSummary`)
+is a **separate, condensed** view — top 3 scorers, top 2 bowlers,
+extras inline — just for `renderInningsBreak`. It is not a replacement
+for `renderInningsSummary`'s full batting/bowling tables, which Live's
+"Show full scorecard" toggle still shows exactly as before. It reuses
+the Live screen's `.matchup-head`/`.matchup-row`/`.partnership-row`
+classes, since those are just a plain eyebrow-header-plus-data-rows
+layout with nothing live-scoring-specific about them.
+
+## Result screen
+
+`renderResult()` defaults to condensed too, via a **third**, even
+smaller view — `renderResultInningsCard(match, inn)`, one combined card
+per innings (2 top batters + 1 top bowler, no extras line) — reusing
+the same `ui.showFullScorecard` flag Live's toggle already uses, not a
+new one. Toggling it swaps both innings between this condensed pair and
+`renderInningsSummary`'s full tables, so nothing is ever permanently
+lost — this matters because "Export PDF" is just `window.print()` on
+whatever's currently in the DOM (see "Share & export" above): printing
+without expanding first prints the condensed cards, which is a real,
+visible consequence of this default, not a hidden one. `renderResultInningsCard`
+is its own function rather than a parameterized `renderInningsHighlights`
+call — its shape (one combined card, 2 batters/1 bowler, no extras) differs
+enough from the innings-break version (two cards, 3/2, extras line) that
+sharing one function would need more branching than just writing both.
+
+`renderResultDetail(match)` (the "186-5 (19.1) chasing 185 · 5 balls
+left" line under the result headline) is computed fresh from the raw
+innings numbers, not reparsed from `match.result` — `match.result`
+stays exactly the sentence `matchResult()`/`forfeitMatch()` produced,
+since standings/fixtures read that string verbatim. It renders nothing
+for a forfeited match (no real chase to describe) or when
+`match.innings[1]` doesn't exist (a first-innings forfeit — same guard
+the scorecard section already needs). `renderResultInningsCard` picks
+the *winning* team's score to highlight in green the same way: compare
+`i1.runs`/`i2.runs` directly, and show no highlight at all for a tie or
+a forfeit.
+
+## Match Setup, Presets & Tournament Dashboard
+
+**Match Setup and the tournament Fixtures tab's "start a match" form stay
+fully editable, on purpose** — a Design-canvas mockup for Match Setup
+showed a chosen preset's conditions as a read-only confirmation card,
+with a separate "Custom…" chip needed to unlock editing. That was
+deliberately not adopted: picking a preset still just pre-fills every
+field (`ballsPerOver`/`overs`/`players`/wide/no-ball/free-hit/fielder
+checkboxes), and every field stays directly editable inline, same as
+before this pass. Don't reintroduce a locked/read-only conditions panel
+without discussing scope — it would remove the "start from T20 but tweak
+overs to 15 just this once" flow, which today needs no saved preset at
+all. `.tile-fieldset` (both screens' "Who bats first?" fieldset) is
+purely a CSS reskin of that same idea, not a step toward locking
+anything — it's still a real, submittable `<input type=radio>` group,
+just styled as two tiles instead of native bullets via `label:has(input:checked)`.
+
+`renderMatchPresetsTab()`/`renderTournamentPresetsTab()`'s "BUILT IN"
+badge is informational only (id-matched against `DEFAULT_MATCH_PRESETS`/
+`DEFAULT_TOURNAMENT_PRESETS`) — it does not gate Edit/Delete. Once
+seeded, a built-in preset is an ordinary preset the user can freely
+change or remove (see "Storage schema & migration" above); don't wire
+the badge into any permission check.
+
+**The Tournament Dashboard has no "next scheduled fixture" card**, even
+though its Design-canvas mockup showed one (`"Sinhalese SC v Moors SC ·
+Round 7 · not started"`). There's no data to draw it from: a tournament
+(`createTournament`) only ever holds `teamIds` and `matchIds` (matches
+already played) — there's no generated round-robin schedule, no concept
+of "rounds," and fixtures are created ad hoc by picking any two teams
+whenever a scorer wants (see `renderTournamentFixtures`'s own
+team-picker form). Fabricating a "next up" fixture would mean guessing
+at a schedule that doesn't exist. The dashboard's persistent "Start a
+fixture" button (visible on every tab except Fixtures itself, and only
+when `!state.match`) just jumps to the Fixtures tab, where that existing
+ad hoc form already lives — it doesn't relocate the form itself.
+
+## Home, Teams & Stats vs. their Design-canvas mockups
+
+Home gained a "Recent matches" section (latest 3 of `state.matchHistory`
+by `completedAt`) and a "stored on this device" footnote — both need
+only existing data. Stats now leads with the MVP leaderboard
+(`.leaderboard.mvp`, gold-tinted, with M/Runs/Wkt/Pts columns) and ends
+with an "archived matches only" footnote. `renderLeaderboards` is shared
+with the tournament Stats tab and club home, so they pick this up too.
+
+Deliberately **not** adopted from those mockups, each because it needs
+something the app doesn't have (or would remove working behavior):
+- Home dropping Players / the club switcher to four cards — those are
+  real entry points. (Settings *was* removed from Home on request: it's
+  reachable only from the side menu, `view: "settings"`. Don't re-add it.) (My clubs *was* removed from Home and the
+  side menu on request: it is now reachable **only** through Account's
+  "My clubs" button, `go-my-clubs`. Don't re-add it to either.)
+- A combined "Teams & players" screen with an expandable team card and
+  an all-players search box — Teams and Players are separate screens,
+  and a live search field needs an `input` listener the app doesn't
+  have (only `click`/`submit`/`change` are delegated).
+- Highest-score ("HS") and best-bowling ("BEST") columns, and the
+  All-time/tournament scope chips on Stats — `aggregatePlayerStats`
+  doesn't track per-innings bests, and Stats has no scope state.
+
 ## Theme & sound
 
 The visual theme lives entirely in `:root` CSS custom properties at the
 top of `<style>` (`--bg`, `--panel`, `--accent`, `--accent-2`, radii,
 shadow tokens) — retheme by changing those, not by hunting through
-component rules. Panels are glass (`background:var(--panel)` +
-`backdrop-filter:blur(...)`) over a fixed radial-gradient body
-background; component selectors are unchanged from before this pass, so
-JS never needed to touch class names to pick up the new look.
+component rules. `THEME_PRESETS` (REFERENCE DATA) only overrides the
+*color* variables (`--bg`/`--panel`/`--text`/status colors, applied by
+`applyTheme()`); the *structural* tokens below it (`--radius-*`,
+`--shadow-card`, `--shadow-btn`) are shared by every preset, which is
+why a redesign of the shape language doesn't need to touch
+`THEME_PRESETS` at all.
+
+The current visual language is flat, not glass: panels are a solid/
+translucent fill with **no `backdrop-filter`**, 2px borders, and hard,
+unblurred offset shadows (`--shadow-card`/`--shadow-btn`, e.g.
+`3px 3px 0 rgba(0,0,0,.35)`) instead of the soft blurred glow this app
+used to have. The one deliberate exception is `.modal-backdrop`, whose
+blur is a scrim behind the bottom-sheet modals, not a panel surface —
+don't add `backdrop-filter` back to card/panel classes without a reason,
+and don't remove it from `.modal-backdrop` by "consistency" reflex.
+`.modal` itself (the sheet, not the scrim) got the same 1px→2px border
+bump as everything else once modal content started actually using the
+flat-design language (`.modal.danger` — the forfeit sheet — needed a
+colored 2px border to read as a variant, which a 1px border couldn't
+carry as clearly).
+
+**Home's bento grid is one CSS rule, not per-screen markup:**
+`.home-card.primary-card { grid-column: 1 / -1 }` makes whichever card
+carries `primary-card` span the full row as a hero tile, in *any*
+`.home-grid` — Home, the Premier dashboard, club home all reuse the same
+two classes and get the hero treatment for free. Don't hand-roll a
+different hero layout per screen; give the card `primary-card` instead.
+Similarly, `.home-card-icon`'s rotating accent-color badge (gold → blue
+→ green → red) is assigned purely by CSS `:nth-of-type` position on
+`.home-grid button.home-card:not(.primary-card)` — there's no per-card
+color field in the data or markup, so reordering or adding cards just
+re-cycles the same four colors rather than needing a color choice per
+card. `.brand-highlight` (the rotated sticker behind the Home wordmark)
+is likewise pure decorative CSS with no JS behind it.
+
+**Shared plain-screen primitives — reuse these instead of ad hoc markup
+when a screen needs a section divider, a lone form, or a settings-style
+row:**
+- `.section-label` — the uppercase-eyebrow-with-bullet look (same as
+  `.home-section h3`) for a bare in-page section heading, e.g. `<h3
+  class="section-label">Roster</h3>` in club home or Settings. Don't
+  leave a section heading as a plain unstyled `<h3>`.
+- `.auth-card` — wraps a standalone form/profile block (sign in, sign
+  up, account) in the same bordered-panel language every other screen
+  uses, instead of a form floating directly on the page background.
+- `.settings-row` — a bordered row for one labelled setting + its
+  control (see the Sound row in Settings); pairs with `.settings-row-label`/
+  `.settings-row-sub` for the two-line label.
+- `.avatar-badge` — a circular initial badge (Account screen); purely
+  decorative, computed from `profile.display_name` or the session email.
+- `.tab-row`/`.tab-btn` (tournament dashboard tabs, presets tabs) render
+  as solid chip toggles now, not underlined text tabs — same visual
+  family as `.preset-chip`.
+- `.leaderboard` (used by `renderLeaderboards`, shared across Stats, the
+  tournament dashboard's Stats tab, and club home) is a bordered card per
+  table now, not a bare table with a heading — and `tbody tr:nth-child(even)`
+  zebra-striping is a global `table` rule, so any new table picks it up
+  automatically.
+
+`renderTopBar(canNavigate, onAuthScreen)` (next to `renderBackBar`, in
+`UI`) is the **single sticky nav row** — hamburger-menu button (left,
+only when `canNavigate`), sign-in button and sound toggle (right) — that
+`render()` prepends before every screen's own html. The account slot on
+the right is a "Sign in" button when signed out and a 👤 icon button
+(→ Account) when signed in — hidden on the auth screens themselves and
+during a live match. Account is deliberately **not** a Home card: it's
+reachable only from that top-bar slot and the side menu, so don't add it
+back to `renderHome`. It replaced three
+independently `position:fixed` buttons that used to stack at top-right
+(sound/sign-in/menu, each floating on its own); if you add a new
+always-visible nav control, add it inside `renderTopBar()` rather than
+introducing another fixed-position floating button, or it'll drift back
+into the same stacking mess this replaced. While a match is actually in
+progress (`state.match && state.match.status !== "complete"`), the left
+side swaps the hamburger for a pulsing `.live-dot` + `"TeamA v TeamB"`,
+and a 🚩 forfeit icon joins the right cluster — this is also why the old
+per-screen "Forfeit match" link was removed from the bottom of both the
+live-scoring and innings-break screens, so don't re-add it there.
+The hamburger shows whenever there is no match or one is in progress
+(see "Navigation" above); it stays hidden only on the Result screen,
+whose own "New match"/"Back to..." button is the way out — a side-menu
+tap there would only set `state.view`, and `render()` would keep showing
+Result until `state.match` is cleared.
 
 `SFX` (next to `escapeHtml`, in `UI`) is a tiny synthesized sound
 engine — plain Web Audio oscillators, no audio files, so it stays
 inside the single-file/offline constraints. It's muted by
-`state.soundEnabled` (persisted, default on) and toggled by the
-always-visible `.sound-toggle` button that `render()` appends to every
-screen. **Don't add an infinite CSS animation to `.sound-toggle`** (or
-any other always-on-screen, always-clickable element) — one was tried
-here and reverted because it never lets the element's layout "settle,"
-which breaks Playwright/automation click-stability checks and is a
-mild UX annoyance besides. A static or short, non-repeating animation
-is fine; `infinite` on a persistent control is not.
+`state.soundEnabled` (persisted, default on) and toggled by the sound
+button inside `renderTopBar()`. **Don't add an infinite CSS animation to
+`.topbar-icon-btn`/`.topbar-signin`** (or any other always-on-screen,
+always-clickable element) — one was tried on the old sound toggle and
+reverted because it never lets the element's layout "settle," which
+breaks Playwright/automation click-stability checks and is a mild UX
+annoyance besides. A static or short, non-repeating animation is fine;
+`infinite` on a persistent control is not.
 
 ## Editing dismissal types
 
-`WICKET_LABELS` and the wicket modal's button list are the two places a
-new dismissal type needs to be added (e.g. "handled the ball",
-"obstructing the field" — currently omitted as too rare to bother
-with). Both must agree, and `recordBall`'s wicket branch needs to know
-whether the new type behaves like a normal dismissal (clears
-`inn.striker`, always the facing batsman) or like a run-out (clears
-whichever end the UI names).
+`WICKET_LABELS` and the wicket modal's button list (the `types` array
+at the top of `renderWicketModal`) are the two places a new dismissal
+type needs to be added (e.g. "handled the ball", "obstructing the
+field" — currently omitted as too rare to bother with). Both must
+agree, and `recordBall`'s wicket branch needs to know whether the new
+type behaves like a normal dismissal (clears `inn.striker`, always the
+facing batsman) or like a run-out (clears whichever end the UI names).
+
+`renderWicketModal()` is **one sheet**, not a menu screen that swaps to
+a separate detail screen for caught/run-out — `ui.wicketFlow` doubles as
+both "is the modal open" and "which type is currently selected"
+(`"menu"` when open with nothing selected yet, or the type string once
+one is). Tapping Bowled/LBW/Stumped/Hit wicket still calls
+`confirmWicket(type)` immediately, same one-tap speed as always — there
+being nothing to enter for those, a second confirm tap would only slow
+down the common case. Only Caught and Run out set `ui.wicketFlow` to
+themselves and grow the sheet (fielder box, and for run-out the
+`ui.runoutEnd` end-picker + `ui.runoutRuns` picker) below the same type
+grid, ending in a Confirm button — still exactly two taps for those two,
+just without a full-screen swap. If you add a type that needs its own
+extra input, follow this pattern (extend the sheet, don't add a new
+screen) and remember to reset any new `ui.*` field everywhere
+`runoutEnd`/`runoutRuns` already get reset (`close-wicket-modal`,
+`handleUndo`, and the runout success path in
+`handleWicketFielderSubmit`) or it'll leak into the next wicket.
+
+`renderNewBowlerModal()` lists every bowler in `inn.bowling.order` as a
+**one-tap row** (name + figures) via `confirmNewBowler(name)` — shared
+by both that click path and `handleNewBowlerSubmit`'s form path, so the
+"can't bowl two in a row" check only needs to live in one place
+(`handleNewBowlerSubmit` still re-checks it for the typed-name path;
+`confirmNewBowler` itself also guards it, so a stray `pick-bowler` call
+can't bypass it either). The previous over's bowler
+(`inn.lastOverBowler`) is filtered out of that tappable list and shown
+separately, struck through and disabled — don't just disable their row
+with the same styling as the others, the mockup (and the current CSS)
+deliberately makes it read as "not an option" rather than "option,
+temporarily off."
+
+`renderNewBatsmanModal()` deliberately has **no "yet to bat" quick-pick
+list**, even though the Design-canvas mockup for this screen had one
+grouped by team. There's no data to draw it from: a standalone match's
+`teamA`/`teamB` are plain strings with no linked roster (see "Teams,
+players & presets" above), and even a tournament match's `createMatch()`
+call only ever receives resolved name strings, not team IDs — so
+neither match type has a squad list available at this point. Don't
+approximate one from `state.players` (the global, cross-team list); it
+would just as happily suggest the *other* team's players.
 
 ## Testing
 
@@ -356,6 +683,247 @@ Schema/RLS migrations for each cloud milestone live in `supabase/`
 `auth.users`), run by hand in the Supabase SQL editor. There is no
 migration tooling/CLI wired up — add new files there in order as later
 milestones land, and don't collapse them into one file retroactively.
+
+Adding a player to a club roster goes through the
+`add_player_to_club(_club_id, _name)` RPC (`supabase/005`, redefined in `009`
+to return `{ id, created }`), which finds the player in the global `players`
+table by exact, case-insensitive name (or a merge alias), **creates them there
+if they aren't** (so they appear on the Premier screens too, with the adding
+club recorded as `origin_club_id`), and adds the `club_rosters` row — all
+in one server-side step. `created` matters: only a *new* player's profile is
+editable by the adding club (see "Ownership, claiming & merging" below). It has to be an RPC: the base `players` table is
+only readable by the claimant or an admin (so `phone` can't leak), which
+means a client-side `insert(...).select()` of a brand-new global player is
+rejected by RLS for ordinary users. Don't put the two-step
+find-or-insert back in the client, and don't go back to `ilike` for the
+name match (it treats `%`/`_` in a name as wildcards). If the migration
+hasn't been run, `addPlayerToClub` surfaces a "run 005" message instead of
+failing silently.
+
+**Guest data and club data are kept apart.** `state.players`/`state.teams`
+are the guest (on-device) lists and are only ever offered in guest matches.
+In a club match (`match.clubId`), `registerMatchPlayer(name, teamKey)` — the
+one function match-time name entry goes through (openers, new batsman/
+bowler, catch/run-out taker) — never touches them: the club's own side is
+added to that club's roster and the global players table via
+`addPlayerToClub` (005), and a **friendly's visiting side (team B) goes to
+the global table only** via `addGlobalPlayer` → `ensure_global_player`
+(`supabase/006_ensure_global_player.sql`), because visitors aren't members
+of the home club. Practice and club-tournament matches are the club's own
+people on both sides. Because both RPCs match the global table by exact
+case-insensitive name, one person is one global row and can be on any number
+of clubs' rosters. `suggestionPlayerNames()`/`suggestionTeamNames()` feed the
+two datalists: guest lists normally, the club roster / the club's own name
+in a club match or club match-setup, so guest names never surface inside a
+club and vice versa. `render()` lazily loads `ui.club` for a club match (once,
+guarded by `ui.clubRosterLoading` — it survives a reload, `ui` doesn't).
+**Guest players are strictly local.** They live only in `state.players` /
+`state.teams` on the device, are only used in guest mode, and are never sent
+to the cloud, added to any club, or added to the global (Premier) list —
+nothing in the guest path calls Supabase. To keep that boundary visible:
+while "Acting as" a club, Home swaps the guest Teams/Players tiles for a
+"Club roster" tile (→ that club's cloud roster), and the guest Teams and
+Players screens carry a "guest only" note. `purgeLeakedClubPlayers(st)` runs
+once per device (`state.guestPlayersCleaned`, on `load()`) to remove the club
+names that used to leak into `state.players`: a name is removed only if it
+appears in a club match and nowhere guest (no guest match, not on a saved
+local team). It's a name-based heuristic — a guest player who shares a name
+with a club player and was never used anywhere else goes too; guest players
+are temporary, so that's re-created by typing the name.
+
+**"Recent matches" and guest Stats are role-scoped too, never mixed.**
+`state.matchHistory` holds every match archived on this device, guest and
+club alike (club ones carry `clubId`), so each view filters it:
+- **Guest** (Home, no club selected): `!m.clubId` only — and the guest Stats
+  screen and Home's Stats-tile count use the same filter.
+- **Club** (Home, "Acting as" a club): that club's matches only —
+  `matchHistory` entries with `clubId === activeClub.id` merged by id with
+  the cloud `ui.club.matches` (so a match scored on another device shows
+  up); `render()` lazily loads `ui.club` for the selected club, guarded by
+  `ui.clubRosterLoading`.
+- **Premier** (its own screen, reached via the same switcher): the
+  `level: "premier"` matches in `ui.premier.premierMatches`, under "Recent
+  Premier matches".
+`recentMatchesFor()`/`renderRecentMatches()` do the dedupe-sort-render for
+all three; pass them an already-filtered list, don't widen the filter.
+
+Known gaps: names entered in a club match while signed out or offline aren't
+synced (same best-effort as `syncMatchToCloud`); there is no persistent club
+*team* entity (a club's "teams" are just the names typed at match setup).
+
+## Roles: guest, club, Premier — separate data, nothing shared
+
+Every kind of data belongs to exactly one role and each role's screens read
+only its own:
+
+| | Guest (this device) | Club (cloud, per club) | Premier (cloud, global) |
+|---|---|---|---|
+| Players | `state.players` | `club_rosters` → `players` (via `addPlayerToClub`) | `players_public` (everyone, incl. friendly visitors) |
+| Teams | `state.teams` | none — names typed at match setup | derived from `level:"premier"` matches |
+| Presets | `state.matchPresets` / `tournamentPresets` | `club_presets` → `ui.club.presets` | none (`PREMIER_STANDINGS_DISPLAY_PRESET` is fixed display config) |
+| Matches | `matchHistory` where `!clubId` | `matches` where `club_id` (+ local archive with that `clubId`) | `matches` where `level = "premier"` |
+| Tournaments | `state.tournaments` | `tournaments` where `organizer_club_id` | — |
+
+The role is `state.activeClubId` (Home's "Acting as"); Premier is its own
+screen. Rules that keep it clean: club setup screens read
+`matchPresetChoices()` / `clubPresetList(kind, clubId)`, **never**
+`state.matchPresets`; Home's tiles, its Tournaments list and the side menu
+swap the guest Teams/Players/Presets/Stats entries for the club's own
+**Players / Presets / Stats** (`clubPlayers` / `clubPresets` / `clubStats`
+views, opened by `go-club-view` from `state.activeClubId`; each renders
+through `renderClubScreen` and shows only that club's cloud data, with
+`clubMatchesFor(clubId)` merging the local archive and cloud matches by id)
+while a club is selected; `renderClubHome` (My clubs → a club) is now just
+that club's admins, tournaments and match list. Club presets are edited on
+`clubPresets` with the *same* forms (`renderMatchPresetForm(p, clubId)` etc.)
+but their own actions (`club-*-preset`) and ui fields
+(`editingClub*Preset`), and saved with `saveClubPreset` (a club's tournament
+presets carry points config only — `matchPresetId` is unused there, match
+presets are chosen at match setup). `matchPresetCardHtml`/`tournamentPresetCardHtml`
+are markup-only and shared; pass each role its own list and action names.
+`fetchClubDetail` is the single loader for a club's cloud data and `render()`
+lazy-loads it for whichever screen needs it (one guarded block,
+`ui.clubRosterLoading`). If you add a new kind of per-role data, add a row to
+this table and don't fall back to the guest store for club/Premier.
+
+**Player profiles (club + Premier).** Tapping a player on the club Players
+screen or the Premier Players screen opens the `playerProfile` view
+(`renderPlayerProfile`, state in `ui.profile`, not persisted): name, contact
+number, NIC, and a career stats grid. Name and stats are public; **contact
+number and NIC are personal data and are only ever returned by the database
+to whoever may *manage* the profile (the claimant, platform admins, or — only
+while unclaimed — members of the club that first added the player; see
+"Ownership, claiming & merging")** — `supabase/007_player_profiles.sql`
+adds `players.nic` and three SECURITY DEFINER functions
+(`can_see_player_contact`, `get_player_profile`, `update_player_profile`);
+everyone else gets nulls + `can_see_contact = false`, which the screen shows
+as "Private". Never select `phone`/`nic` from the base table or add them to
+`players_public`, and never gate visibility in the client alone — the client
+just renders what the RPC returned (a signed-out visitor gets the public row
+only). Editing contact details uses the same permission; the name is
+read-only (no rename support). Field rules live in `normalizeNic` /
+`isValidNic` / `isValidPhone` (Sri Lankan NIC: 9 digits + V/X or 12 digits;
+contact: 7–15 digits, optional +), mirrored by the SQL checks, and are
+tested in `test.js`. The club add-player form takes the name plus every optional
+detail (contact, NIC, city, batting/bowling, keeper, photo — saved with follow-up
+RPCs after `add_player_to_club`, and only when `created` is true). **Optional player details** (`supabase/008_player_details.sql`): batting hand,
+bowling arm + style (`BOWLING_TYPES`), wicket-keeper, city and a photo. Unlike
+contact/NIC these are **public** — they're columns on `players_public`, read
+with `fetchPlayerDetails` — but editing uses the same permission
+(`can_see_player_contact`, redefined in 009 — see below) via `update_player_details`, and all of it is one edit form on the
+profile (`handlePlayerProfileSubmit` saves contact then details). Everything
+is optional and displays as "Not set" when empty. If 008 hasn't been run the
+select just fails and the profile shows a "run 008" hint to editors instead of
+breaking (`details_unavailable`). The photo is stored inline as a small base64
+JPEG in `players.photo` (no storage bucket): `resizeImageToDataUrl` centre-crops
+to 240px and steps quality down to fit the 80,000-character column check, and
+the file-input `change` handler updates the DOM directly (no re-render) so
+half-typed fields survive. Anything read back for display goes through
+`safePhoto()` — only base64 jpeg/png/webp data URLs ever reach `<img src>`, never
+svg or remote URLs — keep it that way. The photo picker is a generic
+`.photo-field` (`photoFieldHtml`: hidden `photo` input + `.photo-preview` +
+`.photo-file-input`), shared by the profile editor and the club add form and
+handled by `closest(".photo-field")` — no ids, so both forms can use it;
+`playerDetailFieldsHtml`/`readPlayerDetails` are the shared fields/reader.
+Labels/validation
+(`formatBatting`, `formatBowling`, `playerDetailsError`, `safePhoto`) are pure
+and tested.
+
+Stats come from
+`playerCareer(nameOrNames, matches)`, matched by **name** (matches store names,
+not ids; pass `[name, ...aliases]` and it folds every spelling — see merging), and **every profile shows two separate tiers — "Club matches" and
+"Premier matches" — never a combined total**, whichever screen opened it (the
+order flips: club-opened shows club first). **Inside each tier, batting,
+bowling and fielding are separate sections** (a small "matches / MVP pts" line
+on top, then Batting, Bowling, Fielding, each with its own tiles or a "hasn't
+batted/bowled yet" line): batting = innings, runs, balls, highest (`*` if not
+out), average, strike rate, not outs, ducks, 4s, 6s, 50s, 100s; bowling =
+innings, overs, maidens, runs, wickets, best, average, economy, strike rate;
+fielding = catches, run-outs, dismissals. `playerCareer` computes the
+per-innings ones (highest, 50s/100s/ducks, best bowling) by walking the
+matches itself, since `aggregatePlayerStats` only keeps totals — a 100 counts
+as a hundred, not also a fifty, matching `calcPlayerPoints`. Premier = only the
+`level:"premier"` matches (`ui.premier.premierMatches`, loaded on demand).
+Club = a club-opened profile folds `clubMatchesFor(ui.currentClubId)`; a
+Premier-opened profile folds the *viewer's own clubs'* matches
+(`fetchViewerClubMatches`: `matches` where `level = "local"` and `club_id` in
+`ui.myClubs`, merged by id with the local archive). That asymmetry is
+deliberate, not a gap to "fix" client-side: matches are publicly readable, but
+club rosters are members-only, so there's no way to ask which clubs an
+arbitrary player belongs to; a signed-out visitor gets a "sign in" hint for
+the club block. If you want true per-player club stats across every club,
+it needs a server-side query (e.g. an RPC over `matches.data`), not more
+client fetching. Economy uses 6-ball overs (like the
+leaderboards); highest score/best bowling aren't tracked.
+
+**Gotcha (fixed):** the submit dispatcher reads `e.target.getAttribute("id")`,
+not `e.target.id` — the preset forms contain a hidden `<input name="id">`,
+which shadows the form's `id` property, so `form.id` was an input element,
+nothing matched, and saving *any* preset did a native GET submit (page
+reload, nothing saved). Never name a form control `id`/`name`/`action` on a
+form the delegated handlers dispatch by id without using `getAttribute`.
+
+## Ownership, claiming & merging (`supabase/009_ownership_claims_merges.sql`)
+
+**Who may manage (edit) a player profile** — one rule, in
+`can_see_player_contact(_player_id)`, which the contact/NIC reads
+(`get_player_profile`) and every edit RPC all go through, so visibility and
+editability can't drift apart (the client just renders `can_see_contact`):
+
+1. a platform admin, or
+2. the player who **claimed** it (`players.claimed_by`), or
+3. **only while the profile is unclaimed**, a member of the club that first
+   added the player (`players.origin_club_id`, stamped by `add_player_to_club`
+   when it *creates* the row, and by `ensure_global_player(_name, _club_id)`
+   for a friendly's visitors).
+
+Adding an already-existing platform player to a roster (`created: false`)
+gives **no** edit rights, and the club's edit right **ends the moment the
+player claims the profile** — a deliberate reading of "players have to claim
+the profile and edit"; if you'd rather clubs keep editing after a claim, that's
+the one clause to change in the SQL function. The client shows a message when a
+roster add didn't create a new player and doesn't send the typed details.
+
+**One person, one claimed profile.** `players_one_claim_per_user` is a partial
+unique index on `claimed_by`; `request_claim` refuses if you already own a
+profile ("request a merge instead"), if the player is claimed, or if you
+already have a claim pending. Claims are no longer inserted directly
+(the old insert policy is dropped) — always `request_claim` → admin
+`approve_claim`/`reject_claim`. The client wraps these in `ownershipRpc`
+(friendly "run 009" error if the function is missing) and learns who the viewer
+already is from `fetchMyPlayerIdentity()` → `ui.identity`
+(`{ myPlayer, pendingClaim, pendingMerges }`), which `renderOwnershipBlock`
+turns into the right action: "This is me — claim" (no claim yet), "request
+merge" (already own one), or just a status line. Profile-only: the Premier list
+shows Claimed/Unclaimed and the admin queues, not per-row claim buttons.
+
+**Merging duplicates.** If a second profile is also you, `request_merge(from)`
+asks to fold it into the profile you own; `approve_merge` (admin only) keeps the
+**survivor's id**, adds the merged name (and its own aliases) to
+`player_aliases` (public read, unique on `lower(alias)`), moves roster rows,
+fills only the survivor's *blank* fields from the duplicate (keeper is OR-ed),
+marks the request approved, and deletes the duplicate row. Only an *unclaimed*
+profile can be merged away. Because matches store **names**, stats survive the
+merge by name-folding: the profile loads `player_aliases` and passes
+`[name, ...aliases]` to `playerCareer` (`mergeCareers` sums counts, keeps the
+best single innings/figures and re-derives averages from the combined totals).
+`add_player_to_club` resolves a typed old name through the alias table to the
+survivor. **Known limits:** the leaderboards (`aggregatePlayerStats`) still list
+names separately — only profiles fold aliases; and a match where *both* names
+appeared would count that match twice in the "matches" tally. `merge_requests.
+from_player_id` deliberately has no FK (the row is deleted on approval); the
+`into_player_id` FK cascades.
+
+**Verifying SQL changes:** the logic lives in Postgres, so it's worth running
+it for real — a throwaway `postgres:16-alpine` with a stub `auth` schema
+(`auth.users(id, email, raw_user_meta_data)`, `auth.uid()` reading a session
+setting, `authenticated`/`anon` roles) applies 001–009 cleanly, and you can
+impersonate users with `set role authenticated` to check the rules above
+(remember the base `players` table is RLS-hidden from ordinary users, so
+capture ids as superuser first). The 009 scenarios (46 checks: manage rule per
+actor, claimed-club lockout, one-claim-per-user, direct-write blocks, merge
+alias/roster/blank-fill/deletion, alias resolution, no contact leak) all passed
+this way.
 
 ## Deployment
 
