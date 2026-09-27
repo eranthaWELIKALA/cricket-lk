@@ -82,6 +82,7 @@ gh api repos/<owner>/<name>/pages -X POST -f "source[branch]=master" -f "source[
 | File | Purpose |
 |---|---|
 | `index.html` | Everything — markup, CSS, and JS in one file. See below for internal structure. |
+| `admin.html` | Platform admin portal (claim/merge review, players, clubs, matches, users, audit log). Desktop-first, online-only, needs `supabase/011_admin_portal.sql`. |
 | `manifest.webmanifest` | Home-screen install metadata. |
 | `sw.js` | Service worker: offline cache only (no notifications in this app). |
 | `icon-*.png` | App icons (192, 512, 512 maskable) — a plain cricket ball. |

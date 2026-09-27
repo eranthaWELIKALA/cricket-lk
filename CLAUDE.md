@@ -51,9 +51,10 @@ Numbered sections, in order, findable by searching for the heading text:
    live, opening/new-batsman/new-bowler/wicket modals, innings break,
    result), one `render()` that picks the screen (from `match.status`
    when a match is in progress, otherwise from `state.view`) and layers
-   a modal on top when needed, and three delegated listeners (`click`
+   a modal on top when needed, and four delegated listeners (`click`
    via `data-action`, `submit` via form `id`, `change` for the
-   tournament team-checkbox list) attached once at boot.
+   tournament team-checkbox list and photo pickers, `input` for the club
+   add-player sheet's platform suggestions) attached once at boot.
 
 ## The engine's state model (read this before touching `recordBall`)
 
@@ -452,8 +453,9 @@ something the app doesn't have (or would remove working behavior):
   "My clubs" button, `go-my-clubs`. Don't re-add it to either.)
 - A combined "Teams & players" screen with an expandable team card and
   an all-players search box — Teams and Players are separate screens,
-  and a live search field needs an `input` listener the app doesn't
-  have (only `click`/`submit`/`change` are delegated).
+  and a live search field there would need its own handling — the one
+  delegated `input` listener is scoped to the club add-player sheet's name
+  field (see "Nickname, jersey no…" below), not a general search hook.
 - Highest-score ("HS") and best-bowling ("BEST") columns, and the
   All-time/tournament scope chips on Stats — `aggregatePlayerStats`
   doesn't track per-innings bests, and Stats has no scope state.
@@ -730,6 +732,13 @@ appears in a club match and nowhere guest (no guest match, not on a saved
 local team). It's a name-based heuristic — a guest player who shares a name
 with a club player and was never used anywhere else goes too; guest players
 are temporary, so that's re-created by typing the name.
+`purgeLocalClubMatches(st)` is a second one-time, per-device purge
+(`state.clubDataReset202609`), added when the cloud's clubs, players and
+matches were wiped: it drops every `matchHistory` entry with a `clubId` and
+clears `activeClubId`, leaving guest matches and a match in progress alone.
+Fresh and legacy installs get the flag set to `true` in `load()` (nothing to
+purge), so it can never eat club matches scored after the wipe. Don't reset
+the flag for a future wipe; add a new one.
 
 **"Recent matches" and guest Stats are role-scoped too, never mixed.**
 `state.matchHistory` holds every match archived on this device, guest and
@@ -863,6 +872,39 @@ nothing matched, and saving *any* preset did a native GET submit (page
 reload, nothing saved). Never name a form control `id`/`name`/`action` on a
 form the delegated handlers dispatch by id without using `getAttribute`.
 
+**Nickname, jersey no, roster removal & player modals** (`supabase/010_player_nickname_jersey.sql`).
+`players.nickname` (≤24) and `players.jersey_no` (0–999, not unique) are
+public profile fields on `players_public`, edited under the same manage rule
+via `update_player_nickname_jersey` — called from `updatePlayerDetails` after
+008's RPC. They're read with a fallback (`fetchPlayerDetails`/`fetchRosterRows`
+retry without them) so nothing breaks before 010 is run (`kit_unavailable`).
+`playerLabel()` renders `#7 Name (Nick)`; `parseJerseyNo` is the validator.
+The club Players screen adds via a floating `+` (`.fab`, rendered *outside*
+`.screen`, whose transform animation would otherwise capture a fixed child)
+and opens add / edit / remove as bottom-sheet modals from `ui.playerModal`
+(`{kind:"add"|"edit"|"remove"}`), layered in `render()` only off the live
+screen. `render()` keeps an open player modal's DOM when its `modalKey`
+hasn't changed, so background fetches can't wipe typed input — change the key
+if the sheet itself needs to re-render. "Remove from club" (roster row ✕ or
+the club-scope profile) is a two-tap confirm and deletes the `club_rosters`
+row only (002's "members remove" policy; every member is owner/admin). The
+global player, their stats and `origin_club_id` are untouched — so the club
+that added an unclaimed player can still edit them after removing them (it's
+also what lets clubs edit friendly visitors, who are never on a roster).
+
+**"Already on the platform" suggestions in the add sheet.** Typing 2+
+characters in the add-player name field runs `searchPlatformPlayers`
+(`players_public` `ilike`, input escaped with `escapeLike`, public columns
+only — never phone/NIC) from the app's single delegated `input` listener
+(debounced, stale responses dropped via `suggestSeq`), and fills
+`.platform-suggest` straight into the DOM (no `render()`, so typed fields
+survive). "Add to club" inserts that exact player's `club_rosters` row **by
+id** (`addExistingPlayerToClub`) — names aren't unique, so this is the way to
+pick the right one of two same-named players; it never creates a player or
+changes `origin_club_id`. Submitting the form still goes through
+`add_player_to_club` by name, which joins an exact-name match instead of
+creating one — the sheet's hint says so. Merge aliases aren't searched.
+
 ## Ownership, claiming & merging (`supabase/009_ownership_claims_merges.sql`)
 
 **Who may manage (edit) a player profile** — one rule, in
@@ -935,3 +977,52 @@ that key secret) — don't confuse it with a service-role key, which must
 never appear in this client-side file. Still no environment variables
 and no application server of our own — Supabase is a hosted backend we
 call directly from the client, not a backend we run.
+
+## Platform admin portal (`admin.html`, `supabase/011_admin_portal.sql`)
+
+A **separate page**, not a screen in `index.html`: desktop-first, online-only,
+for **platform** admins (`admin_users`) — club admins keep managing their clubs
+in the scorer. Same origin and supabase-js' default localStorage key as the
+scorer, so one sign-in covers both (and signing out of either signs out both).
+Reached from Account's "Open admin portal" (shown when `isAdmin`) or directly
+at `/admin.html`. It isn't in `sw.js`' cache list on purpose: offline, a
+navigation falls back to `index.html`, which is fine since the portal is useless
+without the database.
+
+**The security boundary is Postgres, never the page.** Every private read is
+either RLS that already allows admins (`players` base table incl. phone/NIC,
+`claim_requests`, `merge_requests`, `admin_audit_log`) or an admin-only
+SECURITY DEFINER RPC from 011 that starts with `if not public.is_admin()`.
+The page's `admin_users` check only picks which screen to show. If you add an
+admin feature, add an RPC that checks `is_admin()` and calls `admin_log(...)` —
+don't add a broad RLS policy for admins on a new table.
+
+Sections: Overview (counts), Claim requests, Merge requests (both show each
+profile side by side with a match record folded by name + aliases, and
+auto-flags: claimant already owns a profile, contact number match/mismatch,
+different NICs, and **both names in the same scorecard** — usually two
+different people), Players (search, edit contact/NIC via 007's
+`update_player_profile`, release a claim, direct merge, delete unclaimed),
+Clubs (+ members), Matches (delete), Users & admins (grant/revoke platform
+admin; you can't remove yourself), Audit log.
+
+011 details worth knowing:
+- `admin_audit_log` is append-only (admin read, no write policies). Claim/merge
+  reviews are logged by triggers on the request tables, so 009's approve/reject
+  RPCs didn't need changing for that. Deletes store the deleted row in
+  `detail` (a match row can be restored by hand; a player row keeps phone/NIC
+  but not the photo — the log is admin-only, but it is PII retention).
+- The merge body now lives in one internal function, `merge_player_rows`
+  (not executable by clients); `approve_merge` is redefined to call it and
+  `admin_merge_players` (direct admin merge, reason required) reuses it. It
+  also blank-fills 010's `nickname`/`jersey_no`, which 009's version predated.
+  Only an unclaimed profile can be merged away or deleted.
+- Destructive actions require a reason (stored in the log); delete-player
+  and delete-match also need a typed confirmation in the UI.
+
+The portal's stats (`careerFor` in admin.html) are a review aid that walks
+every match row client-side (paged, cached per visit). It uses the same
+name matching as `playerCareer` but no MVP points; if the match count grows
+large, move it to an RPC over `matches.data` rather than fetching more.
+All 011 rules were checked against a throwaway Postgres (see "Verifying SQL
+changes"); the page was driven in Playwright against a mocked client.

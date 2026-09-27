@@ -152,6 +152,10 @@ async function main(){
       matchHistory: { a: Object.assign(mk("club-1", ["Leak", "both", "Rostered"]), { id: "a" }), b: Object.assign(mk(null, ["Both", "Guest"]), { id: "b" }) },
       match: null
     };
+    const hist = { a: { id: "a", clubId: "c1" }, b: { id: "b" }, c: { id: "c", clubId: "c2" } };
+    const st2 = { matchHistory: hist, activeClubId: "c1" };
+    assert(win.purgeLocalClubMatches(st2) === 2 && Object.keys(st2.matchHistory).join() === "b" && st2.activeClubId === null,
+      "purgeLocalClubMatches drops only club matches and clears the selected club");
     const removed = win.purgeLeakedClubPlayers(st);
     assert(removed.join() === "Leak", "only a name seen solely in club matches is purged, got: " + removed.join());
     assert(!st.players.p_Leak, "the leaked club player is gone from the guest table");
@@ -222,6 +226,12 @@ async function main(){
     assert(win.playerDetailsError({ batting_hand: "right", bowling_arm: "left", bowling_type: "fast", city: "Kandy" }) === null, "valid details pass");
     assert(win.playerDetailsError({ batting_hand: "both" }) !== null && win.playerDetailsError({ bowling_type: "yorker" }) !== null, "unknown hand/style values are rejected");
     assert(win.playerDetailsError({ city: "x".repeat(41) }) !== null, "a city over 40 characters is rejected");
+    assert(win.playerDetailsError({ nickname: "Mahi", jersey_no: "07" }) === null, "a nickname and jersey no pass");
+    assert(win.playerDetailsError({ nickname: "x".repeat(25) }) !== null, "a nickname over 24 characters is rejected");
+    assert(["1000", "-1", "7.5", "abc"].every(j => win.playerDetailsError({ jersey_no: j }) !== null), "jersey no outside 0-999 whole numbers is rejected");
+    assert(win.parseJerseyNo("") === null && win.parseJerseyNo(" ") === null && win.parseJerseyNo("07") === 7 && win.parseJerseyNo("0") === 0 && win.parseJerseyNo("1000") === undefined, "parseJerseyNo: blank -> null, digits -> number, invalid -> undefined");
+    assert(win.escapeLike("50%_a\\b") === "50\\%\\_a\\\\b" && win.escapeLike("Kusal") === "Kusal", "escapeLike escapes %, _ and \\ for an ilike search");
+    assert(win.playerLabel({ name: "Kusal", jersey_no: 0, nickname: "KM" }) === "#0 Kusal (KM)" && win.playerLabel({ name: "Kusal" }) === "Kusal", "playerLabel shows jersey (incl. 0) and nickname only when set");
     const ok = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
     assert(win.safePhoto(ok) === ok, "a base64 jpeg data URL is accepted");
     assert(win.safePhoto("data:image/svg+xml;base64,PHN2Zz4=") === "" && win.safePhoto("https://evil.example/x.png") === "" && win.safePhoto('data:image/png;base64,AA" onerror="x') === "", "svg, remote and attribute-breaking values are refused");

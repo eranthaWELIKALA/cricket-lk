@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<!-- Tight CSP: the only script origin is jsDelivr (supabase-js, loaded
+     dynamically), the only network origin is this project's Supabase, and
+     form-action 'none' means a form can never fall back to a native GET that
+     would put a password in the URL. Keep SUPABASE_URL below in sync. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://xfsaldtvvcuyondayjjw.supabase.co wss://xfsaldtvvcuyondayjjw.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
+<title>Cricket.lk Admin</title>
+<link rel="icon" href="icon-192.png">
+<style>
+  :root{
+    --bg:#050B0A; --bg-2:#0A1613; --panel:#101E1B;
+    --line:rgba(255,255,255,.12); --line-strong:rgba(255,255,255,.22);
+    --text:#F4F8F6; --muted:#8FA9A0;
+    --accent:#FFC247; --accent-ink:#231200; --accent-2:#33E29B; --accent-2-ink:#022417;
+    --danger:#FF5D70; --info:#5FC7FF; --warn:#FFB02E;
+    --radius-lg:14px; --radius-md:10px; --radius-sm:7px;
+    --shadow-card:3px 3px 0 rgba(0,0,0,.35); --shadow-btn:2px 2px 0 rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:linear-gradient(180deg,var(--bg-2),var(--bg) 40%) fixed;color:var(--text);
+    font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;min-height:100vh;}
+  a{color:var(--info);}
+  h1{font-size:1.45rem;margin:0 0 4px;} h2{font-size:1.1rem;margin:22px 0 10px;} h3{font-size:.95rem;margin:0 0 6px;}
+  .muted{color:var(--muted);} .small{font-size:.82rem;}
+  .shell{display:grid;grid-template-columns:220px 1fr;min-height:100vh;}
+  nav.side{border-right:2px solid var(--line);padding:18px 12px;position:sticky;top:0;height:100vh;overflow-y:auto;}
+  .brand{font-weight:800;font-size:1.1rem;margin:0 8px 18px;} .brand span{color:var(--accent);}
+  nav.side a{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:var(--radius-sm);color:var(--text);text-decoration:none;margin-bottom:2px;border:2px solid transparent;}
+  nav.side a:hover{background:rgba(255,255,255,.05);}
+  nav.side a.active{border-color:var(--accent);background:rgba(255,194,71,.08);}
+  .badge{display:inline-block;min-width:20px;padding:1px 7px;border-radius:999px;font-size:.75rem;font-weight:700;text-align:center;background:var(--line-strong);}
+  .badge.hot{background:var(--accent);color:var(--accent-ink);}
+  .badge.ok{background:var(--accent-2);color:var(--accent-2-ink);}
+  .badge.bad{background:var(--danger);color:#fff;}
+  .side-foot{margin:22px 8px 0;font-size:.8rem;} .side-foot button{margin-top:6px;}
+  main{padding:24px 28px 60px;max-width:1200px;width:100%;}
+  .card{background:var(--panel);border:2px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-card);padding:16px;margin-bottom:14px;}
+  .card.warn{border-color:var(--warn);}
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;}
+  .stat{background:var(--panel);border:2px solid var(--line);border-radius:var(--radius-md);padding:12px 14px;box-shadow:var(--shadow-card);text-decoration:none;color:var(--text);display:block;}
+  .stat b{display:block;font-size:1.6rem;} .stat.hot{border-color:var(--accent);}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .kv{display:grid;grid-template-columns:130px 1fr;gap:3px 10px;font-size:.88rem;} .kv dt{color:var(--muted);} .kv dd{margin:0;word-break:break-word;}
+  .tiles{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+  .tile{border:2px solid var(--line);border-radius:var(--radius-sm);padding:4px 8px;font-size:.8rem;} .tile b{font-size:.95rem;margin-right:3px;}
+  .flag{padding:6px 10px;border-radius:var(--radius-sm);margin:8px 0 0;font-size:.85rem;border:2px solid;}
+  .flag.warn{border-color:var(--warn);color:var(--warn);} .flag.ok{border-color:var(--accent-2);color:var(--accent-2);} .flag.bad{border-color:var(--danger);color:var(--danger);}
+  table{width:100%;border-collapse:collapse;font-size:.88rem;}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top;}
+  th{color:var(--muted);font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;}
+  tbody tr:nth-child(even){background:rgba(255,255,255,.025);}
+  tr.clickable{cursor:pointer;} tr.clickable:hover{background:rgba(255,194,71,.07);}
+  button{font:inherit;cursor:pointer;border-radius:var(--radius-sm);border:2px solid var(--line-strong);background:transparent;color:var(--text);padding:6px 12px;box-shadow:var(--shadow-btn);}
+  button:hover{border-color:var(--text);} button:disabled{opacity:.5;cursor:default;}
+  button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700;}
+  button.approve{background:var(--accent-2);border-color:var(--accent-2);color:var(--accent-2-ink);font-weight:700;}
+  button.danger{border-color:var(--danger);color:var(--danger);}
+  button.link{border:0;box-shadow:none;padding:0;color:var(--info);text-decoration:underline;}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+  .chips{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;}
+  .chips a{padding:5px 12px;border:2px solid var(--line-strong);border-radius:999px;color:var(--text);text-decoration:none;font-size:.85rem;}
+  .chips a.active{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700;}
+  input,textarea,select{font:inherit;color:var(--text);background:var(--bg);border:2px solid var(--line-strong);border-radius:var(--radius-sm);padding:7px 9px;width:100%;}
+  label{display:block;margin-bottom:10px;font-size:.85rem;color:var(--muted);} label input,label textarea{margin-top:4px;color:var(--text);}
+  form.inline{display:flex;gap:8px;align-items:center;margin-bottom:14px;} form.inline input{max-width:360px;}
+  details summary{cursor:pointer;color:var(--info);font-size:.85rem;margin-top:8px;}
+  .auth{max-width:380px;margin:12vh auto;padding:0 16px;}
+  .photo{width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--line-strong);float:right;}
+  dialog{background:var(--panel);color:var(--text);border:2px solid var(--line-strong);border-radius:var(--radius-lg);box-shadow:var(--shadow-card);max-width:460px;width:calc(100% - 32px);padding:18px;}
+  dialog::backdrop{background:rgba(0,0,0,.6);}
+  dialog.danger{border-color:var(--danger);}
+  #toast{position:fixed;bottom:18px;right:18px;max-width:420px;padding:10px 14px;border-radius:var(--radius-md);border:2px solid var(--accent-2);background:var(--panel);box-shadow:var(--shadow-card);display:none;z-index:10;}
+  #toast.err{border-color:var(--danger);}
+  @media (max-width:820px){
+    .shell{grid-template-columns:1fr;}
+    nav.side{position:static;height:auto;border-right:0;border-bottom:2px solid var(--line);display:flex;flex-wrap:wrap;gap:4px;padding:10px;}
+    .brand{width:100%;margin:0 4px 6px;} .side-foot{width:100%;margin:6px 4px 0;}
+    main{padding:16px;} .cols{grid-template-columns:1fr;} .kv{grid-template-columns:110px 1fr;}
+    table{display:block;overflow-x:auto;}
+  }
+</style>
+</head>
+<body>
+<div id="app"><p class="auth muted">Loading…</p></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+/* ============================================================
+   Cricket.lk platform admin portal.
+   For PLATFORM admins (public.admin_users) only -- not club admins. Every
+   read of private data and every action goes through Postgres RLS or an
+   admin-only SECURITY DEFINER RPC (supabase/011_admin_portal.sql, plus
+   009's approve/reject RPCs), which check is_admin() server-side. The
+   checks in this page only decide what to show; they are not the security
+   boundary.
+   Same origin as index.html, and supabase-js' default localStorage key, so
+   signing in on either page signs you in on both (and signing out here signs
+   the scorer out too).
+   ============================================================ */
+
+// Keep in sync with index.html's CLOUD section (and the CSP meta above).
+const SUPABASE_URL = "https://xfsaldtvvcuyondayjjw.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_jDfjBu62WssP3fKEbbfVKw_ZyoxCXUm";  // publishable key -- access is enforced by RLS
+const SUPABASE_JS_CDN_URL = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js";
+const ADMIN_SQL = "supabase/011_admin_portal.sql";
+const PLAYER_COLS = "id, name, nickname, jersey_no, phone, nic, claimed_by, origin_club_id, city, batting_hand, bowling_arm, bowling_type, is_keeper, photo, created_at";
+
+let sb = null;       // supabase client
+let session = null;  // auth session
+let amAdmin = false;
+// Loaded once per page visit (Refresh data clears it): every match row, for
+// stats while reviewing claims/merges, and club names by id.
+const cache = { matches: null, clubs: null };
+
+/* ------------------------------------------------------------ helpers */
+function esc(s){
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function fmtDate(v, withTime){
+  if (!v) return "—";
+  const d = new Date(v);
+  if (isNaN(d)) return "—";
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) +
+    (withTime ? " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : "");
+}
+// Mirrors index.html's validators and the SQL checks in 007.
+function normalizeNic(v){ return (v || "").replace(/\s+/g, "").toUpperCase(); }
+function isValidNic(v){ const n = normalizeNic(v); return n === "" || /^([0-9]{9}[VX]|[0-9]{12})$/.test(n); }
+function isValidPhone(v){ const t = (v || "").trim(); return t === "" || /^\+?[0-9 ]{7,15}$/.test(t); }
+const isUuid = v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v || "");
+function digits(v){ return (v || "").replace(/\D/g, ""); }
+function escapeLike(v){ return String(v || "").replace(/[\\%_]/g, c => "\\" + c); }
+// Only a base64 raster data URL ever reaches <img src> (same rule as index.html).
+function safePhoto(v){ return typeof v === "string" && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/.test(v) && v.length <= 80000 ? v : ""; }
+function playerLabel(p){
+  if (!p) return "(deleted profile)";
+  return `${p.jersey_no == null ? "" : `#${p.jersey_no} `}${p.name}${p.nickname ? ` (${p.nickname})` : ""}`;
+}
+function sqlMissing(error){
+  return error && (error.code === "PGRST202" || error.code === "42883" || error.code === "42P01");
+}
+function errText(error){
+  return sqlMissing(error) ? `The database is missing ${ADMIN_SQL} — run it in the Supabase SQL editor.` : (error && error.message) || String(error);
+}
+async function rpc(fn, args){
+  const { data, error } = await sb.rpc(fn, args || {});
+  if (error) throw error;
+  return data;
+}
+async function q(promise){
+  const { data, error } = await promise;
+  if (error) throw error;
+  return data || [];
+}
+function toast(msg, isErr){
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className = isErr ? "err" : "";
+  el.style.display = "block";
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => { el.style.display = "none"; }, isErr ? 7000 : 3500);
+}
+
+/* ------------------------------------------------------ shared lookups */
+async function loadClubs(){
+  if (cache.clubs) return cache.clubs;
+  const rows = await q(sb.from("clubs").select("id, name"));
+  cache.clubs = new Map(rows.map(c => [c.id, c.name]));
+  return cache.clubs;
+}
+const clubName = id => (id && cache.clubs && cache.clubs.get(id)) || (id ? "(deleted club)" : "—");
+
+// Every match row, paged past PostgREST's 1000-row cap. Fine at today's
+// scale; if this gets slow, stats need a server-side RPC over matches.data.
+async function loadMatches(){
+  if (cache.matches) return cache.matches;
+  const all = [];
+  for (let from = 0; ; from += 1000){
+    const page = await q(sb.from("matches").select("id, club_id, level, match_type, played_at, created_at, data").order("played_at", { ascending: false }).range(from, from + 999));
+    all.push(...page);
+    if (page.length < 1000 || all.length >= 20000) break;
+  }
+  cache.matches = all;
+  return all;
+}
+
+async function lookupUsers(ids){
+  const uniq = [...new Set(ids.filter(Boolean))];
+  if (!uniq.length) return new Map();
+  try {
+    const rows = await rpc("admin_lookup_users", { _ids: uniq });
+    return new Map(rows.map(u => [u.id, u]));
+  } catch (e){
+    if (sqlMissing(e)) return new Map(); // before 011: review still works, requesters show as ids
+    throw e;
+  }
+}
+function userLine(u, id){
+  if (!u) return id ? `<span class="muted">${esc(id.slice(0, 8))}…</span>` : "—";
+  return `${esc(u.display_name || "—")} <span class="muted">&lt;${esc(u.email || "")}&gt;</span>`;
+}
+
+async function loadPlayers(ids){
+  const uniq = [...new Set(ids.filter(Boolean))];
+  if (!uniq.length) return new Map();
+  const rows = await q(sb.from("players").select(PLAYER_COLS).in("id", uniq));
+  return new Map(rows.map(p => [p.id, p]));
+}
+async function loadAliases(ids){
+  const uniq = [...new Set(ids.filter(Boolean))];
+  const map = new Map(uniq.map(id => [id, []]));
+  if (!uniq.length) return map;
+  const { data } = await sb.from("player_aliases").select("player_id, alias").in("player_id", uniq);
+  (data || []).forEach(r => map.get(r.player_id) && map.get(r.player_id).push(r.alias));
+  return map;
+}
+
+/* ------------------------------------------------------------- stats
+   A reviewer's summary of what a name (plus its merge aliases) has done,
+   folded from match data by case-insensitive name -- the same matching
+   index.html's playerCareer uses, since matches store names, not ids. This
+   is a review aid, not the leaderboard: MVP points aren't computed here. */
+function nameKeys(names){ return new Set(names.map(n => (n || "").trim().toLowerCase()).filter(Boolean)); }
+
+function careerFor(names, matchRows){
+  const keys = nameKeys(names);
+  const c = { played: [], clubs: new Set(), innings: 0, notOuts: 0, runs: 0, balls: 0, fours: 0, sixes: 0, high: null,
+              fifties: 0, hundreds: 0, ducks: 0, legalBalls: 0, runsConceded: 0, wickets: 0, maidens: 0, best: null,
+              catches: 0, runouts: 0 };
+  matchRows.forEach(row => {
+    const m = row.data;
+    if (!m || !Array.isArray(m.innings)) return;
+    let played = false;
+    m.innings.forEach(inn => {
+      ((inn.batting && inn.batting.order) || []).forEach(n => {
+        if (!keys.has(String(n).toLowerCase())) return;
+        const b = inn.batting.stats[n]; played = true;
+        c.innings++; c.runs += b.runs; c.balls += b.balls; c.fours += b.fours; c.sixes += b.sixes;
+        if (!b.out) c.notOuts++;
+        if (b.out && b.runs === 0) c.ducks++;
+        if (b.runs >= 100) c.hundreds++; else if (b.runs >= 50) c.fifties++;
+        if (!c.high || b.runs > c.high.runs || (b.runs === c.high.runs && !b.out && c.high.out)) c.high = { runs: b.runs, out: !!b.out };
+      });
+      ((inn.bowling && inn.bowling.order) || []).forEach(n => {
+        if (!keys.has(String(n).toLowerCase())) return;
+        const w = inn.bowling.stats[n]; played = true;
+        c.legalBalls += w.legalBalls; c.runsConceded += w.runs; c.wickets += w.wickets; c.maidens += w.maidens;
+        if ((w.legalBalls > 0 || w.wickets > 0) && (!c.best || w.wickets > c.best.wickets || (w.wickets === c.best.wickets && w.runs < c.best.runs))) c.best = { wickets: w.wickets, runs: w.runs };
+      });
+      ((inn.fielding && inn.fielding.order) || []).forEach(n => {
+        if (!keys.has(String(n).toLowerCase())) return;
+        const f = inn.fielding.stats[n]; played = true;
+        c.catches += f.catches; c.runouts += f.runouts;
+      });
+    });
+    if (played){ c.played.push(row); if (row.club_id) c.clubs.add(row.club_id); }
+  });
+  const outs = c.innings - c.notOuts;
+  c.average = outs > 0 ? c.runs / outs : null;
+  c.strikeRate = c.balls > 0 ? c.runs / c.balls * 100 : null;
+  c.economy = c.legalBalls > 0 ? c.runsConceded / (c.legalBalls / 6) : null;
+  return c;
+}
+
+/* Matches in which a name from each list appears. For a merge that's a red
+   flag: two names in one scorecard are usually two different people (and
+   index.html's career tally would count that match twice). */
+function sharedMatches(namesA, namesB, matchRows){
+  const a = nameKeys(namesA), b = nameKeys(namesB);
+  return matchRows.filter(row => {
+    const m = row.data;
+    if (!m || !Array.isArray(m.innings)) return false;
+    const seen = new Set();
+    m.innings.forEach(inn => ["batting", "bowling", "fielding"].forEach(k => ((inn[k] && inn[k].order) || []).forEach(n => seen.add(String(n).toLowerCase()))));
+    return [...a].some(x => seen.has(x)) && [...b].some(x => seen.has(x));
+  });
+}
+
+const fx = (v, d) => v == null ? "—" : v.toFixed(d);
+function matchLabel(row){
+  const m = row.data || {};
+  return `${m.teamA || "?"} v ${m.teamB || "?"}`;
+}
+function matchDate(row){ return row.played_at || (row.data && row.data.completedAt) || row.created_at; }
+
+function careerHtml(c){
+  if (!c.played.length) return `<p class="muted small">No recorded matches under this name.</p>`;
+  const overs = `${Math.floor(c.legalBalls / 6)}.${c.legalBalls % 6}`;
+  const last = c.played[0];
+  return `
+    <div class="tiles">
+      <span class="tile"><b>${c.played.length}</b>matches</span>
+      <span class="tile"><b>${c.runs}</b>runs (${c.innings} inns, HS ${c.high ? c.high.runs + (c.high.out ? "" : "*") : "—"}, avg ${fx(c.average, 1)}, SR ${fx(c.strikeRate, 0)})</span>
+      <span class="tile"><b>${c.wickets}</b>wkts (${overs} ov, econ ${fx(c.economy, 2)}, best ${c.best ? c.best.wickets + "/" + c.best.runs : "—"})</span>
+      <span class="tile"><b>${c.catches + c.runouts}</b>dismissals (${c.catches} ct, ${c.runouts} ro)</span>
+    </div>
+    <p class="muted small">Clubs: ${[...c.clubs].map(id => esc(clubName(id))).join(", ") || "—"} · last played ${fmtDate(matchDate(last))}</p>
+    <details><summary>Matches (${c.played.length})</summary>${matchListHtml(c.played.slice(0, 50))}</details>`;
+}
+function matchListHtml(rows){
+  return `<table><tbody>${rows.map(r => `
+    <tr><td>${fmtDate(matchDate(r))}</td><td>${esc(matchLabel(r))}</td><td class="muted">${esc(clubName(r.club_id))} · ${esc(r.level)}</td><td class="muted">${esc((r.data && r.data.result) || "")}</td></tr>`).join("")}</tbody></table>`;
+}
+
+function profileKv(p, aliases, claimant){
+  if (!p) return `<p class="muted">This profile no longer exists (merged or deleted).</p>`;
+  const photo = safePhoto(p.photo);
+  return `
+    ${photo ? `<img class="photo" src="${photo}" alt="">` : ""}
+    <h3><a href="#player/${esc(p.id)}">${esc(playerLabel(p))}</a></h3>
+    <dl class="kv">
+      <dt>Status</dt><dd>${p.claimed_by ? `<span class="badge ok">Claimed</span> ${claimant ? userLine(claimant) : ""}` : `<span class="badge">Unclaimed</span>`}</dd>
+      <dt>Added by club</dt><dd>${esc(clubName(p.origin_club_id))}</dd>
+      <dt>Contact</dt><dd>${esc(p.phone || "—")}</dd>
+      <dt>NIC</dt><dd>${esc(p.nic || "—")}</dd>
+      <dt>City</dt><dd>${esc(p.city || "—")}</dd>
+      <dt>Aliases</dt><dd>${aliases && aliases.length ? aliases.map(esc).join(", ") : "—"}</dd>
+      <dt>Created</dt><dd>${fmtDate(p.created_at)}</dd>
+    </dl>`;
+}
+
+/* --------------------------------------------------------- confirm modal
+   Every approve/reject/delete goes through here. Destructive actions ask
+   for a reason, which the server stores in admin_audit_log. */
+function confirmDialog({ title, body, confirmLabel, danger, needReason, extraField }){
+  return new Promise(resolve => {
+    const d = document.createElement("dialog");
+    if (danger) d.className = "danger";
+    d.innerHTML = `
+      <form method="dialog" id="confirm-form">
+        <h3>${esc(title)}</h3>
+        <div class="small">${body || ""}</div>
+        ${extraField ? `<label>${esc(extraField.label)}<input name="extra" autocomplete="off" required></label>` : ""}
+        ${needReason ? `<label>Reason (kept in the audit log)<textarea name="reason" rows="2" required maxlength="500"></textarea></label>` : ""}
+        <div class="actions">
+          <button type="submit" value="ok" class="${danger ? "danger" : "primary"}">${esc(confirmLabel || "Confirm")}</button>
+          <button type="button" value="cancel" data-cancel>Cancel</button>
+        </div>
+      </form>`;
+    document.body.appendChild(d);
+    const form = d.querySelector("form");
+    const finish = v => { d.close(); d.remove(); resolve(v); };
+    d.querySelector("[data-cancel]").onclick = () => finish(null);
+    d.addEventListener("cancel", e => { e.preventDefault(); finish(null); });
+    form.addEventListener("submit", e => {
+      e.preventDefault();
+      const reason = needReason ? form.reason.value.trim() : "";
+      const extra = extraField ? form.extra.value.trim() : "";
+      if (needReason && !reason) return;
+      if (extraField && extraField.mustEqual != null && extra !== extraField.mustEqual){ toast("That doesn't match — nothing was changed.", true); return; }
+      finish({ reason, extra });
+    });
+    d.showModal();
+  });
+}
+
+/* ------------------------------------------------------------- views */
+const NAV = [
+  ["overview", "Overview"], ["claims", "Claim requests"], ["merges", "Merge requests"], ["players", "Players"],
+  ["clubs", "Clubs"], ["matches", "Matches"], ["users", "Users & admins"], ["audit", "Audit log"]
+];
+const counts = { claims: 0, merges: 0 };
+
+async function refreshCounts(){
+  const [c, m] = await Promise.all([
+    sb.from("claim_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    sb.from("merge_requests").select("id", { count: "exact", head: true }).eq("status", "pending")
+  ]);
+  counts.claims = c.count || 0;
+  counts.merges = m.count || 0;
+}
+
+function renderShell(){
+  const route = currentRoute();
+  document.getElementById("app").innerHTML = `
+    <div class="shell">
+      <nav class="side">
+        <div class="brand">Cricket<span>.lk</span> Admin</div>
+        ${NAV.map(([k, label]) => `<a href="#${k}" class="${route.view === k || (k === "players" && route.view === "player") ? "active" : ""}">${label}${counts[k] ? ` <span class="badge hot">${counts[k]}</span>` : ""}</a>`).join("")}
+        <div class="side-foot muted">
+          ${esc(session.user.email)}<br>
+          <button data-action="refresh">Refresh data</button>
+          <button data-action="sign-out">Sign out</button><br><br>
+          <a href="index.html">← Back to scorer</a>
+        </div>
+      </nav>
+      <main id="main"><p class="muted">Loading…</p></main>
+    </div>`;
+}
+
+function currentRoute(){
+  const [view, arg, arg2] = (location.hash.replace(/^#/, "") || "overview").split("/").map(decodeURIComponent);
+  return { view: VIEWS[view] ? view : "overview", arg, arg2 };
+}
+
+let routeSeq = 0;
+async function route(){
+  if (!session || !amAdmin) return;
+  const seq = ++routeSeq;
+  renderShell();
+  const main = document.getElementById("main");
+  const r = currentRoute();
+  try {
+    await loadClubs();
+    const html = await VIEWS[r.view](r.arg, r.arg2);
+    if (seq === routeSeq) main.innerHTML = html;
+  } catch (e){
+    if (seq === routeSeq) main.innerHTML = `<div class="card warn"><h3>Couldn't load this page</h3><p>${esc(errText(e))}</p></div>`;
+  }
+}
+
+const VIEWS = {
+  async overview(){
+    let o = null, missing = false;
+    try { o = await rpc("admin_overview"); } catch (e){ if (sqlMissing(e)) missing = true; else throw e; }
+    const audit = missing ? [] : await q(sb.from("admin_audit_log").select("*").order("created_at", { ascending: false }).limit(8));
+    const users = await lookupUsers(audit.map(a => a.actor)).catch(() => new Map());
+    const s = (label, v, href, hot) => `<a class="stat ${hot ? "hot" : ""}" href="#${href}"><b>${v == null ? "—" : v}</b>${label}</a>`;
+    return `
+      <h1>Overview</h1>
+      <p class="muted">Platform-wide administration. Club admins manage their own clubs from the scorer app.</p>
+      ${missing ? `<div class="card warn">Run <b>${ADMIN_SQL}</b> in the Supabase SQL editor to enable counts, users, clubs, the audit log and the direct admin actions. Claim and merge review already work.</div>` : ""}
+      <div class="stat-grid">
+        ${s("pending claims", counts.claims, "claims", counts.claims)}
+        ${s("pending merges", counts.merges, "merges", counts.merges)}
+        ${s("players", o && `${o.players}`, "players")}
+        ${s(`claimed profiles`, o && o.claimed, "players")}
+        ${s("clubs", o && o.clubs, "clubs")}
+        ${s(`matches${o ? ` (${o.premier_matches} Premier)` : ""}`, o && o.matches, "matches")}
+        ${s("users", o && o.users, "users")}
+        ${s("platform admins", o && o.admins, "users")}
+      </div>
+      ${audit.length ? `<h2>Recent admin activity</h2><div class="card">${auditTable(audit, users)}</div>` : ""}`;
+  },
+
+  async claims(status){
+    status = ["pending", "approved", "rejected"].includes(status) ? status : "pending";
+    const reqs = await q(sb.from("claim_requests").select("*").eq("status", status).order("created_at", { ascending: status === "pending" }).limit(100));
+    const [players, aliases, matches] = await Promise.all([
+      loadPlayers(reqs.map(r => r.player_id)), loadAliases(reqs.map(r => r.player_id)), loadMatches()
+    ]);
+    const users = await lookupUsers([...reqs.map(r => r.requested_by), ...reqs.map(r => r.reviewed_by), ...[...players.values()].map(p => p.claimed_by)]);
+    return `
+      <h1>Claim requests</h1>
+      <p class="muted">A user says "this profile is me". Check the contact number and the match history before approving — approval gives them control of the profile's contact, NIC and details.</p>
+      ${statusChips("claims", status)}
+      ${reqs.length ? reqs.map(r => claimCard(r, players.get(r.player_id), aliases.get(r.player_id) || [], users, matches)).join("") : `<p class="muted">No ${status} claim requests.</p>`}`;
+  },
+
+  async merges(status){
+    status = ["pending", "approved", "rejected"].includes(status) ? status : "pending";
+    const reqs = await q(sb.from("merge_requests").select("*").eq("status", status).order("created_at", { ascending: status === "pending" }).limit(100));
+    const ids = [...reqs.map(r => r.from_player_id), ...reqs.map(r => r.into_player_id)];
+    const [players, aliases, matches] = await Promise.all([loadPlayers(ids), loadAliases(ids), loadMatches()]);
+    const users = await lookupUsers([...reqs.map(r => r.requested_by), ...reqs.map(r => r.reviewed_by), ...[...players.values()].map(p => p.claimed_by)]);
+    return `
+      <h1>Merge requests</h1>
+      <p class="muted">A user who already owns a profile says a second, unclaimed profile is also them. Approving keeps their profile, turns the duplicate's name into an alias (so its stats fold in), moves its club rosters, and deletes the duplicate.</p>
+      ${statusChips("merges", status)}
+      ${reqs.length ? reqs.map(r => mergeCard(r, players, aliases, users, matches)).join("") : `<p class="muted">No ${status} merge requests.</p>`}`;
+  },
+
+  async players(search){
+    const term = (search || "").trim();
+    let rows;
+    if (term){
+      rows = await q(sb.from("players").select(PLAYER_COLS).ilike("name", `%${escapeLike(term)}%`).order("name").limit(200));
+    } else {
+      rows = await q(sb.from("players").select(PLAYER_COLS).order("created_at", { ascending: false }).limit(100));
+    }
+    const users = await lookupUsers(rows.map(p => p.claimed_by)).catch(() => new Map());
+    return `
+      <h1>Players</h1>
+      <form class="inline" id="player-search-form"><input name="q" value="${esc(term)}" placeholder="Search by name…" autocomplete="off"><button class="primary" type="submit">Search</button></form>
+      <p class="muted small">${term ? `${rows.length} match${rows.length === 1 ? "" : "es"}` : "Newest 100 profiles"} · contact and NIC are personal data — don't copy them out of this portal.</p>
+      <div class="card"><table>
+        <thead><tr><th>Player</th><th>Status</th><th>Added by club</th><th>City</th><th>Contact</th><th>Created</th></tr></thead>
+        <tbody>${rows.map(p => `
+          <tr class="clickable" data-href="#player/${esc(p.id)}">
+            <td>${esc(playerLabel(p))}</td>
+            <td>${p.claimed_by ? `<span class="badge ok">Claimed</span> <span class="muted small">${esc((users.get(p.claimed_by) || {}).email || "")}</span>` : `<span class="badge">Unclaimed</span>`}</td>
+            <td>${esc(clubName(p.origin_club_id))}</td><td>${esc(p.city || "")}</td>
+            <td>${p.phone ? "✓" : ""}</td><td>${fmtDate(p.created_at)}</td>
+          </tr>`).join("")}</tbody>
+      </table></div>`;
+  },
+
+  async player(id, mergeSearch){
+    // id comes from the URL and goes into a PostgREST or() filter below.
+    if (!isUuid(id)) return `<h1>Player</h1><p class="muted">Not a valid player id.</p><a href="#players">← Players</a>`;
+    const players = await loadPlayers([id]);
+    const p = players.get(id);
+    if (!p) return `<h1>Player</h1><p class="muted">That profile doesn't exist (it may have been merged or deleted).</p><a href="#players">← Players</a>`;
+    const [aliases, matches, users] = await Promise.all([loadAliases([id]), loadMatches(), lookupUsers([p.claimed_by])]);
+    const names = [p.name, ...(aliases.get(id) || [])];
+    const [pendingClaims, pendingMerges] = await Promise.all([
+      q(sb.from("claim_requests").select("id").eq("player_id", id).eq("status", "pending")),
+      q(sb.from("merge_requests").select("id").or(`from_player_id.eq.${id},into_player_id.eq.${id}`).eq("status", "pending"))
+    ]);
+    let candidates = [];
+    const term = (mergeSearch || "").trim();
+    if (term) candidates = (await q(sb.from("players").select(PLAYER_COLS).ilike("name", `%${escapeLike(term)}%`).neq("id", id).order("name").limit(20)));
+    return `
+      <a href="#players">← Players</a>
+      <h1>${esc(playerLabel(p))}</h1>
+      ${pendingClaims.length || pendingMerges.length ? `<p class="flag warn">Has pending ${pendingClaims.length ? `<a href="#claims">claim</a>` : ""}${pendingClaims.length && pendingMerges.length ? " and " : ""}${pendingMerges.length ? `<a href="#merges">merge</a>` : ""} request(s).</p>` : ""}
+      <div class="cols">
+        <div class="card">${profileKv(p, aliases.get(id), users.get(p.claimed_by))}</div>
+        <div class="card">
+          <h3>Edit contact details</h3>
+          <form id="player-contact-form" data-id="${esc(p.id)}">
+            <label>Contact number<input name="phone" value="${esc(p.phone || "")}" autocomplete="off"></label>
+            <label>NIC<input name="nic" value="${esc(p.nic || "")}" autocomplete="off"></label>
+            <button class="primary" type="submit">Save</button>
+          </form>
+        </div>
+      </div>
+      <div class="card"><h3>Career (all clubs + Premier)</h3>${careerHtml(careerFor(names, matches))}</div>
+      <h2>Admin actions</h2>
+      <div class="card">
+        ${p.claimed_by ? `
+          <p>Claimed by ${userLine(users.get(p.claimed_by), p.claimed_by)}. Releasing the claim makes the profile unclaimed again (its adding club can edit it; the user can claim a different one).</p>
+          <div class="actions"><button class="danger" data-action="release-claim" data-id="${esc(p.id)}" data-name="${esc(p.name)}">Release claim</button></div>
+        ` : `
+          <p>Unclaimed profile. You can fold it into another profile (for duplicate spellings of one person) or delete it if it's junk. Match stats are stored by name and are never deleted.</p>
+          <form class="inline" id="merge-search-form" data-id="${esc(p.id)}"><input name="q" value="${esc(term)}" placeholder="Find the profile to keep…" autocomplete="off"><button type="submit">Find</button></form>
+          ${term ? (candidates.length ? `<table><tbody>${candidates.map(t => {
+            const shared = sharedMatches(names, [t.name], matches).length;
+            return `<tr><td>${esc(playerLabel(t))}</td><td>${t.claimed_by ? `<span class="badge ok">Claimed</span>` : `<span class="badge">Unclaimed</span>`}</td>
+              <td>${shared ? `<span class="badge bad">in ${shared} same match${shared === 1 ? "" : "es"}</span>` : ""}</td>
+              <td><button data-action="direct-merge" data-from="${esc(p.id)}" data-from-name="${esc(p.name)}" data-into="${esc(t.id)}" data-into-name="${esc(t.name)}" data-shared="${shared}">Merge into this</button></td></tr>`;
+          }).join("")}</tbody></table>` : `<p class="muted">No other profiles match.</p>`) : ""}
+          <div class="actions"><button class="danger" data-action="delete-player" data-id="${esc(p.id)}" data-name="${esc(p.name)}">Delete profile</button></div>
+        `}
+      </div>`;
+  },
+
+  async clubs(openId){
+    if (!isUuid(openId)) openId = null;
+    const rows = await rpc("admin_list_clubs");
+    let members = [];
+    if (openId) members = await rpc("admin_club_members", { _club_id: openId });
+    return `
+      <h1>Clubs</h1>
+      <div class="card"><table>
+        <thead><tr><th>Club</th><th>Created</th><th>Created by</th><th>Admins</th><th>Roster</th><th>Players added</th><th>Matches</th></tr></thead>
+        <tbody>${rows.map(c => `
+          <tr class="clickable" data-href="#clubs/${c.id === openId ? "" : esc(c.id)}">
+            <td><b>${esc(c.name)}</b></td><td>${fmtDate(c.created_at)}</td><td class="muted">${esc(c.created_by_email || "")}</td>
+            <td>${c.member_count}</td><td>${c.roster_count}</td><td>${c.origin_player_count}</td><td>${c.match_count}</td>
+          </tr>
+          ${c.id === openId ? `<tr><td colspan="7"><b>Club admins</b>${members.length ? `<table><tbody>${members.map(m => `<tr><td>${esc(m.display_name || "—")}</td><td class="muted">${esc(m.email)}</td><td>${esc(m.role)}</td><td>${fmtDate(m.created_at)}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">No members.</p>`}</td></tr>` : ""}`).join("")}</tbody>
+      </table></div>`;
+  },
+
+  async matches(level){
+    level = ["local", "premier"].includes(level) ? level : "all";
+    const all = await loadMatches();
+    const rows = (level === "all" ? all : all.filter(m => m.level === level)).slice(0, 200);
+    return `
+      <h1>Matches</h1>
+      <div class="chips">${["all", "local", "premier"].map(l => `<a href="#matches/${l}" class="${l === level ? "active" : ""}">${l[0].toUpperCase() + l.slice(1)}</a>`).join("")}</div>
+      <p class="muted small">Newest ${rows.length} of ${level === "all" ? all.length : all.filter(m => m.level === level).length}. Deleting a match removes it from every standings table and career; the full row is kept in the audit log.</p>
+      <div class="card"><table>
+        <thead><tr><th>Date</th><th>Match</th><th>Result</th><th>Club</th><th>Type</th><th></th></tr></thead>
+        <tbody>${rows.map(r => `
+          <tr><td>${fmtDate(matchDate(r))}</td><td>${esc(matchLabel(r))}<br><span class="muted small">${esc(inningsLine(r.data))}</span></td>
+            <td class="small">${esc((r.data && r.data.result) || "")}</td><td>${esc(clubName(r.club_id))}</td>
+            <td class="small">${esc(r.level)} · ${esc(r.match_type)}</td>
+            <td><button class="danger" data-action="delete-match" data-id="${esc(r.id)}" data-label="${esc(matchLabel(r))}">Delete</button></td></tr>`).join("")}</tbody>
+      </table></div>`;
+  },
+
+  async users(search){
+    const term = (search || "").trim();
+    const [rows, admins] = await Promise.all([
+      rpc("admin_list_users", { _search: term || null, _limit: 200 }),
+      rpc("admin_list_admins")
+    ]);
+    return `
+      <h1>Users & admins</h1>
+      <h2>Platform admins</h2>
+      <div class="card">
+        <table><tbody>${admins.map(a => `<tr><td>${esc(a.display_name || "—")}</td><td class="muted">${esc(a.email)}</td><td>since ${fmtDate(a.created_at)}</td>
+          <td>${a.user_id === session.user.id ? `<span class="muted">you</span>` : `<button class="danger" data-action="set-admin" data-email="${esc(a.email)}" data-grant="0">Remove admin</button>`}</td></tr>`).join("")}</tbody></table>
+        <form class="inline" id="grant-admin-form" style="margin-top:12px"><input name="email" type="email" placeholder="Email of an existing account" autocomplete="off" required><button type="submit">Make platform admin</button></form>
+        <p class="muted small">Platform admins can see every player's contact and NIC, approve claims and merges, and delete data. Grant sparingly.</p>
+      </div>
+      <h2>Accounts</h2>
+      <form class="inline" id="user-search-form"><input name="q" value="${esc(term)}" placeholder="Search email or name…" autocomplete="off"><button class="primary" type="submit">Search</button></form>
+      <div class="card"><table>
+        <thead><tr><th>Name</th><th>Email</th><th>Joined</th><th>Last sign-in</th><th>Claimed profile</th><th>Clubs</th></tr></thead>
+        <tbody>${rows.map(u => `
+          <tr><td>${esc(u.display_name || "—")}${u.is_admin ? ` <span class="badge hot">admin</span>` : ""}</td><td>${esc(u.email)}</td>
+            <td>${fmtDate(u.created_at)}</td><td>${fmtDate(u.last_sign_in_at, true)}</td>
+            <td>${u.claimed_player_id ? `<a href="#player/${esc(u.claimed_player_id)}">${esc(u.claimed_player_name)}</a>` : "—"}</td><td>${u.club_count}</td></tr>`).join("")}</tbody>
+      </table></div>`;
+  },
+
+  async audit(){
+    const rows = await q(sb.from("admin_audit_log").select("*").order("created_at", { ascending: false }).limit(300));
+    const users = await lookupUsers(rows.map(a => a.actor));
+    return `<h1>Audit log</h1><p class="muted">Every admin action, newest first. Append-only — nobody, including admins, can edit or delete entries.</p>
+      <div class="card">${rows.length ? auditTable(rows, users) : `<p class="muted">Nothing logged yet.</p>`}</div>`;
+  }
+};
+
+function statusChips(view, status){
+  return `<div class="chips">${["pending", "approved", "rejected"].map(s => `<a href="#${view}/${s}" class="${s === status ? "active" : ""}">${s[0].toUpperCase() + s.slice(1)}${s === "pending" && counts[view] ? ` (${counts[view]})` : ""}</a>`).join("")}</div>`;
+}
+
+function inningsLine(m){
+  if (!m || !Array.isArray(m.innings)) return "";
+  const bpo = m.ballsPerOver || 6;
+  return m.innings.map(i => `${i.battingTeam === "A" ? m.teamA : m.teamB} ${i.runs}-${i.wickets} (${Math.floor(i.legalBalls / bpo)}.${i.legalBalls % bpo})`).join(" · ");
+}
+
+function auditTable(rows, users){
+  const target = a => {
+    if (a.target_type === "player" && a.action !== "player_deleted") return `<a href="#player/${esc(a.target_id)}">player</a>`;
+    return esc(a.target_type);
+  };
+  const detail = a => {
+    const d = a.detail || {};
+    const bits = [];
+    if (d.from_name || d.into_name) bits.push(`${esc(d.from_name || "?")} → ${esc(d.into_name || "?")}`);
+    if (d.row && d.row.name) bits.push(esc(d.row.name));
+    if (d.row && d.row.data) bits.push(esc(`${d.row.data.teamA} v ${d.row.data.teamB}`));
+    if (d.email) bits.push(esc(d.email));
+    if (d.reason) bits.push(`<span class="muted">“${esc(d.reason)}”</span>`);
+    return bits.join(" · ");
+  };
+  return `<table><thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead><tbody>${rows.map(a => `
+    <tr><td>${fmtDate(a.created_at, true)}</td><td>${userLine(users.get(a.actor), a.actor)}</td><td>${esc(a.action.replace(/_/g, " "))}</td><td>${target(a)}</td><td class="small">${detail(a)}</td></tr>`).join("")}</tbody></table>`;
+}
+
+function claimCard(r, p, aliases, users, matches){
+  const requester = users.get(r.requested_by);
+  const flags = [];
+  if (r.status === "pending"){
+    if (!p) flags.push(`<p class="flag bad">The profile no longer exists.</p>`);
+    else if (p.claimed_by) flags.push(`<p class="flag bad">This profile is already claimed — approval will fail.</p>`);
+    if (requester && requester.claimed_player_id) flags.push(`<p class="flag bad">The requester already owns <a href="#player/${esc(requester.claimed_player_id)}">${esc(requester.claimed_player_name)}</a> — this should be a merge request; approval will fail.</p>`);
+    if (p && r.claimed_phone){
+      if (!p.phone) flags.push(`<p class="flag warn">The profile has no contact number on file to compare against.</p>`);
+      else if (digits(p.phone).slice(-9) === digits(r.claimed_phone).slice(-9)) flags.push(`<p class="flag ok">Claimed contact number matches the one on the profile.</p>`);
+      else flags.push(`<p class="flag warn">Claimed contact number differs from the one on the profile (${esc(p.phone)}).</p>`);
+    } else if (p && !r.claimed_phone) flags.push(`<p class="flag warn">No contact number given with the claim.</p>`);
+  }
+  return `
+    <div class="card">
+      <div class="cols">
+        <div>${profileKv(p, aliases, p && users.get(p.claimed_by))}</div>
+        <div>
+          <h3>Requested by</h3>
+          <dl class="kv">
+            <dt>Account</dt><dd>${userLine(requester, r.requested_by)}</dd>
+            <dt>Owns a profile</dt><dd>${requester && requester.claimed_player_id ? `<a href="#player/${esc(requester.claimed_player_id)}">${esc(requester.claimed_player_name)}</a>` : "No"}</dd>
+            <dt>Claimed contact</dt><dd>${esc(r.claimed_phone || "—")}</dd>
+            <dt>Note</dt><dd>${esc(r.note || "—")}</dd>
+            <dt>Requested</dt><dd>${fmtDate(r.created_at, true)}</dd>
+            ${r.reviewed_at ? `<dt>Reviewed</dt><dd>${esc(r.status)} ${fmtDate(r.reviewed_at, true)} by ${userLine(users.get(r.reviewed_by), r.reviewed_by)}</dd>` : ""}
+          </dl>
+        </div>
+      </div>
+      ${flags.join("")}
+      ${p ? `<h3 style="margin-top:12px">Match record</h3>${careerHtml(careerFor([p.name, ...aliases], matches))}` : ""}
+      ${r.status === "pending" ? `<div class="actions">
+        <button class="approve" data-action="approve-claim" data-id="${esc(r.id)}" data-name="${esc(p ? p.name : "")}" data-who="${esc(requester ? requester.email : "")}">Approve claim</button>
+        <button class="danger" data-action="reject-claim" data-id="${esc(r.id)}" data-name="${esc(p ? p.name : "")}">Reject</button>
+      </div>` : ""}
+    </div>`;
+}
+
+function mergeCard(r, players, aliases, users, matches){
+  const from = players.get(r.from_player_id), into = players.get(r.into_player_id);
+  const fromAl = aliases.get(r.from_player_id) || [], intoAl = aliases.get(r.into_player_id) || [];
+  const fromNames = from ? [from.name, ...fromAl] : [], intoNames = into ? [into.name, ...intoAl] : [];
+  const requester = users.get(r.requested_by);
+  const flags = [];
+  if (r.status === "pending"){
+    if (!from) flags.push(`<p class="flag bad">The duplicate profile no longer exists.</p>`);
+    else if (from.claimed_by) flags.push(`<p class="flag bad">The duplicate has since been claimed — approval will fail.</p>`);
+    if (into && into.claimed_by !== r.requested_by) flags.push(`<p class="flag bad">The requester no longer owns the profile to keep — approval will fail.</p>`);
+    if (from && into){
+      const shared = sharedMatches(fromNames, intoNames, matches);
+      if (shared.length) flags.push(`<div class="flag bad">Both names appear in the same scorecard in ${shared.length} match${shared.length === 1 ? "" : "es"} — they are probably two different people.${matchListHtml(shared.slice(0, 10))}</div>`);
+      else flags.push(`<p class="flag ok">The two names never appear in the same match.</p>`);
+      const fp = digits(from.phone).slice(-9), ip = digits(into.phone).slice(-9);
+      if (fp && ip) flags.push(fp === ip ? `<p class="flag ok">Both profiles have the same contact number.</p>` : `<p class="flag warn">The profiles have different contact numbers.</p>`);
+      if (from.nic && into.nic && from.nic !== into.nic) flags.push(`<p class="flag bad">The profiles have different NICs.</p>`);
+    }
+  }
+  return `
+    <div class="card">
+      <p class="muted small">Requested by ${userLine(requester, r.requested_by)} · ${fmtDate(r.created_at, true)}${r.note ? ` · “${esc(r.note)}”` : ""}${r.reviewed_at ? ` · ${esc(r.status)} ${fmtDate(r.reviewed_at, true)} by ${userLine(users.get(r.reviewed_by), r.reviewed_by)}` : ""}</p>
+      <div class="cols">
+        <div><p class="muted small">MERGE AWAY (duplicate)</p>${profileKv(from, fromAl)}${from ? careerHtml(careerFor(fromNames, matches)) : ""}</div>
+        <div><p class="muted small">KEEP (requester's profile)</p>${profileKv(into, intoAl, into && users.get(into.claimed_by))}${into ? careerHtml(careerFor(intoNames, matches)) : ""}</div>
+      </div>
+      ${flags.join("")}
+      ${r.status === "pending" ? `<div class="actions">
+        <button class="approve" data-action="approve-merge" data-id="${esc(r.id)}" data-from-name="${esc(from ? from.name : "")}" data-into-name="${esc(into ? into.name : "")}">Approve merge</button>
+        <button class="danger" data-action="reject-merge" data-id="${esc(r.id)}">Reject</button>
+      </div>` : ""}
+    </div>`;
+}
+
+/* ----------------------------------------------------------- actions */
+async function act(fn, okMsg, invalidates){
+  try {
+    await fn();
+    if (invalidates === "matches") cache.matches = null;
+    toast(okMsg);
+    await refreshCounts();
+    route();
+  } catch (e){ toast(errText(e), true); }
+}
+
+const ACTIONS = {
+  async "approve-claim"(el){
+    const ok = await confirmDialog({ title: "Approve claim?", confirmLabel: "Approve",
+      body: `<p>${esc(el.dataset.who || "The requester")} will own <b>${esc(el.dataset.name)}</b> and be able to edit its contact, NIC and details. The adding club loses edit access.</p>` });
+    if (ok) act(() => rpc("approve_claim", { _request_id: el.dataset.id }), "Claim approved.");
+  },
+  async "reject-claim"(el){
+    const ok = await confirmDialog({ title: "Reject claim?", confirmLabel: "Reject", danger: true, body: `<p>Claim on <b>${esc(el.dataset.name)}</b> will be rejected. The user can request again.</p>` });
+    if (ok) act(() => rpc("reject_claim", { _request_id: el.dataset.id }), "Claim rejected.");
+  },
+  async "approve-merge"(el){
+    const ok = await confirmDialog({ title: "Approve merge?", confirmLabel: "Merge", danger: true,
+      body: `<p><b>${esc(el.dataset.fromName)}</b> will be deleted and its name kept as an alias of <b>${esc(el.dataset.intoName)}</b>. This can't be undone from the portal.</p>` });
+    if (ok) act(() => rpc("approve_merge", { _request_id: el.dataset.id }), "Profiles merged.");
+  },
+  async "reject-merge"(el){
+    const ok = await confirmDialog({ title: "Reject merge?", confirmLabel: "Reject", danger: true, body: "" });
+    if (ok) act(() => rpc("reject_merge", { _request_id: el.dataset.id }), "Merge rejected.");
+  },
+  async "release-claim"(el){
+    const ok = await confirmDialog({ title: "Release claim?", confirmLabel: "Release", danger: true, needReason: true,
+      body: `<p><b>${esc(el.dataset.name)}</b> becomes unclaimed. Its contact and NIC stay as they are — clear them below if they belonged to the wrong person.</p>` });
+    if (ok) act(() => rpc("admin_release_claim", { _player_id: el.dataset.id, _reason: ok.reason }), "Claim released.");
+  },
+  async "direct-merge"(el){
+    const shared = +el.dataset.shared;
+    const ok = await confirmDialog({ title: "Merge profiles?", confirmLabel: "Merge", danger: true, needReason: true,
+      body: `<p><b>${esc(el.dataset.fromName)}</b> will be deleted and its name kept as an alias of <b>${esc(el.dataset.intoName)}</b>.</p>${shared ? `<p class="flag bad">These names appear together in ${shared} match${shared === 1 ? "" : "es"} — likely different people.</p>` : ""}` });
+    if (ok) act(async () => { await rpc("admin_merge_players", { _from: el.dataset.from, _into: el.dataset.into, _reason: ok.reason }); location.hash = `#player/${el.dataset.into}`; }, "Profiles merged.");
+  },
+  async "delete-player"(el){
+    const ok = await confirmDialog({ title: "Delete profile?", confirmLabel: "Delete", danger: true, needReason: true,
+      extraField: { label: `Type the name "${el.dataset.name}" to confirm`, mustEqual: el.dataset.name },
+      body: `<p>Removes the profile and its club roster entries. Match scorecards are kept.</p>` });
+    if (ok) act(async () => { await rpc("admin_delete_player", { _player_id: el.dataset.id, _reason: ok.reason }); location.hash = "#players"; }, "Profile deleted.");
+  },
+  async "delete-match"(el){
+    const ok = await confirmDialog({ title: "Delete match?", confirmLabel: "Delete", danger: true, needReason: true,
+      extraField: { label: `Type DELETE to confirm`, mustEqual: "DELETE" },
+      body: `<p><b>${esc(el.dataset.label)}</b> will be removed from standings and every player's stats. A copy is kept in the audit log.</p>` });
+    if (ok) act(() => rpc("admin_delete_match", { _match_id: el.dataset.id, _reason: ok.reason }), "Match deleted.", "matches");
+  },
+  async "set-admin"(el){
+    const grant = el.dataset.grant === "1";
+    const ok = await confirmDialog({ title: grant ? "Make platform admin?" : "Remove platform admin?", confirmLabel: grant ? "Grant" : "Remove", danger: true,
+      body: `<p>${esc(el.dataset.email)}</p>` });
+    if (!ok) return;
+    act(async () => {
+      const res = await rpc("admin_set_platform_admin", { _email: el.dataset.email, _grant: grant });
+      if (res !== "ok") throw new Error({ not_found: "No account with that email.", already_admin: "Already a platform admin.", not_admin: "Not a platform admin." }[res] || res);
+    }, grant ? "Admin access granted." : "Admin access removed.");
+  },
+  refresh(){ cache.matches = null; cache.clubs = null; refreshCounts().then(route); },
+  async "sign-out"(){ await sb.auth.signOut(); }
+};
+
+const FORMS = {
+  "player-search-form": f => { location.hash = `#players/${encodeURIComponent(f.q.value.trim())}`; },
+  "user-search-form": f => { location.hash = `#users/${encodeURIComponent(f.q.value.trim())}`; },
+  "merge-search-form": f => { location.hash = `#player/${encodeURIComponent(f.dataset.id)}/${encodeURIComponent(f.q.value.trim())}`; },
+  "grant-admin-form": f => ACTIONS["set-admin"]({ dataset: { email: f.email.value.trim(), grant: "1" } }),
+  "player-contact-form": f => {
+    const phone = f.phone.value.trim(), nic = normalizeNic(f.nic.value);
+    if (!isValidPhone(phone)) return toast("Contact number should be 7–15 digits, optionally starting with +.", true);
+    if (!isValidNic(nic)) return toast("NIC should be 9 digits + V/X, or 12 digits.", true);
+    act(() => rpc("update_player_profile", { _player_id: f.dataset.id, _phone: phone || null, _nic: nic || null }), "Contact details saved.");
+  },
+  "sign-in-form": async f => {
+    const btn = f.querySelector("button"); btn.disabled = true;
+    const { error } = await sb.auth.signInWithPassword({ email: f.email.value.trim(), password: f.password.value });
+    btn.disabled = false;
+    if (error) toast(error.message, true);
+  }
+};
+
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-action]");
+  if (el && ACTIONS[el.dataset.action]){ e.preventDefault(); ACTIONS[el.dataset.action](el); return; }
+  const row = e.target.closest("tr[data-href]");
+  if (row && !e.target.closest("a, button")) location.hash = row.dataset.href;
+});
+// getAttribute("id"), not form.id: a control named "id" would shadow it (see CLAUDE.md).
+document.addEventListener("submit", e => {
+  const handler = FORMS[e.target.getAttribute("id")];
+  if (!handler) return;
+  e.preventDefault();
+  handler(e.target);
+});
+window.addEventListener("hashchange", route);
+
+/* -------------------------------------------------------------- boot */
+function renderGate(html){ document.getElementById("app").innerHTML = `<div class="auth">${html}</div>`; }
+
+async function onSession(newSession){
+  session = newSession;
+  amAdmin = false;
+  cache.matches = null; cache.clubs = null;
+  if (!session){
+    renderGate(`
+      <h1>Cricket<span style="color:var(--accent)">.lk</span> Admin</h1>
+      <p class="muted">Platform administrators only.</p>
+      <div class="card"><form id="sign-in-form" method="post">
+        <label>Email<input name="email" type="email" required autocomplete="email"></label>
+        <label>Password<input name="password" type="password" required autocomplete="current-password"></label>
+        <button type="submit" class="primary">Sign in</button>
+      </form></div>
+      <p><a href="index.html">← Back to scorer</a></p>`);
+    return;
+  }
+  const { data } = await sb.from("admin_users").select("user_id").eq("user_id", session.user.id).maybeSingle();
+  amAdmin = !!data;
+  if (!amAdmin){
+    renderGate(`<h1>Not authorised</h1><p>${esc(session.user.email)} isn't a platform admin. Club admins manage their clubs from the scorer app.</p>
+      <div class="actions"><button data-action="sign-out">Sign out</button><a href="index.html">← Back to scorer</a></div>`);
+    return;
+  }
+  await refreshCounts();
+  route();
+}
+
+(async function boot(){
+  let lib;
+  try {
+    lib = window.supabase || await new Promise((resolve, reject) => {
+      const el = document.createElement("script");
+      el.src = SUPABASE_JS_CDN_URL;
+      el.onload = () => resolve(window.supabase);
+      el.onerror = () => reject(new Error("load failed"));
+      document.head.appendChild(el);
+    });
+  } catch (_){
+    renderGate(`<h1>Offline</h1><p class="muted">The admin portal needs a connection to the cloud database.</p>`);
+    return;
+  }
+  sb = lib.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
+  const { data } = await sb.auth.getSession();
+  await onSession(data.session || null);
+  sb.auth.onAuthStateChange((event, s) => {
+    // Token refreshes keep the same user; only re-gate on a real change.
+    if (!s && !session) return;
+    if (event === "TOKEN_REFRESHED" || (s && session && s.user.id === session.user.id && event !== "SIGNED_OUT")){ session = s; return; }
+    onSession(s);
+  });
+})();
+</script>
+</body>
+</html>

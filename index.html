@@ -499,6 +499,28 @@
   .list-row.active{ border-color:var(--accent-2); border-left-color:var(--accent-2); box-shadow:0 0 0 1px var(--accent-2) inset; }
   .list-row .chevron{ color:var(--muted); }
   .list-row .muted{ color:var(--muted); font-size:.8rem; }
+  /* Club roster row: open-profile button + a separate remove button (no nested buttons). */
+  .list-row.roster-row{ padding:0; }
+  .roster-row .roster-open{ flex-grow:1; display:flex; justify-content:space-between; align-items:center; gap:10px; background:none; border:none; color:inherit; font:inherit; text-align:left; padding:13px 10px 13px 15px; }
+  .roster-row .roster-remove{ flex-shrink:0; width:44px; align-self:stretch; background:none; border:none; border-left:2px solid var(--line); color:var(--muted); font-size:.9rem; }
+  .roster-row .roster-remove:hover{ color:var(--wicket); }
+  .danger-text{ color:var(--wicket) !important; }
+  .jersey-no{ color:var(--accent); font-variant-numeric:tabular-nums; }
+  /* Floating add button (club Players). Static -- no infinite animation on an
+     always-on-screen control (see CLAUDE.md "Theme & sound"). Below the
+     modal backdrop (50) and the side menu (49/50). */
+  .fab{
+    position:fixed; right:max(16px, calc((100vw - 520px) / 2 + 16px)); bottom:calc(20px + env(safe-area-inset-bottom)); z-index:30;
+    width:58px; height:58px; border-radius:50%; background:var(--accent); color:var(--accent-ink);
+    border:2px solid var(--bg); box-shadow:var(--shadow-btn); font-size:1.9rem; font-weight:800; line-height:1; padding:0;
+  }
+  .fab:active{ transform:scale(.94); }
+  .fab-spacer{ height:84px; }
+  /* Add-player sheet: existing platform players matching the typed name. */
+  .suggest-row{ display:flex; align-items:center; gap:10px; padding:8px 10px; margin-bottom:6px; background:var(--panel-2); border:2px solid var(--line); border-radius:var(--radius-sm); }
+  .suggest-row .suggest-name{ flex-grow:1; font-size:.9rem; font-weight:700; min-width:0; overflow-wrap:anywhere; line-height:1.3; }
+  .suggest-avatar{ width:32px; height:32px; border-radius:50%; object-fit:cover; flex-shrink:0; margin:0; font-size:.85rem; }
+  .suggest-row button{ flex-shrink:0; margin:0; }
 
   /* --- presets / tabs / shared form bits --- */
   .preset-picker{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
@@ -977,7 +999,25 @@ function playerDetailsError(d){
   if (d.bowling_type && !BOWLING_TYPES[d.bowling_type]) return "Pick a valid bowling style.";
   if ((d.city || "").trim().length > 40) return "City can be at most 40 characters.";
   if (d.photo && !safePhoto(d.photo)) return "That photo couldn't be used — try another image.";
+  if ((d.nickname || "").trim().length > 24) return "Nickname can be at most 24 characters.";
+  if (parseJerseyNo(d.jersey_no) === undefined) return "Jersey no should be a whole number from 0 to 999.";
   return null;
+}
+/* Jersey no (supabase/010): blank -> null, "07" -> 7, anything that isn't a
+   whole number 0-999 -> undefined (invalid). */
+function parseJerseyNo(v){
+  const t = v == null ? "" : String(v).trim();
+  if (t === "") return null;
+  return /^[0-9]{1,3}$/.test(t) ? parseInt(t, 10) : undefined;
+}
+/* Escape a user's text for a PostgREST ilike pattern, so a typed % or _
+   matches literally instead of acting as a wildcard. */
+function escapeLike(v){ return String(v || "").replace(/[\\%_]/g, c => "\\" + c); }
+/* "#7 Kusal Mendis (KM)" -- the roster/profile label; the name alone when
+   neither is set. */
+function playerLabel(p){
+  const jersey = p.jersey_no == null ? "" : `#${p.jersey_no} `;
+  return `${jersey}${p.name}${p.nickname ? ` (${p.nickname})` : ""}`;
 }
 
 /* One player's career line, folded from whatever matches the caller passes
@@ -1310,6 +1350,7 @@ function defaultState(){
     tournaments: {}, matchHistory: {},
     activeTournamentId: null,
     activeClubId: null, // which club (if any) Home's quick-action cards currently target -- see the CLOUD "clubs" section
+    clubDataReset202609: false, // one-time drop of local club-match copies after the cloud wipe -- see purgeLocalClubMatches()
     guestPlayersCleaned: false, // one-time purge of club-match names that leaked into state.players -- see purgeLeakedClubPlayers()
     soundEnabled: true,
     themeId: "midnight", // see THEME_PRESETS (REFERENCE DATA) and applyTheme()
@@ -1436,12 +1477,26 @@ async function createClub(name){
   return { club };
 }
 
+/* Members, then their display names in a second query: PostgREST can't embed
+   profiles_public in club_members (both only reference auth.users, and a view
+   carries no FK), so "club_members?select=...,profiles_public(...)" is a 400. */
+async function fetchClubMembers(clubId){
+  const { data: rows, error } = await supabaseClient.from("club_members").select("user_id, role").eq("club_id", clubId);
+  if (error || !rows) return { data: [] };
+  const ids = rows.map(r => r.user_id);
+  const { data: names } = ids.length
+    ? await supabaseClient.from("profiles_public").select("id, display_name").in("id", ids)
+    : { data: [] };
+  const byId = new Map((names || []).map(n => [n.id, n.display_name]));
+  return { data: rows.map(r => ({ userId: r.user_id, role: r.role, displayName: byId.get(r.user_id) || "—" })) };
+}
+
 async function fetchClubDetail(clubId){
   ui.clubBusy = true;
   const [{ data: club }, { data: members }, { data: roster }, { data: matches }, { data: tournaments }, { data: presetRows }] = await Promise.all([
     supabaseClient.from("clubs").select("id, name").eq("id", clubId).single(),
-    supabaseClient.from("club_members").select("user_id, role, profiles_public(display_name)").eq("club_id", clubId),
-    supabaseClient.from("club_rosters").select("player_id, players_public(id, name)").eq("club_id", clubId),
+    fetchClubMembers(clubId),
+    fetchRosterRows(clubId),
     supabaseClient.from("matches").select("id, match_type, data, played_at").eq("club_id", clubId).order("played_at", { ascending: false }).limit(50),
     supabaseClient.from("tournaments").select("id, name, created_at").eq("organizer_club_id", clubId).order("created_at", { ascending: false }),
     supabaseClient.from("club_presets").select("id, kind, preset").eq("club_id", clubId).order("created_at")
@@ -1449,7 +1504,7 @@ async function fetchClubDetail(clubId){
   ui.club = {
     id: clubId,
     name: club ? club.name : "",
-    members: (members || []).map(m => ({ userId: m.user_id, role: m.role, displayName: (m.profiles_public && m.profiles_public.display_name) || "—" })),
+    members: members || [],
     roster: (roster || []).map(r => r.players_public).filter(Boolean),
     matches: matches || [],
     tournaments: tournaments || [],
@@ -1528,7 +1583,38 @@ async function addPlayerToClub(clubId, name, extras){
   return { ok: true, id: playerId, created };
 }
 function playerHasDetails(d){
-  return !!(d.batting_hand || d.bowling_arm || d.bowling_type || d.is_keeper || d.city || d.photo);
+  return !!(d.batting_hand || d.bowling_arm || d.bowling_type || d.is_keeper || d.city || d.photo || d.nickname || parseJerseyNo(d.jersey_no) != null);
+}
+
+/* Players already on the platform whose name contains `query` -- public
+   columns only (players_public; never phone/NIC). Used by the add-player
+   sheet to offer "add the existing player" instead of creating a new one. */
+async function searchPlatformPlayers(query){
+  const pattern = `%${escapeLike(query.trim())}%`;
+  const full = await supabaseClient.from("players_public").select(`id, name, city, photo, ${PLAYER_KIT_COLS}`).ilike("name", pattern).order("name").limit(8);
+  if (!full.error) return full.data || [];
+  const { data } = await supabaseClient.from("players_public").select("id, name").ilike("name", pattern).order("name").limit(8);
+  return data || [];
+}
+/* Add one specific existing player (by id -- names aren't unique) to the
+   roster. A plain insert: 002's "members manage" policy allows it, and it
+   never creates a player or grants edit rights (origin_club_id is untouched). */
+async function addExistingPlayerToClub(clubId, playerId){
+  const { error } = await supabaseClient.from("club_rosters").insert({ club_id: clubId, player_id: playerId });
+  if (!error) return { ok: true };
+  return { error: error.code === "23505" ? "Already on your club's roster." : error.message };
+}
+
+/* Take a player off this club's roster (club_rosters delete; any club member
+   may, per 002's "members remove" policy -- every member is an owner/admin).
+   The global player, their profile and every past match (which store names)
+   are untouched, so stats stay and they can be re-added later. RLS turns a
+   non-member's delete into "0 rows", not an error, hence the row check. */
+async function removePlayerFromClub(clubId, playerId){
+  const { data, error } = await supabaseClient.from("club_rosters").delete()
+    .eq("club_id", clubId).eq("player_id", playerId).select("player_id");
+  if (error) return { error: error.message };
+  return data && data.length ? { ok: true } : { error: "Couldn't remove this player — only this club's admins can." };
 }
 
 /* --- player profiles (supabase/007_player_profiles.sql). Name and stats are
@@ -1543,9 +1629,19 @@ function profileSqlMissing(error){
    they only exist once supabase/008 has been run, so a failed select there
    just means "details unavailable", not a failed profile. */
 const PLAYER_DETAIL_COLS = "batting_hand, bowling_arm, bowling_type, is_keeper, city, photo";
+const PLAYER_KIT_COLS = "nickname, jersey_no";   // supabase/010
 async function fetchPlayerDetails(playerId){
+  // Try with 010's columns first; without 010 that select fails, so fall
+  // back to 008's and flag nickname/jersey as unavailable.
+  const full = await supabaseClient.from("players_public").select(`${PLAYER_DETAIL_COLS}, ${PLAYER_KIT_COLS}`).eq("id", playerId).single();
+  if (!full.error && full.data) return Object.assign({ details_unavailable: false, kit_unavailable: false }, full.data);
   const { data, error } = await supabaseClient.from("players_public").select(PLAYER_DETAIL_COLS).eq("id", playerId).single();
-  return error || !data ? { details_unavailable: true } : Object.assign({ details_unavailable: false }, data);
+  return error || !data ? { details_unavailable: true, kit_unavailable: true } : Object.assign({ details_unavailable: false, kit_unavailable: true }, data);
+}
+/* Same 010 fallback for the roster list, so it still loads before 010 is run. */
+async function fetchRosterRows(clubId){
+  const full = await supabaseClient.from("club_rosters").select(`player_id, players_public(id, name, ${PLAYER_KIT_COLS})`).eq("club_id", clubId);
+  return full.error ? supabaseClient.from("club_rosters").select("player_id, players_public(id, name)").eq("club_id", clubId) : full;
 }
 async function fetchPlayerProfile(playerId){
   if (!supabaseClient) return { error: "Cloud isn't configured on this deployment." };
@@ -1581,9 +1677,16 @@ async function updatePlayerDetails(playerId, d){
     _player_id: playerId, _batting_hand: d.batting_hand || "", _bowling_arm: d.bowling_arm || "", _bowling_type: d.bowling_type || "",
     _is_keeper: !!d.is_keeper, _city: d.city || "", _photo: d.photo || ""
   });
-  if (!error) return { ok: true };
-  return { error: error.code === "PGRST202" || error.code === "42883"
+  if (error) return { error: error.code === "PGRST202" || error.code === "42883"
     ? "Cloud database is missing supabase/008_player_details.sql — run it in the Supabase SQL editor." : error.message };
+  // Nickname + jersey no are a separate RPC (supabase/010). Without 010 a
+  // blank nickname/jersey is fine -- only complain if one was actually typed.
+  const nickname = (d.nickname || "").trim(), jersey = parseJerseyNo(d.jersey_no);
+  const kit = await supabaseClient.rpc("update_player_nickname_jersey", { _player_id: playerId, _nickname: nickname, _jersey_no: jersey });
+  if (!kit.error) return { ok: true };
+  const missing = cloudSqlMissing(kit.error, "supabase/010_player_nickname_jersey.sql");
+  if (missing && !nickname && jersey == null) return { ok: true };
+  return { error: missing || kit.error.message };
 }
 async function updatePlayerProfile(playerId, phone, nic){
   const { error } = await supabaseClient.rpc("update_player_profile", { _player_id: playerId, _phone: phone || "", _nic: nic || "" });
@@ -1705,10 +1808,10 @@ function defaultUi(){
     // re-fetched whenever their screen is opened.
     myClubs: null, myClubsLoading: false, currentClubId: null, club: null, clubBusy: false, clubInviteMessage: null,
     clubMatchSetupType: null, // "practice" | "friendly" | "tournament", set when entering club match setup
-    clubTournamentSetupPresetId: null, currentTournamentId: null, clubTournament: null,
+    clubTournamentSetupPresetId: null, clubTournamentSetupName: null, currentTournamentId: null, clubTournament: null,
     premier: null, // { players, premierMatches, pendingClaims, pendingMerges } -- see fetchPremierData()
     identity: null, // { myPlayer, pendingClaim, pendingMerges } for the signed-in viewer -- see fetchMyPlayerIdentity()
-    claimMessage: null, clubAddMessage: null,
+    claimMessage: null, clubAddMessage: null, playerModal: null,
     sideMenuOpen: false
   };
 }
@@ -1748,14 +1851,30 @@ function purgeLeakedClubPlayers(st){
   return removed;
 }
 
+/* One-time, per device: the cloud's clubs/players/matches were wiped
+   (2026-09), so drop this device's archived copies of club matches (they'd
+   otherwise keep feeding club stats via clubMatchesFor) and forget the
+   selected club, which no longer exists. Guest matches (no clubId) and a
+   match still in progress are left alone. Returns how many were removed. */
+function purgeLocalClubMatches(st){
+  let removed = 0;
+  Object.keys(st.matchHistory || {}).forEach(id => {
+    if (st.matchHistory[id] && st.matchHistory[id].clubId){ delete st.matchHistory[id]; removed++; }
+  });
+  st.activeClubId = null;
+  return removed;
+}
+
 function load(){
   const data = DB.load(STORAGE_KEY);
   if (data){
     state = Object.assign(defaultState(), data);
     if (!state.guestPlayersCleaned){ purgeLeakedClubPlayers(state); state.guestPlayersCleaned = true; save(); }
+    if (!state.clubDataReset202609){ purgeLocalClubMatches(state); state.clubDataReset202609 = true; save(); }
     applyTheme(); return;
   }
   state = migrateLegacy() || defaultState();
+  state.clubDataReset202609 = true;   // nothing from before the wipe to purge on a fresh/legacy install
   applyTheme();
   save();
 }
@@ -2295,7 +2414,7 @@ function renderAccount(){
         <div class="avatar-badge">${escapeHtml(initial)}</div>
         <p class="mvp-name">${escapeHtml(profile?.display_name || "—")}</p>
         <p class="muted">${escapeHtml(session.user.email || "")}</p>
-        ${isAdmin ? `<p class="hint">Signed in as platform admin.</p>` : ""}
+        ${isAdmin ? `<p class="hint">Signed in as platform admin.</p><button data-action="go-admin-portal" class="ghost">Open admin portal</button>` : ""}
         <button data-action="go-my-clubs" class="primary">My clubs</button>
         <button data-action="sign-out" class="ghost">Sign out</button>
       </div>
@@ -2519,6 +2638,10 @@ function photoFieldHtml(photo, initial){
 function playerDetailFieldsHtml(d){
   const opt = (v, cur, label) => `<option value="${v}" ${cur === v ? "selected" : ""}>${label}</option>`;
   return `
+    <div class="field-row" style="grid-template-columns:1fr 96px;">
+      <label>Nickname<input name="nickname" value="${escapeHtml(d.nickname || "")}" placeholder="e.g. Mahi" maxlength="24" autocomplete="off"></label>
+      <label>Jersey no<input name="jersey_no" value="${d.jersey_no == null ? "" : escapeHtml(String(d.jersey_no))}" inputmode="numeric" pattern="[0-9]{1,3}" placeholder="7" maxlength="3" autocomplete="off"></label>
+    </div>
     <label>City <span class="muted">(optional)</span><input name="city" value="${escapeHtml(d.city || "")}" placeholder="e.g. Kandy" maxlength="40"></label>
     <div class="field-row">
       <label>Batting<select name="batting_hand">${opt("", d.batting_hand || "", "Not set")}${opt("right", d.batting_hand, "Right-hand")}${opt("left", d.batting_hand, "Left-hand")}</select></label>
@@ -2530,7 +2653,8 @@ function playerDetailFieldsHtml(d){
 function readPlayerDetails(f){
   return {
     batting_hand: f.get("batting_hand") || "", bowling_arm: f.get("bowling_arm") || "", bowling_type: f.get("bowling_type") || "",
-    is_keeper: f.get("is_keeper") === "on", city: (f.get("city") || "").trim(), photo: f.get("photo") || ""
+    is_keeper: f.get("is_keeper") === "on", city: (f.get("city") || "").trim(), photo: f.get("photo") || "",
+    nickname: (f.get("nickname") || "").trim(), jersey_no: (f.get("jersey_no") || "").trim()
   };
 }
 
@@ -2557,7 +2681,10 @@ function handlePlayerProfileSubmit(e){
     if (canContact){ pr.data.phone = phone || null; pr.data.nic = nic || null; }
     Object.assign(pr.data, { batting_hand: details.batting_hand || null, bowling_arm: details.bowling_arm || null, bowling_type: details.bowling_type || null,
       is_keeper: details.is_keeper, city: details.city || null, photo: details.photo || null, details_unavailable: false });
-    pr.editing = false; pr.message = "Saved.";
+    if (!pr.data.kit_unavailable) Object.assign(pr.data, { nickname: details.nickname || null, jersey_no: parseJerseyNo(details.jersey_no) });
+    ui.playerModal = null; pr.message = "Saved.";
+    // The roster list shows jersey/nickname, so refresh it if it's this club's.
+    if (pr.scope === "club" && ui.currentClubId) fetchClubDetail(ui.currentClubId).then(render);
     render();
   });
 }
@@ -2666,21 +2793,7 @@ function renderPlayerProfile(){
   let body = "";
   if (pr.loading) body = `<div class="auth-card" style="margin-top:0;"><p class="hint">Loading…</p></div>`;
   else if (pr.error) body = `<div class="auth-card" style="margin-top:0;"><p class="hint">${escapeHtml(pr.error)}</p></div>`;
-  else if (pr.editing && canEdit){
-    body = `
-      <h3 class="section-label">Edit profile</h3>
-      <form id="player-profile-form" class="auth-card" style="margin-top:0;">
-        <div class="form-error"></div>
-        ${photoFieldHtml(photo, initial)}
-        <label>Contact no<input name="phone" type="tel" value="${escapeHtml(d.phone || "")}" placeholder="07x xxx xxxx" maxlength="16" autocomplete="off"></label>
-        <label>NIC<input name="nic" value="${escapeHtml(d.nic || "")}" placeholder="901234567V" maxlength="14" autocomplete="off"></label>
-        ${playerDetailFieldsHtml(d)}
-        <div style="display:flex;gap:10px;">
-          <button type="button" data-action="cancel-player-profile-edit" class="ghost" style="width:112px;flex-shrink:0;">Cancel</button>
-          <button type="submit" class="primary" style="flex-grow:1;margin-top:0;">Save</button>
-        </div>
-      </form>`;
-  } else {
+  else {
     const batting = formatBatting(d.batting_hand), bowling = formatBowling(d.bowling_arm, d.bowling_type);
     body = `
       ${d.details_unavailable ? (canEdit ? `<p class="hint guest-note">Batting, bowling, keeper, city and photo need supabase/008_player_details.sql to be run in the Supabase SQL editor.</p>` : "") : `
@@ -2691,9 +2804,13 @@ function renderPlayerProfile(){
         <div class="profile-row"><span class="profile-key">Wicket-keeper</span><span>${d.is_keeper ? "Yes" : `<span class="muted">No</span>`}</span></div>
         <div class="profile-row"><span class="profile-key">City</span><span>${d.city ? escapeHtml(d.city) : `<span class="muted">Not set</span>`}</span></div>
       </div>`}
+      ${d.kit_unavailable ? (canEdit && !d.details_unavailable ? `<p class="hint guest-note">Nickname and jersey no need supabase/010_player_nickname_jersey.sql to be run in the Supabase SQL editor.</p>` : "") : ""}
       <h3 class="section-label">Profile</h3>
       <div class="auth-card" style="margin-top:0;">
         <div class="profile-row"><span class="profile-key">Name</span><span>${escapeHtml(d.name)}</span></div>
+        ${d.kit_unavailable ? "" : `
+          <div class="profile-row"><span class="profile-key">Nickname</span><span>${d.nickname ? escapeHtml(d.nickname) : `<span class="muted">Not set</span>`}</span></div>
+          <div class="profile-row"><span class="profile-key">Jersey no</span><span>${d.jersey_no != null ? `#${d.jersey_no}` : `<span class="muted">Not set</span>`}</span></div>`}
         ${(pr.aliases || []).length ? `<div class="profile-row"><span class="profile-key">Also played as</span><span>${pr.aliases.map(escapeHtml).join(", ")}</span></div>` : ""}
         ${canEdit ? `
           <div class="profile-row"><span class="profile-key">Contact no</span><span>${d.phone ? escapeHtml(d.phone) : `<span class="muted">Not set</span>`}</span></div>
@@ -2705,7 +2822,10 @@ function renderPlayerProfile(){
         `}
         ${pr.message ? `<p class="hint">${escapeHtml(pr.message)}</p>` : ""}
       </div>
-      ${canEdit ? `<button data-action="edit-player-profile" class="ghost small" style="margin:0 0 4px;">Edit profile</button>` : ""}`;
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 4px;">
+        ${canEdit ? `<button data-action="edit-player-profile" class="ghost small">Edit profile</button>` : ""}
+        ${isClub && onClubRoster(pr.id) ? `<button data-action="ask-remove-club-player" data-id="${escapeHtml(pr.id)}" data-name="${escapeHtml(pr.name)}" class="ghost small danger-text">Remove from club</button>` : ""}
+      </div>`;
   }
   return `
     <div class="screen">
@@ -2713,7 +2833,8 @@ function renderPlayerProfile(){
       <div class="profile-head">
         ${avatar(photo)}
         <div>
-          <h1 style="margin:0;">${escapeHtml(pr.name)}</h1>
+          <h1 style="margin:0;">${d && d.jersey_no != null ? `<span class="jersey-no">#${d.jersey_no}</span> ` : ""}${escapeHtml(pr.name)}</h1>
+          ${d && d.nickname ? `<div class="muted" style="font-size:.85rem;">“${escapeHtml(d.nickname)}”</div>` : ""}
           <div class="profile-badges">
             ${d && d.claimed_by ? `<span class="required-badge">${session && d.claimed_by === session.user.id ? "THIS IS YOU" : "CLAIMED"}</span>` : ""}
             ${d && d.is_keeper ? `<span class="required-badge">KEEPER</span>` : ""}
@@ -2729,25 +2850,121 @@ function renderPlayerProfile(){
   `;
 }
 
+/* Is this player on the currently loaded club's roster? (Gates "Remove from
+   club" -- the roster is members-only, so a loaded roster means a member.) */
+function onClubRoster(playerId){
+  return !!(ui.club && ui.club.id === ui.currentClubId && ui.club.roster.some(p => p.id === playerId));
+}
+
 function renderClubPlayers(){
+  const loaded = !!(session && ui.club && ui.club.id === ui.currentClubId && !ui.clubBusy);
+  // The FAB sits outside .screen: .screen animates a transform, which would
+  // make a position:fixed child position against it during the animation.
   return renderClubScreen("Players", club => `
-    <form id="club-add-player-form" class="preset-form">
-      <div class="form-error"></div>
-      <label>Name<input name="name" placeholder="Player name" required maxlength="24"></label>
-      <div class="field-row">
-        <label>Contact no<input name="phone" type="tel" placeholder="07x xxx xxxx" maxlength="16" autocomplete="off"></label>
-        <label>NIC<input name="nic" placeholder="901234567V" maxlength="14" autocomplete="off"></label>
-      </div>
-      ${playerDetailFieldsHtml({})}
-      ${photoFieldHtml("", "?")}
-      <button type="submit" class="primary">Add player</button>
-    </form>
     ${ui.clubAddMessage ? `<p class="hint guest-note">${escapeHtml(ui.clubAddMessage)}</p>` : ""}
-    <p class="hint">Everything except the name is optional, and you can fill in a new player's full details right here. If they're already on the platform they just join your roster — their profile is then edited by the club that first added them until they claim it, and by the player after that. Contact number and NIC are never shown to other clubs.</p>
     ${club.roster.length ? club.roster.map(p => p.id
-      ? `<button data-action="open-player-profile" data-scope="club" data-id="${p.id}" data-name="${escapeHtml(p.name)}" class="list-row"><span>${escapeHtml(p.name)}</span><span class="chevron">›</span></button>`
-      : `<div class="list-row"><span>${escapeHtml(p.name)}</span><span class="muted">syncing…</span></div>`).join("") : `<p class="hint">No players yet.</p>`}
-  `);
+      ? `<div class="list-row roster-row">
+          <button data-action="open-player-profile" data-scope="club" data-id="${p.id}" data-name="${escapeHtml(p.name)}" class="roster-open"><span>${escapeHtml(playerLabel(p))}</span><span class="chevron">›</span></button>
+          <button data-action="ask-remove-club-player" data-id="${p.id}" data-name="${escapeHtml(p.name)}" class="roster-remove" aria-label="Remove ${escapeHtml(p.name)} from club" title="Remove from club">✕</button>
+        </div>`
+      : `<div class="list-row"><span>${escapeHtml(p.name)}</span><span class="muted">syncing…</span></div>`).join("") : `<p class="hint">No players yet — tap + to add one.</p>`}
+    <div class="fab-spacer"></div>
+  `) + (loaded ? `<button data-action="open-club-add-player" class="fab" aria-label="Add player" title="Add player">+</button>` : "");
+}
+
+/* --- player modals (club Players / profile). ui.playerModal is
+   { kind: "add" | "edit" | "remove", id?, name? }; not persisted. render()
+   keeps an already-open one's DOM (see modalKey) so a background fetch that
+   re-renders the page can't wipe what's been typed. --- */
+/* The "Already on the platform" block under the add sheet's name field.
+   Filled straight into the DOM by the input listener (no render()), so the
+   rest of the form keeps what's been typed. */
+function platformSuggestHtml(query, players){
+  if (!players.length) return "";
+  const rosterIds = new Set(ui.club && ui.club.id === ui.currentClubId ? ui.club.roster.map(p => p.id) : []);
+  const exact = players.find(p => p.name.toLowerCase() === query.trim().toLowerCase());
+  return `
+    <div class="section-label" style="margin-top:4px;">Already on the platform</div>
+    ${players.map(p => {
+      const photo = safePhoto(p.photo);
+      const avatar = photo ? `<img class="suggest-avatar" src="${photo}" alt="">` : `<span class="suggest-avatar avatar-badge">${escapeHtml(p.name.charAt(0).toUpperCase())}</span>`;
+      const inClub = rosterIds.has(p.id);
+      return `
+        <div class="suggest-row">
+          ${avatar}
+          <span class="suggest-name">${escapeHtml(playerLabel(p))}${p.city ? `<span class="muted"> · ${escapeHtml(p.city)}</span>` : ""}</span>
+          ${inClub ? `<span class="muted" style="font-size:.75rem;">In your club</span>`
+            : `<button type="button" data-action="add-existing-club-player" data-id="${escapeHtml(p.id)}" data-name="${escapeHtml(p.name)}" class="ghost small">Add to club</button>`}
+        </div>`;
+    }).join("")}
+    <p class="hint" style="margin:4px 0 10px;">${exact && rosterIds.has(exact.id)
+      ? `“${escapeHtml(exact.name)}” is already in your club. Add someone else, or pick another player above.`
+      : exact
+      ? `“${escapeHtml(exact.name)}” already exists — submitting this name adds that player rather than creating a new one, and the details below won't be applied. Use “Add to club” to pick the right person.`
+      : "Pick one to add them as they are, or keep typing to create a new player."}</p>`;
+}
+
+function renderClubAddPlayerModal(){
+  return `
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2>Add player</h2>
+        <form id="club-add-player-form" class="preset-form" style="margin:0;">
+          <div class="form-error"></div>
+          <label>Name<input name="name" placeholder="Player name" required maxlength="24" autocomplete="off"></label>
+          <div class="platform-suggest" hidden></div>
+          <div class="field-row">
+            <label>Contact no<input name="phone" type="tel" placeholder="07x xxx xxxx" maxlength="16" autocomplete="off"></label>
+            <label>NIC<input name="nic" placeholder="901234567V" maxlength="14" autocomplete="off"></label>
+          </div>
+          ${playerDetailFieldsHtml({})}
+          ${photoFieldHtml("", "?")}
+          <p class="hint">Everything except the name is optional. If they're already on the platform they just join your roster — their profile is then edited by the club that first added them until they claim it, and by the player after that. Contact number and NIC are never shown to other clubs.</p>
+          <div style="display:flex;gap:10px;">
+            <button type="button" data-action="close-player-modal" class="ghost" style="width:112px;flex-shrink:0;">Cancel</button>
+            <button type="submit" class="primary" style="flex-grow:1;margin-top:0;">Add player</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+}
+function renderPlayerEditModal(){
+  const pr = ui.profile, d = pr.data;
+  const initial = (pr.name || "?").trim().charAt(0).toUpperCase();
+  return `
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2>Edit ${escapeHtml(pr.name)}</h2>
+        <form id="player-profile-form" style="margin:0;">
+          <div class="form-error"></div>
+          ${photoFieldHtml(safePhoto(d.photo), initial)}
+          ${d.can_see_contact ? `
+            <label>Contact no<input name="phone" type="tel" value="${escapeHtml(d.phone || "")}" placeholder="07x xxx xxxx" maxlength="16" autocomplete="off"></label>
+            <label>NIC<input name="nic" value="${escapeHtml(d.nic || "")}" placeholder="901234567V" maxlength="14" autocomplete="off"></label>` : ""}
+          ${playerDetailFieldsHtml(d)}
+          <div style="display:flex;gap:10px;">
+            <button type="button" data-action="close-player-modal" class="ghost" style="width:112px;flex-shrink:0;">Cancel</button>
+            <button type="submit" class="primary" style="flex-grow:1;margin-top:0;">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+}
+/* Two taps (open, then confirm) like the forfeit sheet: removal has no undo. */
+function renderRemovePlayerModal(){
+  const pm = ui.playerModal;
+  return `
+    <div class="modal-backdrop">
+      <div class="modal danger">
+        <h2>Remove ${escapeHtml(pm.name)} from ${escapeHtml(currentClubName() || "this club")}?</h2>
+        <p class="hint">They come off this club's roster only. Their player profile, their past match stats and any other clubs they're on stay as they are, and you can add them again later.</p>
+        <div class="form-error">${pm.error ? escapeHtml(pm.error) : ""}</div>
+        <div style="display:flex;gap:10px;margin-top:2px;">
+          <button data-action="close-player-modal" class="ghost" style="width:112px;flex-shrink:0;">Cancel</button>
+          <button data-action="confirm-remove-club-player" class="primary danger-confirm" style="flex-grow:1;" ${pm.busy ? "disabled" : ""}>${pm.busy ? "Removing…" : "Remove player"}</button>
+        </div>
+      </div>
+    </div>`;
 }
 
 function renderClubPresets(){
@@ -2802,15 +3019,24 @@ function handleClubAddPlayerSubmit(e){
   const detailsError = playerDetailsError(details);
   if (detailsError){ showFormError(form, detailsError); return; }
   ui.clubAddMessage = null;
+  const submit = form.querySelector('button[type="submit"]');
+  if (submit) submit.disabled = true;   // no double-add on a slow network
   addPlayerToClub(ui.currentClubId, name, { phone, nic, details }).then(result => {
-    if (result && result.error){ showFormError(form, result.error); return; }
-    if (result && result.created === false){
+    if (submit) submit.disabled = false;
+    // "Added, but couldn't save ..." means the roster row exists already --
+    // close the sheet (re-submitting would just hit "already on the platform").
+    const partial = result && result.error && result.error.startsWith("Added,");
+    if (result && result.error && !partial){ showFormError(form, result.error); return; }
+    ui.playerModal = null;
+    if (partial) ui.clubAddMessage = result.error;
+    else if (result && result.created === false){
       const typed = phone || nic || playerHasDetails(details);
       ui.clubAddMessage = `${name} is already on the platform, so they were added to your roster as they are${typed ? " — the details you entered weren't applied" : ""}. Only the club that first added them, or the player after claiming, can edit their profile.`;
-    }
+    } else ui.clubAddMessage = `${name} added.`;
     // A brand-new name also just became a global (Premier) player -- refresh
     // that list too if it was already loaded, so it doesn't show stale.
     if (ui.premier) fetchPremierData();
+    render();
     fetchClubDetail(ui.currentClubId).then(render);
   });
 }
@@ -2833,6 +3059,12 @@ function handleClubInviteAdminSubmit(e){
    CLAUDE.md). Reuses the same renderStandingsTable/computeStandings/
    renderLeaderboards/aggregatePlayerStats as the local guest tournament
    feature, fed cloud-fetched matches instead of state.matchHistory. --- */
+// Club tournaments are usually "everything played today", so the name box is
+// pre-filled with today's date (e.g. "Sun 27 Sep 2026") -- no typing needed.
+function defaultClubTournamentName(date = new Date()){
+  return date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" }).replace(/,/g, "");
+}
+
 function renderClubTournamentSetup(){
   if (!session) return renderSignIn();
   const clubName = currentClubName();
@@ -2846,7 +3078,7 @@ function renderClubTournamentSetup(){
       <h1>🏆 New tournament</h1>
       <p class="tagline">Group this club's own matches -- e.g. everything played on one day -- under one tournament with standings.</p>
       <form id="club-tournament-setup-form">
-        <label>Tournament name<input name="name" required maxlength="40" placeholder="e.g. Sunday 12 Oct"></label>
+        <label>Tournament name<input name="name" required maxlength="40" placeholder="e.g. Sunday 12 Oct" value="${escapeHtml(ui.clubTournamentSetupName ?? defaultClubTournamentName())}"></label>
         <input type="hidden" name="tournamentPresetId" value="${ui.clubTournamentSetupPresetId || ""}">
         ${!presets.length ? `<p class="hint">${ui.club && ui.club.id === ui.currentClubId ? "This club has no tournament presets yet — add one on the club page first." : "Loading this club's presets…"}</p>` : ""}
         ${presets.length ? `
@@ -2871,7 +3103,7 @@ function handleClubTournamentSetupSubmit(e){
   createClubTournament(ui.currentClubId, name, preset).then(result => {
     if (result && result.error){ showFormError(form, result.error); return; }
     ui.currentTournamentId = result.tournament.id;
-    ui.clubTournamentSetupPresetId = null;
+    ui.clubTournamentSetupPresetId = null; ui.clubTournamentSetupName = null;
     state.view = "clubTournamentDashboard";
     save(); render();
     fetchClubTournamentDetail(result.tournament.id).then(render);
@@ -4584,7 +4816,19 @@ function render(){
 
   const modalRoot = document.getElementById("modal-root");
   let modalHtml = "";
-  if (away){
+  // Player modals (club Players / profile) only exist off the live screen.
+  // modalKey lets an already-open one survive re-renders untouched.
+  let modalKey = "";
+  const pm = ui.playerModal;
+  const pmValid = pm && (!inProgress || away) && (
+    (pm.kind === "add" && state.view === "clubPlayers") ||
+    (pm.kind === "edit" && state.view === "playerProfile" && ui.profile && ui.profile.data && ui.profile.data.can_see_contact) ||
+    (pm.kind === "remove" && (state.view === "clubPlayers" || state.view === "playerProfile")));
+  if (pm && !pmValid) ui.playerModal = null;
+  if (pmValid){
+    modalKey = pm.kind === "remove" ? `remove:${pm.id}:${pm.busy ? 1 : 0}:${pm.error || ""}` : pm.kind;
+    modalHtml = pm.kind === "add" ? renderClubAddPlayerModal() : pm.kind === "edit" ? renderPlayerEditModal() : renderRemovePlayerModal();
+  } else if (away){
     modalHtml = "";
   } else if (m && m.status !== "complete" && ui.forfeitFlow){
     modalHtml = renderForfeitModal(m);
@@ -4597,7 +4841,11 @@ function render(){
     else if (!inn.bowler) modalHtml = renderNewBowlerModal(inn);
     else if (ui.wicketFlow) modalHtml = renderWicketModal(inn);
   }
-  modalRoot.innerHTML = modalHtml;
+  if (!(modalKey && modalRoot.dataset.modalKey === modalKey)){
+    modalRoot.innerHTML = modalHtml;
+    modalRoot.dataset.modalKey = modalKey;
+    if (modalKey === "add"){ const first = modalRoot.querySelector('input[name="name"]'); if (first) first.focus(); }
+  }
 }
 
 document.addEventListener("click", (e) => {
@@ -4675,6 +4923,7 @@ document.addEventListener("click", (e) => {
   }
   else if (action === "go-account"){ state.view = session ? "account" : "signIn"; render(); }
   else if (action === "sign-out"){ handleSignOut(); }
+  else if (action === "go-admin-portal"){ location.href = "admin.html"; } // platform admins only; admin.html re-checks server-side
   else if (action === "go-premier"){ state.view = "premier"; render(); fetchPremierData().then(render); }
   else if (action === "open-side-menu"){ ui.sideMenuOpen = true; render(); }
   else if (action === "close-side-menu"){ ui.sideMenuOpen = false; render(); }
@@ -4709,8 +4958,35 @@ document.addEventListener("click", (e) => {
     field.querySelector('input[name="photo"]').value = "";
     if (preview) preview.outerHTML = `<div class="avatar-badge photo-preview">${escapeHtml(field.dataset.initial || "?")}</div>`;
   }
-  else if (action === "edit-player-profile"){ ui.profile.editing = true; ui.profile.message = null; render(); }
-  else if (action === "cancel-player-profile-edit"){ ui.profile.editing = false; render(); }
+  else if (action === "edit-player-profile"){ ui.playerModal = { kind: "edit" }; ui.profile.message = null; render(); }
+  else if (action === "open-club-add-player"){ ui.playerModal = { kind: "add" }; ui.clubAddMessage = null; render(); }
+  else if (action === "close-player-modal"){ ui.playerModal = null; render(); }
+  else if (action === "add-existing-club-player"){
+    const form = btn.closest("form");
+    btn.disabled = true;
+    addExistingPlayerToClub(ui.currentClubId, btn.dataset.id).then(r => {
+      if (r.error){ btn.disabled = false; if (form) showFormError(form, r.error); return; }
+      ui.playerModal = null;
+      ui.clubAddMessage = `${btn.dataset.name} added to the club from the platform.`;
+      render();
+      fetchClubDetail(ui.currentClubId).then(render);
+    });
+  }
+  else if (action === "ask-remove-club-player"){ ui.playerModal = { kind: "remove", id: btn.dataset.id, name: btn.dataset.name, busy: false, error: null }; render(); }
+  else if (action === "confirm-remove-club-player"){
+    const pmr = ui.playerModal;
+    if (!pmr || pmr.kind !== "remove" || pmr.busy) return;
+    pmr.busy = true; pmr.error = null; render();
+    removePlayerFromClub(ui.currentClubId, pmr.id).then(r => {
+      if (ui.playerModal !== pmr) return;
+      if (r.error){ pmr.busy = false; pmr.error = r.error; render(); return; }
+      ui.playerModal = null;
+      ui.clubAddMessage = `${pmr.name} was removed from the club roster.`;
+      if (state.view === "playerProfile") state.view = "clubPlayers";
+      save(); render();
+      fetchClubDetail(ui.currentClubId).then(render);
+    });
+  }
   else if (action === "go-club-view"){
     ui.currentClubId = state.activeClubId; ui.editingClubMatchPreset = null; ui.editingClubTournamentPreset = null;
     state.view = btn.dataset.view; render();
@@ -4724,9 +5000,14 @@ document.addEventListener("click", (e) => {
   }
   else if (action === "go-club-tournament-setup"){
     ui.currentClubId = state.activeClubId;
-    ui.clubTournamentSetupPresetId = null; state.view = "clubTournamentSetup"; render();
+    ui.clubTournamentSetupPresetId = null; ui.clubTournamentSetupName = null; state.view = "clubTournamentSetup"; render();
   }
-  else if (action === "pick-club-tournament-preset"){ ui.clubTournamentSetupPresetId = btn.dataset.id; render(); }
+  else if (action === "pick-club-tournament-preset"){
+    // Keep whatever is in the name box -- the re-render would otherwise reset it to today's date.
+    const nameInput = btn.form && btn.form.elements.namedItem("name");
+    if (nameInput) ui.clubTournamentSetupName = nameInput.value;
+    ui.clubTournamentSetupPresetId = btn.dataset.id; render();
+  }
   else if (action === "open-club-tournament"){
     ui.currentTournamentId = btn.dataset.id; ui.clubTournament = null; state.view = "clubTournamentDashboard"; render();
     fetchClubTournamentDetail(btn.dataset.id).then(render);
@@ -4834,6 +5115,28 @@ document.addEventListener("submit", (e) => {
   else if (id === "club-tournament-setup-form") handleClubTournamentSetupSubmit(e);
   else if (id === "claim-request-form") handleClaimRequestSubmit(e);
   else if (id === "merge-request-form") handleMergeRequestSubmit(e);
+});
+
+/* The only delegated `input` listener: live "already on the platform"
+   suggestions for the club add-player sheet's name field. Debounced, needs
+   2+ characters, and drops stale responses (suggestSeq) so a slow early
+   query can't overwrite a newer one. */
+let suggestTimer = null, suggestSeq = 0;
+document.addEventListener("input", (e) => {
+  const form = e.target.closest && e.target.closest("#club-add-player-form");
+  if (!form || e.target.name !== "name" || !supabaseClient) return;
+  const box = form.querySelector(".platform-suggest");
+  const query = e.target.value;
+  clearTimeout(suggestTimer);
+  if (query.trim().length < 2){ suggestSeq++; box.hidden = true; box.innerHTML = ""; return; }
+  suggestTimer = setTimeout(() => {
+    const seq = ++suggestSeq;
+    searchPlatformPlayers(query).then(players => {
+      if (seq !== suggestSeq || !box.isConnected) return;
+      box.innerHTML = platformSuggestHtml(query, players);
+      box.hidden = !players.length;
+    });
+  }, 250);
 });
 
 document.addEventListener("change", (e) => {
