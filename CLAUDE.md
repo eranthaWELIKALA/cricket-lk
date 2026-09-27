@@ -619,15 +619,22 @@ with the same styling as the others, the mockup (and the current CSS)
 deliberately makes it read as "not an option" rather than "option,
 temporarily off."
 
-`renderNewBatsmanModal()` deliberately has **no "yet to bat" quick-pick
-list**, even though the Design-canvas mockup for this screen had one
-grouped by team. There's no data to draw it from: a standalone match's
-`teamA`/`teamB` are plain strings with no linked roster (see "Teams,
-players & presets" above), and even a tournament match's `createMatch()`
-call only ever receives resolved name strings, not team IDs — so
-neither match type has a squad list available at this point. Don't
-approximate one from `state.players` (the global, cross-team list); it
-would just as happily suggest the *other* team's players.
+**In-match name boxes are a search-select, not a `<datalist>`.** Native
+datalist popups proved unreliable on phones (options showed but couldn't be
+tapped inside the bottom sheet), so the opening, new-batsman, new-bowler and
+fielder inputs have no `list` attribute; `renderNameCombo()` puts our own
+`.combo-list` under each, hidden until the input is focused, narrowed by the
+delegated `input` listener, closed on `focusout` (delayed; `pointerdown` on
+an option is cancelled so the input keeps focus). A tap (`combo-pick`) only
+fills the input — the form's own button still submits, so every check in
+`handleOpeningSubmit`/`submitNewBatsman`/`submitNewBowler`/
+`handleWicketFielderSubmit` applies. All DOM-only, never `render()`. Options
+come from `pickPool(teamKey)` (the side's squad → else the club roster /
+guest list → nothing for a friendly's visitors) filtered by the pure
+`pickCandidates(match, pool, role)` in ENGINE (tested): batters drop anyone
+out/at the crease, bowlers drop anyone who's already bowled (they keep their
+figure rows) and the last-over bowler, every role drops names already on the
+other side. Other forms (setup team names, guest Teams) still use datalists.
 
 ## Testing
 
@@ -938,14 +945,13 @@ setup swaps the typed name boxes for two team selects and stores
 `match.squads = { A: [names], B: [names] }`. `playerTeamInMatch` checks squads
 *before* usage, so the side-conflict rule fires before a squad player has
 even batted; a name in neither squad (a late sub) falls back to usage.
-`squadListId(teamKey)`/`renderSquadDatalists()` give each side its own
-datalist (batting side minus out/at-crease), used by every in-match name box.
+Squads also scope the in-match search-select options to each side (see "In-match
+name boxes are a search-select" above).
 `syncMatchToCloud` strips `squads` from the public `matches.data` blob. Played
 matches keep their own names, so editing/deleting a team never changes
 history or standings (which still group by name). If 012 isn't run, the
 dashboard shows a "run 012" hint (`teams_unavailable`) and setup falls back
-to typed names. The new-batsman modal still has no one-tap "yet to bat" list —
-squads now make one possible, but it isn't built.
+to typed names.
 
 ## Ownership, claiming & merging (`supabase/009_ownership_claims_merges.sql`)
 

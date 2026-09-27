@@ -297,6 +297,16 @@
     border-radius:6px;padding:2px 7px;font-size:.65rem;font-weight:800;letter-spacing:.06em;
   }
   .bowler-pick-list{display:flex;flex-direction:column;gap:8px;margin:8px 0;}
+  /* One-tap player chips in the batsman/bowler/fielder sheets -- scroll
+     inside the sheet rather than pushing its buttons off a short screen. */
+  /* Search-select for in-match name boxes (renderNameCombo): our own list
+     under the input, shown only while it's focused -- see the JS side. */
+  .combo{position:relative;}
+  .combo-list{margin:-6px 0 12px;max-height:176px;overflow-y:auto;border:2px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--panel-solid);}
+  .combo-list[hidden], .combo-opt[hidden]{display:none;}
+  .combo-opt{display:block;width:100%;text-align:left;border:none;border-bottom:1px solid var(--line);border-radius:0;background:none;box-shadow:none;padding:11px 12px;font-size:.92rem;font-weight:600;color:var(--text);}
+  .combo-opt:last-child{border-bottom:none;}
+  .combo-opt:active{background:var(--panel-2);}
   .bowler-pick-row{
     height:52px;width:100%;background:var(--panel-2);border:2px solid var(--line-strong);border-radius:var(--radius-sm);
     display:flex;align-items:center;gap:10px;padding:0 12px;box-shadow:var(--shadow-card);color:var(--text);box-sizing:border-box;
@@ -1175,6 +1185,35 @@ function playerSideConflict(match, name, teamKey){
   const owner = playerTeamInMatch(match, name);
   if (owner && owner !== teamKey) return `${name} already plays for ${teamName(match, owner)} in this match.`;
   return null;
+}
+
+/* Which of `pool` (a squad, the club roster, the guest players list) can be
+   offered as a one-tap pick for the current innings, in `role`:
+   - "batter": the batting side, minus anyone out or already at the crease;
+   - "bowler": the bowling side, minus anyone who has already bowled (they
+     have their own rows with figures) and the previous over's bowler;
+   - "fielder": the bowling side.
+   Anyone already on the other side is dropped; duplicates (any case) too. */
+function pickCandidates(match, pool, role){
+  const inn = currentInnings(match);
+  const side = role === "batter" ? inn.battingTeam : inn.bowlingTeam;
+  const lc = n => n.toLowerCase();
+  const skip = new Set();
+  if (role === "batter"){
+    inn.batting.order.forEach(n => { if (inn.batting.stats[n].out) skip.add(lc(n)); });
+    [inn.striker, inn.nonStriker].forEach(n => { if (n) skip.add(lc(n)); });
+  } else if (role === "bowler"){
+    inn.bowling.order.forEach(n => skip.add(lc(n)));
+    if (inn.lastOverBowler) skip.add(lc(inn.lastOverBowler));
+  }
+  const out = [];
+  (pool || []).forEach(raw => {
+    const n = (raw || "").trim();
+    if (!n || skip.has(lc(n)) || playerSideConflict(match, n, side)) return;
+    skip.add(lc(n));
+    out.push(n);
+  });
+  return out;
 }
 
 function startSecondInnings(match){
@@ -2230,21 +2269,44 @@ const SFX = (() => {
 function renderPlayersDatalist(){
   return `<datalist id="players-datalist">${suggestionPlayerNames().map(n => `<option value="${escapeHtml(n)}">`).join("")}</datalist>`;
 }
-/* A match started from saved tournament teams (match.squads) gets one list
-   per side, so the batter/bowler/fielder boxes only suggest that side's
-   players -- the batting side minus whoever is out or already in. */
-function squadListId(teamKey){
-  return state.match && state.match.squads ? `squad-${teamKey}-datalist` : "players-datalist";
-}
-function renderSquadDatalists(){
+/* The names a side can be picked from: its squad (saved tournament teams),
+   else the same list the datalist offers -- except a friendly's visitors,
+   who aren't on the home club's roster, so there's nothing to offer them. */
+function pickPool(teamKey){
   const m = state.match;
-  if (!m || !m.squads || m.status === "complete") return "";
-  const inn = currentInnings(m);
-  const used = new Set(inn.batting.order.filter(n => inn.batting.stats[n].out || n === inn.striker || n === inn.nonStriker).map(n => n.toLowerCase()));
-  return ["A", "B"].map(key => {
-    const names = (m.squads[key] || []).filter(n => key !== inn.battingTeam || !used.has(n.toLowerCase()));
-    return `<datalist id="squad-${key}-datalist">${names.map(n => `<option value="${escapeHtml(n)}">`).join("")}</datalist>`;
-  }).join("");
+  if (m && m.squads) return m.squads[teamKey] || [];
+  if (m && m.clubId && m.matchType === "friendly" && teamKey === "B") return [];
+  return suggestionPlayerNames();
+}
+/* A search-select for the in-match name boxes. Native <datalist> popups are
+   unreliable on phones (options show but often can't be tapped inside a
+   bottom sheet), so these inputs have no `list` and get our own option list
+   instead: hidden until the input is focused, narrowed as you type, a tap
+   fills the input (the form's own button still submits, so every check in
+   the submit handlers applies). DOM-only -- see the focusin/focusout/input
+   listeners and the "combo-pick" click action; nothing here re-renders.
+   `label` is trusted HTML (callers escape names); `names` are escaped here. */
+function renderNameCombo(label, inputAttrs, names){
+  const input = `<input ${inputAttrs} autocomplete="off" autocapitalize="words">`;
+  return `
+    <div class="combo">
+      ${label ? `<label>${label}${input}</label>` : input}
+      <div class="combo-list" role="listbox" hidden>
+        ${names.map(n => `<button type="button" class="combo-opt" role="option" data-action="combo-pick" data-name="${escapeHtml(n)}">${escapeHtml(n)}</button>`).join("")}
+      </div>
+    </div>`;
+}
+function updateCombo(input, open){
+  const list = input.closest(".combo") && input.closest(".combo").querySelector(".combo-list");
+  if (!list) return;
+  const q = input.value.trim().toLowerCase();
+  let shown = 0;
+  list.querySelectorAll(".combo-opt").forEach(o => {
+    const hit = !q || o.dataset.name.toLowerCase().includes(q);
+    o.hidden = !hit;
+    if (hit) shown++;
+  });
+  list.hidden = !open || shown === 0;
 }
 function renderTeamsDatalist(){
   return `<datalist id="teams-datalist">${suggestionTeamNames().map(n => `<option value="${escapeHtml(n)}">`).join("")}</datalist>`;
@@ -3611,9 +3673,9 @@ function renderOpeningModal(match){
         <h2>${escapeHtml(teamName(match, inn.battingTeam))} — opening players</h2>
         <form id="opening-form">
           <div class="form-error"></div>
-          <label>Striker<input name="striker" required maxlength="24" list="${squadListId(inn.battingTeam)}"></label>
-          <label>Non-striker<input name="nonStriker" required maxlength="24" list="${squadListId(inn.battingTeam)}"></label>
-          <label>${escapeHtml(teamName(match, inn.bowlingTeam))} bowler<input name="bowler" required maxlength="24" list="${squadListId(inn.bowlingTeam)}"></label>
+          ${renderNameCombo("Striker", `name="striker" required maxlength="24" placeholder="Search players"`, pickCandidates(match, pickPool(inn.battingTeam), "batter"))}
+          ${renderNameCombo("Non-striker", `name="nonStriker" required maxlength="24" placeholder="Search players"`, pickCandidates(match, pickPool(inn.battingTeam), "batter"))}
+          ${renderNameCombo(`${escapeHtml(teamName(match, inn.bowlingTeam))} bowler`, `name="bowler" required maxlength="24" placeholder="Search players"`, pickCandidates(match, pickPool(inn.bowlingTeam), "bowler"))}
           <button type="submit" class="primary">Start innings</button>
         </form>
         <button type="button" data-action="open-forfeit" class="link-btn">Forfeit match instead</button>
@@ -3729,7 +3791,7 @@ function renderNewBatsmanModal(inn, slot){
         ` : ""}
         <form id="new-batsman-form">
           <div class="form-error"></div>
-          <label>Name<input name="name" required maxlength="24" autofocus list="${squadListId(inn.battingTeam)}" placeholder="Type or pick a player"></label>
+          ${renderNameCombo("Name", `name="name" required maxlength="24" placeholder="Search or type a player"`, pickCandidates(state.match, pickPool(inn.battingTeam), "batter"))}
           <p class="hint">A name that is not in your players list yet is added to it automatically.</p>
           <button type="submit" class="primary">Send in</button>
         </form>
@@ -3744,21 +3806,23 @@ function renderNewBatsmanModal(inn, slot){
 
 function handleNewBatsmanSubmit(e){
   e.preventDefault();
+  submitNewBatsman((new FormData(e.target).get("name") || "").trim(), e.target);
+}
+
+/* The one place a new batsman's name is checked and applied. */
+function submitNewBatsman(name, form){
   const inn = currentInnings(state.match);
   const slot = pendingBatsmanSlot(inn);
-  if (!slot) return;
-  const f = new FormData(e.target);
-  const name = (f.get("name") || "").trim();
-  if (!name) return;
+  if (!slot || !name) return;
   const other = slot === "striker" ? inn.nonStriker : inn.striker;
   if (other && name.toLowerCase() === other.toLowerCase()){
-    showFormError(e.target, "That player is already at the crease."); return;
+    showFormError(form, "That player is already at the crease."); return;
   }
   if (inn.batting.stats[name] && inn.batting.stats[name].out){
-    showFormError(e.target, `${name} is already out.`); return;
+    showFormError(form, `${name} is already out.`); return;
   }
   const sideConflict = playerSideConflict(state.match, name, inn.battingTeam);
-  if (sideConflict){ showFormError(e.target, sideConflict); return; }
+  if (sideConflict){ showFormError(form, sideConflict); return; }
   pushSnapshot();
   ensureBatsman(inn, name);
   registerMatchPlayer(name, inn.battingTeam);
@@ -3786,7 +3850,7 @@ function renderNewBowlerModal(inn){
         </div>
         <form id="new-bowler-form">
           <div class="form-error"></div>
-          <label>Name<input name="name" required maxlength="24" autofocus list="${squadListId(inn.bowlingTeam)}" placeholder="Type or pick a bowler"></label>
+          ${renderNameCombo("Name", `name="name" required maxlength="24" placeholder="Search or type a bowler"`, pickCandidates(state.match, pickPool(inn.bowlingTeam), "bowler"))}
           ${inn.bowling.order.length ? `
             <div class="section-label">Already bowled</div>
             <div class="bowler-pick-list">
@@ -3827,16 +3891,19 @@ function confirmNewBowler(name){
 
 function handleNewBowlerSubmit(e){
   e.preventDefault();
+  submitNewBowler((new FormData(e.target).get("name") || "").trim(), e.target);
+}
+
+/* A typed/searched name -- unlike the "already bowled" rows (pick-bowler),
+   it may not have played yet, so it needs the side check too. */
+function submitNewBowler(name, form){
   const inn = currentInnings(state.match);
-  if (inn.bowler) return;
-  const f = new FormData(e.target);
-  const name = (f.get("name") || "").trim();
-  if (!name) return;
+  if (inn.bowler || !name) return;
   if (inn.lastOverBowler && name.toLowerCase() === inn.lastOverBowler.toLowerCase()){
-    showFormError(e.target, `${name} can't bowl two overs in a row.`); return;
+    showFormError(form, `${name} can't bowl two overs in a row.`); return;
   }
   const sideConflict = playerSideConflict(state.match, name, inn.bowlingTeam);
-  if (sideConflict){ showFormError(e.target, sideConflict); return; }
+  if (sideConflict){ showFormError(form, sideConflict); return; }
   confirmNewBowler(name);
 }
 
@@ -3910,8 +3977,8 @@ function renderWicketModal(inn){
                 <label for="wicket-fielder">FIELDER</label>
                 ${required ? `<span class="required-badge">REQUIRED</span>` : ""}
               </div>
-              <input id="wicket-fielder" name="fielder" list="${squadListId(inn.bowlingTeam)}" maxlength="24" ${required ? "required" : ""}>
-              ${isCaught ? `<div class="hint">Autocompletes from your players list. Credits a catch in the fielding stats.</div>` : ""}
+              ${renderNameCombo("", `id="wicket-fielder" name="fielder" maxlength="24" placeholder="Search players" ${required ? "required" : ""}`, pickCandidates(match, pickPool(inn.bowlingTeam), "fielder"))}
+              ${isCaught ? `<div class="hint">Credits a catch in the fielding stats.</div>` : ""}
             </div>
             <div style="display:flex;gap:10px;margin-top:14px;">
               <button type="button" data-action="close-wicket-modal" class="ghost" style="width:112px;flex-shrink:0;">Cancel</button>
@@ -5059,7 +5126,7 @@ function render(){
   // renders the same form) is redundant clutter, not a shortcut to anywhere.
   const onAuthScreen = state.view === "signIn" || state.view === "signUp" || state.view === "account";
   root.classList.toggle("live-mode", !!(inProgress && !away && m.status !== "innings_break"));
-  root.innerHTML = renderTopBar(canNavigate, onAuthScreen) + html + renderPlayersDatalist() + renderSquadDatalists() + renderTeamsDatalist()
+  root.innerHTML = renderTopBar(canNavigate, onAuthScreen) + html + renderPlayersDatalist() + renderTeamsDatalist()
     + (canNavigate ? renderSideMenu() : "");
 
   const modalRoot = document.getElementById("modal-root");
@@ -5119,7 +5186,14 @@ document.addEventListener("click", (e) => {
   else if (action === "close-wicket-modal"){ ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; render(); }
   else if (action === "pick-runout-end"){ ui.runoutEnd = btn.dataset.end; render(); }
   else if (action === "pick-bowler"){ confirmNewBowler(btn.dataset.name); }
-  else if (action === "pick-wicket"){
+  else if (action === "combo-pick"){
+    const combo = btn.closest(".combo"), input = combo && combo.querySelector("input");
+    if (input){
+      input.value = btn.dataset.name;
+      combo.querySelector(".combo-list").hidden = true;
+      const form = btn.closest("form"); if (form) showFormError(form, "");
+    }
+  }  else if (action === "pick-wicket"){
     if (btn.dataset.type === "runout" || btn.dataset.type === "caught"){ ui.wicketFlow = btn.dataset.type; render(); }
     else confirmWicket(btn.dataset.type);
   }
@@ -5394,7 +5468,26 @@ document.addEventListener("submit", (e) => {
    2+ characters, and drops stale responses (suggestSeq) so a slow early
    query can't overwrite a newer one. */
 let suggestTimer = null, suggestSeq = 0;
+// Search-select open/close. pointerdown on an option is cancelled so the
+// input keeps focus (no focusout) and the tap lands as a plain click; the
+// focusout close is delayed as a backstop for browsers that move focus anyway.
+document.addEventListener("focusin", (e) => {
+  if (e.target.matches && e.target.matches(".combo input")) updateCombo(e.target, true);
+});
+document.addEventListener("focusout", (e) => {
+  if (!(e.target.matches && e.target.matches(".combo input"))) return;
+  const combo = e.target.closest(".combo");
+  setTimeout(() => {
+    if (!combo.isConnected || combo.contains(document.activeElement)) return;
+    combo.querySelector(".combo-list").hidden = true;
+  }, 200);
+});
+document.addEventListener("pointerdown", (e) => {
+  if (e.target.closest && e.target.closest(".combo-opt")) e.preventDefault();
+});
 document.addEventListener("input", (e) => {
+  // Search-select (renderNameCombo): narrow the list as you type.
+  if (e.target.closest && e.target.closest(".combo")){ updateCombo(e.target, true); return; }
   const form = e.target.closest && e.target.closest("#club-add-player-form");
   if (!form || e.target.name !== "name" || !supabaseClient) return;
   const box = form.querySelector(".platform-suggest");

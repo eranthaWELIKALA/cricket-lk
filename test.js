@@ -565,6 +565,22 @@ async function main(){
     assert(win.playerTeamInMatch(m, "Sub Fielder") === null, "a name in neither squad falls back to the usage rule");
   }
 
+  // --- 23. one-tap pick lists only offer players who can actually be picked ---
+  {
+    const m = createMatch({ teamA: "Reds", teamB: "Blues", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    const inn = currentInnings(m);
+    win.ensureBatsman(inn, "A1"); win.ensureBatsman(inn, "A2"); win.ensureBowler(inn, "B1");
+    inn.striker = "A1"; inn.nonStriker = "A2"; inn.bowler = "B1";
+    recordBall(inn, { kind: "wicket", wicketType: "bowled" }); // A1 out
+    const pool = ["A1", "a2", "A3", "B1", "B2", "a3"];
+    assert(JSON.stringify(win.pickCandidates(m, pool, "batter")) === JSON.stringify(["A3", "B2"]), "batter picks drop the out batter, the one at the crease, the bowling side and duplicates");
+    const bowl = win.pickCandidates(m, pool, "bowler");
+    assert(!bowl.includes("A1") && !bowl.includes("a2") && !bowl.includes("B1") && bowl.includes("B2"), "bowler picks: no batters from this innings, no one who has already bowled");
+    m.squads = { A: ["A1", "A2", "A3"], B: ["B1", "B2"] };
+    assert(JSON.stringify(win.pickCandidates(m, m.squads.B, "fielder")) === JSON.stringify(["B1", "B2"]), "fielder picks are the bowling squad");
+    assert(!win.pickCandidates(m, pool, "bowler").includes("A3"), "with squads, a batting-squad player is never offered to bowl");
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }
