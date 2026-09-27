@@ -52,7 +52,8 @@
   .screen.live > *{ flex-shrink:0; }
   .screen.live > .run-pad{ flex:1 0 100px; grid-auto-rows:1fr; margin-bottom:8px; }
   .screen.live .run-pad .run-btn{ padding:0; height:100%; min-height:44px; }
-  .screen.live > .link-btn{ padding:4px; font-size:.8rem; }
+  .screen.live > .link-btn, .screen.live > .live-links .link-btn{ padding:4px; font-size:.8rem; }
+  .live-links{ display:flex; justify-content:center; gap:16px; }
   @media (max-height:760px){
     #app.live-mode .over-row.dimmed{ display:none; }
     #app.live-mode .score-bento{ margin-bottom:6px; }
@@ -79,7 +80,7 @@
     #app.live-mode .run-pad .run-btn:not(.undo){ font-size:1.15rem; min-height:38px; }
     #app.live-mode .extra-pad button{ height:36px; }
     #app.live-mode .wicket-btn{ height:42px; }
-    #app.live-mode .screen.live > .link-btn{ padding:2px; }
+    #app.live-mode .screen.live > .link-btn, #app.live-mode .screen.live > .live-links .link-btn{ padding:2px; }
   }
   h1,h2,h3{margin:0 0 8px;letter-spacing:-.02em;}
   h1{font-size:2rem;font-weight:800;}
@@ -753,7 +754,13 @@ function createInnings(battingTeam, bowlingTeam, target, playersPerSide, oversLi
     wideBaseRuns: cfg.wideRuns != null ? cfg.wideRuns : 1,
     noBallBaseRuns: cfg.noBallRuns != null ? cfg.noBallRuns : 1,
     freeHitOnNoBall: cfg.freeHitOnNoBall !== false,
-    maxWickets: playersPerSide - 1,
+    // playersPerSide/oversLimit may be null ("no limit"): null maxWickets
+    // means the side can't be bowled out, null oversLimit means no overs
+    // cap (the innings then ends on all out, the target, or endInnings()).
+    // Last man stands: the side is only all out once every batter is out,
+    // and the last one bats alone (see battingAlone()).
+    lastManStands: !!cfg.lastManStands && playersPerSide != null,
+    maxWickets: playersPerSide == null ? null : (cfg.lastManStands ? playersPerSide : playersPerSide - 1),
     runs: 0, wickets: 0, legalBalls: 0,
     extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0 },
     freeHit: false,
@@ -802,6 +809,7 @@ function runRate(runs, legalBalls, ballsPerOver){
 function requiredRunRate(inn){
   if (inn.target == null) return null;
   const bpo = inn.ballsPerOver || 6;
+  if (inn.oversLimit == null) return null;
   const ballsLeft = inn.oversLimit * bpo - inn.legalBalls;
   if (ballsLeft <= 0) return null;
   const runsNeeded = inn.target - inn.runs;
@@ -812,8 +820,20 @@ function swapStrike(inn){
   const t = inn.striker; inn.striker = inn.nonStriker; inn.nonStriker = t;
 }
 
+/* Last man stands: one wicket short of all out, the remaining batter
+   carries on with no partner. They always hold the striker slot and the
+   non-striker slot stays null *without* asking for a new batsman. */
+function battingAlone(inn){
+  return !!inn.lastManStands && inn.maxWickets != null && inn.wickets === inn.maxWickets - 1;
+}
+
+function isAllOut(inn){
+  return inn.maxWickets != null && inn.wickets >= inn.maxWickets;
+}
+
 function pendingBatsmanSlot(inn){
   if (inn.complete) return null;
+  if (battingAlone(inn)) return inn.striker || inn.nonStriker ? null : "striker";
   if (!inn.striker) return "striker";
   if (!inn.nonStriker) return "nonStriker";
   return null;
@@ -822,8 +842,8 @@ function pendingBatsmanSlot(inn){
 function checkInningsComplete(inn){
   const bpo = inn.ballsPerOver || 6;
   if (inn.target != null && inn.runs >= inn.target){ inn.complete = true; inn.completeReason = "target"; }
-  else if (inn.wickets >= inn.maxWickets){ inn.complete = true; inn.completeReason = "allout"; }
-  else if (inn.legalBalls >= inn.oversLimit * bpo){ inn.complete = true; inn.completeReason = "overs"; }
+  else if (isAllOut(inn)){ inn.complete = true; inn.completeReason = "allout"; }
+  else if (inn.oversLimit != null && inn.legalBalls >= inn.oversLimit * bpo){ inn.complete = true; inn.completeReason = "overs"; }
 }
 
 /* event: { kind: 'run'|'wide'|'noball'|'bye'|'legbye'|'wicket',
@@ -927,17 +947,40 @@ function recordBall(inn, event){
       swapStrike(inn);
     }
   }
+
+  // Runs after both swaps (which stay unconditional): a lone last batter
+  // always ends up back on strike, whichever slot the swaps left them in.
+  if (battingAlone(inn) && !inn.complete){
+    inn.striker = inn.striker || inn.nonStriker;
+    inn.nonStriker = null;
+  }
 }
 
-function createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst, ballsPerOver, wideRuns, noBallRuns, wideEnabled, noBallEnabled, freeHitOnNoBall, requireFielderOnCatch, requireFielderOnRunout, presetId, presetName, tournamentId }){
+/* Closes the current innings by hand (declaration / time called) -- the
+   only way an innings with no overs limit ends short of all out or the
+   target. afterBall() then moves on exactly as after a completing ball. */
+function endInnings(match){
+  const inn = currentInnings(match);
+  if (inn.complete) return;
+  inn.complete = true;
+  inn.completeReason = "closed";
+  afterBall(match);
+}
+
+function createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst, ballsPerOver, wideRuns, noBallRuns, wideEnabled, noBallEnabled, freeHitOnNoBall, lastManStands, requireFielderOnCatch, requireFielderOnRunout, presetId, presetName, tournamentId }){
+  // null/undefined overs or players = no limit (see createInnings).
+  oversLimit = oversLimit || null;
+  playersPerSide = playersPerSide || null;
   const cfg = {
     ballsPerOver: ballsPerOver || 6,
     wideRuns: wideRuns != null ? wideRuns : 1,
     noBallRuns: noBallRuns != null ? noBallRuns : 1,
-    freeHitOnNoBall: freeHitOnNoBall !== false
+    freeHitOnNoBall: freeHitOnNoBall !== false,
+    lastManStands: !!lastManStands && playersPerSide != null
   };
   return {
     teamA, teamB, oversLimit, playersPerSide, battingFirst,
+    lastManStands: cfg.lastManStands,
     ballsPerOver: cfg.ballsPerOver,
     wideEnabled: wideEnabled !== false,
     noBallEnabled: noBallEnabled !== false,
@@ -961,11 +1004,19 @@ function teamName(match, key){ return key === "A" ? match.teamA : match.teamB; }
 /* A match doesn't store rosters (names are typed freely), so a name's side
    is inferred from where it's already been used: batters belong to that
    innings' batting team, bowlers and fielders to its bowling team.
-   Case-insensitive. Returns "A"/"B", or null if the name hasn't appeared. */
+   Case-insensitive. Returns "A"/"B", or null if the name hasn't appeared.
+   A club-tournament match started from saved teams also carries
+   `match.squads` ({ A: [names], B: [names] }), which wins over usage: a
+   squad player is on their squad's side before they've even batted. Names
+   in neither squad (a late sub) fall back to the usage rule. */
 function playerTeamInMatch(match, name){
   const key = (name || "").trim().toLowerCase();
   if (!key) return null;
   const has = list => list.some(n => n.toLowerCase() === key);
+  if (match.squads){
+    if (has(match.squads.A || [])) return "A";
+    if (has(match.squads.B || [])) return "B";
+  }
   for (const inn of match.innings){
     if (has(inn.batting.order)) return inn.battingTeam;
     if (has(inn.bowling.order) || has(inn.fielding.order)) return inn.bowlingTeam;
@@ -1010,6 +1061,27 @@ function parseJerseyNo(v){
   if (t === "") return null;
   return /^[0-9]{1,3}$/.test(t) ? parseInt(t, 10) : undefined;
 }
+/* Optional overs/players fields: blank -> null ("no limit"), otherwise a
+   whole number clamped to at least `min`. */
+function parseOptionalLimit(v, min){
+  const t = v == null ? "" : String(v).trim();
+  if (t === "") return null;
+  const n = parseInt(t, 10);
+  return isNaN(n) ? null : Math.max(min, n);
+}
+/* What an optional-limit <input> should start with: `def` for a brand-new
+   form (field absent), blank for a saved "no limit" (null). */
+function limitInputValue(v, def){ return v === undefined ? def : (v == null ? "" : v); }
+/* Playing-condition tags shared by preset cards and the innings break. */
+function conditionTagsFor(c){
+  return [
+    c.oversLimit != null ? `${c.oversLimit} overs` : "no over limit",
+    `${c.ballsPerOver}-ball`,
+    c.playersPerSide != null ? `${c.playersPerSide} a side` : "any number a side",
+    c.lastManStands && c.playersPerSide != null ? "last man stands" : null
+  ].filter(Boolean);
+}
+
 /* Escape a user's text for a PostgREST ilike pattern, so a typed % or _
    matches literally instead of acting as a wildcard. */
 function escapeLike(v){ return String(v || "").replace(/[\\%_]/g, c => "\\" + c); }
@@ -1108,7 +1180,7 @@ function playerSideConflict(match, name, teamKey){
 function startSecondInnings(match){
   const i1 = match.innings[0];
   const target = i1.runs + 1;
-  const cfg = { ballsPerOver: match.ballsPerOver, wideRuns: i1.wideBaseRuns, noBallRuns: i1.noBallBaseRuns, freeHitOnNoBall: i1.freeHitOnNoBall };
+  const cfg = { ballsPerOver: match.ballsPerOver, wideRuns: i1.wideBaseRuns, noBallRuns: i1.noBallBaseRuns, freeHitOnNoBall: i1.freeHitOnNoBall, lastManStands: i1.lastManStands };
   match.innings.push(createInnings(i1.bowlingTeam, i1.battingTeam, target, match.playersPerSide, match.oversLimit, cfg));
   match.status = "opening";
 }
@@ -1117,9 +1189,11 @@ function matchResult(match){
   const [i1, i2] = match.innings;
   const bpo = match.ballsPerOver || 6;
   if (i2.runs >= i2.target){
-    const wl = i2.maxWickets - i2.wickets;
-    const ballsLeft = i2.oversLimit * bpo - i2.legalBalls;
-    return `${teamName(match, i2.battingTeam)} won by ${wl} wicket${wl === 1 ? "" : "s"} (${oversDisplay(ballsLeft, bpo)} overs left)`;
+    // No players limit -> no wickets margin; no overs limit -> no "overs left".
+    const wl = i2.maxWickets != null ? i2.maxWickets - i2.wickets : null;
+    const left = i2.oversLimit != null ? ` (${oversDisplay(i2.oversLimit * bpo - i2.legalBalls, bpo)} overs left)` : "";
+    const margin = wl != null ? ` by ${wl} wicket${wl === 1 ? "" : "s"}` : "";
+    return `${teamName(match, i2.battingTeam)} won${margin}${left}`;
   }
   if (i2.runs === i1.runs) return "Match tied";
   const margin = i1.runs - i2.runs;
@@ -1262,7 +1336,7 @@ function computeStandings(matches, tournamentPreset){
     match.innings.forEach(inn => {
       const bt = ensureTeam(teamName(match, inn.battingTeam));
       const bwt = ensureTeam(teamName(match, inn.bowlingTeam));
-      const oversFaced = inn.completeReason === "allout" ? inn.oversLimit : inn.legalBalls / bpo;
+      const oversFaced = inn.completeReason === "allout" && inn.oversLimit != null ? inn.oversLimit : inn.legalBalls / bpo;
       bt.runsFor += inn.runs; bt.oversFor += oversFaced;
       bwt.runsAgainst += inn.runs; bwt.oversAgainst += oversFaced;
     });
@@ -1528,11 +1602,36 @@ async function createClubTournament(clubId, name, tournamentPreset){
 }
 
 async function fetchClubTournamentDetail(tournamentId){
-  const [{ data: tournament }, { data: matches }] = await Promise.all([
+  const [{ data: tournament }, { data: matches }, { data: teams, error: teamsError }] = await Promise.all([
     supabaseClient.from("tournaments").select("id, name, organizer_club_id, tournament_preset").eq("id", tournamentId).single(),
-    supabaseClient.from("matches").select("id, data, played_at").eq("tournament_id", tournamentId).order("played_at", { ascending: false })
+    supabaseClient.from("matches").select("id, data, played_at").eq("tournament_id", tournamentId).order("played_at", { ascending: false }),
+    supabaseClient.from("tournament_teams").select("id, name, players").eq("tournament_id", tournamentId).order("created_at")
   ]);
-  ui.clubTournament = tournament ? { ...tournament, matches: matches || [] } : null;
+  // teams_unavailable: 012 hasn't been run -- the dashboard says so instead
+  // of breaking, and match setup falls back to typed team names.
+  ui.clubTournament = tournament
+    ? { ...tournament, matches: matches || [], teams: teamsError ? [] : (teams || []), teams_unavailable: !!teamsError }
+    : null;
+}
+
+/* Tournament teams (supabase/012): a name + roster players, members-only.
+   `players` is [{ id, name }] -- the name is a snapshot, see the SQL. */
+async function saveTournamentTeam(tournament, team){
+  const row = { name: team.name, players: team.players };
+  const { error } = team.id
+    ? await supabaseClient.from("tournament_teams").update(row).eq("id", team.id).eq("tournament_id", tournament.id)
+    : await supabaseClient.from("tournament_teams").insert({ ...row, tournament_id: tournament.id, club_id: tournament.organizer_club_id, created_by: session.user.id });
+  if (!error) return { ok: true };
+  if (error.code === "23505") return { error: "This tournament already has a team with that name." };
+  return { error: cloudTableMissing(error, "012_tournament_teams.sql") || error.message };
+}
+async function deleteTournamentTeam(tournamentId, teamId){
+  const { error } = await supabaseClient.from("tournament_teams").delete().eq("id", teamId).eq("tournament_id", tournamentId);
+  return error ? { error: cloudTableMissing(error, "012_tournament_teams.sql") || error.message } : { ok: true };
+}
+function cloudTableMissing(error, file){
+  return error && (error.code === "42P01" || error.code === "PGRST205")
+    ? `Cloud database is missing ${file} — run it in the Supabase SQL editor.` : null;
 }
 
 /* Club presets live in the cloud (club_presets, members-only via RLS) --
@@ -1722,7 +1821,9 @@ async function syncMatchToCloud(match, archived){
       opponent_name: match.opponentName || null,
       tournament_id: match.tournamentId || null,
       created_by: session.user.id,
-      data: archived,
+      // squads are the saved tournament teams (members-only, supabase/012);
+      // matches are publicly readable, so they stay on this device.
+      data: Object.assign({}, archived, { squads: undefined }),
       played_at: new Date(archived.completedAt).toISOString()
     });
   } catch (_){ /* best-effort -- the match is already safely archived locally either way */ }
@@ -1798,7 +1899,7 @@ const rejectMergeRequest = requestId => ownershipRpc("reject_merge", { _request_
 var state = defaultState();
 function defaultUi(){
   return {
-    pendingExtra: null, wicketFlow: null, runoutRuns: 0, runoutEnd: "striker", showFullScorecard: false, forfeitFlow: false, forfeitTeam: null, awayFromMatch: false, clubRosterLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
+    pendingExtra: null, wicketFlow: null, runoutRuns: 0, runoutEnd: "striker", showFullScorecard: false, forfeitFlow: false, forfeitTeam: null, endInningsConfirm: false, awayFromMatch: false, clubRosterLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
     matchSetupPresetId: null,
     tournamentSetupPresetId: null, tournamentSetupTeamIds: [],
     tournamentTab: "standings",
@@ -1808,7 +1909,7 @@ function defaultUi(){
     // re-fetched whenever their screen is opened.
     myClubs: null, myClubsLoading: false, currentClubId: null, club: null, clubBusy: false, clubInviteMessage: null,
     clubMatchSetupType: null, // "practice" | "friendly" | "tournament", set when entering club match setup
-    clubTournamentSetupPresetId: null, clubTournamentSetupName: null, currentTournamentId: null, clubTournament: null,
+    clubTournamentSetupPresetId: null, clubTournamentSetupName: null, currentTournamentId: null, clubTournament: null, tournamentTeamEdit: null, tournamentTeamDelete: null, tournamentTeamBusy: false, tournamentTeamError: null,
     premier: null, // { players, premierMatches, pendingClaims, pendingMerges } -- see fetchPremierData()
     identity: null, // { myPlayer, pendingClaim, pendingMerges } for the signed-in viewer -- see fetchMyPlayerIdentity()
     claimMessage: null, clubAddMessage: null, playerModal: null,
@@ -2128,6 +2229,22 @@ const SFX = (() => {
 
 function renderPlayersDatalist(){
   return `<datalist id="players-datalist">${suggestionPlayerNames().map(n => `<option value="${escapeHtml(n)}">`).join("")}</datalist>`;
+}
+/* A match started from saved tournament teams (match.squads) gets one list
+   per side, so the batter/bowler/fielder boxes only suggest that side's
+   players -- the batting side minus whoever is out or already in. */
+function squadListId(teamKey){
+  return state.match && state.match.squads ? `squad-${teamKey}-datalist` : "players-datalist";
+}
+function renderSquadDatalists(){
+  const m = state.match;
+  if (!m || !m.squads || m.status === "complete") return "";
+  const inn = currentInnings(m);
+  const used = new Set(inn.batting.order.filter(n => inn.batting.stats[n].out || n === inn.striker || n === inn.nonStriker).map(n => n.toLowerCase()));
+  return ["A", "B"].map(key => {
+    const names = (m.squads[key] || []).filter(n => key !== inn.battingTeam || !used.has(n.toLowerCase()));
+    return `<datalist id="squad-${key}-datalist">${names.map(n => `<option value="${escapeHtml(n)}">`).join("")}</datalist>`;
+  }).join("");
 }
 function renderTeamsDatalist(){
   return `<datalist id="teams-datalist">${suggestionTeamNames().map(n => `<option value="${escapeHtml(n)}">`).join("")}</datalist>`;
@@ -3120,11 +3237,97 @@ function renderClubTournamentDashboard(){
       ${!t ? `<p class="hint">Loading…</p>` : `
         <h1>🏆 ${escapeHtml(t.name)}</h1>
         <button data-action="go-club-tournament-match-setup" class="primary">Start match</button>
+        ${renderTournamentTeams(t)}
         ${t.matches.length ? renderStandingsTable(computeStandings(t.matches.map(m => m.data), t.tournament_preset), t.tournament_preset.useNRR) : `<p class="hint">No matches yet -- start one above.</p>`}
         ${t.matches.length ? `<h3>Leaderboard</h3>${renderLeaderboards(aggregatePlayerStats(t.matches.map(m => m.data)))}` : ""}
       `}
     </div>
   `;
+}
+
+/* Tournament teams (supabase/012). A team is a name + players picked from
+   the club roster; a player can be on only one team per tournament (checked
+   here, on save). Teams only pre-fill match setup and set match.squads --
+   played matches keep their own names, so editing or deleting a team never
+   changes history or standings. */
+function renderTournamentTeams(t){
+  if (t.teams_unavailable){
+    return `<h3 class="section-label">Teams</h3><p class="hint">Saved teams need 012_tournament_teams.sql — run it in the Supabase SQL editor. You can still type team names at match setup.</p>`;
+  }
+  const edit = ui.tournamentTeamEdit;
+  return `
+    <h3 class="section-label">Teams</h3>
+    ${ui.tournamentTeamError ? `<p class="form-error">${escapeHtml(ui.tournamentTeamError)}</p>` : ""}
+    ${t.teams.length ? `<div class="preset-list">${t.teams.map(team => `
+      <div class="preset-row">
+        <div class="preset-row-head">
+          <b>${escapeHtml(team.name)}</b>
+          <span class="muted">${team.players.length} player${team.players.length === 1 ? "" : "s"}</span>
+          <div class="row-actions">
+            <button data-action="edit-tournament-team" data-id="${team.id}" class="ghost small">Edit</button>
+            <button data-action="delete-tournament-team" data-id="${team.id}" class="ghost small" ${ui.tournamentTeamDelete === team.id ? `style="color:var(--wicket);border-color:var(--wicket);"` : ""}>${ui.tournamentTeamDelete === team.id ? "Tap to confirm" : "Delete"}</button>
+          </div>
+        </div>
+        ${team.players.length ? `<div class="chips">${team.players.map(pl => `<span class="n tag-pill">${escapeHtml(pl.name)}</span>`).join("")}</div>` : `<p class="hint">No players picked yet.</p>`}
+      </div>`).join("")}</div>`
+      : `<p class="hint">No teams yet. Most club tournaments are two sides — add them here, then pick them when you start a match.</p>`}
+    ${edit ? renderTournamentTeamForm(t, edit) : `<button data-action="new-tournament-team" class="link-btn">+ Add team</button>`}
+  `;
+}
+
+function renderTournamentTeamForm(t, edit){
+  const rosterReady = ui.club && ui.club.id === t.organizer_club_id;
+  // Who's already on another team in this tournament -> shown, but locked.
+  const takenBy = {};
+  t.teams.forEach(team => { if (team.id !== edit.id) team.players.forEach(pl => { takenBy[pl.id] = team.name; }); });
+  const roster = rosterReady ? ui.club.roster.filter(p => p.id).slice().sort((a, b) => a.name.localeCompare(b.name)) : [];
+  // Anyone already on this team but no longer on the roster stays listed.
+  const current = t.teams.find(team => team.id === edit.id);
+  const leftRoster = current ? current.players.filter(pl => !roster.some(p => p.id === pl.id)) : [];
+  const row = (id, label, taken) => `
+    <label class="check-row"><input type="checkbox" name="teamPlayerIds" value="${escapeHtml(id)}" ${edit.playerIds.includes(id) ? "checked" : ""} ${taken ? "disabled" : ""}> ${escapeHtml(label)}${taken ? ` <span class="muted">· ${escapeHtml(taken)}</span>` : ""}</label>`;
+  return `
+    <form id="tournament-team-form" class="preset-form">
+      <div class="form-error"></div>
+      <label>Team name<input name="teamName" required maxlength="24" value="${escapeHtml(edit.name || "")}" placeholder="e.g. Reds"></label>
+      <fieldset>
+        <legend>Players</legend>
+        ${!rosterReady ? `<p class="hint">Loading the club roster…</p>`
+          : !roster.length && !leftRoster.length ? `<p class="hint">This club's roster is empty — add players on the Players screen first.</p>`
+          : roster.map(p => row(p.id, playerLabel(p), takenBy[p.id])).join("") + leftRoster.map(pl => row(pl.id, `${pl.name} (left the roster)`, null)).join("")}
+      </fieldset>
+      <p class="hint">A player can be on only one team in this tournament.</p>
+      <div class="action-row">
+        <button type="submit" class="primary" ${ui.tournamentTeamBusy ? "disabled" : ""}>${ui.tournamentTeamBusy ? "Saving…" : "Save team"}</button>
+        <button type="button" data-action="cancel-tournament-team" class="ghost">Cancel</button>
+      </div>
+    </form>
+  `;
+}
+
+function handleTournamentTeamSubmit(e){
+  e.preventDefault();
+  const form = e.target;
+  const t = ui.clubTournament, edit = ui.tournamentTeamEdit;
+  if (!t || !edit || ui.tournamentTeamBusy) return;
+  const f = new FormData(form);
+  const name = (f.get("teamName") || "").trim();
+  if (!name){ showFormError(form, "Give the team a name."); return; }
+  const others = t.teams.filter(team => team.id !== edit.id);
+  if (others.some(team => team.name.toLowerCase() === name.toLowerCase())){ showFormError(form, "This tournament already has a team with that name."); return; }
+  const ids = f.getAll("teamPlayerIds").map(String);
+  const clash = others.find(team => team.players.some(pl => ids.includes(pl.id)));
+  if (clash){ showFormError(form, `Someone you picked is already on ${clash.name}.`); return; }
+  const current = t.teams.find(team => team.id === edit.id);
+  const known = [...(ui.club ? ui.club.roster : []), ...(current ? current.players : [])];
+  const players = ids.map(id => known.find(p => p.id === id)).filter(Boolean).map(p => ({ id: p.id, name: p.name }));
+  ui.tournamentTeamBusy = true; render();
+  saveTournamentTeam(t, { id: edit.id, name, players }).then(result => {
+    ui.tournamentTeamBusy = false;
+    if (result.error){ render(); showFormError(document.getElementById("tournament-team-form"), result.error); return; }
+    ui.tournamentTeamEdit = null;
+    fetchClubTournamentDetail(t.id).then(render);
+  });
 }
 
 /* --- Premier: cross-club players/stats + claiming --- */
@@ -3287,6 +3490,9 @@ function renderMatchSetup(){
   const clubName = clubMode ? currentClubName() : "";
   const inTournament = clubMode && ui.clubMatchSetupType === "tournament";
   const tournamentName = inTournament && ui.clubTournament ? ui.clubTournament.name : "";
+  // Two or more saved tournament teams -> pick them instead of typing names.
+  const savedTeams = inTournament && ui.clubTournament && ui.clubTournament.id === ui.currentTournamentId ? ui.clubTournament.teams || [] : [];
+  const pickTeams = savedTeams.length >= 2;
   const headings = { practice: "🏏 Practice match", friendly: "🤝 Friendly match", tournament: `🏆 Tournament match` };
   const taglines = {
     practice: `${escapeHtml(clubName)} vs itself — an intra-club scrimmage.`,
@@ -3305,16 +3511,26 @@ function renderMatchSetup(){
         </div>
       ` : ""}
       <form id="match-setup-form">
+        <div class="form-error"></div>
         <input type="hidden" name="presetId" value="${preset.id || ""}">
         <h3 class="section-label">Teams</h3>
+        ${pickTeams ? `
+        <label>Team A<select name="teamAId">${savedTeams.map((t, i) => `<option value="${t.id}" ${i === 0 ? "selected" : ""}>${escapeHtml(t.name)} (${t.players.length})</option>`).join("")}</select></label>
+        <label>Team B<select name="teamBId">${savedTeams.map((t, i) => `<option value="${t.id}" ${i === 1 ? "selected" : ""}>${escapeHtml(t.name)} (${t.players.length})</option>`).join("")}</select></label>
+        <p class="hint">From this tournament's teams. Only their players are suggested while scoring.</p>
+        ` : `
         <label>${clubMode && ui.clubMatchSetupType === "friendly" ? "Home team name" : "Team A name"}<input name="teamA" required maxlength="24" value="${clubMode && ui.clubMatchSetupType === "friendly" ? escapeHtml(clubName) : ""}" placeholder="e.g. Lions" list="teams-datalist"></label>
         <label>${clubMode && ui.clubMatchSetupType === "friendly" ? "Visiting team name" : "Team B name"}<input name="teamB" required maxlength="24" placeholder="e.g. Tigers" list="teams-datalist"></label>
+        ${inTournament && !pickTeams ? `<p class="hint">Tip: add teams on the tournament page to pick them here.</p>` : ""}
+        `}
         <h3 class="section-label">Playing conditions</h3>
         <div class="field-row">
           <label>Balls per over<input name="ballsPerOver" type="number" min="1" max="10" value="${preset.ballsPerOver ?? 6}" required></label>
-          <label>Overs per innings<input name="overs" type="number" min="1" max="50" value="${preset.oversLimit ?? 20}" required></label>
+          <label>Overs per innings<input name="overs" type="number" min="1" max="50" value="${limitInputValue(preset.oversLimit, 20)}" placeholder="No limit"></label>
         </div>
-        <label>Players per side<input name="players" type="number" min="2" max="11" value="${preset.playersPerSide ?? 11}" required></label>
+        <label>Players per side<input name="players" type="number" min="2" max="11" value="${limitInputValue(preset.playersPerSide, 11)}" placeholder="No limit"></label>
+        <label class="check-row"><input type="checkbox" name="lastManStands" ${preset.lastManStands ? "checked" : ""}> Last man stands — the last batter bats alone</label>
+        <p class="hint">Leave overs or players blank for no limit. With no overs limit, end each innings by hand from the live screen.</p>
         <fieldset>
           <legend>Extras</legend>
           <label class="check-row"><input type="checkbox" name="wideEnabled" ${preset.wide ? (preset.wide.enabled ? "checked" : "") : "checked"}> Wides count, worth <input name="wideRuns" type="number" min="0" max="6" value="${preset.wide ? preset.wide.runs : 1}" class="inline-num"> run(s)</label>
@@ -3343,10 +3559,19 @@ function handleMatchSetupSubmit(e){
   e.preventDefault();
   if (state.match && state.match.status !== "complete") return;
   const f = new FormData(e.target);
-  const teamA = (f.get("teamA") || "").trim() || "Team A";
-  const teamB = (f.get("teamB") || "").trim() || "Team B";
-  const oversLimit = Math.max(1, parseInt(f.get("overs"), 10) || 20);
-  const playersPerSide = Math.max(2, parseInt(f.get("players"), 10) || 11);
+  let teamA = (f.get("teamA") || "").trim() || "Team A";
+  let teamB = (f.get("teamB") || "").trim() || "Team B";
+  let squads = null;
+  if (f.get("teamAId")){
+    const saved = (ui.clubTournament && ui.clubTournament.teams) || [];
+    const ta = saved.find(t => t.id === f.get("teamAId")), tb = saved.find(t => t.id === f.get("teamBId"));
+    if (!ta || !tb || ta.id === tb.id){ showFormError(e.target, "Pick two different teams."); return; }
+    teamA = ta.name; teamB = tb.name;
+    squads = { A: ta.players.map(p => p.name), B: tb.players.map(p => p.name) };
+  }
+  const oversLimit = parseOptionalLimit(f.get("overs"), 1);
+  const playersPerSide = parseOptionalLimit(f.get("players"), 2);
+  const lastManStands = f.get("lastManStands") === "on";
   const ballsPerOver = Math.max(1, parseInt(f.get("ballsPerOver"), 10) || 6);
   const battingFirst = f.get("battingFirst") || "A";
   const wideEnabled = f.get("wideEnabled") === "on";
@@ -3360,7 +3585,7 @@ function handleMatchSetupSubmit(e){
   const inTournament = ui.currentClubId && ui.clubMatchSetupType === "tournament";
   state.match = createMatch({
     teamA, teamB, oversLimit, playersPerSide, battingFirst, ballsPerOver,
-    wideEnabled, noBallEnabled, wideRuns, noBallRuns, freeHitOnNoBall,
+    wideEnabled, noBallEnabled, wideRuns, noBallRuns, freeHitOnNoBall, lastManStands,
     requireFielderOnCatch, requireFielderOnRunout,
     presetId: preset ? preset.id : null, presetName: preset ? preset.name : null,
     tournamentId: inTournament ? ui.currentTournamentId : null
@@ -3370,6 +3595,8 @@ function handleMatchSetupSubmit(e){
     // tournamentId already is) -- recordBall etc. never look at these.
     state.match.clubId = ui.currentClubId;
     state.match.matchType = ui.clubMatchSetupType;
+    // Read by playerTeamInMatch (side checks) and the squad datalists.
+    if (squads) state.match.squads = squads;
   }
   state.snapshots = [];
   save(); render();
@@ -3384,9 +3611,9 @@ function renderOpeningModal(match){
         <h2>${escapeHtml(teamName(match, inn.battingTeam))} — opening players</h2>
         <form id="opening-form">
           <div class="form-error"></div>
-          <label>Striker<input name="striker" required maxlength="24" list="players-datalist"></label>
-          <label>Non-striker<input name="nonStriker" required maxlength="24" list="players-datalist"></label>
-          <label>${escapeHtml(teamName(match, inn.bowlingTeam))} bowler<input name="bowler" required maxlength="24" list="players-datalist"></label>
+          <label>Striker<input name="striker" required maxlength="24" list="${squadListId(inn.battingTeam)}"></label>
+          <label>Non-striker<input name="nonStriker" required maxlength="24" list="${squadListId(inn.battingTeam)}"></label>
+          <label>${escapeHtml(teamName(match, inn.bowlingTeam))} bowler<input name="bowler" required maxlength="24" list="${squadListId(inn.bowlingTeam)}"></label>
           <button type="submit" class="primary">Start innings</button>
         </form>
         <button type="button" data-action="open-forfeit" class="link-btn">Forfeit match instead</button>
@@ -3502,7 +3729,7 @@ function renderNewBatsmanModal(inn, slot){
         ` : ""}
         <form id="new-batsman-form">
           <div class="form-error"></div>
-          <label>Name<input name="name" required maxlength="24" autofocus list="players-datalist" placeholder="Type or pick a player"></label>
+          <label>Name<input name="name" required maxlength="24" autofocus list="${squadListId(inn.battingTeam)}" placeholder="Type or pick a player"></label>
           <p class="hint">A name that is not in your players list yet is added to it automatically.</p>
           <button type="submit" class="primary">Send in</button>
         </form>
@@ -3559,7 +3786,7 @@ function renderNewBowlerModal(inn){
         </div>
         <form id="new-bowler-form">
           <div class="form-error"></div>
-          <label>Name<input name="name" required maxlength="24" autofocus list="players-datalist" placeholder="Type or pick a bowler"></label>
+          <label>Name<input name="name" required maxlength="24" autofocus list="${squadListId(inn.bowlingTeam)}" placeholder="Type or pick a bowler"></label>
           ${inn.bowling.order.length ? `
             <div class="section-label">Already bowled</div>
             <div class="bowler-pick-list">
@@ -3666,9 +3893,9 @@ function renderWicketModal(inn){
               <button type="button" data-action="pick-runout-end" data-end="striker" class="end-tile ${ui.runoutEnd === "striker" ? "active" : ""}">
                 <span class="role">Striker</span><span class="n">${escapeHtml(inn.striker)}${strikerStats ? " " + strikerStats.runs : ""}</span>
               </button>
-              <button type="button" data-action="pick-runout-end" data-end="nonStriker" class="end-tile ${ui.runoutEnd === "nonStriker" ? "active" : ""}">
-                <span class="role">Non-striker</span><span class="n">${escapeHtml(inn.nonStriker)}${inn.nonStriker && inn.batting.stats[inn.nonStriker] ? " " + inn.batting.stats[inn.nonStriker].runs : ""}</span>
-              </button>
+              ${inn.nonStriker ? `<button type="button" data-action="pick-runout-end" data-end="nonStriker" class="end-tile ${ui.runoutEnd === "nonStriker" ? "active" : ""}">
+                <span class="role">Non-striker</span><span class="n">${escapeHtml(inn.nonStriker)}${inn.batting.stats[inn.nonStriker] ? " " + inn.batting.stats[inn.nonStriker].runs : ""}</span>
+              </button>` : ""}
             </div>
             <p class="hint">The end you pick is vacated directly. Batsmen crossing is not modelled.</p>
             <div class="section-label">Runs completed before the run out</div>
@@ -3683,7 +3910,7 @@ function renderWicketModal(inn){
                 <label for="wicket-fielder">FIELDER</label>
                 ${required ? `<span class="required-badge">REQUIRED</span>` : ""}
               </div>
-              <input id="wicket-fielder" name="fielder" list="players-datalist" maxlength="24" ${required ? "required" : ""}>
+              <input id="wicket-fielder" name="fielder" list="${squadListId(inn.bowlingTeam)}" maxlength="24" ${required ? "required" : ""}>
               ${isCaught ? `<div class="hint">Autocompletes from your players list. Credits a catch in the fielding stats.</div>` : ""}
             </div>
             <div style="display:flex;gap:10px;margin-top:14px;">
@@ -3768,10 +3995,22 @@ function handleBallClick(runs){
   save(); render();
 }
 
+/* Two taps (ui.endInningsConfirm), like forfeit: closing the 1st innings
+   lands on the innings break, which has no Undo control. Any other click
+   clears the pending confirm (see the click dispatcher). */
+function handleEndInnings(){
+  if (!ui.endInningsConfirm){ ui.endInningsConfirm = true; render(); return; }
+  ui.endInningsConfirm = false;
+  pushSnapshot();
+  endInnings(state.match);
+  maybeArchiveCompletedMatch(state.match);
+  save(); render();
+}
+
 function handleUndo(){
   if (!state.snapshots.length) return;
   state.match = state.snapshots.pop();
-  ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.forfeitFlow = false; ui.forfeitTeam = null;
+  ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.forfeitFlow = false; ui.forfeitTeam = null; ui.endInningsConfirm = false;
   save(); render();
 }
 
@@ -3817,7 +4056,8 @@ function renderLive(match){
   const bpo = inn.ballsPerOver;
   const crr = runRate(inn.runs, inn.legalBalls, bpo).toFixed(2);
   const rrr = requiredRunRate(inn);
-  const ballsLeft = Math.max(match.oversLimit * bpo - inn.legalBalls, 0);
+  const ballsLeft = inn.oversLimit != null ? Math.max(inn.oversLimit * bpo - inn.legalBalls, 0) : null;
+  const alone = battingAlone(inn);
   const strikerStats = inn.striker ? inn.batting.stats[inn.striker] : null;
   const nonStrikerStats = inn.nonStriker ? inn.batting.stats[inn.nonStriker] : null;
   const bowlerStats = inn.bowler ? inn.bowling.stats[inn.bowler] : null;
@@ -3850,7 +4090,7 @@ function renderLive(match){
           <div class="target-tile">
             <div class="eyebrow">TARGET ${inn.target}</div>
             <div class="need-n">${Math.max(inn.target - inn.runs, 0)}</div>
-            <div class="need-sub">off ${ballsLeft} ball${ballsLeft === 1 ? "" : "s"}</div>
+            <div class="need-sub">${ballsLeft != null ? `off ${ballsLeft} ball${ballsLeft === 1 ? "" : "s"}` : "no over limit"}</div>
             ${rrr != null ? `<div class="rrr">RRR ${rrr.toFixed(2)}</div>` : ""}
           </div>
         ` : ""}
@@ -3867,7 +4107,7 @@ function renderLive(match){
           <span class="stat" style="width:46px;">${strikerStats ? sr(strikerStats) : ""}</span>
         </div>
         <div class="matchup-row muted">
-          <span class="matchup-marker nonstriker"></span><span class="name">${escapeHtml(inn.nonStriker) || "—"}</span>
+          <span class="matchup-marker nonstriker"></span><span class="name">${alone ? "Batting alone" : escapeHtml(inn.nonStriker) || "—"}</span>
           <span class="stat emph" style="width:34px;">${nonStrikerStats ? nonStrikerStats.runs + "*" : ""}</span>
           <span class="stat" style="width:30px;">${nonStrikerStats ? nonStrikerStats.balls : ""}</span>
           <span class="stat" style="width:24px;">${nonStrikerStats ? nonStrikerStats.fours : ""}</span>
@@ -3913,7 +4153,10 @@ function renderLive(match){
         ${inn.freeHit ? `<span class="sub">free hit — run out only</span>` : ""}
       </button>
 
-      <button data-action="toggle-scorecard" class="link-btn">${ui.showFullScorecard ? "Hide" : "Show"} full scorecard</button>
+      <div class="live-links">
+        <button data-action="toggle-scorecard" class="link-btn">${ui.showFullScorecard ? "Hide" : "Show"} full scorecard</button>
+        ${inn.oversLimit == null ? `<button data-action="end-innings" class="link-btn" ${ui.endInningsConfirm ? `style="color:var(--wicket);font-weight:700;"` : ""}>${ui.endInningsConfirm ? "Tap again to end innings" : "End innings"}</button>` : ""}
+      </div>
       ${ui.showFullScorecard ? renderInningsSummary(match, inn) : ""}
     </div>
   `;
@@ -3999,9 +4242,9 @@ function renderInningsBreak(match){
   const i1 = match.innings[0];
   const battingNext = teamName(match, i1.bowlingTeam);
   const target = i1.runs + 1;
-  const rpo = target / match.oversLimit;
+  const rpo = match.oversLimit != null ? target / match.oversLimit : null;
   const conditionTags = [
-    `${match.oversLimit} overs`, `${match.ballsPerOver}-ball`, `${match.playersPerSide} a side`,
+    ...conditionTagsFor(match),
     match.wideEnabled ? `wide ${i1.wideBaseRuns}` : null,
     match.noBallEnabled ? `no-ball ${i1.noBallBaseRuns}` : null
   ].filter(Boolean);
@@ -4016,8 +4259,8 @@ function renderInningsBreak(match){
         <div class="eyebrow">${escapeHtml(battingNext).toUpperCase()} NEED</div>
         <div style="display:flex;align-items:baseline;gap:10px;margin-top:2px;">
           <span class="n" style="font-size:1.6rem;font-weight:800;">${target}</span>
-          <span class="n" style="font-size:.8rem;font-weight:700;opacity:.8;">from ${match.oversLimit} overs</span>
-          <span class="n" style="flex-grow:1;text-align:right;font-size:.8rem;font-weight:800;">${rpo.toFixed(2)} rpo</span>
+          <span class="n" style="font-size:.8rem;font-weight:700;opacity:.8;">${match.oversLimit != null ? `from ${match.oversLimit} overs` : "no over limit"}</span>
+          ${rpo != null ? `<span class="n" style="flex-grow:1;text-align:right;font-size:.8rem;font-weight:800;">${rpo.toFixed(2)} rpo</span>` : ""}
         </div>
       </div>
       <div class="chips">
@@ -4042,9 +4285,10 @@ function renderResultDetail(match){
   if (match.forfeited || !i2) return "";
   const bpo = match.ballsPerOver;
   const i2ov = oversDisplay(i2.legalBalls, bpo);
-  const i2Score = i2.wickets >= i2.maxWickets ? `${i2.runs} all out` : `${i2.runs}-${i2.wickets}`;
+  const i2Score = isAllOut(i2) ? `${i2.runs} all out` : `${i2.runs}-${i2.wickets}`;
   if (i2.runs === i1.runs) return `${i2Score} (${i2ov}) level with ${i1.runs}`;
   if (i2.runs > i1.runs){
+    if (i2.oversLimit == null) return `${i2Score} (${i2ov}) chasing ${i1.runs}`;
     const ballsLeft = i2.oversLimit * bpo - i2.legalBalls;
     return `${i2Score} (${i2ov}) chasing ${i1.runs} · ${ballsLeft} ball${ballsLeft === 1 ? "" : "s"} left`;
   }
@@ -4064,7 +4308,7 @@ function renderResultInningsCard(match, inn){
   const bpo = inn.ballsPerOver;
   const [i1, i2] = match.innings;
   const isWinner = i2 && !match.forfeited && i2.runs !== i1.runs && (i2.runs > i1.runs ? inn === i2 : inn === i1);
-  const scoreStr = inn.wickets >= inn.maxWickets ? `${inn.runs}` : `${inn.runs}-${inn.wickets}`;
+  const scoreStr = isAllOut(inn) ? `${inn.runs}` : `${inn.runs}-${inn.wickets}`;
   const topBatters = [...inn.batting.order].sort((a, b) => inn.batting.stats[b].runs - inn.batting.stats[a].runs).slice(0, 2);
   const topBowler = [...inn.bowling.order]
     .filter(name => inn.bowling.stats[name].legalBalls > 0)
@@ -4349,7 +4593,7 @@ function renderPresetsScreen(){
    own edit/delete action names, so the two never touch each other's store. */
 function matchPresetCardHtml(p, builtIn, editAction, deleteAction){
   const tags = [
-    `${p.oversLimit} overs`, `${p.ballsPerOver}-ball`, `${p.playersPerSide} a side`,
+    ...conditionTagsFor(p),
     p.wide.enabled ? `wide ${p.wide.runs}` : "wides off",
     p.noBall.enabled ? `no-ball ${p.noBall.runs}` : "no-balls off"
   ];
@@ -4418,9 +4662,11 @@ function renderMatchPresetForm(p, clubId){
       <label>Name<input name="name" required maxlength="30" value="${escapeHtml(p.name || "")}"></label>
       <div class="field-row">
         <label>Balls/over<input name="ballsPerOver" type="number" min="1" max="10" value="${p.ballsPerOver ?? 6}" required></label>
-        <label>Overs<input name="oversLimit" type="number" min="1" max="50" value="${p.oversLimit ?? 20}" required></label>
+        <label>Overs<input name="oversLimit" type="number" min="1" max="50" value="${limitInputValue(p.oversLimit, 20)}" placeholder="No limit"></label>
       </div>
-      <label>Players/side<input name="playersPerSide" type="number" min="2" max="11" value="${p.playersPerSide ?? 11}" required></label>
+      <label>Players/side<input name="playersPerSide" type="number" min="2" max="11" value="${limitInputValue(p.playersPerSide, 11)}" placeholder="No limit"></label>
+      <p class="hint">Leave overs or players blank for no limit.</p>
+      <label class="check-row"><input type="checkbox" name="lastManStands" ${p.lastManStands ? "checked" : ""}> Last man stands (last batter bats alone)</label>
       <label class="check-row"><input type="checkbox" name="wideEnabled" ${!p.wide || p.wide.enabled ? "checked" : ""}> Wides count, worth <input name="wideRuns" type="number" min="0" max="6" value="${p.wide ? p.wide.runs : 1}" class="inline-num"></label>
       <label class="check-row"><input type="checkbox" name="noBallEnabled" ${!p.noBall || p.noBall.enabled ? "checked" : ""}> No-balls count, worth <input name="noBallRuns" type="number" min="0" max="6" value="${p.noBall ? p.noBall.runs : 1}" class="inline-num"></label>
       <label class="check-row"><input type="checkbox" name="freeHitOnNoBall" ${p.freeHitOnNoBall !== false ? "checked" : ""}> No-ball gives a free hit</label>
@@ -4473,8 +4719,9 @@ function parseMatchPresetForm(f){
     id: f.get("id") || undefined,
     name: (f.get("name") || "").trim() || "Untitled preset",
     ballsPerOver: Math.max(1, parseInt(f.get("ballsPerOver"), 10) || 6),
-    oversLimit: Math.max(1, parseInt(f.get("oversLimit"), 10) || 20),
-    playersPerSide: Math.max(2, parseInt(f.get("playersPerSide"), 10) || 11),
+    oversLimit: parseOptionalLimit(f.get("oversLimit"), 1),
+    playersPerSide: parseOptionalLimit(f.get("playersPerSide"), 2),
+    lastManStands: f.get("lastManStands") === "on",
     wide: { enabled: f.get("wideEnabled") === "on", runs: Math.max(0, parseInt(f.get("wideRuns"), 10) || 0) },
     noBall: { enabled: f.get("noBallEnabled") === "on", runs: Math.max(0, parseInt(f.get("noBallRuns"), 10) || 0) },
     freeHitOnNoBall: f.get("freeHitOnNoBall") === "on",
@@ -4668,6 +4915,7 @@ function handleTournamentStartMatchSubmit(e){
     wideEnabled: matchPreset.wide.enabled, wideRuns: matchPreset.wide.runs,
     noBallEnabled: matchPreset.noBall.enabled, noBallRuns: matchPreset.noBall.runs,
     freeHitOnNoBall: matchPreset.freeHitOnNoBall,
+    lastManStands: matchPreset.lastManStands,
     requireFielderOnCatch: matchPreset.requireFielderOnCatch,
     requireFielderOnRunout: matchPreset.requireFielderOnRunout,
     battingFirst,
@@ -4743,7 +4991,7 @@ function render(){
   const wantClubId = m && m.clubId ? m.clubId
     : (!m && state.view === "home" && state.activeClubId && (ui.myClubs || []).some(c => c.id === state.activeClubId)) ? state.activeClubId
     : (!m && (state.view === "matchSetup" || state.view === "clubTournamentSetup") && ui.currentClubId && (state.view !== "matchSetup" || ui.clubMatchSetupType)) ? ui.currentClubId
-    : (!m && ["clubPlayers", "clubPresets", "clubStats"].includes(state.view) && ui.currentClubId) ? ui.currentClubId
+    : (!m && ["clubPlayers", "clubPresets", "clubStats", "clubTournamentDashboard"].includes(state.view) && ui.currentClubId) ? ui.currentClubId
     : null;
   if (wantClubId && supabaseClient && session && (!ui.club || ui.club.id !== wantClubId) && ui.clubRosterLoading !== wantClubId){
     ui.clubRosterLoading = wantClubId;
@@ -4811,7 +5059,7 @@ function render(){
   // renders the same form) is redundant clutter, not a shortcut to anywhere.
   const onAuthScreen = state.view === "signIn" || state.view === "signUp" || state.view === "account";
   root.classList.toggle("live-mode", !!(inProgress && !away && m.status !== "innings_break"));
-  root.innerHTML = renderTopBar(canNavigate, onAuthScreen) + html + renderPlayersDatalist() + renderTeamsDatalist()
+  root.innerHTML = renderTopBar(canNavigate, onAuthScreen) + html + renderPlayersDatalist() + renderSquadDatalists() + renderTeamsDatalist()
     + (canNavigate ? renderSideMenu() : "");
 
   const modalRoot = document.getElementById("modal-root");
@@ -4862,7 +5110,10 @@ document.addEventListener("click", (e) => {
     // drops straight back onto it.
     if (state.match && state.match.status !== "complete" && action !== "resume-match") ui.awayFromMatch = true;
   }
+  if (action !== "end-innings") ui.endInningsConfirm = false;
+  if (action !== "delete-tournament-team") ui.tournamentTeamDelete = null;
   if (action === "ball") handleBallClick(parseInt(btn.dataset.runs, 10));
+  else if (action === "end-innings") handleEndInnings();
   else if (action === "toggle-extra"){ ui.pendingExtra = (ui.pendingExtra === btn.dataset.extra) ? null : btn.dataset.extra; render(); }
   else if (action === "open-wicket"){ ui.wicketFlow = "menu"; render(); }
   else if (action === "close-wicket-modal"){ ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; render(); }
@@ -5009,8 +5260,28 @@ document.addEventListener("click", (e) => {
     ui.clubTournamentSetupPresetId = btn.dataset.id; render();
   }
   else if (action === "open-club-tournament"){
-    ui.currentTournamentId = btn.dataset.id; ui.clubTournament = null; state.view = "clubTournamentDashboard"; render();
+    ui.currentTournamentId = btn.dataset.id; ui.clubTournament = null; ui.tournamentTeamEdit = null; ui.tournamentTeamError = null; state.view = "clubTournamentDashboard"; render();
     fetchClubTournamentDetail(btn.dataset.id).then(render);
+  }
+  else if (action === "new-tournament-team" && ui.clubTournament){
+    const n = ui.clubTournament.teams.length;
+    ui.tournamentTeamEdit = { id: null, name: n < 26 ? `Team ${String.fromCharCode(65 + n)}` : "", playerIds: [] };
+    ui.tournamentTeamDelete = null; render();
+  }
+  else if (action === "edit-tournament-team" && ui.clubTournament){
+    const team = ui.clubTournament.teams.find(t => t.id === btn.dataset.id);
+    if (team){ ui.tournamentTeamEdit = { id: team.id, name: team.name, playerIds: team.players.map(p => p.id) }; ui.tournamentTeamDelete = null; render(); }
+  }
+  else if (action === "cancel-tournament-team"){ ui.tournamentTeamEdit = null; render(); }
+  else if (action === "delete-tournament-team" && ui.clubTournament){
+    // Two taps: the first arms this row's button, the second deletes.
+    if (ui.tournamentTeamDelete !== btn.dataset.id){ ui.tournamentTeamDelete = btn.dataset.id; render(); return; }
+    ui.tournamentTeamDelete = null;
+    const tid = ui.clubTournament.id;
+    deleteTournamentTeam(tid, btn.dataset.id).then(result => {
+      ui.tournamentTeamError = result.error || null;
+      fetchClubTournamentDetail(tid).then(render);
+    });
   }
   else if (action === "go-club-tournament-match-setup"){
     ui.matchSetupPresetId = null; ui.clubMatchSetupType = "tournament"; state.view = "matchSetup"; render();
@@ -5113,6 +5384,7 @@ document.addEventListener("submit", (e) => {
   else if (id === "club-add-player-form") handleClubAddPlayerSubmit(e);
   else if (id === "club-invite-admin-form") handleClubInviteAdminSubmit(e);
   else if (id === "club-tournament-setup-form") handleClubTournamentSetupSubmit(e);
+  else if (id === "tournament-team-form") handleTournamentTeamSubmit(e);
   else if (id === "claim-request-form") handleClaimRequestSubmit(e);
   else if (id === "merge-request-form") handleMergeRequestSubmit(e);
 });
@@ -5140,6 +5412,16 @@ document.addEventListener("input", (e) => {
 });
 
 document.addEventListener("change", (e) => {
+  // Mirror the tournament-team form into ui so a background re-render (e.g.
+  // the roster finishing loading) doesn't drop half-made picks.
+  if (e.target.closest && e.target.closest("#tournament-team-form") && ui.tournamentTeamEdit){
+    if (e.target.name === "teamName") ui.tournamentTeamEdit.name = e.target.value;
+    else if (e.target.name === "teamPlayerIds"){
+      const ids = ui.tournamentTeamEdit.playerIds, id = e.target.value;
+      ui.tournamentTeamEdit.playerIds = e.target.checked ? (ids.includes(id) ? ids : [...ids, id]) : ids.filter(x => x !== id);
+    }
+    return;
+  }
   if (e.target.name === "teamIds"){
     const id = e.target.value;
     if (e.target.checked){ if (!ui.tournamentSetupTeamIds.includes(id)) ui.tournamentSetupTeamIds.push(id); }

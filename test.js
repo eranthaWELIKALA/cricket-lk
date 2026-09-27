@@ -494,6 +494,77 @@ async function main(){
     assert(inn2.freeHit === true, "no-ball grants a free hit by default (freeHitOnNoBall defaults to true)");
   }
 
+  // --- 20. last man stands: the last batter bats alone, always on strike ---
+  {
+    const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 3, battingFirst: "A", lastManStands: true });
+    const inn = currentInnings(m);
+    win.ensureBatsman(inn, "A1"); win.ensureBatsman(inn, "A2"); win.ensureBowler(inn, "B1");
+    inn.striker = "A1"; inn.nonStriker = "A2"; inn.bowler = "B1";
+    assert(inn.maxWickets === 3, "last man stands: all out only when every batter (3) is out");
+    recordBall(inn, { kind: "wicket", wicketType: "bowled" }); afterBall(m);
+    assert(win.pendingBatsmanSlot(inn) === "striker", "first wicket still asks for a new batsman");
+    win.ensureBatsman(inn, "A3"); inn.striker = "A3";
+    recordBall(inn, { kind: "wicket", wicketType: "bowled" }); afterBall(m);
+    assert(!inn.complete && win.battingAlone(inn), "2 down of 3: innings continues with the last man alone");
+    assert(inn.striker === "A2" && inn.nonStriker === null, "the not-out batter moves to strike, no partner");
+    assert(win.pendingBatsmanSlot(inn) === null, "batting alone doesn't ask for a new batsman");
+    recordBall(inn, { kind: "run", runs: 1 });
+    assert(inn.striker === "A2" && inn.nonStriker === null, "a single keeps the lone batter on strike");
+    recordBall(inn, { kind: "run", runs: 2 }); recordBall(inn, { kind: "run", runs: 0 }); recordBall(inn, { kind: "run", runs: 1 });
+    assert(inn.legalBalls === 6 && inn.striker === "A2" && inn.bowler === null, "end of over keeps the lone batter on strike");
+    inn.bowler = "B2"; win.ensureBowler(inn, "B2");
+    recordBall(inn, { kind: "wicket", wicketType: "bowled" }); afterBall(m);
+    assert(inn.complete && inn.completeReason === "allout" && m.status === "innings_break", "the last man out ends the innings");
+
+    const off = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 3, battingFirst: "A" });
+    assert(currentInnings(off).maxWickets === 2 && off.lastManStands === false, "without the rule, all out is players - 1");
+  }
+
+  // --- 21. no overs limit / no players limit ---
+  {
+    const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: null, playersPerSide: null, battingFirst: "A" });
+    let inn = currentInnings(m);
+    win.ensureBatsman(inn, "A1"); win.ensureBatsman(inn, "A2"); win.ensureBowler(inn, "B1");
+    inn.striker = "A1"; inn.nonStriker = "A2"; inn.bowler = "B1";
+    for (let w = 0; w < 15; w++){
+      recordBall(inn, { kind: "wicket", wicketType: "bowled" }); afterBall(m);
+      win.ensureBatsman(inn, "X" + w); inn[win.pendingBatsmanSlot(inn)] = "X" + w;
+      if (inn.bowler === null){ inn.bowler = w % 2 ? "B1" : "B2"; win.ensureBowler(inn, inn.bowler); }
+    }
+    for (let i = 0; i < 60; i++){
+      recordBall(inn, { kind: "run", runs: 0 }); afterBall(m);
+      if (inn.bowler === null){ inn.bowler = inn.lastOverBowler === "B1" ? "B2" : "B1"; win.ensureBowler(inn, inn.bowler); }
+    }
+    assert(!inn.complete && inn.wickets === 15 && inn.legalBalls === 75, "no limits: neither wickets nor overs end the innings");
+    assert(win.requiredRunRate(inn) === null, "no RRR without a target / overs limit");
+    recordBall(inn, { kind: "run", runs: 4 }); afterBall(m);
+    win.endInnings(m);
+    assert(inn.complete && inn.completeReason === "closed" && m.status === "innings_break", "endInnings closes the innings by hand");
+    startSecondInnings(m);
+    inn = currentInnings(m);
+    assert(inn.oversLimit === null && inn.maxWickets === null && inn.target === 5, "second innings keeps the no-limit conditions");
+    win.ensureBatsman(inn, "B1"); win.ensureBatsman(inn, "B2"); win.ensureBowler(inn, "A1");
+    inn.striker = "B1"; inn.nonStriker = "B2"; inn.bowler = "A1";
+    recordBall(inn, { kind: "run", runs: 6 }); afterBall(m);
+    assert(m.status === "complete" && m.result === "Tigers won", "chase with no limits: no wickets/overs margin in the result");
+
+    const m2 = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: null, playersPerSide: 11, battingFirst: "A" });
+    const i2 = currentInnings(m2);
+    assert(i2.maxWickets === 10 && i2.oversLimit === null, "overs can be unlimited while players are fixed");
+    assert(win.parseOptionalLimit("", 1) === null && win.parseOptionalLimit(" 0 ", 1) === 1 && win.parseOptionalLimit("15", 1) === 15, "blank limit field means no limit; numbers clamp to the minimum");
+    assert(win.limitInputValue(undefined, 20) === 20 && win.limitInputValue(null, 20) === "" && win.limitInputValue(8, 20) === 8, "limit inputs default for new forms, blank for saved no-limit");
+  }
+
+  // --- 22. tournament squads decide a player's side before they've played ---
+  {
+    const m = createMatch({ teamA: "Reds", teamB: "Blues", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    m.squads = { A: ["Kusal", "Dinesh"], B: ["Wanindu", "Maheesh"] };
+    assert(win.playerTeamInMatch(m, "wanindu") === "B", "squad membership gives the side, case-insensitive, before any ball");
+    assert(win.playerSideConflict(m, "Wanindu", "A") !== null, "a Blues squad player can't open for Reds");
+    assert(win.playerSideConflict(m, "Kusal", "A") === null, "a Reds squad player can bat for Reds");
+    assert(win.playerTeamInMatch(m, "Sub Fielder") === null, "a name in neither squad falls back to the usage rule");
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }

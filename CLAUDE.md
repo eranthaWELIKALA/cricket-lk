@@ -167,6 +167,23 @@ reads, not just which buttons are shown. All of this is set once, at
 `createMatch`, from whatever **match preset** was picked (or hand-typed
 on the match-setup screen) and never changes mid-match.
 
+**Optional limits & last man stands.** `oversLimit` and `playersPerSide`
+may be `null` ("no limit" — a blank field in the preset/match-setup forms,
+parsed by `parseOptionalLimit`, re-filled by `limitInputValue`). A null
+`playersPerSide` gives `inn.maxWickets = null` (can't be bowled out); a
+null `oversLimit` means no overs cap, so the live screen shows an "End
+innings" link (two taps, `ui.endInningsConfirm`) that calls `endInnings()`
+(`completeReason: "closed"`). Never compare against these directly — use
+`isAllOut(inn)` / check `oversLimit != null` (`x >= null` is `true` in JS).
+`lastManStands` (preset + match flag, copied onto each innings) makes
+`maxWickets = playersPerSide`; one wicket short of that, `battingAlone(inn)`
+is true, `pendingBatsmanSlot` asks for nobody, and the end of `recordBall`
+puts the lone batter back in `striker` with `nonStriker = null` — this runs
+*after* both unconditional swaps, it doesn't replace them. The run-out end
+picker hides the non-striker tile when that slot is empty. `matchResult`
+omits the wickets margin with no players limit and "overs left" with no
+overs limit.
+
 ## Storage schema & migration
 
 Schema version is `cricket.lk.v2` (see `STORAGE` above for the shape).
@@ -757,8 +774,9 @@ club alike (club ones carry `clubId`), so each view filters it:
 all three; pass them an already-filtered list, don't widen the filter.
 
 Known gaps: names entered in a club match while signed out or offline aren't
-synced (same best-effort as `syncMatchToCloud`); there is no persistent club
-*team* entity (a club's "teams" are just the names typed at match setup).
+synced (same best-effort as `syncMatchToCloud`); outside a club tournament
+there is no persistent club *team* entity (practice/friendly teams are just
+the names typed at match setup) — see "Club tournament teams" below.
 
 ## Roles: guest, club, Premier — separate data, nothing shared
 
@@ -768,7 +786,7 @@ only its own:
 | | Guest (this device) | Club (cloud, per club) | Premier (cloud, global) |
 |---|---|---|---|
 | Players | `state.players` | `club_rosters` → `players` (via `addPlayerToClub`) | `players_public` (everyone, incl. friendly visitors) |
-| Teams | `state.teams` | none — names typed at match setup | derived from `level:"premier"` matches |
+| Teams | `state.teams` | `tournament_teams` per club tournament (012); otherwise names typed at match setup | derived from `level:"premier"` matches |
 | Presets | `state.matchPresets` / `tournamentPresets` | `club_presets` → `ui.club.presets` | none (`PREMIER_STANDINGS_DISPLAY_PRESET` is fixed display config) |
 | Matches | `matchHistory` where `!clubId` | `matches` where `club_id` (+ local archive with that `clubId`) | `matches` where `level = "premier"` |
 | Tournaments | `state.tournaments` | `tournaments` where `organizer_club_id` | — |
@@ -904,6 +922,30 @@ pick the right one of two same-named players; it never creates a player or
 changes `origin_club_id`. Submitting the form still goes through
 `add_player_to_club` by name, which joins an exact-name match instead of
 creating one — the sheet's hint says so. Merge aliases aren't searched.
+
+## Club tournament teams (`supabase/012_tournament_teams.sql`)
+
+A club tournament (usually the club split into two sides for a day) can
+hold saved teams: `tournament_teams` rows (name + `players` jsonb of
+`[{id, name}]` roster snapshots), **members-only** via RLS on a denormalized
+`club_id` that the policies check matches `tournaments.organizer_club_id`
+(the tournament row itself is public; team lists reveal roster membership,
+which isn't). Managed from the tournament dashboard (`renderTournamentTeams`,
+`ui.tournamentTeamEdit`, two-tap delete via `ui.tournamentTeamDelete`); a
+player can be on only one team per tournament (client-side check on save);
+names are unique per tournament (index). With 2+ teams, tournament match
+setup swaps the typed name boxes for two team selects and stores
+`match.squads = { A: [names], B: [names] }`. `playerTeamInMatch` checks squads
+*before* usage, so the side-conflict rule fires before a squad player has
+even batted; a name in neither squad (a late sub) falls back to usage.
+`squadListId(teamKey)`/`renderSquadDatalists()` give each side its own
+datalist (batting side minus out/at-crease), used by every in-match name box.
+`syncMatchToCloud` strips `squads` from the public `matches.data` blob. Played
+matches keep their own names, so editing/deleting a team never changes
+history or standings (which still group by name). If 012 isn't run, the
+dashboard shows a "run 012" hint (`teams_unavailable`) and setup falls back
+to typed names. The new-batsman modal still has no one-tap "yet to bat" list —
+squads now make one possible, but it isn't built.
 
 ## Ownership, claiming & merging (`supabase/009_ownership_claims_merges.sql`)
 
