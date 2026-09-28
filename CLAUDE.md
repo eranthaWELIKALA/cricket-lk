@@ -945,7 +945,7 @@ is next online. Three pieces, all in the CLOUD section:
   and the tournament overlay also folds this device's archived matches for
   it, so standings count a match scored offline. Pending items render with
   a "not synced" tag.
-- **Offline sign-in.** `sw.js` (cache `cricket-lk-v4`) precaches the
+- **Offline sign-in.** `sw.js` (cache `cricket-lk-v5`) precaches the
   supabase-js CDN script and serves it stale-while-revalidate — keep its URL
   in step with `SUPABASE_JS_CDN_URL`. Offline, `supabase.auth.getSession()`
   can hang retrying a token refresh, so `initAuth` doesn't wait on it: it uses
@@ -1024,8 +1024,8 @@ everyone else gets nulls + `can_see_contact = false`, which the screen shows
 as "Private". Never select `phone`/`nic` from the base table or add them to
 `players_public`, and never gate visibility in the client alone — the client
 just renders what the RPC returned (a signed-out visitor gets the public row
-only). Editing contact details uses the same permission; the name is
-read-only (no rename support). Field rules live in `normalizeNic` /
+only). Editing contact details uses the same permission, and so does renaming
+(see "Renaming a player" below). Field rules live in `normalizeNic` /
 `isValidNic` / `isValidPhone` (Sri Lankan NIC: 9 digits + V/X or 12 digits;
 contact: 7–15 digits, optional +), mirrored by the SQL checks, and are
 tested in `test.js`. The club add-player form takes the name plus every optional
@@ -1120,6 +1120,26 @@ pick the right one of two same-named players; it never creates a player or
 changes `origin_club_id`. Submitting the form still goes through
 `add_player_to_club` by name, which joins an exact-name match instead of
 creating one — the sheet's hint says so. Merge aliases aren't searched.
+
+## Renaming a player (`supabase/013_rename_player.sql`)
+
+The profile's Edit sheet has a Name field for anyone who may manage the
+profile (009's rule: platform admin, the claimant, or the adding club while
+unclaimed — the sheet only opens for them, and `rename_player` re-checks
+server-side). Because matches store **names** and are never rewritten, a
+rename keeps the old name in `player_aliases` — the same mechanism merges use
+— so the profile's stats (`playerCareer([name, ...aliases])`) and
+`add_player_to_club`'s alias lookup keep finding this player. Renaming back to
+a former name removes that alias; a case/spacing-only change adds none. The
+RPC refuses a name held by another player or used as another player's alias
+(every name lookup picks one player per name), updates the `{id, name}`
+snapshots in `tournament_teams`, and writes `player_rename` to
+`admin_audit_log`. Client: `normalizePlayerName`/`playerNameError` (pure,
+tested, 1–24 chars), `renamePlayer`, `applyPlayerRename`; the rename runs
+before the other saves in `handlePlayerProfileSubmit`. Online-only, like the
+other profile edits. Known limits: leaderboards still list old and new names
+separately (same as merges), and a match in progress keeps the name it
+started with.
 
 ## Club tournament teams (`supabase/012_tournament_teams.sql`)
 

@@ -173,6 +173,9 @@ async function main(){
     assert(win.normalizeNic(" 90 1234567 v ") === "901234567V", "NIC is normalised to upper-case without spaces");
     assert(win.isValidPhone("") && win.isValidPhone("0771234567") && win.isValidPhone("+94 77 123 4567"), "blank, local and +94 contact numbers are valid");
     assert(!win.isValidPhone("123") && !win.isValidPhone("07x1234567") && !win.isValidPhone("+94-77-1234567"), "too-short or non-numeric contact numbers are rejected");
+    assert(win.normalizePlayerName("  Kumar   Sangakkara ") === "Kumar Sangakkara", "player names are trimmed with inner spaces collapsed");
+    assert(win.playerNameError("   ") && win.playerNameError("x".repeat(25)), "a blank or 25+ character name is rejected");
+    assert(win.playerNameError("x".repeat(24)) === null && win.playerNameError(" Mahela ") === null, "a 1–24 character name is accepted");
     const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
     const inn = currentInnings(m);
     win.ensureBatsman(inn, "A1"); win.ensureBatsman(inn, "A2"); win.ensureBowler(inn, "B1");

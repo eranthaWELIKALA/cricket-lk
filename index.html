@@ -1264,6 +1264,15 @@ function playerTeamInMatch(match, name){
 function normalizeNic(v){ return (v || "").replace(/\s+/g, "").toUpperCase(); }
 function isValidNic(v){ const n = normalizeNic(v); return n === "" || /^([0-9]{9}[VX]|[0-9]{12})$/.test(n); }
 function isValidPhone(v){ const t = (v || "").trim(); return t === "" || /^\+?[0-9 ]{7,15}$/.test(t); }
+// Player names: trimmed, inner whitespace collapsed, 1-24 characters --
+// mirrored by rename_player (supabase/013).
+function normalizePlayerName(v){ return (v || "").trim().replace(/\s+/g, " "); }
+function playerNameError(v){
+  const n = normalizePlayerName(v);
+  if (!n) return "Enter the player's name.";
+  if (n.length > 24) return "Name can be at most 24 characters.";
+  return null;
+}
 
 /* Optional profile details: "Right-hand bat", "Right-arm fast", etc. Empty
    string when nothing is set, so callers can just filter falsy. */
@@ -2639,6 +2648,19 @@ async function updatePlayerDetails(playerId, d){
   const missing = cloudSqlMissing(kit.error, "supabase/010_player_nickname_jersey.sql");
   if (missing && !nickname && jersey == null) return { ok: true };
   return { error: missing || kit.error.message };
+}
+/* Rename (supabase/013): same manage rule as the other profile edits. The
+   old name becomes an alias, so past matches -- stored by name -- still
+   count on the profile and a typed old name still finds this player. */
+async function renamePlayer(playerId, name){
+  const offline = needsInternet(); if (offline) return offline;
+  const { data, error } = await supabaseClient.rpc("rename_player", { _player_id: playerId, _name: name });
+  if (error){
+    const missing = cloudSqlMissing(error, "supabase/013_rename_player.sql");
+    const msg = missing || error.message || "Couldn't rename.";
+    return { error: msg.charAt(0).toUpperCase() + msg.slice(1) + (missing || /[.!?]$/.test(msg) ? "" : ".") };
+  }
+  return { ok: true, name: data || name };
 }
 async function updatePlayerProfile(playerId, phone, nic){
   const offline = needsInternet(); if (offline) return offline;
@@ -4129,7 +4151,18 @@ function handlePlayerProfileSubmit(e){
   if (!isValidNic(nic)){ showFormError(form, "NIC should be 9 digits + V/X, or 12 digits."); return; }
   const detailsError = playerDetailsError(details);
   if (detailsError){ showFormError(form, detailsError); return; }
-  const contactStep = canContact ? updatePlayerProfile(pr.id, phone, nic) : Promise.resolve({ ok: true });
+  const newName = normalizePlayerName(f.get("playerName"));
+  const nameError = playerNameError(newName);
+  if (nameError){ showFormError(form, nameError); return; }
+  const oldName = pr.data.name || pr.name;
+  // Rename first: a taken name is the likeliest failure, and nothing else is
+  // saved until it's sorted out.
+  const renameStep = newName !== oldName ? renamePlayer(pr.id, newName) : Promise.resolve({ ok: true });
+  const contactStep = renameStep.then(r => {
+    if (r.error) return r;
+    if (r.name && r.name !== oldName) applyPlayerRename(pr, oldName, r.name);
+    return canContact ? updatePlayerProfile(pr.id, phone, nic) : { ok: true };
+  });
   contactStep.then(r => {
     if (r && r.error){ showFormError(form, r.error); return null; }
     return updatePlayerDetails(pr.id, details);
@@ -4141,10 +4174,23 @@ function handlePlayerProfileSubmit(e){
       is_keeper: details.is_keeper, city: details.city || null, photo: details.photo || null, details_unavailable: false });
     if (!pr.data.kit_unavailable) Object.assign(pr.data, { nickname: details.nickname || null, jersey_no: parseJerseyNo(details.jersey_no) });
     ui.playerModal = null; pr.message = "Saved.";
-    // The roster list shows jersey/nickname, so refresh it if it's this club's.
+    // The roster list shows name/jersey/nickname, so refresh it if it's this club's.
     if (pr.scope === "club" && ui.currentClubId) fetchClubDetail(ui.currentClubId).then(render);
     render();
   });
+}
+
+/* Mirror a successful rename into what's on screen: the profile, its alias
+   list (the old name joins it, the new one leaves it if it was a former
+   name) and the Premier list. The club roster is re-fetched by the caller.
+   Past matches keep the name they were scored with. */
+function applyPlayerRename(pr, oldName, newName){
+  pr.name = newName; pr.data.name = newName;
+  const lower = newName.toLowerCase();
+  pr.aliases = (pr.aliases || []).filter(a => a.toLowerCase() !== lower);
+  if (oldName.toLowerCase() !== lower && !pr.aliases.some(a => a.toLowerCase() === oldName.toLowerCase())) pr.aliases.push(oldName);
+  const listed = ui.premier && ui.premier.players.find(p => p.id === pr.id);
+  if (listed) listed.name = newName;
 }
 
 /* Who can edit this profile, and the claim / merge actions (all approved by a
@@ -4401,6 +4447,8 @@ function renderPlayerEditModal(){
         <form id="player-profile-form" style="margin:0;">
           <div class="form-error"></div>
           ${photoFieldHtml(safePhoto(d.photo), initial)}
+          <label>Name<input name="playerName" value="${escapeHtml(d.name || pr.name || "")}" required maxlength="24" autocomplete="off"></label>
+          <p class="hint" style="margin-top:-6px;">Renaming keeps the old name as an alias, so past scorecards still count for this player.</p>
           ${d.can_see_contact ? `
             <label>Contact no<input name="phone" type="tel" value="${escapeHtml(d.phone || "")}" placeholder="07x xxx xxxx" maxlength="16" autocomplete="off"></label>
             <label>NIC<input name="nic" value="${escapeHtml(d.nic || "")}" placeholder="901234567V" maxlength="14" autocomplete="off"></label>` : ""}
