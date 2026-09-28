@@ -432,7 +432,8 @@ always-visible control — see "Theme & sound"), and slow down under
 
 Every "are you sure?" goes through `askConfirm({...})` (UI, next to
 `renderSideMenu`), which sets `ui.confirm` and renders `renderConfirmModal()`
-**above every other sheet** in `render()`. Options: `title`, `body` (trusted
+into its own `#confirm-root` layer **above every other sheet** — the sheet
+underneath stays in the DOM (typed input included) while it asks. Options: `title`, `body` (trusted
 HTML — escape names), `confirmLabel`/`cancelLabel`/`busyLabel`, `icon`,
 `tone` (`"danger"` default, `"primary"`), optional `choices` (a required pick
 before confirm is enabled — forfeit's team), `onConfirm(choice)` (return
@@ -449,6 +450,38 @@ a separate page).
 Re-rendering a sheet that carries `data-keep-scroll="<key>"` (the confirm
 sheet, the team builder) keeps its scroll position and adds `.no-anim`, so a
 tap inside doesn't jump to the top or replay the slide-up animation.
+
+## Back button (phone back / back gesture)
+
+No per-screen URLs. One "trap" history entry sits on top (`armNav()`); every
+back press pops it, `popstate` runs `handleBack()`, and the trap is re-pushed.
+`handleBack()` goes most specific first: confirm sheet (cancel) → side menu →
+sync sheet → player modal → team builder (`closeTeamEdit`) → live match
+(match menu, wicket sheet, pending extra, expanded scorecard, then **asks**
+"Leave live scoring?" — it only sets `ui.awayFromMatch`, nothing is lost) →
+Result (`leaveMatch()`, same as its button) → in-screen sub-forms (preset
+editors, claim/merge) → previous screen. At Home it returns false: the trap
+stays unarmed and a toast says "Press back again to exit" (at Home with a match
+running in the background, back resumes it instead).
+- **Previous screen** comes from `navStack`, filled by `noteNavigation()` in
+  `render()` from `navKey()` (`"match"`, `"result"` or `state.view`), so
+  existing `state.view = ...` code needs nothing extra. Arriving at Home clears
+  it; arriving at a screen already in it cuts back to there; setup screens and
+  Result (`NAV_TRANSIENT`) are never returned to. Empty stack (e.g. after a
+  reload) → the screen's own `.back-bar` target → Home. `goToView()` does the
+  lazy loads a screen needs when reached by back (`ui` may have been reset).
+- **Unsaved input asks first**: `formIsDirty()` compares every field with the
+  value it was rendered with. The on-screen back bar (`go-view` on a
+  `.back-bar`) goes through the same `leaveScreen()` check. Mark a control or
+  container `data-nav-ignore` if it shouldn't count.
+- **Typed input survives re-renders**: `captureFormDrafts`/`restoreFormDrafts`
+  carry edited fields of each `form[id]` in `#app`/`#modal-root` across the
+  `innerHTML` swap — only when the re-render left that field's default alone
+  (so a preset pick still re-fills overs), and never for a just-submitted form
+  (`data-submitted`, cleared on the next edit).
+- Chrome skips history entries pushed before any user interaction, so the trap
+  is armed only from `pointerdown`/`keydown` or inside `popstate` — **don't arm
+  it at boot**, it would silently stop working.
 
 ## Innings break screen
 
@@ -912,7 +945,7 @@ is next online. Three pieces, all in the CLOUD section:
   and the tournament overlay also folds this device's archived matches for
   it, so standings count a match scored offline. Pending items render with
   a "not synced" tag.
-- **Offline sign-in.** `sw.js` (cache `cricket-lk-v3`) precaches the
+- **Offline sign-in.** `sw.js` (cache `cricket-lk-v4`) precaches the
   supabase-js CDN script and serves it stale-while-revalidate — keep its URL
   in step with `SUPABASE_JS_CDN_URL`. Offline, `supabase.auth.getSession()`
   can hang retrying a token refresh, so `initAuth` doesn't wait on it: it uses

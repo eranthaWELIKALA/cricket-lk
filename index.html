@@ -562,6 +562,13 @@
     padding:0 8px; border-radius:6px; transform:rotate(-1.5deg);
   }
   .home-logo{ width:56px; height:56px; border-radius:var(--radius-md); object-fit:cover; margin-bottom:8px; border:2px solid var(--line-strong); }
+  .nav-toast{
+    position:fixed; left:50%; bottom:calc(24px + env(safe-area-inset-bottom)); transform:translateX(-50%); z-index:200;
+    background:var(--panel); color:var(--text); border:2px solid var(--line-strong); border-radius:var(--radius-sm);
+    box-shadow:var(--shadow-card); padding:10px 16px; font-size:.85rem; font-weight:700; pointer-events:none;
+    animation:backdropIn .15s ease-out;
+  }
+  .nav-toast[hidden]{ display:none; }
   .back-bar{
     display:inline-flex; align-items:center; gap:6px; height:38px; padding:0 12px 0 10px;
     background:var(--panel); border:2px solid var(--line-strong); border-radius:var(--radius-sm); box-shadow:var(--shadow-card);
@@ -878,7 +885,7 @@
   /* --- print: "Export PDF" is window.print() on the result screen --- */
   @media print{
     body{ background:#fff; color:#000; }
-    #modal-root, .share-row, .motm-card form, button, .topbar{ display:none !important; }
+    #modal-root, #confirm-root, #nav-toast, .share-row, .motm-card form, button, .topbar{ display:none !important; }
     .innings-summary, .motm-card, .result-hero{ background:#fff; border:1px solid #ccc; color:#000; box-shadow:none; }
     .motm-name{ color:#000; }
     table, th, td{ border-color:#ccc; color:#000; }
@@ -891,6 +898,8 @@
 <div id="busy-status" class="sr-only" role="status" aria-live="polite"></div>
 <div id="app"></div>
 <div id="modal-root"></div>
+<div id="confirm-root"></div>
+<div id="nav-toast" class="nav-toast" role="status" aria-live="polite" hidden></div>
 <script>
 /* ============================================================
    1. REFERENCE DATA
@@ -3318,6 +3327,263 @@ function cancelConfirm(){
   render();
 }
 
+/* --- Back navigation (phone back button / back gesture / browser back).
+   The app has no URLs per screen, so instead of mirroring every screen into
+   browser history we keep ONE extra "trap" entry on top of it: every back
+   press pops that entry, fires popstate, and handleBack() decides what back
+   means right now (close the top sheet, leave a sub-form, go to the
+   previous screen), then the trap is put back. At Home with nothing open we
+   let the press through, so a second press within reach exits the app.
+   Previous screens come from navStack, filled by noteNavigation() inside
+   render() -- so every existing `state.view = ...` path is recorded without
+   touching it. navStack is a plain `let`, not in ui: leaveMatch() resets ui
+   wholesale, and it's not persisted (a reload starts a fresh stack; back
+   then falls back to the screen's own back bar, then Home).
+   Chrome ignores history entries pushed before the user has interacted
+   with the page, so the trap is only (re)armed from a real pointer/key
+   event or from inside popstate -- never at boot. */
+let navStack = [], navCurrent = null, navGoingBack = false;
+// Screens that are never returned to by back: setup forms (they're consumed
+// by starting the match/tournament) and the Result screen (its match is gone).
+const NAV_TRANSIENT = new Set(["matchSetup", "tournamentSetup", "clubTournamentSetup", "result"]);
+
+function navKey(){
+  const m = state.match;
+  if (m && m.status === "complete") return "result";
+  if (m && !ui.awayFromMatch) return "match";
+  return state.view || "home";
+}
+// Called from render(): records the screen we're leaving, keeping navStack a
+// simple path (arriving at Home clears it; arriving somewhere already in the
+// stack cuts back to that point, so loops don't build up).
+function noteNavigation(){
+  const key = navKey();
+  if (key === (navCurrent && navCurrent.key)){ navGoingBack = false; return; }
+  if (navCurrent && !navGoingBack && !NAV_TRANSIENT.has(navCurrent.key)) navStack.push(navCurrent);
+  navGoingBack = false;
+  const at = navStack.findIndex(e => e.key === key);
+  if (key === "home") navStack = [];
+  else if (at >= 0) navStack = navStack.slice(0, at);
+  if (navStack.length > 30) navStack = navStack.slice(-30);
+  // The context a screen needs to be shown again, captured on arrival.
+  navCurrent = { key, clubId: ui.currentClubId, clubTournamentId: ui.currentTournamentId, tournamentId: state.activeTournamentId, profile: ui.profile };
+}
+function navEntryUsable(e){
+  if (e.key === navKey()) return false;
+  if (e.key === "match") return !!(state.match && state.match.status !== "complete");
+  if (e.key === "playerProfile") return !!e.profile;
+  if (e.key === "signIn" || e.key === "signUp") return !session;
+  return true;
+}
+function armNav(){
+  if (!(history.state && history.state.cricketLkNav === "top")) history.pushState({ cricketLkNav: "top" }, "");
+}
+
+// The same view switch the go-view action does, plus the lazy loads a
+// screen needs when it's reached by back rather than through its own entry
+// action (ui may have been reset since, e.g. by leaveMatch).
+function goToView(view){
+  if (["premierPlayers", "premierTeams", "premierStats"].includes(view) && !ui.premier) view = "premier";
+  state.view = view;
+  if (view === "clubHome" && ui.currentClubId && (!ui.club || ui.club.id !== ui.currentClubId)){
+    ui.club = null;
+    fetchClubDetail(ui.currentClubId).then(render);
+  } else if (view === "clubTournamentDashboard" && ui.currentTournamentId && (!ui.clubTournament || ui.clubTournament.id !== ui.currentTournamentId)){
+    ui.clubTournament = null; ui.tournamentTeamEdit = null;
+    fetchClubTournamentDetail(ui.currentTournamentId).then(render);
+  } else if (view === "premier" && !ui.premier){
+    fetchPremierData().then(render);
+  } else if (view === "myClubs" && !ui.myClubs){
+    fetchMyClubs().then(render);
+  }
+  render();
+}
+function restoreNavEntry(e){
+  navGoingBack = true;
+  if (e.key === "match"){ ui.awayFromMatch = false; render(); return; }
+  if (e.clubId) ui.currentClubId = e.clubId;
+  if (e.key === "clubTournamentDashboard" && e.clubTournamentId) ui.currentTournamentId = e.clubTournamentId;
+  if (e.key === "tournamentDashboard" && e.tournamentId) state.activeTournamentId = e.tournamentId;
+  if (e.key === "playerProfile") ui.profile = e.profile;
+  goToView(e.key);
+}
+// One step back through screens: the previous screen, else this screen's
+// own on-screen back bar target, else Home. Returns false at Home.
+function popUsableEntry(){
+  while (navStack.length){
+    const e = navStack.pop();
+    if (navEntryUsable(e)) return e;
+  }
+  return null;
+}
+function goBackScreen(){
+  const e = popUsableEntry();
+  if (e){ restoreNavEntry(e); return true; }
+  const m = state.match;
+  if (navKey() === "home"){
+    // Home while a match runs in the background: back resumes it.
+    if (m && m.status !== "complete" && ui.awayFromMatch){ navGoingBack = true; ui.awayFromMatch = false; render(); return true; }
+    return false;
+  }
+  const bar = document.querySelector("#app .back-bar[data-view]");
+  navGoingBack = true;
+  goToView(bar ? bar.dataset.view : "home");
+  return true;
+}
+
+/* A form holds unsaved input when any field differs from what it was
+   rendered with. Hidden inputs can't be compared (their defaultValue follows
+   .value) and search boxes only filter, so both are ignored. */
+function formIsDirty(form){
+  return [...form.elements].some(el => {
+    if (el.disabled || el.closest("[data-nav-ignore]")) return false;
+    const t = el.type;
+    if (["hidden", "submit", "button", "reset", "search"].includes(t) || el.classList.contains("team-builder-search")) return false;
+    if (t === "file") return !!(el.files && el.files.length);
+    if (t === "checkbox" || t === "radio") return el.checked !== el.defaultChecked;
+    if (el.tagName === "SELECT"){
+      if (el.multiple) return [...el.options].some(o => o.selected !== o.defaultSelected);
+      const opts = [...el.options], def = opts.findIndex(o => o.defaultSelected);
+      return el.selectedIndex !== (def >= 0 ? def : (opts.length ? 0 : -1));
+    }
+    return typeof el.defaultValue === "string" && el.value !== el.defaultValue;
+  });
+}
+function hasDirtyForm(rootSel){
+  return [...document.querySelectorAll(`${rootSel} form`)].some(formIsDirty);
+}
+/* render() rebuilds #app / #modal-root with innerHTML, which used to drop
+   anything half-typed whenever something re-rendered (a confirmation
+   opening, a background fetch landing). These carry the edited fields of
+   each form[id] across the swap. A field is only put back if the re-render
+   left its default alone -- so a render that deliberately changes a field
+   (picking a preset re-fills overs) still wins -- and a form that was just
+   submitted is skipped, so a successful save still clears it. */
+function captureFormDrafts(root){
+  const drafts = {};
+  root.querySelectorAll("form[id]").forEach(f => {
+    if (f.dataset.submitted) return;
+    const fields = [];
+    [...f.elements].forEach(el => {
+      if (!el.name || el.disabled || ["hidden", "submit", "button", "reset", "file"].includes(el.type)) return;
+      if (el.type === "checkbox" || el.type === "radio"){
+        if (el.checked !== el.defaultChecked) fields.push({ kind: "check", name: el.name, value: el.value, checked: el.checked, def: el.defaultChecked });
+      } else if (el.tagName === "SELECT"){
+        if (el.multiple) return;
+        const d = [...el.options].find(o => o.defaultSelected) || el.options[0];
+        const def = d ? d.value : "";
+        if (el.value !== def) fields.push({ kind: "select", name: el.name, value: el.value, def });
+      } else if (typeof el.defaultValue === "string" && el.value !== el.defaultValue){
+        fields.push({ kind: "text", name: el.name, value: el.value, def: el.defaultValue });
+      }
+    });
+    if (fields.length) drafts[f.getAttribute("id")] = fields;
+  });
+  return drafts;
+}
+function restoreFormDrafts(root, drafts){
+  Object.keys(drafts).forEach(id => {
+    const f = root.querySelector(`form[id="${CSS.escape(id)}"]`);
+    if (!f) return;
+    drafts[id].forEach(d => {
+      const named = [...f.elements].filter(el => el.name === d.name);
+      if (d.kind === "check"){
+        const el = named.find(x => x.value === d.value);
+        if (el && el.defaultChecked === d.def) el.checked = d.checked;
+        return;
+      }
+      if (named.length !== 1) return;
+      const el = named[0];
+      if (d.kind === "select"){
+        const o = [...el.options].find(x => x.defaultSelected) || el.options[0];
+        if ((o ? o.value : "") === d.def && [...el.options].some(x => x.value === d.value)) el.value = d.value;
+      } else if (el.defaultValue === d.def){
+        el.value = d.value;
+        // Lets DOM-only followers (e.g. match setup's "Who bats first?" labels)
+        // catch up; not for search-selects, where input would pop the list open.
+        if (!el.closest(".combo")) el.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    });
+  });
+}
+function confirmDiscard(proceed){
+  askConfirm({
+    title: "Discard your changes?", icon: "✎", tone: "primary",
+    body: `<p>What you've entered here hasn't been saved yet.</p>`,
+    confirmLabel: "Discard", cancelLabel: "Keep editing",
+    onConfirm: () => { proceed(); }
+  });
+}
+// Back (or the on-screen back bar) away from a screen with typed input asks first.
+function leaveScreen(go){
+  if (hasDirtyForm("#app")) confirmDiscard(go); else go();
+}
+
+/* What one back press does, most specific first. Returns false only when
+   there's nothing left to go back from (Home), so the press can exit. */
+function handleBack(){
+  const m = state.match;
+  const inProgress = !!(m && m.status !== "complete");
+  const onMatch = inProgress && !ui.awayFromMatch;
+  // 1. Sheets and overlays, top-most first.
+  if (ui.confirm){ cancelConfirm(); return true; }
+  if (ui.sideMenuOpen){ ui.sideMenuOpen = false; render(); return true; }
+  if (ui.syncSheet){ ui.syncSheet = false; render(); return true; }
+  if (ui.playerModal && document.querySelector("#modal-root form")){
+    const close = () => { ui.playerModal = null; render(); };
+    if (hasDirtyForm("#modal-root")) confirmDiscard(close); else close();
+    return true;
+  }
+  if (ui.tournamentTeamEdit && document.querySelector(".team-modal")){ closeTeamEdit(); return true; }
+  // 2. The live match screen: close its own sheets, then ask before leaving.
+  if (onMatch){
+    if (ui.matchMenu){ ui.matchMenu = ui.matchMenu === "menu" ? null : "menu"; ui.squadError = null; render(); return true; }
+    if (ui.wicketFlow){ ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; render(); return true; }
+    if (ui.pendingExtra){ ui.pendingExtra = null; render(); return true; }
+    if (ui.showFullScorecard){ ui.showFullScorecard = false; render(); return true; }
+    askConfirm({
+      title: "Leave live scoring?", icon: "🏏", tone: "primary",
+      body: `<p>The match keeps going and nothing is lost. Get back to it from the green <b>Live</b> pill at the top, or from Home.</p>`,
+      confirmLabel: "Leave", cancelLabel: "Keep scoring",
+      onConfirm: () => {
+        ui.awayFromMatch = true;
+        const e = popUsableEntry();
+        if (e && e.key !== "match") restoreNavEntry(e);
+        else { navGoingBack = true; goToView("home"); }
+      }
+    });
+    return true;
+  }
+  // 3. Result: the match is already archived, so back is the exit button.
+  if (m && m.status === "complete"){ leaveMatch(); return true; }
+  // 4. A form opened inside a screen (preset editors, claim/merge).
+  const subForm = state.view === "presets" && (ui.editingMatchPreset || ui.editingTournamentPreset) ? () => { ui.editingMatchPreset = null; ui.editingTournamentPreset = null; }
+    : state.view === "clubPresets" && (ui.editingClubMatchPreset || ui.editingClubTournamentPreset) ? () => { ui.editingClubMatchPreset = null; ui.editingClubTournamentPreset = null; }
+    : state.view === "playerProfile" && ui.profile && (ui.profile.claiming || ui.profile.merging) ? () => { ui.profile.claiming = false; ui.profile.merging = false; }
+    : null;
+  if (subForm){ leaveScreen(() => { subForm(); render(); }); return true; }
+  // 5. Previous screen.
+  if (navKey() !== "home" || navStack.length){
+    if (hasDirtyForm("#app")){ confirmDiscard(() => { goBackScreen(); }); return true; }
+  }
+  return goBackScreen();
+}
+
+let navToastTimer = null;
+function showNavToast(text){
+  const el = document.getElementById("nav-toast");
+  if (!el) return;
+  el.textContent = text; el.hidden = false;
+  clearTimeout(navToastTimer);
+  navToastTimer = setTimeout(() => { el.hidden = true; }, 2200);
+}
+window.addEventListener("popstate", () => {
+  if (handleBack()){ armNav(); return; }
+  // Nothing to go back from: leave the trap unarmed so the next press exits.
+  // Any tap re-arms it (see the pointerdown/keydown listeners at boot).
+  showNavToast("Press back again to exit");
+});
+
 /* Top-bar sync status, only for a signed-in (cloud) user: nothing when all
    is synced and online; otherwise offline / syncing / N waiting / N failed.
    Tapping it opens the sync sheet. Static -- no infinite animation on an
@@ -5105,6 +5371,7 @@ function leaveMatch(){
   const tournamentId = state.match.tournamentId;
   const clubId = state.match.clubId;
   state.match = null; state.snapshots = []; ui = defaultUi();
+  navStack = []; navGoingBack = true; // back from here goes by the screen's own back bar
   if (clubId && tournamentId){
     // a club's own Local-tier tournament -- tournamentId is a cloud
     // `tournaments` row here, NOT a key into local state.tournaments.
@@ -6539,6 +6806,7 @@ function render(){
   } else {
     html = renderHome();
   }
+  noteNavigation();
   const canNavigate = !m || inProgress;
   // Hidden on the auth screens themselves -- showing a "Sign in" CTA
   // while already on the sign-in form (or signed-out on Account, which
@@ -6547,8 +6815,10 @@ function render(){
   root.classList.toggle("live-mode", !!(inProgress && !away && m.status !== "innings_break"));
   // Loading indicators are off while a match is on screen (see "activity").
   document.body.classList.toggle("live-scoring", !!(inProgress && !away));
+  const appDrafts = captureFormDrafts(root);
   root.innerHTML = renderTopBar(canNavigate, onAuthScreen) + html + renderPlayersDatalist() + renderTeamsDatalist()
     + (canNavigate ? renderSideMenu() : "");
+  restoreFormDrafts(root, appDrafts);
 
   const modalRoot = document.getElementById("modal-root");
   let modalHtml = "";
@@ -6561,10 +6831,10 @@ function render(){
     (pm.kind === "edit" && state.view === "playerProfile" && ui.profile && ui.profile.data && ui.profile.data.can_see_contact));
   if (pm && !pmValid) ui.playerModal = null;
   const teamEditOpen = ui.tournamentTeamEdit && state.view === "clubTournamentDashboard" && ui.clubTournament && !ui.clubTournament.teams_unavailable && (!inProgress || away);
-  if (ui.confirm){
-    // The shared confirmation sheet sits above everything (see askConfirm).
-    modalHtml = renderConfirmModal();
-  } else if (ui.syncSheet && session){
+  // The shared confirmation sheet has its own layer above everything (see
+  // askConfirm), so the sheet under it stays in the DOM -- typed input and
+  // all -- while it asks.
+  if (ui.syncSheet && session){
     modalHtml = renderSyncSheet();
   } else if (pmValid){
     modalKey = pm.kind;
@@ -6589,12 +6859,20 @@ function render(){
     // and skips the slide-up animation -- see data-keep-scroll.
     const prev = modalRoot.querySelector("[data-keep-scroll]");
     const keep = prev ? { key: prev.dataset.keepScroll, top: prev.scrollTop } : null;
+    const modalDrafts = captureFormDrafts(modalRoot);
     modalRoot.innerHTML = modalHtml;
     modalRoot.dataset.modalKey = modalKey;
+    restoreFormDrafts(modalRoot, modalDrafts);
     const again = keep && modalRoot.querySelector(`[data-keep-scroll="${keep.key}"]`);
     if (again){ again.classList.add("no-anim"); again.scrollTop = keep.top; }
     if (modalKey === "add"){ const first = modalRoot.querySelector('input[name="name"]'); if (first) first.focus(); }
   }
+  const confirmRoot = document.getElementById("confirm-root");
+  const prevConfirm = confirmRoot.querySelector("[data-keep-scroll]");
+  const confirmTop = prevConfirm ? prevConfirm.scrollTop : null;
+  confirmRoot.innerHTML = ui.confirm ? renderConfirmModal() : "";
+  const againConfirm = confirmTop != null && confirmRoot.querySelector("[data-keep-scroll]");
+  if (againConfirm){ againConfirm.classList.add("no-anim"); againConfirm.scrollTop = confirmTop; }
   // The DOM was just replaced: put the tapped button's spinner back.
   if (activity.shown || document.querySelector(".is-loading")) applyActivity();
 }
@@ -6603,7 +6881,12 @@ document.addEventListener("click", (e) => {
   const b = e.target.closest && e.target.closest("[data-action]");
   if (b) noteTrigger(b);
 }, true);
-document.addEventListener("submit", (e) => { noteTrigger(e.target); }, true);
+document.addEventListener("submit", (e) => { noteTrigger(e.target); e.target.dataset.submitted = "1"; }, true);
+// Editing a form again after a failed submit makes it a draft again (see captureFormDrafts).
+["input", "change"].forEach(t => document.addEventListener(t, (e) => {
+  const f = e.target.closest && e.target.closest("form");
+  if (f) delete f.dataset.submitted;
+}, true));
 document.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-action]");
   if (!btn) return;
@@ -6680,15 +6963,13 @@ document.addEventListener("click", (e) => {
     if (state.soundEnabled) SFX.tap();
   }
   else if (action === "go-view"){
-    state.view = btn.dataset.view;
-    // Self-healing: "clubHome" can now be reached (via back-bars) without
-    // ever having gone through "open-club" first -- e.g. back from a
-    // tournament created directly off Home -- so make sure ui.club
-    // actually matches before rendering it, instead of showing stale data.
-    if (state.view === "clubHome" && ui.currentClubId && (!ui.club || ui.club.id !== ui.currentClubId)){
-      ui.club = null; render();
-      fetchClubDetail(ui.currentClubId).then(render);
-    } else render();
+    // goToView self-heals ui.club etc. -- "clubHome" can be reached via
+    // back-bars without ever going through "open-club" first. The on-screen
+    // back bar behaves like the phone's back: asks before dropping typed
+    // input, and doesn't add the screen it leaves to the back stack.
+    const view = btn.dataset.view;
+    if (btn.classList.contains("back-bar")) leaveScreen(() => { navGoingBack = true; goToView(view); });
+    else goToView(view);
   }
   else if (action === "go-account"){ state.view = session ? "account" : "signIn"; render(); }
   else if (action === "sign-out"){ handleSignOut(); }
@@ -7066,6 +7347,9 @@ document.addEventListener("change", (e) => {
 load();
 render();
 initAuth();
+// Back-button trap (see handleBack): armed on real interaction only.
+document.addEventListener("pointerdown", armNav, true);
+document.addEventListener("keydown", armNav, true);
 // Offline-first sync triggers: coming back online, returning to the app, and
 // a slow heartbeat while anything is still waiting.
 window.addEventListener("online", () => handleBackOnline());
