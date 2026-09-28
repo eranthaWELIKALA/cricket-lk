@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><rect x="8" y="8" width="496" height="496" rx="112" fill="#0B1512" stroke="#26332F" stroke-width="4"/>
+  <rect x="164" y="296" width="184" height="16" rx="8" fill="#33E29B"/>
+  <g stroke="#050B0A" stroke-width="6">
+    <rect x="186" y="138" width="26" height="168" rx="7" fill="#FFFFFF"/>
+    <rect x="243" y="138" width="26" height="168" rx="7" fill="#FFFFFF"/>
+    <rect x="300" y="138" width="26" height="168" rx="7" fill="#FFFFFF"/>
+    <rect x="184" y="122" width="72" height="14" rx="7" fill="#FFC247"/>
+    <rect x="258" y="122" width="72" height="14" rx="7" fill="#FFC247"/>
+  </g>
+  <text x="256" y="398" text-anchor="middle" font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" font-weight="800" font-size="50" letter-spacing="-1.5" fill="#FFFFFF">Cricket<tspan fill="#FFC247">.lk</tspan></text>
+</svg>

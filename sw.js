@@ -1,6 +1,6 @@
 /* Cricket.lk service worker: offline cache only, no notifications (yet). */
-const CACHE = "cricket-lk-v2";
-const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
+const CACHE = "cricket-lk-v3";
+const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-512-maskable.png", "./apple-touch-icon.png", "./favicon-32.png", "./icon.svg"];
 // supabase-js (loaded dynamically by index.html's loadSupabaseLib). Cached so
 // a signed-in user can still boot into their clubs offline -- keep in step
 // with SUPABASE_JS_CDN_URL in index.html.
