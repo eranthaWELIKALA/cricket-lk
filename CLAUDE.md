@@ -172,8 +172,12 @@ may be `null` ("no limit" — a blank field in the preset/match-setup forms,
 parsed by `parseOptionalLimit`, re-filled by `limitInputValue`). A null
 `playersPerSide` gives `inn.maxWickets = null` (can't be bowled out); a
 null `oversLimit` means no overs cap, so the live screen shows an "End
-innings" link (two taps, `ui.endInningsConfirm`) that calls `endInnings()`
-(`completeReason: "closed"`). Never compare against these directly — use
+innings" link (asks first via `askConfirm`, see "Confirmations" below) that calls `endInnings()`
+(`completeReason: "closed"`). The same button (`renderEndInningsButton`,
+gated by `canEndInningsByHand(inn)` — no overs limit *or* no players limit)
+also sits at the bottom of the new-batsman and new-bowler sheets, which
+otherwise block everything until a name is entered; in the 2nd innings it
+reads "finish match" and `afterBall` produces the result as usual. Never compare against these directly — use
 `isAllOut(inn)` / check `oversLimit != null` (`x >= null` is `true` in JS).
 `lastManStands` (preset + match flag, copied onto each innings) makes
 `maxWickets = playersPerSide`; one wicket short of that, `battingAlone(inn)`
@@ -272,10 +276,9 @@ from `matchResult`/`afterBall` — it can fire at *any* point (before
 mid-chase), so it doesn't try to compute a runs margin or reuse the
 normal completion path; it just sets `match.forfeited`,
 `match.forfeitedBy`, `status = "complete"`, and a result string
-directly. The UI trigger (`ui.forfeitFlow` → `renderForfeitModal`) is
-checked *before* the opening/new-batsman/new-bowler/wicket modal
-branches in `render()`'s modal logic, so it can interrupt any of those
-at any time. Two consequences worth remembering if you touch this:
+directly. The UI trigger (`askForfeit()` → the shared confirmation sheet,
+`ui.confirm`) is checked *before* every other modal branch in `render()`,
+so it can interrupt any of them at any time. Two consequences worth remembering if you touch this:
 - `renderResult` guards `match.innings[1]` before rendering its
   scorecard (`match.innings[1] ? renderInningsSummary(...) : ""`) — a
   first-innings forfeit means it doesn't exist. Don't remove that guard.
@@ -285,10 +288,8 @@ at any time. Two consequences worth remembering if you touch this:
   innings would skew it). If you change how standings fold in normal
   matches, check the forfeited branch still makes sense alongside it.
 
-`renderForfeitModal()` is the one place in the app where picking an
-option and confirming are deliberately two separate taps
-(`ui.forfeitTeam`, reset alongside `ui.forfeitFlow` in every place that
-already reset it, plus `pick-forfeit-team`/`confirm-forfeit`) rather
+`askForfeit()` passes the two teams as the confirmation's `choices`, so
+picking a team and confirming are deliberately two separate taps rather
 than firing on the first tap — unlike the wicket modal's simple types,
 a forfeit has no working undo path in practice: `pushSnapshot()` does
 run first, but the Result screen it lands on has no Undo control, so
@@ -315,7 +316,7 @@ side-menu item, or Home's "Resume live match" card (all `resume-match`).
 always lands back on the match, so a scorer can never be stranded on
 another screen with a match silently running underneath. While away,
 `render()` suppresses every match modal (opening/batsman/bowler/wicket/
-forfeit), the forfeit icon is hidden, and match creation is blocked —
+forfeit/match options), the ⋯ match-options icon is hidden, and match creation is blocked —
 `renderMatchSetup` shows a "Match in progress" card and
 `handleMatchSetupSubmit` returns early, so nothing can overwrite
 `state.match`. Result (`status === "complete"`) is unchanged: it still
@@ -374,6 +375,80 @@ extras row (`Wide`/`No ball`/`Bye`/`Leg bye`) also adapts its own
 column count to however many are enabled for the match (`match.wideEnabled`/
 `noBallEnabled`; bye/leg-bye are always offered), rather than a fixed
 4-up grid with a gap when one's disabled.
+
+## Match options: cancel, reversed toss, switching players
+
+The top bar's ⋯ (and a link on the opening sheet) opens `renderMatchMenuModal`
+— one sheet whose content follows `ui.matchMenu` (`"menu"`/`"squads"`),
+checked in `render()` *before* the opening/batsman/bowler sheets so it can
+interrupt any of them (`handleUndo` resets it). Its risky rows — toss
+restart (`askSwapToss`), forfeit (`askForfeit`), cancel (`askCancelMatch`) —
+close the menu and open the shared confirmation sheet.
+- **Change who bats first** → `swapToss()` → `restartMatch(match, other)`
+  (ENGINE): the same fixture from ball one, every playing condition kept, and
+  the UI-only extras in `MATCH_CARRY_FIELDS` (`clubId`, `matchType`,
+  `squads`, `guestNames`, `opponentName`) copied over — add a field there if you add
+  another UI-only match field that must survive a restart. Before anything
+  is recorded (`matchHasStarted` false) it flips at once (the opening sheet's
+  "Wrong toss?" link); after, the sheet asks first. Either way it
+  `pushSnapshot()`s, and the opening sheet now shows Undo whenever snapshots
+  exist, so a restart can be walked back.
+- **Cancel match** → `cancelMatch()` → `leaveMatch()` (shared with Result's
+  exit button): just drops `state.match`. Nothing is archived or synced,
+  because archiving only happens on completion. No undo. Players already
+  registered to a club roster during the match stay there.
+- **Switch players** (only when `match.squads` exists) → `moveSquadPlayer` /
+  `addSquadPlayer` (ENGINE, tested): change this match's squads only, never
+  the saved tournament teams, and refuse anyone who has already batted,
+  bowled or fielded (`playerHasPlayed`) — they'd end up on both sides.
+- **Forfeit** opens the existing forfeit sheet.
+
+## Loading indicators ("activity")
+
+Outside live scoring, every network wait shows up automatically — nothing
+per screen. `initAuth` passes `global: { fetch: trackedFetch }` to
+`createClient`, so every Supabase request (data, RPC, auth) bumps one
+in-flight counter (`activityStart`/`activityEnd`). After a 150ms grace (fast
+calls don't flash):
+- `body.is-busy` shows the thin `#top-progress` bar (static element outside
+  `#app`, `pointer-events:none`), and `#busy-status` announces "Loading…" to
+  screen readers;
+- the button that started it gets `.is-loading` (spinner, label hidden, no
+  second tap). The tap is captured in a capture-phase click/submit listener
+  as a *descriptor* (`data-action` + `data-id`, or the form id), and
+  `applyActivity()` re-finds it after every `render()`, so the spinner
+  survives the screen re-rendering. A tap only owns the activity if a request
+  starts within 400ms, so background sync never spins an unrelated button.
+- `loadingHtml(text)` is the spinner placeholder for "nothing to show yet"
+  (it replaced the plain "Loading…" hints).
+`render()` sets `body.live-scoring` whenever a match is on screen (in
+progress, not away), which switches all of this off: scoring stays instant.
+The animations only run while something is loading (never on an idle,
+always-visible control — see "Theme & sound"), and slow down under
+`prefers-reduced-motion`. Don't add a new cloud call that bypasses
+`supabaseClient`, or it won't be tracked.
+
+## Confirmations: one shared sheet
+
+Every "are you sure?" goes through `askConfirm({...})` (UI, next to
+`renderSideMenu`), which sets `ui.confirm` and renders `renderConfirmModal()`
+**above every other sheet** in `render()`. Options: `title`, `body` (trusted
+HTML — escape names), `confirmLabel`/`cancelLabel`/`busyLabel`, `icon`,
+`tone` (`"danger"` default, `"primary"`), optional `choices` (a required pick
+before confirm is enabled — forfeit's team), `onConfirm(choice)` (return
+nothing to close, `{ error }` to stay open with a message, or a Promise of
+either — the sheet shows `busyLabel` meanwhile) and `onCancel`. Esc cancels.
+It currently covers: end innings, toss restart, forfeit, cancel match,
+remove club player, delete tournament team, discard unsaved team edits,
+delete guest team/player, delete match/tournament/club presets. **Don't add
+`window.confirm()` or "tap again to confirm" buttons** — use `askConfirm`.
+The wicket sheet's Confirm button is data entry, not a confirmation, and
+stays as it is. `admin.html` keeps its own typed-confirmation prompts (it's
+a separate page).
+
+Re-rendering a sheet that carries `data-keep-scroll="<key>"` (the confirm
+sheet, the team builder) keeps its scroll position and adds `.no-anim`, so a
+tap inside doesn't jump to the top or replay the slide-up animation.
 
 ## Innings break screen
 
@@ -557,7 +632,8 @@ introducing another fixed-position floating button, or it'll drift back
 into the same stacking mess this replaced. While a match is actually in
 progress (`state.match && state.match.status !== "complete"`), the left
 side swaps the hamburger for a pulsing `.live-dot` + `"TeamA v TeamB"`,
-and a 🚩 forfeit icon joins the right cluster — this is also why the old
+and a ⋯ "Match options" icon joins the right cluster (see "Match options"
+below; forfeit is one of its rows) — this is also why the old
 per-screen "Forfeit match" link was removed from the bottom of both the
 live-scoring and innings-break screens, so don't re-add it there.
 The hamburger shows whenever there is no match or one is in progress
@@ -635,6 +711,15 @@ guest list → nothing for a friendly's visitors) filtered by the pure
 out/at the crease, bowlers drop anyone who's already bowled (they keep their
 figure rows) and the last-over bowler, every role drops names already on the
 other side. Other forms (setup team names, guest Teams) still use datalists.
+In a club match each option also carries the roster's nickname and `#jersey`
+(`rosterEntryFor` → `data-search`), so typing either narrows the list, and
+every in-match submit (openers, new batsman/bowler, fielder, Switch players)
+passes the typed text through `resolveTypedName` → the pure
+`resolvePlayerAlias(value, roster)` (ENGINE, tested): an exact name wins,
+else a nickname or `#7` matching exactly **one** roster player becomes that
+player's name; an ambiguous or unknown value stays as typed. This keeps a
+typed nickname from being recorded as a brand-new player. Guest mode has no
+nicknames, so nothing changes there.
 
 ## Testing
 
@@ -780,10 +865,82 @@ club alike (club ones carry `clubId`), so each view filters it:
 `recentMatchesFor()`/`renderRecentMatches()` do the dedupe-sort-render for
 all three; pass them an already-filtered list, don't widen the filter.
 
-Known gaps: names entered in a club match while signed out or offline aren't
-synced (same best-effort as `syncMatchToCloud`); outside a club tournament
+Known gaps: names entered in a club match while **signed out** aren't synced
+(offline is fine now — see "Offline-first sync" below); outside a club tournament
 there is no persistent club *team* entity (practice/friendly teams are just
 the names typed at match setup) — see "Club tournament teams" below.
+
+## Offline-first sync (outbox + read cache)
+
+Everything a scorer does with club data works offline and syncs when the app
+is next online. Three pieces, all in the CLOUD section:
+
+- **Outbox** (`outbox`, storage key `cricket.lk.outbox.v1`, *not* inside
+  `state`). Every club write goes through `submitCloudOp(kind, args)`: online
+  with an empty queue it runs at once (so a form still shows e.g. "team name
+  taken"); offline, on an offline session, or behind earlier unsynced ops it's
+  queued. `syncNow()` replays this user's ops **in order** (re-reading the
+  queue each step), stops at the first network failure, and marks a real
+  database error `failed` (it waits in the sync sheet for Retry / Discard —
+  failed ops are never retried or folded automatically). Triggers: boot,
+  the `online` event, returning to the tab, a 60s heartbeat while anything
+  is pending, and right after queueing. Kinds and their handlers live in
+  `OP_HANDLERS`: `match`, `club.create`, `tournament.create`, `team.save`,
+  `team.delete`, `preset.save`, `preset.delete`, `roster.add`,
+  `roster.addExisting`, `roster.remove`, `global.add`. **To add a new club
+  write, add a kind there and call `submitCloudOp` — never call
+  `supabaseClient` directly for a write.**
+- **Idempotent replays.** Creates carry client uuids (`newUuid()`; every such
+  table's `id` is a defaulted uuid, `matches.id` is client text already), so a
+  retry after a lost response hits a duplicate-*pkey* error, which `dupId()`
+  treats as done. An update that matches no row (its create never made it)
+  falls back to insert. `coalesceOp()` folds a second save of a team/preset
+  into the pending one (keeping `isNew`), cancels create+delete of something
+  never synced, and drops repeat roster/global adds of a name.
+- **Temp player ids.** A roster add queued offline gets `tmp:<uuid>` so it can
+  be picked into a team right away; when `add_player_to_club` returns the real
+  id, `remapTempId()` rewrites every reference **in place** (queued ops,
+  caches, the open team editor). `team.save` refuses to send a `tmp:` id (it
+  fails with "waiting for X"), so a temp id can never reach the database.
+- **Read cache** (`cloudCache`, key `cricket.lk.cloudcache.v1`, per user):
+  the last server copy of `myClubs`, each club (`fetchClubDetail`, recent 30
+  matches) and each tournament (`fetchClubTournamentDetail`), plus
+  profile/isAdmin. Separate key on purpose — running out of storage there can
+  never cost the scorer's `state`. Offline (or on a network error) the
+  fetchers fall back to it; either way `overlayClubData` /
+  `overlayTournamentData` (pure, tested) lay this user's pending ops on top,
+  and the tournament overlay also folds this device's archived matches for
+  it, so standings count a match scored offline. Pending items render with
+  a "not synced" tag.
+- **Offline sign-in.** `sw.js` (cache `cricket-lk-v2`) precaches the
+  supabase-js CDN script and serves it stale-while-revalidate — keep its URL
+  in step with `SUPABASE_JS_CDN_URL`. Offline, `supabase.auth.getSession()`
+  can hang retrying a token refresh, so `initAuth` doesn't wait on it: it uses
+  `storedOfflineSession()` (the user object from supabase-js' storage key),
+  flagged `session.offline = true`; no request is ever made with it.
+  `handleBackOnline()` (and a throttled check in `syncNow`) swaps in the real
+  session. `onAuthStateChange` ignores a null session unless the event is
+  `SIGNED_OUT`.
+- **Online-only on purpose** (`needsInternet()`): sign in/up, inviting an
+  admin, platform player search, profile contact/NIC and detail edits,
+  claims/merges, Premier and player profiles, and the admin portal. The
+  server has to look something up or check a rule there and then.
+  `friendlyError()` (via `showFormError`) turns a raw "Failed to fetch" into
+  an offline message.
+- **Personal data.** Contact number / NIC are **never queued**: an offline add
+  with either filled in is refused with a message (add without them, fill in
+  later). Sign-out (`doSignOut`, which clears local state *before* calling
+  supabase-js, since that can hang offline) wipes the read cache, because it
+  holds members-only rosters and teams. Queued ops stay on the device, tagged
+  with their `userId`, and only sync for that user; sign-out warns via
+  `askConfirm` if any are pending.
+- **UI:** `renderSyncPill()` in the top bar (offline / N to sync / syncing /
+  N not synced — static, no infinite animation) opens `renderSyncSheet()`
+  (`ui.syncSheet`), which lists each queued change (`describeOp`) with Retry
+  and Discard (confirmed) for failed ones.
+- **Conflicts** are last-write-wins per row. Two devices editing the same
+  team offline: the later sync wins. A unique-name clash surfaces as a failed
+  op.
 
 ## Roles: guest, club, Premier — separate data, nothing shared
 
@@ -906,12 +1063,13 @@ retry without them) so nothing breaks before 010 is run (`kit_unavailable`).
 `playerLabel()` renders `#7 Name (Nick)`; `parseJerseyNo` is the validator.
 The club Players screen adds via a floating `+` (`.fab`, rendered *outside*
 `.screen`, whose transform animation would otherwise capture a fixed child)
-and opens add / edit / remove as bottom-sheet modals from `ui.playerModal`
-(`{kind:"add"|"edit"|"remove"}`), layered in `render()` only off the live
+and opens add / edit as bottom-sheet modals from `ui.playerModal`
+(`{kind:"add"|"edit"}`), layered in `render()` only off the live
 screen. `render()` keeps an open player modal's DOM when its `modalKey`
 hasn't changed, so background fetches can't wipe typed input — change the key
 if the sheet itself needs to re-render. "Remove from club" (roster row ✕ or
-the club-scope profile) is a two-tap confirm and deletes the `club_rosters`
+the club-scope profile) asks first (`askRemoveClubPlayer` → shared
+confirmation sheet) and deletes the `club_rosters`
 row only (002's "members remove" policy; every member is owner/admin). The
 global player, their stats and `origin_club_id` are untouched — so the club
 that added an unclaimed player can still edit them after removing them (it's
@@ -937,8 +1095,18 @@ hold saved teams: `tournament_teams` rows (name + `players` jsonb of
 `[{id, name}]` roster snapshots), **members-only** via RLS on a denormalized
 `club_id` that the policies check matches `tournaments.organizer_club_id`
 (the tournament row itself is public; team lists reveal roster membership,
-which isn't). Managed from the tournament dashboard (`renderTournamentTeams`,
-`ui.tournamentTeamEdit`, two-tap delete via `ui.tournamentTeamDelete`); a
+which isn't). Managed from the tournament dashboard as colored team cards
+(`team-c0..3`, position-based like Home's badges) plus a tap-to-pick team
+builder (`renderTournamentTeamForm`: picks, name and search live in
+`ui.tournamentTeamEdit`; search filters in the DOM only; picking someone on
+another team shows "move" and `handleTournamentTeamSubmit` saves the donor
+team first). With no teams yet, "Split the roster into 2 random teams"
+(`quickSplitTeams`) creates two. Match setup picks teams from two tile columns
+(picking the other side's team swaps the sides). (`renderTournamentTeams`,
+`ui.tournamentTeamEdit`; the builder is a bottom sheet,
+`renderTournamentTeamModal`, and closing it with unsaved changes asks
+first; delete — from a card or the sheet — goes through
+`askDeleteTournamentTeam`); a
 player can be on only one team per tournament (client-side check on save);
 names are unique per tournament (index). With 2+ teams, tournament match
 setup swaps the typed name boxes for two team selects and stores
@@ -947,6 +1115,20 @@ setup swaps the typed name boxes for two team selects and stores
 even batted; a name in neither squad (a late sub) falls back to usage.
 Squads also scope the in-match search-select options to each side (see "In-match
 name boxes are a search-select" above).
+**Adding people who aren't on the roster.** The builder's search box doubles
+as an "add" box (`renderBuilderAddCard`): **New club player** goes through
+`addPlayerToClub` (roster + platform, same RPC as the Players screen) and is
+picked by its real id; **Guest** is stored only inside that team's
+`players` jsonb as `{ id: guestPlayerKey(name), name, guest: true }` — a
+synthetic `guest:<lower name>` id, never a `players` row, so no migration was
+needed. A typed name that matches the roster picks the roster player
+instead. Match setup copies the guests' names to `match.guestNames` (carried
+by `restartMatch`), Switch players can add a guest too, and
+`registerMatchPlayer` returns early for any `isGuestInMatch` name — so a
+guest is never added to the club roster or the global players list, only
+to the scorecard. Anything that reads `tournament_teams.players[].id` must
+allow for that synthetic id (don't treat it as a `players.id`). Guests still
+appear by name in that match's scorecard, and so in name-based leaderboards.
 `syncMatchToCloud` strips `squads` from the public `matches.data` blob. Played
 matches keep their own names, so editing/deleting a team never changes
 history or standings (which still group by name). If 012 isn't run, the

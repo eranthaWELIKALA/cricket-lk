@@ -581,6 +581,142 @@ async function main(){
     assert(!win.pickCandidates(m, pool, "bowler").includes("A3"), "with squads, a batting-squad player is never offered to bowl");
   }
 
+  // --- 24. reversed toss: restart the same fixture with the other side batting ---
+  {
+    const m = createMatch({ teamA: "Reds", teamB: "Blues", oversLimit: null, playersPerSide: 8, battingFirst: "A", ballsPerOver: 8, wideRuns: 2, noBallRuns: 2, wideEnabled: false, lastManStands: true, presetName: "Club day" });
+    m.clubId = "c1"; m.matchType = "tournament"; m.tournamentId = "t1"; m.squads = { A: ["A1"], B: ["B1"] };
+    assert(!win.matchHasStarted(m), "a match with openers not yet named hasn't started");
+    const inn = currentInnings(m);
+    win.ensureBatsman(inn, "A1"); win.ensureBatsman(inn, "A2"); win.ensureBowler(inn, "B1");
+    inn.striker = "A1"; inn.nonStriker = "A2"; inn.bowler = "B1"; m.status = "live";
+    assert(!win.matchHasStarted(m), "naming openers alone doesn't count as started");
+    recordBall(inn, { kind: "wide", runs: 0 });
+    assert(win.matchHasStarted(m), "a wide counts as started (runs on the board)");
+    const r = win.restartMatch(m, "B");
+    const ri = currentInnings(r);
+    assert(r.battingFirst === "B" && ri.battingTeam === "B" && ri.bowlingTeam === "A", "restart flips who bats first");
+    assert(r.status === "opening" && ri.runs === 0 && ri.striker === null && r.innings.length === 1, "restart is a clean first innings");
+    assert(ri.ballsPerOver === 8 && ri.wideBaseRuns === 2 && ri.noBallBaseRuns === 2 && ri.oversLimit === null && ri.lastManStands && ri.maxWickets === 8, "restart keeps every playing condition");
+    assert(r.wideEnabled === false && r.presetName === "Club day" && r.tournamentId === "t1", "restart keeps match-level settings");
+    assert(r.clubId === "c1" && r.matchType === "tournament" && r.squads.A[0] === "A1" && r.squads !== m.squads, "restart carries club extras, with squads copied");
+  }
+
+  // --- 25. squads can change for one match, but not for anyone who has played ---
+  {
+    const m = createMatch({ teamA: "Reds", teamB: "Blues", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    m.squads = { A: ["Kusal", "Dinesh", "Charith"], B: ["Wanindu", "Maheesh"] };
+    const inn = currentInnings(m);
+    win.ensureBatsman(inn, "Kusal"); win.ensureBatsman(inn, "Dinesh"); win.ensureBowler(inn, "Wanindu");
+    assert(win.moveSquadPlayer(m, "charith") === null && m.squads.B.includes("Charith") && !m.squads.A.includes("Charith"), "an unplayed player moves to the other squad (case-insensitive)");
+    assert(win.playerTeamInMatch(m, "Charith") === "B", "...and now counts for that side");
+    assert(win.moveSquadPlayer(m, "Kusal") !== null && m.squads.A.includes("Kusal"), "a player who has batted can't switch sides");
+    assert(win.moveSquadPlayer(m, "Wanindu") !== null, "a player who has bowled can't switch sides");
+    assert(win.moveSquadPlayer(m, "Nobody") !== null, "a name in neither squad can't be moved");
+    assert(win.addSquadPlayer(m, "Pathum", "A") === null && m.squads.A.includes("Pathum"), "a late arrival can join a squad");
+    assert(win.addSquadPlayer(m, "pathum", "B") !== null, "...but not twice");
+    assert(win.addSquadPlayer(m, "Maheesh", "A") !== null, "another squad's player can't be added to this one");
+    assert(win.addSquadPlayer(m, "  ", "A") !== null, "a blank name is rejected");
+  }
+
+  // --- 26. innings with no overs/players limit can be closed by hand ---
+  {
+    const limited = createMatch({ teamA: "A", teamB: "B", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    assert(!win.canEndInningsByHand(currentInnings(limited)), "fully limited innings can't be ended by hand");
+    const noOvers = createMatch({ teamA: "A", teamB: "B", oversLimit: null, playersPerSide: 11, battingFirst: "A" });
+    assert(win.canEndInningsByHand(currentInnings(noOvers)), "no overs limit -> can end by hand");
+    const noPlayers = createMatch({ teamA: "A", teamB: "B", oversLimit: 5, playersPerSide: null, battingFirst: "A" });
+    const np = currentInnings(noPlayers);
+    assert(win.canEndInningsByHand(np), "no players limit -> can end by hand");
+    // Ending with a batsman slot still empty (the new-batsman sheet is up).
+    win.ensureBatsman(np, "A1"); win.ensureBatsman(np, "A2"); win.ensureBowler(np, "B1");
+    np.striker = "A1"; np.nonStriker = "A2"; np.bowler = "B1"; noPlayers.status = "live";
+    recordBall(np, { kind: "run", runs: 3 });
+    recordBall(np, { kind: "wicket", wicketType: "bowled" });
+    assert(win.pendingBatsmanSlot(np) !== null, "a batsman is pending after the wicket");
+    win.endInnings(noPlayers);
+    assert(noPlayers.status === "innings_break" && np.completeReason === "closed" && !win.canEndInningsByHand(np), "endInnings closes the 1st innings with a batsman pending");
+    startSecondInnings(noPlayers);
+    const i2 = currentInnings(noPlayers);
+    win.ensureBatsman(i2, "B1"); win.ensureBatsman(i2, "B2"); win.ensureBowler(i2, "A1");
+    i2.striker = "B1"; i2.nonStriker = "B2"; i2.bowler = "A1"; noPlayers.status = "live";
+    recordBall(i2, { kind: "run", runs: 1 });
+    i2.bowler = null; // new-bowler sheet up
+    win.endInnings(noPlayers);
+    assert(noPlayers.status === "complete" && /won/.test(noPlayers.result), "ending the 2nd innings by hand finishes the match with a result");
+  }
+
+  // --- 27. guest players are flagged per match and survive a restart ---
+  {
+    const m = createMatch({ teamA: "Reds", teamB: "Blues", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    m.squads = { A: ["Kusal", "Visitor One"], B: ["Wanindu"] }; m.guestNames = ["Visitor One"];
+    assert(win.isGuestInMatch(m, "visitor one") && !win.isGuestInMatch(m, "Kusal") && !win.isGuestInMatch(m, ""), "isGuestInMatch is case-insensitive and only true for guests");
+    assert(win.guestPlayerKey("  Visitor One ") === "guest:visitor one", "guest key is derived from the trimmed, lower-cased name");
+    const r = win.restartMatch(m, "B");
+    assert(r.guestNames && r.guestNames[0] === "Visitor One" && r.guestNames !== m.guestNames, "restart keeps guest names (copied)");
+  }
+
+  // --- 28. a typed nickname or "#jersey" resolves to the roster player's name ---
+  {
+    const roster = [
+      { name: "Kusal Mendis", nickname: "Kusa", jersey_no: 13 },
+      { name: "Wanindu Hasaranga", nickname: "Wanna", jersey_no: 49 },
+      { name: "Dasun Shanaka", nickname: "Kusa", jersey_no: 7 },   // shared nickname
+      { name: "Charith Asalanka", nickname: null, jersey_no: 7 }   // shared jersey
+    ];
+    const r = v => win.resolvePlayerAlias(v, roster);
+    assert(r("wanna") === "Wanindu Hasaranga", "unique nickname -> real name, case-insensitive");
+    assert(r("#49") === "Wanindu Hasaranga" && r("# 49") === "Wanindu Hasaranga", "unique #jersey -> real name");
+    assert(r("kusal mendis") === "Kusal Mendis", "an exact name comes back in its roster spelling");
+    assert(r("Kusa") === "Kusa", "an ambiguous nickname is left as typed");
+    assert(r("#7") === "#7", "an ambiguous jersey is left as typed");
+    assert(r("  New Guy ") === "New Guy" && r("") === "", "unknown names are just trimmed");
+    assert(win.resolvePlayerAlias("Wanna", null) === "Wanna", "no roster (guest mode) -> unchanged");
+  }
+
+  // --- 29. offline sync helpers: queue folding, overlays, temp-id remap ---
+  {
+    const op = (kind, args, extra) => Object.assign({ id: Math.random().toString(36), kind, args, userId: "u1", createdAt: 1, failed: false }, extra || {});
+    let q = [];
+    q = win.coalesceOp(q, op("team.save", { id: "t1", isNew: true, name: "Reds", tournamentId: "T" }));
+    q = win.coalesceOp(q, op("team.save", { id: "t1", isNew: false, name: "Reds 2", tournamentId: "T" }));
+    assert(q.length === 1 && q[0].args.name === "Reds 2" && q[0].args.isNew === true, "a second save of an unsynced team replaces the first and keeps isNew");
+    q = win.coalesceOp(q, op("team.delete", { id: "t1", tournamentId: "T" }));
+    assert(q.length === 0, "deleting a team that never synced just cancels its create");
+    q = win.coalesceOp(q, op("roster.add", { clubId: "c", name: "Kusal", tempId: "tmp:1" }));
+    q = win.coalesceOp(q, op("roster.add", { clubId: "c", name: "kusal ", tempId: "tmp:2" }));
+    assert(q.length === 1, "repeat roster adds of one name are dropped");
+    q = win.coalesceOp(q, op("match", { id: "m1" })); q = win.coalesceOp(q, op("match", { id: "m1" }));
+    assert(q.filter(o => o.kind === "match").length === 1, "a match is queued once");
+    const failedSave = op("team.save", { id: "t9", isNew: true, name: "X", tournamentId: "T" }, { failed: true });
+    q = win.coalesceOp([failedSave], op("team.save", { id: "t9", isNew: false, name: "Y", tournamentId: "T" }));
+    assert(q.length === 2, "a failed op is never folded into (it needs a manual retry)");
+
+    const club = { id: "c", roster: [{ id: "p1", name: "Wanindu" }], tournaments: [], presets: { match: [], tournament: [] } };
+    const ops = [
+      op("roster.add", { clubId: "c", name: "Kusal", tempId: "tmp:1", details: { nickname: "Kusa", jersey_no: "13" } }),
+      op("roster.remove", { clubId: "c", playerId: "p1" }),
+      op("tournament.create", { id: "T", clubId: "c", name: "Club Day", preset: { pointsForWin: 2 } }),
+      op("preset.save", { id: "pr", clubId: "c", kind: "match", preset: { name: "T10" } }),
+      op("team.save", { id: "t1", tournamentId: "T", name: "Reds", players: [{ id: "tmp:1", name: "Kusal" }] }),
+      op("roster.add", { clubId: "other", name: "Nope", tempId: "tmp:x" }, { failed: false })
+    ];
+    const c = win.overlayClubData(club, ops);
+    assert(c.roster.length === 1 && c.roster[0].name === "Kusal" && c.roster[0].id === "tmp:1" && c.roster[0].nickname === "Kusa" && c.roster[0].jersey_no === 13, "overlay: queued add shows (with temp id + kit), queued removal hides");
+    assert(c.tournaments[0].id === "T" && c.tournaments[0].pending && c.presets.match[0].name === "T10", "overlay: offline tournament and preset show");
+    assert(club.roster.length === 1 && club.roster[0].id === "p1", "overlay never mutates the cached snapshot");
+    const t = win.overlayTournamentData(null, ops, [{ id: "m1", clubId: "c", tournamentId: "T", completedAt: 5 }, { id: "g1", tournamentId: "T" }], "T");
+    assert(t && t.name === "Club Day" && t.teams.length === 1 && t.teams[0].pending, "overlay: a tournament created offline exists with its offline team");
+    assert(t.matches.length === 1 && t.matches[0].data.id === "m1", "overlay: this device's archived club matches count toward it (guest ones don't)");
+    assert(win.overlayTournamentData(null, [], [], "nope") === null, "overlay: an unknown tournament with nothing queued is null");
+
+    const remapped = win.replaceIdDeep({ a: [{ id: "tmp:1" }, "tmp:1"], b: { c: "tmp:12" } }, "tmp:1", "real-1");
+    assert(remapped.a[0].id === "real-1" && remapped.a[1] === "real-1" && remapped.b.c === "tmp:12", "temp ids are replaced exactly, not by prefix");
+    assert(win.isNetworkError({ message: "TypeError: Failed to fetch" }, true), "a fetch failure is a network error");
+    assert(!win.isNetworkError({ message: "duplicate key", code: "23505" }, true), "a database error with a code is not");
+    assert(win.isNetworkError({ message: "anything", code: "42501" }, false), "everything counts as network while offline");
+    assert(/Kusal/.test(win.describeOp(ops[0])) && /Club Day/.test(win.describeOp(ops[2])), "describeOp names what's queued");
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }

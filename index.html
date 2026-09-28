@@ -306,6 +306,9 @@
   .combo-list[hidden], .combo-opt[hidden]{display:none;}
   .combo-opt{display:block;width:100%;text-align:left;border:none;border-bottom:1px solid var(--line);border-radius:0;background:none;box-shadow:none;padding:11px 12px;font-size:.92rem;font-weight:600;color:var(--text);}
   .combo-opt:last-child{border-bottom:none;}
+  .combo-opt .combo-nick{color:var(--muted);font-weight:600;font-size:.82rem;}
+  .combo-opt .combo-nick::before{content:"“";} .combo-opt .combo-nick::after{content:"”";}
+  .combo-opt .combo-jersey{float:right;color:var(--muted);font-size:.78rem;font-weight:700;font-variant-numeric:tabular-nums;}
   .combo-opt:active{background:var(--panel-2);}
   .bowler-pick-row{
     height:52px;width:100%;background:var(--panel-2);border:2px solid var(--line-strong);border-radius:var(--radius-sm);
@@ -317,6 +320,123 @@
   .bowler-pick-row.active{background:rgba(var(--accent-2-rgb),.16);border-color:var(--accent-2);color:var(--accent-2);}
   .bowler-pick-row.active .figs{color:var(--accent-2);}
   .modal.danger{border-color:var(--wicket);}
+
+  /* End innings by hand (no overs/players limit) -- live screen + sheets. */
+  button.link-btn.end-innings-sheet{margin-top:10px;border:2px dashed var(--line-strong);border-radius:var(--radius-sm);}
+
+  /* Loading indicators (see "activity" in the UI section). Only shown while
+     requests are in flight, never on the live-scoring screen. */
+  .sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+  .top-progress{ position:fixed; top:0; left:0; right:0; height:3px; z-index:80; pointer-events:none; overflow:hidden; opacity:0; transition:opacity .15s ease; }
+  .top-progress::before{ content:""; position:absolute; top:0; bottom:0; left:-40%; width:40%; background:linear-gradient(90deg, transparent, var(--accent-2), var(--accent), transparent); }
+  body.is-busy .top-progress{ opacity:1; }
+  body.is-busy .top-progress::before{ animation:progressSlide 1.1s ease-in-out infinite; }
+  body.live-scoring .top-progress{ display:none; }
+  @keyframes progressSlide{ from{ left:-40%; } to{ left:100%; } }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .spinner{ display:inline-block; width:18px; height:18px; flex-shrink:0; border-radius:50%; border:2.5px solid var(--line-strong); border-top-color:var(--accent-2); animation:spin .75s linear infinite; }
+  .loading-block{ display:flex; align-items:center; gap:10px; padding:14px 2px; color:var(--muted); font-size:.9rem; }
+  /* The tapped button while its request runs: label hidden (keeps its size),
+     spinner in the middle, no second tap. */
+  .is-loading{ position:relative; color:transparent !important; pointer-events:none; }
+  .is-loading > *{ visibility:hidden; }
+  .is-loading::after{
+    content:""; position:absolute; top:50%; left:50%; width:16px; height:16px; margin:-8px 0 0 -8px; border-radius:50%;
+    border:2.5px solid rgba(255,255,255,.25); border-top-color:var(--text); animation:spin .75s linear infinite;
+  }
+  button.is-loading:disabled{ opacity:.9; }
+  button.primary.is-loading::after{ border-color:rgba(0,0,0,.2); border-top-color:var(--accent-ink); }
+  button.primary.danger-confirm.is-loading::after{ border-color:rgba(0,0,0,.2); border-top-color:var(--bg); }
+  @media (prefers-reduced-motion: reduce){
+    .spinner, .is-loading::after{ animation-duration:2s; }
+    body.is-busy .top-progress::before{ animation:none; left:0; width:100%; opacity:.6; }
+  }
+
+  /* Sync status (renderSyncPill / renderSyncSheet) */
+  .topbar-sync{
+    display:inline-flex; align-items:center; gap:5px;
+    height:36px; padding:0 10px; border-radius:var(--radius-sm); border:2px solid var(--line-strong);
+    background:var(--panel-2); color:var(--muted); font-size:.75rem; font-weight:800; white-space:nowrap;
+  }
+  .topbar-sync .long{ display:none; }
+  @media (min-width:520px){ .topbar-sync .short{ display:none; } .topbar-sync .long{ display:inline; } }
+  .topbar-sync.pending, .topbar-sync.syncing{ color:var(--info); border-color:var(--info); }
+  .topbar-sync.offline{ color:var(--accent); border-color:rgba(var(--accent-rgb),.6); }
+  .topbar-sync.failed{ color:var(--wicket); border-color:var(--wicket); }
+  .sync-list{ display:flex; flex-direction:column; gap:8px; margin:10px 0; }
+  .sync-row{ display:flex; align-items:center; gap:10px; padding:9px 12px; background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-sm); }
+  .sync-row.failed{ border-color:var(--wicket); }
+  .sync-row-text{ flex-grow:1; display:flex; flex-direction:column; min-width:0; }
+  .sync-row-text .title{ font-weight:700; font-size:.88rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sync-row-text .sub{ font-size:.72rem; color:var(--muted); }
+  .sync-row.failed .sub{ color:var(--wicket); }
+  .sync-row-actions{ display:flex; gap:6px; flex-shrink:0; }
+  .pending-tag{ display:inline-block; margin-left:6px; padding:1px 6px; border-radius:5px; border:1px dashed var(--muted); color:var(--muted); font-size:.58rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; vertical-align:middle; }
+
+  /* Shared confirmation sheet (askConfirm / renderConfirmModal) */
+  .modal.no-anim{animation:none;}
+  .confirm-modal{max-width:460px;}
+  .confirm-head{display:flex;align-items:center;gap:12px;margin:4px 0 6px;}
+  .confirm-head h2{margin:0;font-size:1.2rem;line-height:1.25;}
+  .confirm-icon{width:38px;height:38px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid var(--line-strong);background:var(--panel-2);font-size:1rem;font-weight:800;}
+  .confirm-modal.danger .confirm-icon{border-color:var(--wicket);color:var(--wicket);background:rgba(255,77,99,.1);}
+  .confirm-body{font-size:.9rem;line-height:1.45;color:var(--muted);}
+  .confirm-body p{margin:8px 0;}
+  .confirm-body b{color:var(--text);}
+  .confirm-actions{display:flex;gap:10px;margin-top:14px;}
+  .confirm-actions .ghost{width:120px;flex-shrink:0;}
+  .confirm-actions .primary{margin-top:0;flex-grow:1;}
+
+  /* Team builder as a sheet */
+  .team-modal{border-color:var(--team-c, var(--line-strong));}
+  .team-modal .team-builder{border:none;background:none;box-shadow:none;padding:0;margin:0;}
+  .team-modal .pick-grid{max-height:none;overflow:visible;}
+  /* bottom offset = the sheet's own bottom padding: sticky insets by it, which
+     would otherwise leave a strip of rows scrolling under the bar. */
+  .team-modal .builder-bar{bottom:calc(-20px - env(safe-area-inset-bottom));margin:14px -18px calc(-20px - env(safe-area-inset-bottom));padding:12px 18px calc(12px + env(safe-area-inset-bottom));border-radius:0;}
+
+  /* Match options sheet (renderMatchMenuModal) */
+  .menu-list{display:flex;flex-direction:column;gap:8px;margin:12px 0 10px;}
+  .menu-row{
+    display:flex;align-items:center;gap:12px;width:100%;min-height:62px;padding:10px 12px;text-align:left;
+    background:var(--panel-2);border:2px solid var(--line-strong);border-radius:var(--radius-md);color:var(--text);box-shadow:var(--shadow-card);
+  }
+  .menu-row:active{transform:translate(2px,2px);box-shadow:none;}
+  .menu-row-icon{width:34px;height:34px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid var(--line-strong);font-size:1rem;font-weight:800;}
+  .menu-row-text{flex-grow:1;display:flex;flex-direction:column;gap:2px;}
+  .menu-row-text .title{font-weight:800;font-size:.92rem;}
+  .menu-row-text .sub{font-size:.75rem;color:var(--muted);line-height:1.3;}
+  .menu-row-chev{color:var(--muted);font-size:1.3rem;}
+  .menu-row:last-child .menu-row-icon{color:var(--wicket);border-color:var(--wicket);}
+
+  /* Switch players (match squads) */
+  .squad-board{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0 14px;}
+  .squad-col{background:var(--panel);border:2px solid var(--line-strong);border-radius:var(--radius-md);padding:8px;display:flex;flex-direction:column;gap:6px;min-width:0;}
+  .squad-col-head{display:flex;align-items:center;gap:6px;padding:2px 2px 4px;font-size:.85rem;min-width:0;}
+  .squad-col-head b{flex-grow:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .squad-col-head .muted{color:var(--muted);font-size:.75rem;}
+  .team-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;background:var(--info);}
+  .team-dot-B{background:var(--accent);}
+  .squad-player{
+    display:flex;align-items:center;gap:6px;width:100%;min-height:40px;padding:6px 9px;background:var(--panel-2);
+    border:2px solid var(--line-strong);border-radius:var(--radius-sm);color:var(--text);font-size:.82rem;font-weight:700;text-align:left;
+  }
+  .squad-player .name{flex-grow:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .squad-player .move{color:var(--accent-2);font-weight:800;}
+  .squad-player.played{background:none;border-style:dashed;color:var(--muted);}
+  .squad-player .name .sub{display:block;font-size:.6rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:1px;}
+  .squad-player .name .sub.guest{color:var(--info);}
+  .squad-add{margin-bottom:6px;}
+  .guest-tag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:5px;border:1px solid var(--info);color:var(--info);font-size:.58rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;vertical-align:middle;flex-shrink:0;}
+  .player-chip.guest{border-style:dashed;}
+  .builder-add{margin-top:10px;padding:10px 12px;border:2px dashed var(--line-strong);border-radius:var(--radius-md);background:var(--panel);}
+  .builder-add-title{font-weight:800;font-size:.88rem;margin-bottom:8px;overflow-wrap:anywhere;}
+  .builder-add-title .q{color:var(--accent-2);}
+  .builder-add-title .muted{color:var(--muted);font-weight:600;}
+  .builder-add-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .builder-add .hint{margin:8px 0 0;}
+  .builder-notice{color:var(--accent-2);margin:4px 0 8px;}
+  .builder-notice.error{color:var(--wicket);}
 
   .tag-pill{font-size:.7rem;font-weight:700;color:var(--muted);border:2px solid var(--line);border-radius:8px;padding:5px 9px;}
   .tag-pill.gold{color:var(--accent);border-color:rgba(var(--accent-rgb),.5);}
@@ -601,6 +721,97 @@
   .row-actions{ display:flex; gap:6px; flex-shrink:0; margin-left:auto; }
   .preset-form{ padding:16px; margin-top:10px; }
 
+  /* --- club tournament teams: cards, builder, match-setup versus picker ---
+     team-c0..3 set --team-c, cycling the same four accents as Home's card
+     badges; it's position-based, there's no per-team color in the data. */
+  .team-c0{ --team-c:var(--info); --team-c-bg:rgba(95,199,255,.14); }
+  .team-c1{ --team-c:var(--accent); --team-c-bg:rgba(var(--accent-rgb),.14); }
+  .team-c2{ --team-c:var(--accent-2); --team-c-bg:rgba(var(--accent-2-rgb),.14); }
+  .team-c3{ --team-c:var(--danger); --team-c-bg:rgba(255,93,112,.14); }
+  .team-badge{
+    width:40px; height:40px; flex-shrink:0; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    background:var(--team-c-bg, var(--panel-2)); border:2px solid var(--team-c, var(--line-strong)); color:var(--team-c, var(--text));
+    font-weight:800; font-size:.85rem; letter-spacing:.02em;
+  }
+  .team-grid{ display:grid; grid-template-columns:1fr; gap:10px; margin-bottom:10px; }
+  @media (min-width:640px){ .team-grid{ grid-template-columns:1fr 1fr; } }
+  .team-card{
+    background:var(--panel); border:2px solid var(--line-strong); border-left:6px solid var(--team-c, var(--line-strong));
+    border-radius:var(--radius-md); padding:12px 14px; box-shadow:var(--shadow-card); display:flex; flex-direction:column; gap:10px;
+  }
+  .team-card.add{
+    border:2px dashed var(--line-strong); box-shadow:none; background:none; color:var(--accent-2);
+    align-items:center; justify-content:center; flex-direction:row; min-height:64px; font-weight:800; font-size:.95rem;
+  }
+  .team-card.add .plus{ font-size:1.2rem; }
+  .team-card-head{ display:flex; align-items:center; gap:10px; }
+  .team-card-title{ display:flex; flex-direction:column; min-width:0; }
+  .team-card-title b{ font-size:1rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .team-card-title .muted{ color:var(--muted); font-size:.75rem; }
+  .team-card-actions{ display:flex; gap:6px; margin-left:auto; flex-shrink:0; }
+  .icon-btn{
+    width:38px; height:38px; padding:0; display:inline-flex; align-items:center; justify-content:center;
+    border-radius:var(--radius-sm); border:2px solid var(--line-strong); background:var(--panel-2); color:var(--text);
+  }
+  .icon-btn:active{ transform:translate(1px,1px); }
+  .icon-btn.danger{ color:var(--wicket); }
+  .icon-btn.danger:hover{ border-color:var(--wicket); }
+  .team-roster{ display:flex; flex-wrap:wrap; gap:6px; }
+  .player-chip{
+    display:inline-flex; align-items:center; gap:6px; padding:3px 9px 3px 3px; border-radius:999px;
+    background:var(--panel-2); border:2px solid var(--line); font-size:.78rem; font-weight:700; color:var(--text);
+  }
+  .player-chip.more{ padding:3px 10px; color:var(--muted); }
+  button.player-chip.on{ border-color:var(--team-c, var(--accent-2)); background:var(--team-c-bg, var(--panel-2)); }
+  .player-chip .x{ color:var(--muted); font-size:.95rem; margin-left:2px; }
+  .mini-avatar{
+    width:24px; height:24px; flex-shrink:0; border-radius:50%; display:inline-flex; align-items:center; justify-content:center;
+    background:var(--bg-2); border:1px solid var(--line-strong); font-size:.6rem; font-weight:800; color:var(--muted);
+  }
+  .team-builder{
+    background:var(--panel); border:2px solid var(--team-c, var(--line-strong)); border-radius:var(--radius-md);
+    padding:14px; box-shadow:var(--shadow-card); margin-bottom:12px;
+  }
+  .team-builder .team-card-head{ margin-bottom:12px; }
+  .team-builder .team-roster.picked{ margin-bottom:8px; }
+  .team-builder .move-note{ color:var(--accent); }
+  .builder-tools{ display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+  .builder-tools input{ margin:0; flex:1; min-width:0; }
+  .builder-tools button{ flex-shrink:0; }
+  .pick-grid{ display:grid; grid-template-columns:1fr; gap:6px; max-height:46vh; overflow-y:auto; padding:2px; }
+  @media (min-width:480px){ .pick-grid{ grid-template-columns:1fr 1fr; } }
+  .pick-row{
+    display:flex; align-items:center; gap:8px; min-height:46px; padding:6px 10px; text-align:left; width:100%;
+    background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-sm); color:var(--text); font-size:.85rem; font-weight:700;
+  }
+  .pick-row[hidden], .pick-grid .no-results[hidden]{ display:none; }
+  .pick-row:active{ border-color:var(--team-c, var(--accent-2)); }
+  .pick-row .name{ flex-grow:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pick-row .state{ color:var(--team-c, var(--accent-2)); font-weight:800; flex-shrink:0; }
+  .pick-row.taken{ border-style:dashed; }
+  .pick-row.taken .state{ color:var(--muted); font-size:.7rem; }
+  .builder-bar{
+    position:sticky; bottom:0; display:flex; gap:10px; margin:12px -14px -14px; padding:12px 14px;
+    background:var(--panel-solid); border-top:2px solid var(--line-strong); border-radius:0 0 var(--radius-md) var(--radius-md);
+  }
+  .builder-bar .ghost{ width:104px; flex-shrink:0; }
+  .builder-bar .primary{ margin-top:0; flex-grow:1; }
+
+  .versus-picker{ display:grid; grid-template-columns:1fr auto 1fr; gap:8px; align-items:start; margin-bottom:8px; }
+  .team-pick-col{ border:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; min-width:0; }
+  .team-pick-col legend{ padding:0 0 6px; }
+  .team-pick{
+    position:relative; display:flex !important; align-items:center; gap:8px; margin:0 !important; padding:8px; min-height:60px;
+    background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-md); box-shadow:var(--shadow-card); cursor:pointer;
+  }
+  .team-pick input{ position:absolute; opacity:0; pointer-events:none; }
+  .team-pick .team-badge{ width:32px; height:32px; font-size:.72rem; }
+  .team-pick-text{ display:flex; flex-direction:column; min-width:0; }
+  .team-pick-text b{ font-size:.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .team-pick-text .muted{ font-size:.68rem; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .team-pick:has(input:checked){ border-color:var(--team-c); background:var(--team-c-bg); }
+  .vs-badge{ align-self:center; margin-top:22px; font-size:.7rem; font-weight:800; letter-spacing:.08em; color:var(--muted); border:2px solid var(--line-strong); border-radius:999px; padding:6px 7px; }
+
   /* --- teams & players --- */
   .roster-card{ padding:16px; margin-top:12px; }
   .roster-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
@@ -675,6 +886,8 @@
 </style>
 </head>
 <body>
+<div id="top-progress" class="top-progress" aria-hidden="true"></div>
+<div id="busy-status" class="sr-only" role="status" aria-live="polite"></div>
 <div id="app"></div>
 <div id="modal-root"></div>
 <script>
@@ -1260,6 +1473,116 @@ function forfeitMatch(match, forfeitingTeamKey){
   match.result = `${teamName(match, winnerKey)} won — ${teamName(match, forfeitingTeamKey)} forfeited the match`;
 }
 
+/* True once anything at all has been recorded -- a delivery, an extra, or
+   a completed innings. Before that, changing who bats first loses nothing. */
+function matchHasStarted(match){
+  return match.innings.length > 1 || match.innings.some(inn =>
+    inn.complete || inn.legalBalls > 0 || inn.runs > 0 || inn.wickets > 0 || inn.currentOverEvents.length || inn.overs.length);
+}
+
+/* The same fixture from ball one: every playing condition kept, only
+   `battingFirst` (optionally) changed. This is how a reversed toss is
+   fixed -- before a ball it just flips the sides; after, it discards what
+   was scored (the UI warns and snapshots first, so Undo can bring it back).
+   UI-only extras that recordBall never reads (club, match type, squads,
+   visitor name) are carried over so the restart is the same fixture. */
+const MATCH_CARRY_FIELDS = ["clubId", "matchType", "squads", "guestNames", "opponentName"];
+function restartMatch(match, battingFirst){
+  const i1 = match.innings[0];
+  const fresh = createMatch({
+    teamA: match.teamA, teamB: match.teamB,
+    oversLimit: match.oversLimit, playersPerSide: match.playersPerSide,
+    battingFirst: battingFirst || match.battingFirst,
+    ballsPerOver: match.ballsPerOver, wideRuns: i1.wideBaseRuns, noBallRuns: i1.noBallBaseRuns,
+    wideEnabled: match.wideEnabled, noBallEnabled: match.noBallEnabled,
+    freeHitOnNoBall: match.freeHitOnNoBall, lastManStands: match.lastManStands,
+    requireFielderOnCatch: match.requireFielderOnCatch, requireFielderOnRunout: match.requireFielderOnRunout,
+    presetId: match.presetId, presetName: match.presetName, tournamentId: match.tournamentId
+  });
+  MATCH_CARRY_FIELDS.forEach(k => { if (match[k] !== undefined) fresh[k] = JSON.parse(JSON.stringify(match[k])); });
+  return fresh;
+}
+
+/* Has this name batted, bowled or fielded in the match yet? */
+function playerHasPlayed(match, name){
+  const key = (name || "").trim().toLowerCase();
+  const has = list => list.some(n => n.toLowerCase() === key);
+  return !!key && match.innings.some(inn => has(inn.batting.order) || has(inn.bowling.order) || has(inn.fielding.order));
+}
+
+/* Club-tournament squads (match.squads) can change for one match -- a
+   player lent to the other side, or a late arrival. Only for players who
+   haven't played yet: someone who has already batted or bowled for one
+   side would be on both. Saved tournament teams are untouched. Both
+   return an error string, or null on success (squads mutated in place). */
+function moveSquadPlayer(match, name){
+  if (!match.squads) return "This match has no squads.";
+  const key = (name || "").trim().toLowerCase();
+  const from = ["A", "B"].find(k => (match.squads[k] || []).some(n => n.toLowerCase() === key));
+  if (!from) return `${name} isn't in either squad.`;
+  if (playerHasPlayed(match, name)) return `${name} has already played for ${teamName(match, from)} in this match.`;
+  const to = from === "A" ? "B" : "A";
+  const real = match.squads[from].find(n => n.toLowerCase() === key);
+  match.squads[from] = match.squads[from].filter(n => n.toLowerCase() !== key);
+  match.squads[to] = [...(match.squads[to] || []), real];
+  return null;
+}
+function addSquadPlayer(match, name, teamKey){
+  if (!match.squads) return "This match has no squads.";
+  name = (name || "").trim();
+  if (!name) return "Type a name.";
+  const key = name.toLowerCase();
+  const inSquad = ["A", "B"].find(k => (match.squads[k] || []).some(n => n.toLowerCase() === key));
+  if (inSquad) return `${name} is already in ${teamName(match, inSquad)}'s squad.`;
+  const conflict = playerSideConflict(match, name, teamKey);
+  if (conflict) return conflict;
+  match.squads[teamKey] = [...(match.squads[teamKey] || []), name];
+  return null;
+}
+
+/* What a scorer typed in a name box -> the player it means, using the club
+   roster's nicknames and jersey numbers (supabase/010). An exact name wins;
+   otherwise a nickname or "#7" that matches exactly one roster player gives
+   that player's name. Anything else comes back unchanged (a new or guest
+   name). `roster` is [{ name, nickname, jersey_no }]. Case-insensitive. */
+function resolvePlayerAlias(value, roster){
+  const typed = (value || "").trim();
+  const key = typed.toLowerCase();
+  if (!key) return typed;
+  const list = roster || [];
+  const byName = list.find(p => p.name && p.name.toLowerCase() === key);
+  if (byName) return byName.name;
+  const byNick = list.filter(p => p.nickname && p.nickname.trim().toLowerCase() === key);
+  if (byNick.length === 1) return byNick[0].name;
+  const jersey = /^#\s*(\d{1,3})$/.exec(typed);
+  if (jersey){
+    const byNo = list.filter(p => p.jersey_no != null && String(p.jersey_no) === String(parseInt(jersey[1], 10)));
+    if (byNo.length === 1) return byNo[0].name;
+  }
+  return typed;
+}
+
+/* Guest players (club tournaments): people playing for a side who aren't
+   club members. Their names sit in `match.guestNames` (from the saved
+   teams, or added in Switch players), and registerMatchPlayer skips them,
+   so nothing about a guest is stored on the club roster or the platform's
+   players list. Case-insensitive. */
+function isGuestInMatch(match, name){
+  const key = (name || "").trim().toLowerCase();
+  return !!key && (match.guestNames || []).some(n => n.toLowerCase() === key);
+}
+/* The team-builder key for a guest: tournament_teams.players entries need an
+   id, but a guest has no players row -- so it's derived from the name. */
+function guestPlayerKey(name){ return "guest:" + (name || "").trim().toLowerCase(); }
+
+/* With no overs limit or no players limit an innings may never end on its
+   own, so the scorer can close it by hand (endInnings) -- from the live
+   screen and from the new-batsman/new-bowler sheets, which otherwise
+   block everything until a name is entered. */
+function canEndInningsByHand(inn){
+  return !inn.complete && (inn.oversLimit == null || inn.maxWickets == null);
+}
+
 /* --- cross-match aggregation: MVP/MOTM, leaderboards, standings ---
    Pure functions over one or more completed matches, kept DOM-free like
    the rest of the engine so they're directly unit-testable. */
@@ -1521,6 +1844,156 @@ function makeCloudAuthStorage(){
   };
 }
 
+/* --- offline-first: outbox + read cache ------------------------------------
+   Every club write goes through submitCloudOp(kind, args): online with an
+   empty queue it runs straight away (so errors like a duplicate team name
+   still show on the form); offline, or behind earlier unsynced changes, it's
+   appended to the OUTBOX (persisted under its own storage key) and replayed
+   in order by syncNow() whenever the app is online and signed in. Creates
+   carry client-generated uuids, so a replay after a lost response is safe
+   (a duplicate-id error just means "already saved").
+   Reads (fetchMyClubs / fetchClubDetail / fetchClubTournamentDetail) keep the
+   last server copy in CLOUD CACHE (own key, per user, cleared on sign-out)
+   and fall back to it offline; either way, pending ops are laid over the top
+   (overlayClubData / overlayTournamentData) so the UI shows offline edits.
+   The pure helpers below take their inputs explicitly and are tested. */
+const OUTBOX_KEY = "cricket.lk.outbox.v1";
+const CLOUD_CACHE_KEY = "cricket.lk.cloudcache.v1";
+const TEMP_ID_PREFIX = "tmp:";   // a player added offline, until add_player_to_club returns the real id
+
+function newUuid(){
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16);
+  });
+}
+/* A failed fetch (offline, DNS, timeout) -- worth retrying later -- as
+   opposed to a real database answer (RLS, constraint, missing SQL), which
+   has a code and won't change by retrying. */
+function isNetworkError(err, online){
+  if (!err) return false;
+  if (online === false) return true;
+  const msg = String((err && err.message) || err);
+  return !err.code && /fetch|network|load failed|timed? ?out|abort|offline/i.test(msg);
+}
+/* Deep-replace a temp id with the real one (outbox payloads, caches, open edits). */
+function replaceIdDeep(obj, from, to){
+  if (Array.isArray(obj)) return obj.map(v => replaceIdDeep(v, from, to));
+  if (obj && typeof obj === "object"){
+    const out = {};
+    Object.keys(obj).forEach(k => { out[k] = replaceIdDeep(obj[k], from, to); });
+    return out;
+  }
+  return obj === from ? to : obj;
+}
+/* Add `op` to `queue` (returns the new queue), folding it into a pending op
+   for the same thing where that's equivalent: a second save of a team or
+   preset replaces the first (keeping isNew), a delete of something never
+   synced just cancels its create, and repeat roster/global adds of a name
+   are dropped. Failed ops are left alone (they need a manual retry). */
+function coalesceOp(queue, op){
+  const same = o => !o.failed && o.userId === op.userId && o.kind === op.kind;
+  const a = op.args;
+  if (op.kind === "team.save" || op.kind === "preset.save"){
+    const prev = queue.find(o => same(o) && o.args.id === a.id);
+    if (prev) return queue.map(o => o === prev ? Object.assign({}, prev, { args: Object.assign({}, a, { isNew: prev.args.isNew || a.isNew }) }) : o);
+  }
+  if (op.kind === "team.delete" || op.kind === "preset.delete"){
+    const saveKind = op.kind === "team.delete" ? "team.save" : "preset.save";
+    const pendingNew = queue.find(o => !o.failed && o.userId === op.userId && o.kind === saveKind && o.args.id === a.id && o.args.isNew);
+    if (pendingNew) return queue.filter(o => !(o.kind === saveKind && o.args.id === a.id && !o.failed));
+    queue = queue.filter(o => !(o.kind === saveKind && o.args.id === a.id && !o.failed));
+  }
+  if (op.kind === "roster.add" || op.kind === "global.add"){
+    const key = (a.name || "").trim().toLowerCase();
+    if (queue.some(o => same(o) && o.args.clubId === a.clubId && (o.args.name || "").trim().toLowerCase() === key)) return queue;
+  }
+  if (op.kind === "match" && queue.some(o => same(o) && o.args.id === a.id)) return queue;
+  return [...queue, op];
+}
+/* A club's server snapshot + this user's pending ops -> what the UI shows. */
+function overlayClubData(club, ops){
+  const c = JSON.parse(JSON.stringify(club));
+  c.roster = c.roster || []; c.tournaments = c.tournaments || [];
+  c.presets = c.presets || { match: [], tournament: [] };
+  ops.filter(o => !o.failed && o.args && o.args.clubId === c.id).forEach(o => {
+    const a = o.args;
+    if (o.kind === "tournament.create" && !c.tournaments.some(t => t.id === a.id)){
+      c.tournaments.unshift({ id: a.id, name: a.name, created_at: new Date(o.createdAt).toISOString(), pending: true });
+    } else if (o.kind === "preset.save"){
+      const list = c.presets[a.kind] = (c.presets[a.kind] || []).filter(p => p.id !== a.id);
+      list.push(Object.assign({}, a.preset, { id: a.id, pending: true }));
+    } else if (o.kind === "preset.delete"){
+      ["match", "tournament"].forEach(k => { c.presets[k] = (c.presets[k] || []).filter(p => p.id !== a.id); });
+    } else if (o.kind === "roster.add"){
+      const key = a.name.trim().toLowerCase();
+      if (!c.roster.some(p => p.name && p.name.toLowerCase() === key)){
+        const d = a.details || {};
+        c.roster.push({ id: a.tempId || null, name: a.name.trim(), nickname: d.nickname || null, jersey_no: parseJerseyNo(d.jersey_no), pending: true });
+      }
+    } else if (o.kind === "roster.addExisting"){
+      if (!c.roster.some(p => p.id === a.playerId)) c.roster.push({ id: a.playerId, name: a.name, pending: true });
+    } else if (o.kind === "roster.remove"){
+      c.roster = c.roster.filter(p => p.id !== a.playerId);
+    }
+  });
+  return c;
+}
+/* A tournament's server snapshot (or null, if it was created offline) +
+   pending ops + this device's archived matches for it -> what the UI shows. */
+function overlayTournamentData(t, ops, localMatches, tournamentId){
+  const live = ops.filter(o => !o.failed && o.args);
+  let out = t ? JSON.parse(JSON.stringify(t)) : null;
+  if (!out){
+    const created = live.find(o => o.kind === "tournament.create" && o.args.id === tournamentId);
+    if (!created) return null;
+    const a = created.args;
+    out = { id: a.id, name: a.name, organizer_club_id: a.clubId, tournament_preset: a.preset, matches: [], teams: [], teams_unavailable: false, pending: true };
+  }
+  out.teams = out.teams || []; out.matches = out.matches || [];
+  live.filter(o => o.args.tournamentId === out.id).forEach(o => {
+    const a = o.args;
+    if (o.kind === "team.save"){
+      const row = { id: a.id, name: a.name, players: a.players, pending: true };
+      const i = out.teams.findIndex(x => x.id === a.id);
+      if (i >= 0) out.teams[i] = row; else out.teams.push(row);
+    } else if (o.kind === "team.delete"){
+      out.teams = out.teams.filter(x => x.id !== a.id);
+    }
+  });
+  (localMatches || []).filter(m => m && m.tournamentId === out.id && m.clubId).forEach(m => {
+    if (!out.matches.some(x => (x.data && x.data.id) === m.id || x.id === m.id)){
+      out.matches.push({ id: m.id, data: m, played_at: new Date(m.completedAt || Date.now()).toISOString(), local: true });
+    }
+  });
+  return out;
+}
+/* One line per queued change, for the sync sheet. */
+function describeOp(op){
+  const a = op.args || {};
+  switch (op.kind){
+    case "match": return `Match: ${a.data ? `${a.data.teamA} v ${a.data.teamB}` : "result"}`;
+    case "club.create": return `New club “${a.name}”`;
+    case "tournament.create": return `New tournament “${a.name}”`;
+    case "team.save": return `Team “${a.name}”`;
+    case "team.delete": return `Delete team “${a.name || "team"}”`;
+    case "preset.save": return `Preset “${(a.preset && a.preset.name) || "preset"}”`;
+    case "preset.delete": return `Delete preset “${a.name || "preset"}”`;
+    case "roster.add": return `Add ${a.name} to the club`;
+    case "roster.addExisting": return `Add ${a.name || "player"} to the club`;
+    case "roster.remove": return `Remove ${a.name || "player"} from the club`;
+    case "global.add": return `Record visiting player ${a.name}`;
+    default: return op.kind;
+  }
+}
+
+let outbox = DB.load(OUTBOX_KEY) || [];         // [{ id, kind, args, userId, createdAt, attempts, failed, error }]
+let cloudCache = DB.load(CLOUD_CACHE_KEY) || null; // { userId, profile, isAdmin, myClubs, clubs: {id: snapshot}, tournaments: {id: snapshot} }
+let syncState = { running: false, lastSyncAt: null };
+function saveOutbox(){ DB.save(OUTBOX_KEY, outbox); }
+function saveCloudCache(){ DB.save(CLOUD_CACHE_KEY, cloudCache); }
+function isOnline(){ return typeof navigator === "undefined" || navigator.onLine !== false; }
+
 let supabaseClient = null; // set by initAuth() once supabase-js has loaded, if configured
 let session = null;  // current Supabase auth session, or null when signed out / cloud unavailable
 let profile = null;  // { id, display_name } row from `profiles` for the signed-in user
@@ -1529,39 +2002,334 @@ let isAdmin = false;  // whether the signed-in user has a row in `admin_users`
 async function refreshProfileAndAdmin(){
   profile = null; isAdmin = false;
   if (!supabaseClient || !session) return;
-  const [{ data: profileRow }, { data: adminRow }] = await Promise.all([
+  const cache = cacheFor();
+  if (session.offline || !isOnline()){
+    if (cache){ profile = cache.profile; isAdmin = !!cache.isAdmin; }
+    return;
+  }
+  const [p, a] = await Promise.all([
     supabaseClient.from("profiles").select("id, display_name").eq("id", session.user.id).maybeSingle(),
     supabaseClient.from("admin_users").select("user_id").eq("user_id", session.user.id).maybeSingle()
   ]);
-  profile = profileRow || null;
-  isAdmin = !!adminRow;
+  if (isNetworkError(p.error, isOnline())){
+    if (cache){ profile = cache.profile; isAdmin = !!cache.isAdmin; }
+    return;
+  }
+  profile = p.data || null;
+  isAdmin = !!a.data;
+  if (cache){ cache.profile = profile; cache.isAdmin = isAdmin; saveCloudCache(); }
+}
+
+/* The per-user read cache; a different (or no) signed-in user gets a fresh
+   one, so one account's club data is never shown to another. */
+function cacheFor(){
+  const uid = session && session.user && session.user.id;
+  if (!uid) return null;
+  if (!cloudCache || cloudCache.userId !== uid){
+    cloudCache = { userId: uid, profile: null, isAdmin: false, myClubs: null, clubs: {}, tournaments: {} };
+  }
+  return cloudCache;
+}
+function myOps(){
+  const uid = session && session.user && session.user.id;
+  return uid ? outbox.filter(o => o.userId === uid) : [];
+}
+function pendingCount(){ return myOps().filter(o => !o.failed).length; }
+function failedCount(){ return myOps().filter(o => o.failed).length; }
+
+/* The last session supabase-js stored, read straight from storage. Offline,
+   an expired access token can't be refreshed, so getSession() comes back
+   empty even though the user is signed in on this device -- this keeps them
+   signed in (session.offline = true) until the network returns. Only the
+   user object is used offline; no request is made with it. */
+function storedOfflineSession(){
+  try {
+    const ref = new URL(SUPABASE_URL).hostname.split(".")[0];
+    const raw = DB.rawBackend ? DB.rawBackend.getItem(`sb-${ref}-auth-token`) : null;
+    const parsed = raw ? JSON.parse(raw) : null;
+    const s = parsed && (parsed.currentSession || parsed);
+    return s && s.user && s.user.id ? { user: s.user, offline: true } : null;
+  } catch (_){ return null; }
+}
+
+/* Everything that writes to the club's cloud data comes through here (see
+   the "offline-first" note above). Returns { ok, queued?, ...result } or
+   { error }. */
+async function submitCloudOp(kind, args){
+  if (!supabaseClient || !session) return { error: "Sign in to save this to the club." };
+  const op = { id: newUuid(), kind, args, userId: session.user.id, createdAt: Date.now(), attempts: 0, failed: false, error: null };
+  if (session.offline || !isOnline() || pendingCount() > 0){ enqueueOp(op); return { ok: true, queued: true }; }
+  const res = await executeOp(op);
+  if (res.network){ enqueueOp(op); return { ok: true, queued: true }; }
+  if (!res.error) afterOpSucceeded(op, res);
+  return res;
+}
+function enqueueOp(op){
+  outbox = coalesceOp(outbox, op);
+  saveOutbox();
+  scheduleSync();
+}
+let syncTimer = null;
+function scheduleSync(delay){
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncNow, delay == null ? 400 : delay);
+}
+
+/* Run one op against Supabase. { ok, ... } | { error } | { network: true }. */
+async function executeOp(op){
+  const run = OP_HANDLERS[op.kind];
+  if (!run) return { error: `Unknown change type "${op.kind}".` };
+  try {
+    const res = await run(op.args, op);
+    if (res && res.error && isNetworkError(res.error, isOnline())) return { network: true };
+    if (res && res.error) return { error: typeof res.error === "string" ? res.error : res.error.message };
+    return Object.assign({ ok: true }, res || {});
+  } catch (err){
+    return isNetworkError(err, isOnline()) || !err.code ? { network: true } : { error: err.message };
+  }
+}
+const dupId = err => err && err.code === "23505" && /pkey/i.test(err.message || "");
+const OP_HANDLERS = {
+  "match": async (a, op) => {
+    const { error } = await supabaseClient.from("matches").upsert({
+      id: a.id, club_id: a.clubId, match_type: a.matchType || "practice", level: "local",
+      opponent_name: a.opponentName || null, tournament_id: a.tournamentId || null,
+      created_by: op.userId, data: a.data, played_at: a.playedAt
+    });
+    return { error };
+  },
+  "club.create": async (a, op) => {
+    let { error } = await supabaseClient.from("clubs").insert({ id: a.id, name: a.name, created_by: op.userId });
+    if (error && !dupId(error)) return { error };
+    ({ error } = await supabaseClient.from("club_members").insert({ club_id: a.id, user_id: op.userId, role: "owner" }));
+    return { error: error && error.code !== "23505" ? error : null };
+  },
+  "tournament.create": async (a, op) => {
+    const { error } = await supabaseClient.from("tournaments").insert({ id: a.id, name: a.name, organizer_club_id: a.clubId, tournament_preset: a.preset, created_by: op.userId });
+    return { error: error && !dupId(error) ? error : null };
+  },
+  "team.save": async (a, op) => {
+    const waiting = (a.players || []).find(p => String(p.id).startsWith(TEMP_ID_PREFIX));
+    if (waiting) return { error: `Waiting for ${waiting.name} to be added to the club first.` };
+    const row = { name: a.name, players: a.players };
+    const insert = () => supabaseClient.from("tournament_teams").insert({ ...row, id: a.id, tournament_id: a.tournamentId, club_id: a.clubId, created_by: op.userId });
+    const update = () => supabaseClient.from("tournament_teams").update(row).eq("id", a.id).eq("tournament_id", a.tournamentId).select("id");
+    let error, data;
+    if (a.isNew){
+      ({ error } = await insert());
+      if (dupId(error)) ({ error } = await update());
+    } else {
+      // An update that matches no row (its create never made it) becomes an insert.
+      ({ data, error } = await update());
+      if (!error && data && !data.length) ({ error } = await insert());
+    }
+    if (error && error.code === "23505") return { error: "This tournament already has a team with that name." };
+    return { error: error ? (cloudTableMissing(error, "012_tournament_teams.sql") || error) : null };
+  },
+  "team.delete": async a => {
+    const { error } = await supabaseClient.from("tournament_teams").delete().eq("id", a.id).eq("tournament_id", a.tournamentId);
+    return { error: error ? (cloudTableMissing(error, "012_tournament_teams.sql") || error) : null };
+  },
+  "preset.save": async a => {
+    const insert = () => supabaseClient.from("club_presets").insert({ id: a.id, club_id: a.clubId, kind: a.kind, preset: a.preset });
+    const update = () => supabaseClient.from("club_presets").update({ preset: a.preset }).eq("id", a.id).eq("club_id", a.clubId).select("id");
+    let error, data;
+    if (a.isNew){
+      ({ error } = await insert());
+      if (dupId(error)) ({ error } = await update());
+    } else {
+      ({ data, error } = await update());
+      if (!error && data && !data.length) ({ error } = await insert());
+    }
+    return { error };
+  },
+  "preset.delete": async a => {
+    const { error } = await supabaseClient.from("club_presets").delete().eq("id", a.id).eq("club_id", a.clubId);
+    return { error };
+  },
+  "roster.add": async a => {
+    const { data, error } = await supabaseClient.rpc("add_player_to_club", { _club_id: a.clubId, _name: a.name.trim() });
+    if (error) return { error: cloudSqlMissing(error, "supabase/005_add_player_to_club.sql") ? { message: cloudSqlMissing(error, "supabase/005_add_player_to_club.sql"), code: error.code } : error };
+    // Before 009 the RPC returned a bare uuid (and the caller always owned the row).
+    const id = data && typeof data === "object" ? data.id : data;
+    const created = data && typeof data === "object" ? !!data.created : true;
+    if (created && a.phone !== undefined && (a.phone || a.nic)){
+      const r = await updatePlayerProfile(id, a.phone, a.nic);
+      if (r && r.error) return { id, created, partial: `Added, but couldn't save the contact details: ${r.error}` };
+    }
+    if (created && a.details && playerHasDetails(a.details)){
+      const r = await updatePlayerDetails(id, a.details);
+      if (r && r.error) return { id, created, partial: `Added, but couldn't save the other details: ${r.error}` };
+    }
+    return { id, created };
+  },
+  "roster.addExisting": async a => {
+    const { error } = await supabaseClient.from("club_rosters").insert({ club_id: a.clubId, player_id: a.playerId });
+    return { error: error && error.code === "23505" ? null : error };
+  },
+  "roster.remove": async a => {
+    const { data, error } = await supabaseClient.from("club_rosters").delete().eq("club_id", a.clubId).eq("player_id", a.playerId).select("player_id");
+    if (error) return { error };
+    // RLS turns a non-member's delete into "0 rows", not an error. Already
+    // gone (e.g. removed on another device) counts as done too.
+    return data && data.length ? {} : (a.mustExist ? { error: "Couldn't remove this player — only this club's admins can." } : {});
+  },
+  "global.add": async a => {
+    let { error } = await supabaseClient.rpc("ensure_global_player", { _name: a.name.trim(), _club_id: a.clubId || null });
+    if (error && error.code === "PGRST202") ({ error } = await supabaseClient.rpc("ensure_global_player", { _name: a.name.trim() }));
+    return { error };
+  }
+};
+/* A roster add that was queued offline got a temp id; once the server hands
+   back the real one, rewrite every reference (later queued ops, caches,
+   the open team editor) so nothing ever stores the temp id in the cloud. */
+function afterOpSucceeded(op, res){
+  if (op.kind === "roster.add" && op.args.tempId && res.id) remapTempId(op.args.tempId, res.id);
+}
+function remapTempId(from, to){
+  // In place (not a new array): syncNow may be part-way through the queue.
+  outbox.forEach(o => { o.args = replaceIdDeep(o.args, from, to); }); saveOutbox();
+  if (cloudCache){ cloudCache = replaceIdDeep(cloudCache, from, to); saveCloudCache(); }
+  if (ui.club) ui.club = replaceIdDeep(ui.club, from, to);
+  if (ui.clubTournament) ui.clubTournament = replaceIdDeep(ui.clubTournament, from, to);
+  if (ui.tournamentTeamEdit) ui.tournamentTeamEdit = replaceIdDeep(ui.tournamentTeamEdit, from, to);
+}
+
+/* Replay this user's queue in order. Stops at the first network failure (it
+   will be retried); a real database error marks that op failed and moves on
+   -- failed ops wait in the sync sheet for Retry or Discard. */
+let lastSessionUpgrade = 0;
+async function syncNow(){
+  // Online again but still on the stored offline user: get a real session
+  // first (throttled, so a failing refresh can't spin).
+  if (session && session.offline && isOnline() && Date.now() - lastSessionUpgrade > 30000){
+    lastSessionUpgrade = Date.now();
+    handleBackOnline();
+    return;
+  }
+  if (syncState.running || !supabaseClient || !session || session.offline || !isOnline()) return;
+  const due = () => myOps().filter(o => !o.failed);
+  if (!due().length) return;
+  syncState.running = true; render();
+  let changed = false, stalled = false;
+  const tried = new Set();
+  // Re-read the queue each step: a success can rewrite later ops (temp ids),
+  // and new ops can be queued while this runs.
+  for (let op = due()[0]; op && !tried.has(op.id); op = due().find(o => !tried.has(o.id))){
+    tried.add(op.id);
+    const res = await executeOp(op);
+    if (res.network){ stalled = true; break; }
+    op.attempts++;
+    if (res.error){ op.failed = true; op.error = res.error; }
+    else { afterOpSucceeded(op, res); outbox = outbox.filter(o => o.id !== op.id); changed = true; }
+    saveOutbox();
+  }
+  syncState.running = false; syncState.lastSyncAt = Date.now();
+  if (!stalled && due().some(o => !tried.has(o.id))) scheduleSync(0);    // more were queued while this ran
+  if (changed) await refreshAfterSync();
+  render();
+}
+/* Re-read whatever club data is on screen, now that the server has it. */
+async function refreshAfterSync(){
+  const jobs = [];
+  if (ui.myClubs) jobs.push(fetchMyClubs());
+  if (ui.club) jobs.push(fetchClubDetail(ui.club.id));
+  if (ui.clubTournament) jobs.push(fetchClubTournamentDetail(ui.clubTournament.id));
+  await Promise.all(jobs.map(j => j.catch(() => {})));
+}
+function retryFailedOps(ids){
+  outbox.forEach(o => { if (ids.includes(o.id)){ o.failed = false; o.error = null; } });
+  saveOutbox(); scheduleSync(0); render();
+}
+function discardOp(id){
+  outbox = outbox.filter(o => o.id !== id); saveOutbox();
+  refreshAfterSync().then(render);
 }
 
 async function initAuth(){
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return; // cloud not configured on this deployment
   let lib;
-  try { lib = await loadSupabaseLib(); } catch (_){ return; } // offline/blocked CDN — stay in guest mode
+  // supabase-js comes from the service worker's cache when offline (sw.js);
+  // without it (first ever visit offline) stay in guest mode.
+  try { lib = await loadSupabaseLib(); } catch (_){ return; }
   supabaseClient = lib.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { storage: makeCloudAuthStorage(), persistSession: true, autoRefreshToken: true }
+    auth: { storage: makeCloudAuthStorage(), persistSession: true, autoRefreshToken: true },
+    // Every Supabase request (data, RPC, auth) goes through trackedFetch, so
+    // the loading indicators know when the network is busy -- see "activity".
+    global: { fetch: trackedFetch }
   });
-  const { data } = await supabaseClient.auth.getSession();
-  session = data.session || null;
+  // Offline, getSession() can sit retrying a token refresh for a long time,
+  // so don't wait on it: use the stored user straight away (session.offline)
+  // and let the real session replace it once the network is back.
+  const stored = storedOfflineSession();
+  let real = null;
+  if (isOnline() || !stored){
+    real = await Promise.race([
+      supabaseClient.auth.getSession().then(r => (r && r.data && r.data.session) || null).catch(() => null),
+      new Promise(res => setTimeout(() => res(undefined), 2500))
+    ]);
+  }
+  session = real || (real === null && isOnline() ? null : stored);
   await refreshProfileAndAdmin();
   render();
-  supabaseClient.auth.onAuthStateChange((_event, newSession) => {
+  supabaseClient.auth.onAuthStateChange((event, newSession) => {
+    // Offline, a failed token refresh isn't a sign-out: keep the stored user.
+    if (!newSession && event !== "SIGNED_OUT" && session && session.offline) return;
     session = newSession;
-    refreshProfileAndAdmin().then(render);
+    refreshProfileAndAdmin().then(() => { render(); scheduleSync(); });
   });
+  scheduleSync(0);
+}
+
+/* Back online: swap an offline session for a real (refreshed) one, then sync. */
+async function handleBackOnline(){
+  if (supabaseClient && session && session.offline){
+    lastSessionUpgrade = Date.now();
+    try {
+      const real = await Promise.race([
+        supabaseClient.auth.getSession().then(r => (r && r.data && r.data.session) || null),
+        new Promise(res => setTimeout(() => res(undefined), 8000))
+      ]);
+      if (real){ session = real; await refreshProfileAndAdmin(); }
+    } catch (_){}
+  }
+  render();
+  if (!(session && session.offline)) scheduleSync(0);
 }
 
 async function handleSignOut(){
   if (!supabaseClient) return;
-  await supabaseClient.auth.signOut();
+  const n = pendingCount() + failedCount();
+  if (n){
+    askConfirm({
+      title: "Sign out with unsynced changes?", icon: "☁",
+      body: `<p>${n} change${n === 1 ? " hasn't" : "s haven't"} reached the cloud yet. ${n === 1 ? "It stays" : "They stay"} on this device and sync${n === 1 ? "s" : ""} the next time you sign in to this account here.</p>`,
+      confirmLabel: "Sign out anyway", tone: "primary",
+      onConfirm: () => doSignOut()
+    });
+    return;
+  }
+  doSignOut();
+}
+async function doSignOut(){
+  // Local first: supabase-js' own sign-out can wait behind a stuck token
+  // refresh offline, and the device must be cleared regardless.
+  const client = supabaseClient;
+  session = null; profile = null; isAdmin = false;
+  // The read cache holds members-only club data (rosters, teams) -- never
+  // leave it for whoever uses this device next. Queued changes stay, tagged
+  // with their user, until that user signs in again.
+  cloudCache = null; DB.clear(CLOUD_CACHE_KEY);
   state.view = "home";
   state.activeClubId = null;
   ui.identity = null; ui.premier = null;
   ui.myClubs = null; ui.club = null; ui.currentClubId = null; // don't leak the previous account's clubs to whoever signs in next
   save(); render();
+  try {
+    // scope "local" never needs the network; online, also revoke the refresh token.
+    await client.auth.signOut(isOnline() ? undefined : { scope: "local" });
+  } catch (_){}
+  if (!isOnline()){ try { const ref = new URL(SUPABASE_URL).hostname.split(".")[0]; DB.rawBackend && DB.rawBackend.removeItem(`sb-${ref}-auth-token`); } catch (_){} }
 }
 
 /* --- clubs (Milestone 2): a signed-in user's clubs, roster, and synced
@@ -1572,22 +2340,26 @@ async function handleSignOut(){
 
 async function fetchMyClubs(){
   if (!supabaseClient || !session) { ui.myClubs = []; return; }
-  const { data, error } = await supabaseClient
-    .from("club_members")
-    .select("role, clubs(id, name)")
-    .eq("user_id", session.user.id);
-  ui.myClubs = error ? [] : data.map(r => ({ id: r.clubs.id, name: r.clubs.name, role: r.role }));
+  const cache = cacheFor();
+  let list = null;
+  if (!session.offline && isOnline()){
+    const { data, error } = await supabaseClient.from("club_members").select("role, clubs(id, name)").eq("user_id", session.user.id);
+    if (!error){ list = data.map(r => ({ id: r.clubs.id, name: r.clubs.name, role: r.role })); cache.myClubs = list; saveCloudCache(); }
+    else if (!isNetworkError(error, isOnline())) list = [];
+  }
+  if (!list) list = (cache && cache.myClubs) || [];
+  // Clubs created offline show up straight away.
+  myOps().filter(o => o.kind === "club.create" && !o.failed && !list.some(c => c.id === o.args.id))
+    .forEach(o => list = [...list, { id: o.args.id, name: o.args.name, role: "owner", pending: true }]);
+  ui.myClubs = list;
 }
 
 async function createClub(name){
   if (!supabaseClient || !session) return null;
-  const { data: club, error } = await supabaseClient
-    .from("clubs").insert({ name, created_by: session.user.id }).select().single();
-  if (error) return { error: error.message };
-  const { error: memberError } = await supabaseClient
-    .from("club_members").insert({ club_id: club.id, user_id: session.user.id, role: "owner" });
-  if (memberError) return { error: memberError.message };
-  return { club };
+  const id = newUuid();
+  const res = await submitCloudOp("club.create", { id, name });
+  if (res.error) return { error: res.error };
+  return { club: { id, name }, queued: !!res.queued };
 }
 
 /* Members, then their display names in a second query: PostgREST can't embed
@@ -1606,7 +2378,23 @@ async function fetchClubMembers(clubId){
 
 async function fetchClubDetail(clubId){
   ui.clubBusy = true;
-  const [{ data: club }, { data: members }, { data: roster }, { data: matches }, { data: tournaments }, { data: presetRows }] = await Promise.all([
+  const cache = cacheFor();
+  let server = null;
+  if (supabaseClient && session && !session.offline && isOnline()){
+    try { server = await fetchClubDetailFromServer(clubId); } catch (_){ server = null; }
+  }
+  if (server && cache){
+    // Cache a trimmed copy (recent matches only) -- it's a separate storage
+    // key, so running out of space here can never cost the scorer's state.
+    cache.clubs[clubId] = Object.assign({}, server, { matches: server.matches.slice(0, 30) });
+    saveCloudCache();
+  }
+  const base = server || (cache && cache.clubs[clubId]) || { id: clubId, name: (ui.myClubs || []).find(c => c.id === clubId)?.name || "", members: [], roster: [], matches: [], tournaments: [], presets: { match: [], tournament: [] } };
+  ui.club = Object.assign(overlayClubData(base, myOps()), { fromCache: !server });
+  ui.clubBusy = false;
+}
+async function fetchClubDetailFromServer(clubId){
+  const [clubRes, members, rosterRes, matchesRes, tournamentsRes, presetsRes] = await Promise.all([
     supabaseClient.from("clubs").select("id, name").eq("id", clubId).single(),
     fetchClubMembers(clubId),
     fetchRosterRows(clubId),
@@ -1614,59 +2402,68 @@ async function fetchClubDetail(clubId){
     supabaseClient.from("tournaments").select("id, name, created_at").eq("organizer_club_id", clubId).order("created_at", { ascending: false }),
     supabaseClient.from("club_presets").select("id, kind, preset").eq("club_id", clubId).order("created_at")
   ]);
-  ui.club = {
+  if ([clubRes, rosterRes, matchesRes].some(r => isNetworkError(r.error, isOnline()))) return null;
+  const presetRows = presetsRes.data || [];
+  return {
     id: clubId,
-    name: club ? club.name : "",
-    members: members || [],
-    roster: (roster || []).map(r => r.players_public).filter(Boolean),
-    matches: matches || [],
-    tournaments: tournaments || [],
+    name: clubRes.data ? clubRes.data.name : "",
+    members: (members && members.data) || [],
+    roster: (rosterRes.data || []).map(r => r.players_public).filter(Boolean),
+    matches: matchesRes.data || [],
+    tournaments: tournamentsRes.data || [],
     // This club's own presets (club_presets), same shape as the guest ones
     // plus the row id -- never mixed with state.matchPresets/tournamentPresets.
     presets: {
-      match: (presetRows || []).filter(r => r.kind === "match").map(r => Object.assign({}, r.preset, { id: r.id })),
-      tournament: (presetRows || []).filter(r => r.kind === "tournament").map(r => Object.assign({}, r.preset, { id: r.id }))
+      match: presetRows.filter(r => r.kind === "match").map(r => Object.assign({}, r.preset, { id: r.id })),
+      tournament: presetRows.filter(r => r.kind === "tournament").map(r => Object.assign({}, r.preset, { id: r.id }))
     }
   };
-  ui.clubBusy = false;
 }
 
 async function createClubTournament(clubId, name, tournamentPreset){
   if (!supabaseClient || !session) return null;
-  const { data, error } = await supabaseClient
-    .from("tournaments")
-    .insert({ name, organizer_club_id: clubId, tournament_preset: tournamentPreset, created_by: session.user.id })
-    .select().single();
-  return error ? { error: error.message } : { tournament: data };
+  const id = newUuid();
+  const res = await submitCloudOp("tournament.create", { id, clubId, name, preset: tournamentPreset });
+  if (res.error) return { error: res.error };
+  return { tournament: { id, name, organizer_club_id: clubId, tournament_preset: tournamentPreset }, queued: !!res.queued };
 }
 
 async function fetchClubTournamentDetail(tournamentId){
-  const [{ data: tournament }, { data: matches }, { data: teams, error: teamsError }] = await Promise.all([
-    supabaseClient.from("tournaments").select("id, name, organizer_club_id, tournament_preset").eq("id", tournamentId).single(),
-    supabaseClient.from("matches").select("id, data, played_at").eq("tournament_id", tournamentId).order("played_at", { ascending: false }),
-    supabaseClient.from("tournament_teams").select("id, name, players").eq("tournament_id", tournamentId).order("created_at")
-  ]);
-  // teams_unavailable: 012 hasn't been run -- the dashboard says so instead
-  // of breaking, and match setup falls back to typed team names.
-  ui.clubTournament = tournament
-    ? { ...tournament, matches: matches || [], teams: teamsError ? [] : (teams || []), teams_unavailable: !!teamsError }
-    : null;
+  const cache = cacheFor();
+  let server;   // undefined = couldn't ask; null = asked, not there (yet)
+  if (supabaseClient && session && !session.offline && isOnline()){
+    try {
+      const [{ data: tournament, error: tErr }, { data: matches }, { data: teams, error: teamsError }] = await Promise.all([
+        supabaseClient.from("tournaments").select("id, name, organizer_club_id, tournament_preset").eq("id", tournamentId).maybeSingle(),
+        supabaseClient.from("matches").select("id, data, played_at").eq("tournament_id", tournamentId).order("played_at", { ascending: false }),
+        supabaseClient.from("tournament_teams").select("id, name, players").eq("tournament_id", tournamentId).order("created_at")
+      ]);
+      if (!isNetworkError(tErr, isOnline())){
+        // teams_unavailable: 012 hasn't been run -- the dashboard says so instead
+        // of breaking, and match setup falls back to typed team names.
+        server = tournament ? { ...tournament, matches: matches || [], teams: teamsError ? [] : (teams || []), teams_unavailable: !!teamsError } : null;
+      }
+    } catch (_){ server = undefined; }
+  }
+  if (server && cache){ cache.tournaments[tournamentId] = server; saveCloudCache(); }
+  const base = server !== undefined ? server : (cache && cache.tournaments[tournamentId]) || null;
+  ui.clubTournament = overlayTournamentData(base, myOps(), Object.values(state.matchHistory), tournamentId);
+  if (ui.clubTournament) ui.clubTournament.fromCache = server === undefined;
 }
 
 /* Tournament teams (supabase/012): a name + roster players, members-only.
    `players` is [{ id, name }] -- the name is a snapshot, see the SQL. */
 async function saveTournamentTeam(tournament, team){
-  const row = { name: team.name, players: team.players };
-  const { error } = team.id
-    ? await supabaseClient.from("tournament_teams").update(row).eq("id", team.id).eq("tournament_id", tournament.id)
-    : await supabaseClient.from("tournament_teams").insert({ ...row, tournament_id: tournament.id, club_id: tournament.organizer_club_id, created_by: session.user.id });
-  if (!error) return { ok: true };
-  if (error.code === "23505") return { error: "This tournament already has a team with that name." };
-  return { error: cloudTableMissing(error, "012_tournament_teams.sql") || error.message };
+  const res = await submitCloudOp("team.save", {
+    id: team.id || newUuid(), isNew: !team.id, tournamentId: tournament.id, clubId: tournament.organizer_club_id,
+    name: team.name, players: team.players
+  });
+  return res.error ? { error: res.error } : { ok: true, queued: !!res.queued };
 }
 async function deleteTournamentTeam(tournamentId, teamId){
-  const { error } = await supabaseClient.from("tournament_teams").delete().eq("id", teamId).eq("tournament_id", tournamentId);
-  return error ? { error: cloudTableMissing(error, "012_tournament_teams.sql") || error.message } : { ok: true };
+  const team = ui.clubTournament && ui.clubTournament.teams.find(t => t.id === teamId);
+  const res = await submitCloudOp("team.delete", { id: teamId, tournamentId, name: team ? team.name : "" });
+  return res.error ? { error: res.error } : { ok: true, queued: !!res.queued };
 }
 function cloudTableMissing(error, file){
   return error && (error.code === "42P01" || error.code === "PGRST205")
@@ -1676,15 +2473,14 @@ function cloudTableMissing(error, file){
 /* Club presets live in the cloud (club_presets, members-only via RLS) --
    the club's own, separate from the on-device guest presets. */
 async function saveClubPreset(clubId, kind, preset){
-  const { id, ...body } = preset;
-  const { error } = id
-    ? await supabaseClient.from("club_presets").update({ preset: body }).eq("id", id).eq("club_id", clubId)
-    : await supabaseClient.from("club_presets").insert({ club_id: clubId, kind, preset: body });
-  return error ? { error: error.message } : { ok: true };
+  const { id, pending, ...body } = preset;
+  const res = await submitCloudOp("preset.save", { id: id || newUuid(), isNew: !id, clubId, kind, preset: body });
+  return res.error ? { error: res.error } : { ok: true, queued: !!res.queued };
 }
 async function deleteClubPreset(clubId, id){
-  const { error } = await supabaseClient.from("club_presets").delete().eq("id", id).eq("club_id", clubId);
-  return error ? { error: error.message } : { ok: true };
+  const pr = ["match", "tournament"].map(k => clubPresetList(k, clubId)).flat().find(p => p.id === id);
+  const res = await submitCloudOp("preset.delete", { id, clubId, name: pr ? pr.name : "" });
+  return res.error ? { error: res.error } : { ok: true, queued: !!res.queued };
 }
 
 /* One server-side step (supabase/009, superseding 005): find the player in
@@ -1703,22 +2499,24 @@ function cloudSqlMissing(error, file){
 async function addPlayerToClub(clubId, name, extras){
   const trimmed = (name || "").trim();
   if (!trimmed) return;
-  const { data, error } = await supabaseClient.rpc("add_player_to_club", { _club_id: clubId, _name: trimmed });
-  if (error) return { error: cloudSqlMissing(error, "supabase/005_add_player_to_club.sql") || error.message };
-  // Before 009 the RPC returned a bare uuid (and the caller always owned the row).
-  const playerId = data && typeof data === "object" ? data.id : data;
-  const created = data && typeof data === "object" ? !!data.created : true;
-  if (created && extras){
-    if (extras.phone || extras.nic){
-      const r = await updatePlayerProfile(playerId, extras.phone, extras.nic);
-      if (r && r.error) return { error: `Added, but couldn't save the contact details: ${r.error}` };
-    }
-    if (extras.details && playerHasDetails(extras.details)){
-      const r = await updatePlayerDetails(playerId, extras.details);
-      if (r && r.error) return { error: `Added, but couldn't save the other details: ${r.error}` };
-    }
+  const phone = extras && extras.phone, nic = extras && extras.nic;
+  // Contact number and NIC are personal data: they're only ever sent
+  // straight to the database, never kept in the on-device queue.
+  if ((phone || nic) && (session && session.offline || !isOnline() || pendingCount() > 0)){
+    return { error: "Contact number and NIC need an internet connection. Clear them to add the player offline, and fill them in later from the profile." };
   }
-  return { ok: true, id: playerId, created };
+  const tempId = TEMP_ID_PREFIX + newUuid();
+  const args = { clubId, name: trimmed, tempId, details: extras && extras.details ? extras.details : null };
+  if (phone || nic) Object.assign(args, { phone: phone || "", nic: nic || "" });
+  const res = await submitCloudOp("roster.add", args);
+  if (res.error) return { error: res.error };
+  if (res.queued){
+    // Already queued for this name? Reuse that op's temp id.
+    const prev = outbox.find(o => o.kind === "roster.add" && !o.failed && o.args.clubId === clubId && o.args.name.toLowerCase() === trimmed.toLowerCase());
+    return { ok: true, queued: true, id: prev ? prev.args.tempId : tempId };
+  }
+  if (res.partial) return { error: res.partial, id: res.id, created: res.created };
+  return { ok: true, id: res.id, created: res.created };
 }
 function playerHasDetails(d){
   return !!(d.batting_hand || d.bowling_arm || d.bowling_type || d.is_keeper || d.city || d.photo || d.nickname || parseJerseyNo(d.jersey_no) != null);
@@ -1728,6 +2526,7 @@ function playerHasDetails(d){
    columns only (players_public; never phone/NIC). Used by the add-player
    sheet to offer "add the existing player" instead of creating a new one. */
 async function searchPlatformPlayers(query){
+  if (needsInternet()) return [];
   const pattern = `%${escapeLike(query.trim())}%`;
   const full = await supabaseClient.from("players_public").select(`id, name, city, photo, ${PLAYER_KIT_COLS}`).ilike("name", pattern).order("name").limit(8);
   if (!full.error) return full.data || [];
@@ -1737,10 +2536,9 @@ async function searchPlatformPlayers(query){
 /* Add one specific existing player (by id -- names aren't unique) to the
    roster. A plain insert: 002's "members manage" policy allows it, and it
    never creates a player or grants edit rights (origin_club_id is untouched). */
-async function addExistingPlayerToClub(clubId, playerId){
-  const { error } = await supabaseClient.from("club_rosters").insert({ club_id: clubId, player_id: playerId });
-  if (!error) return { ok: true };
-  return { error: error.code === "23505" ? "Already on your club's roster." : error.message };
+async function addExistingPlayerToClub(clubId, playerId, name){
+  const res = await submitCloudOp("roster.addExisting", { clubId, playerId, name: name || "" });
+  return res.error ? { error: res.error } : { ok: true, queued: !!res.queued };
 }
 
 /* Take a player off this club's roster (club_rosters delete; any club member
@@ -1749,10 +2547,14 @@ async function addExistingPlayerToClub(clubId, playerId){
    are untouched, so stats stay and they can be re-added later. RLS turns a
    non-member's delete into "0 rows", not an error, hence the row check. */
 async function removePlayerFromClub(clubId, playerId){
-  const { data, error } = await supabaseClient.from("club_rosters").delete()
-    .eq("club_id", clubId).eq("player_id", playerId).select("player_id");
-  if (error) return { error: error.message };
-  return data && data.length ? { ok: true } : { error: "Couldn't remove this player — only this club's admins can." };
+  const p = ui.club && ui.club.roster.find(x => x.id === playerId);
+  // A player added offline and never synced: just drop the queued add.
+  if (String(playerId).startsWith(TEMP_ID_PREFIX)){
+    outbox = outbox.filter(o => !(o.kind === "roster.add" && o.args.tempId === playerId)); saveOutbox();
+    return { ok: true };
+  }
+  const res = await submitCloudOp("roster.remove", { clubId, playerId, name: p ? p.name : "", mustExist: true });
+  return res.error ? { error: res.error } : { ok: true, queued: !!res.queued };
 }
 
 /* --- player profiles (supabase/007_player_profiles.sql). Name and stats are
@@ -1783,6 +2585,7 @@ async function fetchRosterRows(clubId){
 }
 async function fetchPlayerProfile(playerId){
   if (!supabaseClient) return { error: "Cloud isn't configured on this deployment." };
+  const offline = needsInternet(); if (offline) return { error: "You're offline. Player profiles need an internet connection." };
   if (!session){
     const { data } = await supabaseClient.from("players_public").select("id, name, claimed_by").eq("id", playerId).single();
     if (!data) return { error: "Player not found." };
@@ -1811,6 +2614,7 @@ async function fetchViewerClubMatches(){
   return [...byId.values()];
 }
 async function updatePlayerDetails(playerId, d){
+  const offline = needsInternet(); if (offline) return offline;
   const { error } = await supabaseClient.rpc("update_player_details", {
     _player_id: playerId, _batting_hand: d.batting_hand || "", _bowling_arm: d.bowling_arm || "", _bowling_type: d.bowling_type || "",
     _is_keeper: !!d.is_keeper, _city: d.city || "", _photo: d.photo || ""
@@ -1827,6 +2631,7 @@ async function updatePlayerDetails(playerId, d){
   return { error: missing || kit.error.message };
 }
 async function updatePlayerProfile(playerId, phone, nic){
+  const offline = needsInternet(); if (offline) return offline;
   const { error } = await supabaseClient.rpc("update_player_profile", { _player_id: playerId, _phone: phone || "", _nic: nic || "" });
   return error ? { error: profileSqlMissing(error) } : { ok: true };
 }
@@ -1838,12 +2643,17 @@ async function updatePlayerProfile(playerId, phone, nic){
 async function addGlobalPlayer(name, clubId){
   const trimmed = (name || "").trim();
   if (!trimmed) return;
-  let { error } = await supabaseClient.rpc("ensure_global_player", { _name: trimmed, _club_id: clubId || null });
-  if (error && error.code === "PGRST202") ({ error } = await supabaseClient.rpc("ensure_global_player", { _name: trimmed }));
-  return error ? { error: error.message } : { ok: true };
+  const res = await submitCloudOp("global.add", { name: trimmed, clubId: clubId || null });
+  return res.error ? { error: res.error } : { ok: true };
 }
 
+/* The few cloud actions that can't work offline (they need the server to
+   look something up or check a rule there and then). */
+function needsInternet(){
+  return !isOnline() || (session && session.offline) ? { error: "You're offline. This needs an internet connection — try again when you're back online." } : null;
+}
 async function inviteClubAdmin(clubId, email){
+  const offline = needsInternet(); if (offline) return offline;
   const { data, error } = await supabaseClient.rpc("invite_club_admin", { _club_id: clubId, _email: email });
   if (error) return { error: error.message };
   return { result: data }; // "ok" | "not_found" | "already_member"
@@ -1851,21 +2661,14 @@ async function inviteClubAdmin(clubId, email){
 
 async function syncMatchToCloud(match, archived){
   if (!supabaseClient || !session || !match.clubId) return;
-  try {
-    await supabaseClient.from("matches").upsert({
-      id: archived.id,
-      club_id: match.clubId,
-      match_type: match.matchType || "practice",
-      level: "local",
-      opponent_name: match.opponentName || null,
-      tournament_id: match.tournamentId || null,
-      created_by: session.user.id,
-      // squads are the saved tournament teams (members-only, supabase/012);
-      // matches are publicly readable, so they stay on this device.
-      data: Object.assign({}, archived, { squads: undefined }),
-      played_at: new Date(archived.completedAt).toISOString()
-    });
-  } catch (_){ /* best-effort -- the match is already safely archived locally either way */ }
+  await submitCloudOp("match", {
+    id: archived.id, clubId: match.clubId, matchType: match.matchType || "practice",
+    opponentName: match.opponentName || null, tournamentId: match.tournamentId || null,
+    // squads are the saved tournament teams (members-only, supabase/012);
+    // matches are publicly readable, so they stay on this device.
+    data: Object.assign({}, archived, { squads: undefined }),
+    playedAt: new Date(archived.completedAt).toISOString()
+  });
 }
 
 /* --- Premier: a cross-club, public players/stats/(eventually teams)
@@ -1922,6 +2725,7 @@ async function fetchPlayerAliases(playerId){
 
 const CLAIM_SQL_MISSING = "supabase/009_ownership_claims_merges.sql";
 async function ownershipRpc(fn, args){
+  const offline = needsInternet(); if (offline) return offline;
   const { error } = await supabaseClient.rpc(fn, args);
   return error ? { error: cloudSqlMissing(error, CLAIM_SQL_MISSING) || error.message } : { ok: true };
 }
@@ -1938,7 +2742,7 @@ const rejectMergeRequest = requestId => ownershipRpc("reject_merge", { _request_
 var state = defaultState();
 function defaultUi(){
   return {
-    pendingExtra: null, wicketFlow: null, runoutRuns: 0, runoutEnd: "striker", showFullScorecard: false, forfeitFlow: false, forfeitTeam: null, endInningsConfirm: false, awayFromMatch: false, clubRosterLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
+    pendingExtra: null, wicketFlow: null, runoutRuns: 0, runoutEnd: "striker", showFullScorecard: false, confirm: null, syncSheet: false, matchMenu: null, squadError: null, awayFromMatch: false, clubRosterLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
     matchSetupPresetId: null,
     tournamentSetupPresetId: null, tournamentSetupTeamIds: [],
     tournamentTab: "standings",
@@ -1948,7 +2752,7 @@ function defaultUi(){
     // re-fetched whenever their screen is opened.
     myClubs: null, myClubsLoading: false, currentClubId: null, club: null, clubBusy: false, clubInviteMessage: null,
     clubMatchSetupType: null, // "practice" | "friendly" | "tournament", set when entering club match setup
-    clubTournamentSetupPresetId: null, clubTournamentSetupName: null, currentTournamentId: null, clubTournament: null, tournamentTeamEdit: null, tournamentTeamDelete: null, tournamentTeamBusy: false, tournamentTeamError: null,
+    clubTournamentSetupPresetId: null, clubTournamentSetupName: null, currentTournamentId: null, clubTournament: null, tournamentTeamEdit: null, tournamentTeamBusy: false, tournamentTeamError: null,
     premier: null, // { players, premierMatches, pendingClaims, pendingMerges } -- see fetchPremierData()
     identity: null, // { myPlayer, pendingClaim, pendingMerges } for the signed-in viewer -- see fetchMyPlayerIdentity()
     claimMessage: null, clubAddMessage: null, playerModal: null,
@@ -2077,14 +2881,18 @@ function suggestionTeamNames(){
 function registerMatchPlayer(name, teamKey){
   const trimmed = (name || "").trim();
   if (!trimmed) return;
+  if (state.match && isGuestInMatch(state.match, trimmed)) return; // guests are never stored
   const clubId = activeMatchClubId();
   if (!clubId){ findOrCreatePlayer(trimmed); return; }
   // A friendly's visiting side (team B) isn't the home club's people: they
   // still become global players, but stay off this club's roster.
   const visitor = state.match.matchType === "friendly" && teamKey === "B";
-  if (!visitor && ui.club && ui.club.id === clubId && !ui.club.roster.some(p => p.name.toLowerCase() === trimmed.toLowerCase())){
+  const onRoster = ui.club && ui.club.id === clubId ? ui.club.roster.find(p => p.name.toLowerCase() === trimmed.toLowerCase()) : null;
+  if (!visitor && onRoster && onRoster.id) return;   // already a club player -- nothing to store
+  if (!visitor && ui.club && ui.club.id === clubId && !onRoster){
     ui.club.roster.push({ id: null, name: trimmed });
   }
+  // Queued if offline (submitCloudOp) -- syncs with everything else.
   if (supabaseClient && session) (visitor ? addGlobalPlayer(trimmed, clubId) : addPlayerToClub(clubId, trimmed)).catch(() => {});
 }
 
@@ -2292,17 +3100,36 @@ function renderNameCombo(label, inputAttrs, names){
     <div class="combo">
       ${label ? `<label>${label}${input}</label>` : input}
       <div class="combo-list" role="listbox" hidden>
-        ${names.map(n => `<button type="button" class="combo-opt" role="option" data-action="combo-pick" data-name="${escapeHtml(n)}">${escapeHtml(n)}</button>`).join("")}
+        ${names.map(n => {
+          // Club players also match on nickname / "#jersey" (data-search).
+          const r = rosterEntryFor(n);
+          const nick = r && r.nickname ? r.nickname.trim() : "";
+          const jersey = r && r.jersey_no != null ? `#${r.jersey_no}` : "";
+          const search = [n, nick, jersey].filter(Boolean).join(" ").toLowerCase();
+          return `<button type="button" class="combo-opt" role="option" data-action="combo-pick" data-name="${escapeHtml(n)}" data-search="${escapeHtml(search)}">${escapeHtml(n)}${nick ? ` <span class="combo-nick">${escapeHtml(nick)}</span>` : ""}${jersey ? `<span class="combo-jersey">${jersey}</span>` : ""}</button>`;
+        }).join("")}
       </div>
     </div>`;
 }
+/* The roster row behind a name in the current club match/setup (nickname,
+   jersey), or null -- guest-mode players have neither. */
+function currentRoster(){
+  const clubId = activeSetupClubId();
+  return clubId && ui.club && ui.club.id === clubId ? ui.club.roster : [];
+}
+function rosterEntryFor(name){
+  const key = (name || "").trim().toLowerCase();
+  return key ? currentRoster().find(p => p.name && p.name.toLowerCase() === key) || null : null;
+}
+/* A typed nickname / "#7" -> that roster player's name (see resolvePlayerAlias). */
+function resolveTypedName(value){ return resolvePlayerAlias(value, currentRoster()); }
 function updateCombo(input, open){
   const list = input.closest(".combo") && input.closest(".combo").querySelector(".combo-list");
   if (!list) return;
   const q = input.value.trim().toLowerCase();
   let shown = 0;
   list.querySelectorAll(".combo-opt").forEach(o => {
-    const hit = !q || o.dataset.name.toLowerCase().includes(q);
+    const hit = !q || (o.dataset.search || o.dataset.name.toLowerCase()).includes(q);
     o.hidden = !hit;
     if (hit) shown++;
   });
@@ -2341,17 +3168,202 @@ function renderTopBar(canNavigate, onAuthScreen){
           : canNavigate ? menuBtn : `<span class="topbar-brand">🏏 Cricket.lk</span>`}
       </div>
       <div class="topbar-right">
-        ${inProgress && !away ? `<button data-action="open-forfeit" class="topbar-icon-btn" aria-label="Forfeit match">🚩</button>` : ""}
+        ${inProgress && !away ? `<button data-action="open-match-menu" class="topbar-icon-btn" aria-label="Match options">⋯</button>` : ""}
         ${canNavigate && !inProgress && !onAuthScreen
           ? (session
               ? `<button data-action="go-account" class="topbar-icon-btn" aria-label="Account">👤</button>`
               : `<button data-action="go-account" class="topbar-signin">Sign in</button>`)
           : ""}
+        ${renderSyncPill()}
         <button data-action="toggle-sound" class="topbar-icon-btn" aria-label="${state.soundEnabled ? "Mute sound" : "Unmute sound"}">${state.soundEnabled ? "🔊" : "🔇"}</button>
       </div>
     </header>
   `;
 }
+/* --- activity: loading indicators outside live scoring ---------------------
+   One in-flight counter fed by trackedFetch (the fetch every Supabase request
+   uses). While it's > 0 (after a 150ms grace, so fast calls don't flash):
+   - body.is-busy shows the thin #top-progress bar under the top bar, and
+     #busy-status tells screen readers "Loading…";
+   - the button / form that started it gets .is-loading (spinner, no second
+     tap). The tap is remembered as a descriptor (data-action + data-id, or a
+     form id), not an element, and re-applied after every render(), so the
+     spinner survives the screen re-rendering underneath it. A tap only
+     "owns" the activity if a request starts within 400ms of it -- so a
+     background sync never puts a spinner on an unrelated button.
+   All of it is off on the live-scoring screen (body.live-scoring): scoring
+   stays instant and uncluttered. Don't add per-screen spinners for cloud
+   calls -- this already covers them; use loadingHtml() for a
+   "nothing to show yet" placeholder. */
+const activity = { inflight: 0, trigger: null, timer: null, shown: false };
+function trackedFetch(input, init){
+  activityStart();
+  let p;
+  try { p = fetch(input, init); } catch (err){ activityEnd(); throw err; }
+  return p.finally(activityEnd);
+}
+function noteTrigger(el){
+  if (!el || document.body.classList.contains("live-scoring")) return;
+  activity.trigger = el.tagName === "FORM"
+    ? { form: el.getAttribute("id"), at: Date.now() }
+    : { action: el.dataset.action, id: el.dataset.id || null, at: Date.now() };
+}
+function activityStart(){
+  activity.inflight++;
+  const t = activity.trigger;
+  if (t && !t.owned){ if (Date.now() - t.at <= 400) t.owned = true; else activity.trigger = null; }
+  if (activity.inflight === 1 && !activity.shown){
+    clearTimeout(activity.timer);
+    activity.timer = setTimeout(() => { activity.shown = activity.inflight > 0; applyActivity(); }, 150);
+  }
+}
+function activityEnd(){
+  activity.inflight = Math.max(0, activity.inflight - 1);
+  if (activity.inflight) return;
+  clearTimeout(activity.timer);
+  // Short grace: "save, then reload the list" is two requests back to back.
+  activity.timer = setTimeout(() => {
+    if (activity.inflight) return;
+    activity.shown = false; activity.trigger = null; applyActivity();
+  }, 150);
+}
+function findTriggerEl(t){
+  if (!t) return null;
+  if (t.form){
+    const f = document.getElementById(t.form);
+    return f && f.querySelector('button[type="submit"]');
+  }
+  const esc = v => (window.CSS && CSS.escape ? CSS.escape(v) : String(v).replace(/["\\]/g, "\\$&"));
+  return document.querySelector(`[data-action="${esc(t.action)}"]${t.id ? `[data-id="${esc(t.id)}"]` : ""}`);
+}
+function applyActivity(){
+  const live = document.body.classList.contains("live-scoring");
+  const busy = activity.shown && activity.inflight > 0 && !live;
+  document.body.classList.toggle("is-busy", busy);
+  const status = document.getElementById("busy-status");
+  if (status && status.textContent !== (busy ? "Loading…" : "")) status.textContent = busy ? "Loading…" : "";
+  document.querySelectorAll(".is-loading").forEach(el => { el.classList.remove("is-loading"); el.removeAttribute("aria-busy"); });
+  const el = busy && activity.trigger && activity.trigger.owned ? findTriggerEl(activity.trigger) : null;
+  if (el){ el.classList.add("is-loading"); el.setAttribute("aria-busy", "true"); }
+}
+/* A "nothing to show yet" placeholder -- spinner + text. */
+function loadingHtml(text){
+  return `<div class="loading-block" role="status"><span class="spinner" aria-hidden="true"></span><span>${escapeHtml(text || "Loading…")}</span></div>`;
+}
+
+/* The one confirmation sheet (ui.confirm), used for every "are you sure?"
+   in the app: deletes and removals, ending / cancelling / forfeiting a
+   match, restarting after a reversed toss, discarding unsaved edits. Open it
+   with askConfirm({...}); render() layers it above every other sheet, so it
+   can interrupt any of them. Options:
+   - title (text), body (trusted HTML -- escape names with escapeHtml),
+     confirmLabel, cancelLabel ("Cancel"), busyLabel, icon, tone ("danger" |
+     "primary")
+   - choices: optional [{ value, label, sub }] to pick one of first (forfeit:
+     which team) -- the confirm button stays disabled until one is picked
+   - onConfirm(choice): return nothing to close, { error } to stay open with
+     that message, or a Promise of either (the sheet shows busyLabel)
+   - onCancel(): optional
+   ui isn't persisted, so a pending confirmation never survives a reload.
+   Don't reintroduce window.confirm() or "tap again to confirm" buttons. */
+function askConfirm(opts){
+  ui.confirm = Object.assign({ cancelLabel: "Cancel", busyLabel: "Working…", tone: "danger", icon: "", choices: null }, opts,
+    { choice: opts.choice != null ? String(opts.choice) : null, busy: false, error: null });
+  render();
+}
+function renderConfirmModal(){
+  const c = ui.confirm;
+  const needChoice = !!(c.choices && c.choices.length && c.choice == null);
+  return `
+    <div class="modal-backdrop">
+      <div class="modal confirm-modal${c.tone === "danger" ? " danger" : ""}" data-keep-scroll="confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div class="confirm-head">
+          ${c.icon ? `<span class="confirm-icon" aria-hidden="true">${c.icon}</span>` : ""}
+          <h2 id="confirm-title">${escapeHtml(c.title)}</h2>
+        </div>
+        ${c.body ? `<div class="confirm-body">${c.body}</div>` : ""}
+        ${c.choices ? `<div class="bowler-pick-list">${c.choices.map(ch => `
+          <button type="button" data-action="confirm-pick" data-value="${escapeHtml(String(ch.value))}" class="bowler-pick-row ${c.choice === String(ch.value) ? "active" : ""}" style="height:60px;" ${c.busy ? "disabled" : ""}>
+            <span class="name">${escapeHtml(ch.label)}</span>${ch.sub ? `<span class="figs">${escapeHtml(ch.sub)}</span>` : ""}
+          </button>`).join("")}</div>` : ""}
+        ${c.error ? `<p class="form-error">${escapeHtml(c.error)}</p>` : ""}
+        <div class="confirm-actions">
+          <button type="button" data-action="confirm-cancel" class="ghost" ${c.busy ? "disabled" : ""}>${escapeHtml(c.cancelLabel)}</button>
+          <button type="button" data-action="confirm-ok" class="primary${c.tone === "danger" ? " danger-confirm" : ""}" ${c.busy || needChoice ? "disabled" : ""}>${escapeHtml(c.busy ? c.busyLabel : c.confirmLabel)}</button>
+        </div>
+      </div>
+    </div>`;
+}
+function runConfirm(){
+  const c = ui.confirm;
+  if (!c || c.busy || (c.choices && c.choices.length && c.choice == null)) return;
+  const done = res => {
+    if (ui.confirm !== c) return; // the handler already moved on (e.g. leaveMatch reset ui)
+    if (res && res.error){ c.busy = false; c.error = res.error; } else ui.confirm = null;
+    render();
+  };
+  let res;
+  try { res = c.onConfirm(c.choice); } catch (err){ res = { error: err.message || String(err) }; }
+  if (res && typeof res.then === "function"){
+    c.busy = true; c.error = null; render();
+    res.then(done, err => done({ error: err.message || String(err) }));
+  } else done(res);
+}
+function cancelConfirm(){
+  const c = ui.confirm;
+  if (!c || c.busy) return;
+  ui.confirm = null;
+  if (c.onCancel) c.onCancel();
+  render();
+}
+
+/* Top-bar sync status, only for a signed-in (cloud) user: nothing when all
+   is synced and online; otherwise offline / syncing / N waiting / N failed.
+   Tapping it opens the sync sheet. Static -- no infinite animation on an
+   always-visible control (see CLAUDE.md "Theme & sound"). */
+function renderSyncPill(){
+  if (!session) return "";
+  const pending = pendingCount(), failed = failedCount();
+  const offline = !isOnline() || session.offline;
+  if (!pending && !failed && !offline) return "";
+  const cls = failed ? "failed" : offline ? "offline" : syncState.running ? "syncing" : "pending";
+  const label = failed ? `${failed} not synced` : offline ? (pending ? `Offline · ${pending}` : "Offline") : syncState.running ? "Syncing…" : `${pending} to sync`;
+  const icon = failed ? ICON_WARN : offline ? ICON_CLOUD_OFF : ICON_CLOUD;
+  const count = failed || pending;
+  return `<button data-action="open-sync-sheet" class="topbar-sync ${cls}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">${icon}<span class="short">${count ? count : ""}</span><span class="long">${escapeHtml(label)}</span></button>`;
+}
+function renderSyncSheet(){
+  const ops = myOps();
+  const offline = !isOnline() || (session && session.offline);
+  const failed = ops.filter(o => o.failed);
+  const when = syncState.lastSyncAt ? new Date(syncState.lastSyncAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
+  return `
+    <div class="modal-backdrop">
+      <div class="modal" data-keep-scroll="sync">
+        <div class="wicket-modal-head"><h2>Sync</h2><span class="n batter">${offline ? "offline" : syncState.running ? "syncing…" : when ? `last synced ${when}` : "online"}</span></div>
+        <p class="hint" style="margin-top:0;">${offline
+          ? "You're offline. Everything you do is saved on this device and sent to the cloud automatically when you're back online."
+          : !ops.length ? "Everything is synced."
+          : failed.length === ops.length ? "These changes are saved on this device, but the cloud refused them."
+          : "These changes are saved on this device and are being sent to the cloud."}</p>
+        ${ops.length ? `<div class="sync-list">${ops.map(o => `
+          <div class="sync-row${o.failed ? " failed" : ""}">
+            <div class="sync-row-text"><span class="title">${escapeHtml(describeOp(o))}</span>
+              <span class="sub">${o.failed ? escapeHtml(o.error || "Couldn't sync") : `waiting · ${new Date(o.createdAt).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`}</span></div>
+            ${o.failed ? `<div class="sync-row-actions">
+              <button data-action="sync-retry" data-id="${o.id}" class="ghost small" ${offline ? "disabled" : ""}>Retry</button>
+              <button data-action="sync-discard" data-id="${o.id}" class="icon-btn danger" aria-label="Discard this change" title="Discard">${ICON_DELETE}</button>
+            </div>` : ""}
+          </div>`).join("")}</div>` : ""}
+        ${failed.length ? `<p class="hint">A change that couldn't sync was refused by the server (for example a team name that's already taken). Fix it and retry, or discard it.</p>` : ""}
+        <div class="confirm-actions">
+          <button data-action="close-sync-sheet" class="ghost">Close</button>
+          <button data-action="sync-now" class="primary" ${offline || syncState.running || !ops.length ? "disabled" : ""}>${syncState.running ? "Syncing…" : failed.length ? "Retry all" : "Sync now"}</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 function renderSideMenu(){
   if (!ui.sideMenuOpen) return "";
   const clubRole = state.activeClubId ? (ui.myClubs || []).find(c => c.id === state.activeClubId) : null;
@@ -2519,7 +3531,7 @@ function renderHome(){
           <h3>Tournaments · ${escapeHtml(activeClub.name)}</h3>
           ${ui.club.tournaments.map(t => `
             <button data-action="open-club-tournament" data-id="${t.id}" class="list-row">
-              <span>${escapeHtml(t.name)}</span><span class="chevron">›</span>
+              <span>${escapeHtml(t.name)}${t.pending ? `<span class="pending-tag">not synced</span>` : ""}</span><span class="chevron">›</span>
             </button>
           `).join("")}
         </div>
@@ -2706,7 +3718,7 @@ function renderMyClubs(){
         <input name="name" placeholder="Club name" required maxlength="40">
         <button type="submit" class="primary">Create</button>
       </form>
-      ${ui.myClubs === null ? `<p class="hint">Loading…</p>` : ui.myClubs.length ? ui.myClubs.map(c => `
+      ${ui.myClubs === null ? `${loadingHtml()}` : ui.myClubs.length ? ui.myClubs.map(c => `
         <button data-action="open-club" data-id="${c.id}" class="list-row">
           <span>${escapeHtml(c.name)}</span><span class="muted">${escapeHtml(c.role)}</span>
         </button>
@@ -2721,14 +3733,14 @@ function renderClubHome(){
   return `
     <div class="screen">
       ${renderBackBar("My clubs", "myClubs")}
-      ${ui.clubBusy || !club ? `<p class="hint">Loading…</p>` : `
+      ${ui.clubBusy || !club ? `${loadingHtml()}` : `
         <h1>${escapeHtml(club.name)}</h1>
         <p class="hint">To start a practice/friendly match or a new tournament for this club, pick it from the switcher on <button data-action="go-view" data-view="home" class="link-btn">Home</button>.</p>
 
         <h3 class="section-label">Tournaments</h3>
         ${club.tournaments.length ? club.tournaments.map(t => `
           <button data-action="open-club-tournament" data-id="${t.id}" class="list-row">
-            <span>${escapeHtml(t.name)}</span><span class="chevron">›</span>
+            <span>${escapeHtml(t.name)}${t.pending ? `<span class="pending-tag">not synced</span>` : ""}</span><span class="chevron">›</span>
           </button>
         `).join("") : `<p class="hint">No tournaments yet — e.g. group everything played on one day into one.</p>`}
 
@@ -2770,7 +3782,7 @@ function renderClubScreen(title, bodyFn){
       ${renderBackBar("Home", "home")}
       <h1>${escapeHtml(currentClubName() || "Club")} · ${title}</h1>
       <p class="hint guest-note">Club ${title.toLowerCase()} — stored in the cloud for this club only. Guest data on this device is never shown here.</p>
-      ${!club || ui.clubBusy ? `<p class="hint">Loading…</p>` : bodyFn(club)}
+      ${!club || ui.clubBusy ? `${loadingHtml()}` : bodyFn(club)}
     </div>
   `;
 }
@@ -2970,7 +3982,7 @@ function renderPlayerProfile(){
   const avatar = p => p ? `<img class="profile-photo" src="${p}" alt="">` : `<div class="avatar-badge">${escapeHtml(initial)}</div>`;
 
   let body = "";
-  if (pr.loading) body = `<div class="auth-card" style="margin-top:0;"><p class="hint">Loading…</p></div>`;
+  if (pr.loading) body = `<div class="auth-card" style="margin-top:0;">${loadingHtml()}</div>`;
   else if (pr.error) body = `<div class="auth-card" style="margin-top:0;"><p class="hint">${escapeHtml(pr.error)}</p></div>`;
   else {
     const batting = formatBatting(d.batting_hand), bowling = formatBowling(d.bowling_arm, d.bowling_type);
@@ -3041,12 +4053,17 @@ function renderClubPlayers(){
   // make a position:fixed child position against it during the animation.
   return renderClubScreen("Players", club => `
     ${ui.clubAddMessage ? `<p class="hint guest-note">${escapeHtml(ui.clubAddMessage)}</p>` : ""}
-    ${club.roster.length ? club.roster.map(p => p.id
+    ${club.roster.length ? club.roster.map(p => p.id && String(p.id).startsWith(TEMP_ID_PREFIX)
+      ? `<div class="list-row roster-row">
+          <span class="roster-open" style="cursor:default;"><span>${escapeHtml(playerLabel(p))}<span class="pending-tag">not synced</span></span></span>
+          <button data-action="ask-remove-club-player" data-id="${p.id}" data-name="${escapeHtml(p.name)}" class="roster-remove" aria-label="Remove ${escapeHtml(p.name)} from club" title="Remove from club">✕</button>
+        </div>`
+      : p.id
       ? `<div class="list-row roster-row">
           <button data-action="open-player-profile" data-scope="club" data-id="${p.id}" data-name="${escapeHtml(p.name)}" class="roster-open"><span>${escapeHtml(playerLabel(p))}</span><span class="chevron">›</span></button>
           <button data-action="ask-remove-club-player" data-id="${p.id}" data-name="${escapeHtml(p.name)}" class="roster-remove" aria-label="Remove ${escapeHtml(p.name)} from club" title="Remove from club">✕</button>
         </div>`
-      : `<div class="list-row"><span>${escapeHtml(p.name)}</span><span class="muted">syncing…</span></div>`).join("") : `<p class="hint">No players yet — tap + to add one.</p>`}
+      : `<div class="list-row"><span>${escapeHtml(p.name)}<span class="pending-tag">not synced</span></span></div>`).join("") : `<p class="hint">No players yet — tap + to add one.</p>`}
     <div class="fab-spacer"></div>
   `) + (loaded ? `<button data-action="open-club-add-player" class="fab" aria-label="Add player" title="Add player">+</button>` : "");
 }
@@ -3129,21 +4146,21 @@ function renderPlayerEditModal(){
       </div>
     </div>`;
 }
-/* Two taps (open, then confirm) like the forfeit sheet: removal has no undo. */
-function renderRemovePlayerModal(){
-  const pm = ui.playerModal;
-  return `
-    <div class="modal-backdrop">
-      <div class="modal danger">
-        <h2>Remove ${escapeHtml(pm.name)} from ${escapeHtml(currentClubName() || "this club")}?</h2>
-        <p class="hint">They come off this club's roster only. Their player profile, their past match stats and any other clubs they're on stay as they are, and you can add them again later.</p>
-        <div class="form-error">${pm.error ? escapeHtml(pm.error) : ""}</div>
-        <div style="display:flex;gap:10px;margin-top:2px;">
-          <button data-action="close-player-modal" class="ghost" style="width:112px;flex-shrink:0;">Cancel</button>
-          <button data-action="confirm-remove-club-player" class="primary danger-confirm" style="flex-grow:1;" ${pm.busy ? "disabled" : ""}>${pm.busy ? "Removing…" : "Remove player"}</button>
-        </div>
-      </div>
-    </div>`;
+/* Removal has no undo, so it goes through the shared confirmation sheet. */
+function askRemoveClubPlayer(id, name){
+  const clubId = ui.currentClubId;
+  askConfirm({
+    title: `Remove ${name} from ${currentClubName() || "this club"}?`, icon: "👤",
+    body: `<p>They come off this club's roster only. Their player profile, their past match stats and any other clubs they're on stay as they are, and you can add them again later.</p>`,
+    confirmLabel: "Remove player", busyLabel: "Removing…",
+    onConfirm: () => removePlayerFromClub(clubId, id).then(r => {
+      if (r.error) return r;
+      ui.clubAddMessage = `${name} was removed from the club roster.`;
+      if (state.view === "playerProfile") state.view = "clubPlayers";
+      save();
+      fetchClubDetail(clubId).then(render);
+    })
+  });
 }
 
 function renderClubPresets(){
@@ -3208,6 +4225,7 @@ function handleClubAddPlayerSubmit(e){
     if (result && result.error && !partial){ showFormError(form, result.error); return; }
     ui.playerModal = null;
     if (partial) ui.clubAddMessage = result.error;
+    else if (result && result.queued) ui.clubAddMessage = `${name} added on this device. They'll sync to the club when you're online.`;
     else if (result && result.created === false){
       const typed = phone || nic || playerHasDetails(details);
       ui.clubAddMessage = `${name} is already on the platform, so they were added to your roster as they are${typed ? " — the details you entered weren't applied" : ""}. Only the club that first added them, or the player after claiming, can edit their profile.`;
@@ -3296,7 +4314,7 @@ function renderClubTournamentDashboard(){
   return `
     <div class="screen tournament">
       ${renderBackBar(clubName || "Club", "clubHome")}
-      ${!t ? `<p class="hint">Loading…</p>` : `
+      ${!t ? `${loadingHtml()}` : `
         <h1>🏆 ${escapeHtml(t.name)}</h1>
         <button data-action="go-club-tournament-match-setup" class="primary">Start match</button>
         ${renderTournamentTeams(t)}
@@ -3316,80 +4334,297 @@ function renderTournamentTeams(t){
   if (t.teams_unavailable){
     return `<h3 class="section-label">Teams</h3><p class="hint">Saved teams need 012_tournament_teams.sql — run it in the Supabase SQL editor. You can still type team names at match setup.</p>`;
   }
-  const edit = ui.tournamentTeamEdit;
+  const rosterReady = ui.club && ui.club.id === t.organizer_club_id;
+  const assigned = new Set(t.teams.flatMap(team => team.players.map(pl => pl.id)));
+  const unassigned = rosterReady ? ui.club.roster.filter(p => p.id && !assigned.has(p.id)) : [];
+  const CHIP_MAX = 10;
   return `
     <h3 class="section-label">Teams</h3>
     ${ui.tournamentTeamError ? `<p class="form-error">${escapeHtml(ui.tournamentTeamError)}</p>` : ""}
-    ${t.teams.length ? `<div class="preset-list">${t.teams.map(team => `
-      <div class="preset-row">
-        <div class="preset-row-head">
-          <b>${escapeHtml(team.name)}</b>
-          <span class="muted">${team.players.length} player${team.players.length === 1 ? "" : "s"}</span>
-          <div class="row-actions">
-            <button data-action="edit-tournament-team" data-id="${team.id}" class="ghost small">Edit</button>
-            <button data-action="delete-tournament-team" data-id="${team.id}" class="ghost small" ${ui.tournamentTeamDelete === team.id ? `style="color:var(--wicket);border-color:var(--wicket);"` : ""}>${ui.tournamentTeamDelete === team.id ? "Tap to confirm" : "Delete"}</button>
+    <div class="team-grid">
+      ${t.teams.map((team, i) => `
+        <div class="team-card team-c${i % 4}">
+          <div class="team-card-head">
+            <span class="team-badge">${escapeHtml(nameInitials(team.name))}</span>
+            <div class="team-card-title"><b>${escapeHtml(team.name)}${team.pending ? `<span class="pending-tag">not synced</span>` : ""}</b><span class="muted">${team.players.length} player${team.players.length === 1 ? "" : "s"}${team.players.some(pl => pl.guest) ? ` · ${team.players.filter(pl => pl.guest).length} guest${team.players.filter(pl => pl.guest).length === 1 ? "" : "s"}` : ""}</span></div>
+            <div class="team-card-actions">
+              <button data-action="edit-tournament-team" data-id="${team.id}" class="icon-btn" aria-label="Edit ${escapeHtml(team.name)}" title="Edit team">${ICON_EDIT}</button>
+              <button data-action="delete-tournament-team" data-id="${team.id}" class="icon-btn danger" aria-label="Delete ${escapeHtml(team.name)}" title="Delete team">${ICON_DELETE}</button>
+            </div>
           </div>
-        </div>
-        ${team.players.length ? `<div class="chips">${team.players.map(pl => `<span class="n tag-pill">${escapeHtml(pl.name)}</span>`).join("")}</div>` : `<p class="hint">No players picked yet.</p>`}
-      </div>`).join("")}</div>`
-      : `<p class="hint">No teams yet. Most club tournaments are two sides — add them here, then pick them when you start a match.</p>`}
-    ${edit ? renderTournamentTeamForm(t, edit) : `<button data-action="new-tournament-team" class="link-btn">+ Add team</button>`}
+          ${team.players.length ? `<div class="team-roster">
+            ${team.players.slice(0, CHIP_MAX).map(pl => `<span class="player-chip${pl.guest ? " guest" : ""}"><span class="mini-avatar">${escapeHtml(nameInitials(pl.name))}</span>${escapeHtml(pl.name)}${pl.guest ? `<span class="guest-tag">guest</span>` : ""}</span>`).join("")}
+            ${team.players.length > CHIP_MAX ? `<span class="player-chip more">+${team.players.length - CHIP_MAX} more</span>` : ""}
+          </div>` : `<p class="hint">No players picked yet.</p>`}
+        </div>`).join("")}
+      <button data-action="new-tournament-team" class="team-card add" ${ui.tournamentTeamBusy ? "disabled" : ""}><span class="plus">＋</span><span>Add team</span></button>
+    </div>
+    ${!t.teams.length ? `
+      <p class="hint">Most club tournaments are two sides. Build them here, then pick them when you start a match.</p>
+      ${rosterReady && unassigned.length >= 2 ? `<button data-action="quick-split-teams" class="ghost" style="width:100%;" ${ui.tournamentTeamBusy ? "disabled" : ""}>${ui.tournamentTeamBusy ? "Creating…" : `🎲 Split the roster into 2 random teams (${unassigned.length} players)`}</button>` : ""}
+    ` : rosterReady && unassigned.length ? `<p class="hint">${unassigned.length} roster player${unassigned.length === 1 ? " isn't" : "s aren't"} on a team yet: ${unassigned.slice(0, 5).map(p => escapeHtml(p.name)).join(", ")}${unassigned.length > 5 ? "…" : ""}</p>` : ""}
   `;
 }
 
-function renderTournamentTeamForm(t, edit){
-  const rosterReady = ui.club && ui.club.id === t.organizer_club_id;
-  // Who's already on another team in this tournament -> shown, but locked.
+/* Inline SVG icons (no icon font/CDN -- single-file, offline). currentColor,
+   so they follow the button's text color. */
+const ICON_EDIT = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+const ICON_CLOUD = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H7a5 5 0 1 1 .9-9.92A6 6 0 0 1 19.4 11 4 4 0 0 1 17.5 19Z"/></svg>`;
+const ICON_CLOUD_OFF = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20"/><path d="M5.8 9.4A5 5 0 0 0 7 19h10.5M20.8 16.9A4 4 0 0 0 19.4 11 6 6 0 0 0 10 7.2"/></svg>`;
+const ICON_WARN = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>`;
+const ICON_DELETE = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
+
+function nameInitials(name){
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  return (parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : (parts[0] || "?").slice(0, 2)).toUpperCase();
+}
+
+/* Everyone the team builder can offer: the club roster (sorted), anyone
+   still on this team who has since left the roster, and guests -- those
+   already on any team in this tournament plus ones added in this edit
+   (edit.guests). A guest is { id: guestPlayerKey(name), name, guest: true }
+   and lives only inside tournament_teams.players, never on the roster.
+   `takenBy` maps a player id to the other team they're on. */
+function teamBuilderPool(t, edit){
+  const roster = ui.club.roster.filter(p => p.id).slice().sort((a, b) => a.name.localeCompare(b.name));
+  const current = t.teams.find(team => team.id === edit.id);
+  const leftRoster = current ? current.players.filter(pl => !pl.guest && !roster.some(p => p.id === pl.id)) : [];
+  const guests = [];
+  [...t.teams.flatMap(team => team.players.filter(pl => pl.guest)), ...(edit.guests || [])].forEach(g => {
+    if (!guests.some(x => x.id === g.id)) guests.push(g);
+  });
+  const all = [
+    ...roster.map(p => ({ id: p.id, name: p.name, label: playerLabel(p) })),
+    ...leftRoster.map(pl => ({ id: pl.id, name: pl.name, label: `${pl.name} (left the roster)` })),
+    ...guests.map(g => ({ id: g.id, name: g.name, label: g.name, guest: true }))
+  ];
   const takenBy = {};
   t.teams.forEach(team => { if (team.id !== edit.id) team.players.forEach(pl => { takenBy[pl.id] = team.name; }); });
-  const roster = rosterReady ? ui.club.roster.filter(p => p.id).slice().sort((a, b) => a.name.localeCompare(b.name)) : [];
-  // Anyone already on this team but no longer on the roster stays listed.
-  const current = t.teams.find(team => team.id === edit.id);
-  const leftRoster = current ? current.players.filter(pl => !roster.some(p => p.id === pl.id)) : [];
-  const row = (id, label, taken) => `
-    <label class="check-row"><input type="checkbox" name="teamPlayerIds" value="${escapeHtml(id)}" ${edit.playerIds.includes(id) ? "checked" : ""} ${taken ? "disabled" : ""}> ${escapeHtml(label)}${taken ? ` <span class="muted">· ${escapeHtml(taken)}</span>` : ""}</label>`;
+  return { all, takenBy };
+}
+
+/* The team builder: tap a roster player to add them, tap a picked chip to
+   take them off. Picks live in ui.tournamentTeamEdit (playerIds, name,
+   search) so a re-render -- each tap, or the roster finishing loading --
+   never drops them. Someone on another team is shown with "move": picking
+   them takes them off that team when this one is saved (a player is on one
+   team per tournament). The search box filters rows in the DOM only. */
+function renderTournamentTeamForm(t, edit){
+  const rosterReady = ui.club && ui.club.id === t.organizer_club_id;
+  const idx = edit.id ? Math.max(0, t.teams.findIndex(team => team.id === edit.id)) : t.teams.length;
+  const { all, takenBy } = rosterReady ? teamBuilderPool(t, edit) : { all: [], takenBy: {} };
+  const picked = edit.playerIds.map(id => all.find(p => p.id === id)).filter(Boolean);
+  const available = all.filter(p => !edit.playerIds.includes(p.id));
+  const q = (edit.search || "").trim().toLowerCase();
+  const hit = p => !q || p.label.toLowerCase().includes(q);
+  const freeCount = available.filter(p => !takenBy[p.id] && hit(p)).length;
+  const moving = picked.filter(p => takenBy[p.id]);
   return `
-    <form id="tournament-team-form" class="preset-form">
+    <form id="tournament-team-form" class="team-builder team-c${idx % 4}">
+      <div class="team-card-head">
+        <span class="team-badge">${escapeHtml(nameInitials(edit.name || "?"))}</span>
+        <div class="team-card-title"><b>${edit.id ? "Edit team" : "New team"}</b><span class="muted">${picked.length} player${picked.length === 1 ? "" : "s"} picked</span></div>
+        ${edit.id ? `<button type="button" data-action="delete-tournament-team" data-id="${escapeHtml(edit.id)}" class="ghost small danger-text" style="margin-left:auto;">Delete</button>` : ""}
+      </div>
       <div class="form-error"></div>
-      <label>Team name<input name="teamName" required maxlength="24" value="${escapeHtml(edit.name || "")}" placeholder="e.g. Reds"></label>
-      <fieldset>
-        <legend>Players</legend>
-        ${!rosterReady ? `<p class="hint">Loading the club roster…</p>`
-          : !roster.length && !leftRoster.length ? `<p class="hint">This club's roster is empty — add players on the Players screen first.</p>`
-          : roster.map(p => row(p.id, playerLabel(p), takenBy[p.id])).join("") + leftRoster.map(pl => row(pl.id, `${pl.name} (left the roster)`, null)).join("")}
-      </fieldset>
-      <p class="hint">A player can be on only one team in this tournament.</p>
-      <div class="action-row">
-        <button type="submit" class="primary" ${ui.tournamentTeamBusy ? "disabled" : ""}>${ui.tournamentTeamBusy ? "Saving…" : "Save team"}</button>
+      <label>Team name<input name="teamName" required maxlength="24" value="${escapeHtml(edit.name || "")}" placeholder="e.g. Reds" autocomplete="off"></label>
+
+      <div class="section-label">In this team · ${picked.length}</div>
+      ${picked.length ? `<div class="team-roster picked">
+        ${picked.map(p => `<button type="button" data-action="team-builder-toggle" data-id="${escapeHtml(p.id)}" class="player-chip on" aria-label="Take ${escapeHtml(p.name)} off the team"><span class="mini-avatar">${escapeHtml(nameInitials(p.name))}</span>${escapeHtml(p.label)}${p.guest ? `<span class="guest-tag">guest</span>` : ""}<span class="x">×</span></button>`).join("")}
+      </div>` : `<p class="hint">Nobody yet. Tap players below to add them.</p>`}
+      ${moving.length ? `<p class="hint move-note">Moving here on save: ${moving.map(p => `${escapeHtml(p.name)} (from ${escapeHtml(takenBy[p.id])})`).join(", ")}</p>` : ""}
+
+      <div class="section-label">Club roster</div>
+      ${edit.notice ? `<p class="hint builder-notice${edit.notice.error ? " error" : ""}">${escapeHtml(edit.notice.text)}</p>` : ""}
+      ${!rosterReady ? loadingHtml("Loading the club roster…")
+        : `
+        <div class="builder-tools">
+          <input type="text" enterkeyhint="search" name="teamSearch" class="team-builder-search" placeholder="Search, or type a new name" maxlength="24" value="${escapeHtml(edit.search || "")}" autocomplete="off">
+          <button type="button" data-action="team-builder-add-free" class="ghost small" ${freeCount ? "" : "disabled"}>+ All free${freeCount ? ` (${freeCount})` : ""}</button>
+        </div>
+        <div class="pick-grid">
+          ${available.map(p => `
+            <button type="button" data-action="team-builder-toggle" data-id="${escapeHtml(p.id)}" data-label="${escapeHtml(p.label.toLowerCase())}" data-free="${takenBy[p.id] ? "0" : "1"}" class="pick-row${takenBy[p.id] ? " taken" : ""}" ${hit(p) ? "" : "hidden"}>
+              <span class="mini-avatar">${escapeHtml(nameInitials(p.name))}</span>
+              <span class="name">${escapeHtml(p.label)}${p.guest ? ` <span class="guest-tag">guest</span>` : ""}</span>
+              <span class="state">${takenBy[p.id] ? `${escapeHtml(takenBy[p.id])} · move` : "＋"}</span>
+            </button>`).join("")}
+          <p class="hint no-results" ${available.some(hit) ? "hidden" : ""}>${!all.length ? "The club roster is empty. Type a name above to add someone." : available.length ? "No players match." : "Everyone on the roster is in this team."}</p>
+        </div>
+        ${renderBuilderAddCard(edit)}`}
+
+      <div class="builder-bar">
         <button type="button" data-action="cancel-tournament-team" class="ghost">Cancel</button>
+        <button type="submit" class="primary" ${ui.tournamentTeamBusy ? "disabled" : ""}>${ui.tournamentTeamBusy ? "Saving…" : `Save team${picked.length ? ` (${picked.length})` : ""}`}</button>
       </div>
     </form>
   `;
 }
 
-function handleTournamentTeamSubmit(e){
+/* "Someone new?" under the builder's roster list, driven by the search box
+   (the input listener keeps its text/disabled state in step without a
+   re-render). New club player = add_player_to_club (roster + platform, same
+   as the Players screen); guest = a name on this team only. */
+function renderBuilderAddCard(edit){
+  const q = (edit.search || "").trim();
+  return `
+    <div class="builder-add">
+      <div class="builder-add-title">${q ? `Add “<span class="q">${escapeHtml(q)}</span>”` : `Someone new? <span class="muted">Type their name in the search box.</span>`}</div>
+      <div class="builder-add-actions">
+        <button type="button" data-action="team-builder-new-player" class="ghost small" ${q && !edit.adding ? "" : "disabled"}>${edit.adding ? "Adding…" : "＋ New club player"}</button>
+        <button type="button" data-action="team-builder-guest" class="ghost small" ${q && !edit.adding ? "" : "disabled"}>＋ Guest player</button>
+      </div>
+      <p class="hint">A <b>new club player</b> joins the club roster. A <b>guest</b> plays for this team only: nothing about them is stored in the club, and their runs and wickets stay on the scorecard only.</p>
+    </div>`;
+}
+
+function builderRosterMatch(name){
+  const key = name.trim().toLowerCase();
+  return (ui.club ? ui.club.roster : []).find(p => p.id && p.name.toLowerCase() === key);
+}
+function builderSelect(edit, id){ if (!edit.playerIds.includes(id)) edit.playerIds = [...edit.playerIds, id]; }
+
+function addBuilderGuest(){
+  const edit = ui.tournamentTeamEdit;
+  const name = (edit && edit.search || "").trim();
+  if (!name) return;
+  const onRoster = builderRosterMatch(name);
+  if (onRoster){
+    builderSelect(edit, onRoster.id);
+    edit.notice = { text: `${onRoster.name} is already on the club roster, so they were picked from there.` };
+  } else {
+    const id = guestPlayerKey(name);
+    const known = (ui.clubTournament.teams.flatMap(team => team.players).find(pl => pl.id === id));
+    if (!known && !(edit.guests || []).some(g => g.id === id)) edit.guests = [...(edit.guests || []), { id, name, guest: true }];
+    builderSelect(edit, id);
+    edit.notice = { text: `${name} added as a guest.` };
+  }
+  edit.search = "";
+  render();
+}
+
+async function addBuilderClubPlayer(){
+  const edit = ui.tournamentTeamEdit, t = ui.clubTournament;
+  const name = (edit && edit.search || "").trim();
+  if (!name || edit.adding) return;
+  const onRoster = builderRosterMatch(name);
+  if (onRoster){
+    builderSelect(edit, onRoster.id);
+    edit.notice = { text: `${onRoster.name} is already on the club roster, so they were picked from there.` };
+    edit.search = ""; render(); return;
+  }
+  if (!supabaseClient || !session){ edit.notice = { text: "Sign in to add players to the club.", error: true }; render(); return; }
+  // (Works offline too -- the add is queued and the player gets a temp id until it syncs.)
+  edit.adding = true; edit.notice = null; render();
+  const result = await addPlayerToClub(t.organizer_club_id, name);
+  edit.adding = false;
+  if (!result || result.error){
+    edit.notice = { text: (result && result.error) || "Couldn't add that player.", error: true };
+  } else {
+    if (ui.club && ui.club.id === t.organizer_club_id && !ui.club.roster.some(p => p.id === result.id)) ui.club.roster.push({ id: result.id, name });
+    builderSelect(edit, result.id);
+    edit.notice = { text: result.queued ? `${name} added on this device. They'll join the club roster when you're online.` : result.created ? `${name} added to the club roster.` : `${name} was already on the platform, so they joined the club roster.` };
+    edit.search = "";
+  }
+  if (ui.tournamentTeamEdit === edit) render();
+}
+
+/* The team builder opens as a bottom sheet over the dashboard. Each tap
+   inside re-renders it; render() keeps its scroll (data-keep-scroll). */
+function renderTournamentTeamModal(){
+  const t = ui.clubTournament, edit = ui.tournamentTeamEdit;
+  const idx = edit.id ? Math.max(0, t.teams.findIndex(team => team.id === edit.id)) : t.teams.length;
+  return `
+    <div class="modal-backdrop">
+      <div class="modal team-modal team-c${idx % 4}" data-keep-scroll="team-edit" role="dialog" aria-modal="true" aria-label="${edit.id ? "Edit team" : "New team"}">
+        ${renderTournamentTeamForm(t, edit)}
+      </div>
+    </div>`;
+}
+function teamEditState(id, name, playerIds){
+  return { id, name, playerIds: playerIds.slice(), search: "", original: JSON.stringify({ name, ids: playerIds.slice().sort() }) };
+}
+function teamEditDirty(edit){
+  return JSON.stringify({ name: edit.name, ids: edit.playerIds.slice().sort() }) !== edit.original;
+}
+/* Closing with unsaved picks asks first (the shared confirmation sheet). */
+function closeTeamEdit(){
+  const edit = ui.tournamentTeamEdit;
+  if (!edit) return;
+  if (!teamEditDirty(edit)){ ui.tournamentTeamEdit = null; render(); return; }
+  askConfirm({
+    title: "Discard your changes?", icon: "✎", tone: "primary",
+    body: `<p>The players you picked${edit.id ? " and any name change" : ""} for <b>${escapeHtml(edit.name || "this team")}</b> won't be saved.</p>`,
+    confirmLabel: "Discard", cancelLabel: "Keep editing",
+    onConfirm: () => { ui.tournamentTeamEdit = null; }
+  });
+}
+function askDeleteTournamentTeam(teamId){
+  const t = ui.clubTournament;
+  const team = t && t.teams.find(x => x.id === teamId);
+  if (!team) return;
+  const n = team.players.length;
+  askConfirm({
+    title: `Delete ${team.name}?`, icon: "🗑",
+    body: `<p>${n ? `Its ${n === 1 ? "1 player goes" : `${n} players go`} back to unassigned. ` : ""}Matches already played keep their team names, so standings don't change.</p>`,
+    confirmLabel: "Delete team", busyLabel: "Deleting…",
+    onConfirm: () => deleteTournamentTeam(t.id, teamId).then(r => {
+      if (r.error) return r;
+      if (ui.tournamentTeamEdit && ui.tournamentTeamEdit.id === teamId) ui.tournamentTeamEdit = null;
+      return fetchClubTournamentDetail(t.id);
+    })
+  });
+}
+
+async function handleTournamentTeamSubmit(e){
   e.preventDefault();
   const form = e.target;
   const t = ui.clubTournament, edit = ui.tournamentTeamEdit;
   if (!t || !edit || ui.tournamentTeamBusy) return;
-  const f = new FormData(form);
-  const name = (f.get("teamName") || "").trim();
+  const name = (new FormData(form).get("teamName") || "").trim();
   if (!name){ showFormError(form, "Give the team a name."); return; }
   const others = t.teams.filter(team => team.id !== edit.id);
   if (others.some(team => team.name.toLowerCase() === name.toLowerCase())){ showFormError(form, "This tournament already has a team with that name."); return; }
-  const ids = f.getAll("teamPlayerIds").map(String);
-  const clash = others.find(team => team.players.some(pl => ids.includes(pl.id)));
-  if (clash){ showFormError(form, `Someone you picked is already on ${clash.name}.`); return; }
-  const current = t.teams.find(team => team.id === edit.id);
-  const known = [...(ui.club ? ui.club.roster : []), ...(current ? current.players : [])];
-  const players = ids.map(id => known.find(p => p.id === id)).filter(Boolean).map(p => ({ id: p.id, name: p.name }));
+  edit.name = name;
+  const ids = edit.playerIds.slice();
+  const known = [...(ui.club ? ui.club.roster : []), ...t.teams.flatMap(team => team.players), ...(edit.guests || [])];
+  const players = ids.map(id => known.find(p => p.id === id)).filter(Boolean)
+    .map(p => p.guest ? { id: p.id, name: p.name, guest: true } : { id: p.id, name: p.name });
+  // Players picked off another team leave it first, so nobody is ever on two.
+  const donors = others.filter(team => team.players.some(pl => ids.includes(pl.id)));
   ui.tournamentTeamBusy = true; render();
-  saveTournamentTeam(t, { id: edit.id, name, players }).then(result => {
-    ui.tournamentTeamBusy = false;
-    if (result.error){ render(); showFormError(document.getElementById("tournament-team-form"), result.error); return; }
-    ui.tournamentTeamEdit = null;
-    fetchClubTournamentDetail(t.id).then(render);
-  });
+  let result = { ok: true };
+  for (const d of donors){
+    result = await saveTournamentTeam(t, { id: d.id, name: d.name, players: d.players.filter(pl => !ids.includes(pl.id)) });
+    if (result.error) break;
+  }
+  if (!result.error) result = await saveTournamentTeam(t, { id: edit.id, name, players });
+  ui.tournamentTeamBusy = false;
+  if (result.error){
+    render(); showFormError(document.getElementById("tournament-team-form"), result.error);
+    if (donors.length) fetchClubTournamentDetail(t.id).then(render);
+    return;
+  }
+  ui.tournamentTeamEdit = null;
+  fetchClubTournamentDetail(t.id).then(render);
+}
+
+/* One tap for the usual "club splits in two for the day": shuffle the
+   players who aren't on a team yet into two new teams, then edit from there.
+   Only offered while the tournament has no teams. */
+async function quickSplitTeams(){
+  const t = ui.clubTournament;
+  if (!t || t.teams.length || ui.tournamentTeamBusy || !ui.club || ui.club.id !== t.organizer_club_id) return;
+  const pool = ui.club.roster.filter(p => p.id).map(p => ({ id: p.id, name: p.name }));
+  if (pool.length < 2) return;
+  for (let i = pool.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  ui.tournamentTeamBusy = true; ui.tournamentTeamError = null; render();
+  let result = await saveTournamentTeam(t, { id: null, name: "Team A", players: pool.filter((_, i) => i % 2 === 0) });
+  if (!result.error) result = await saveTournamentTeam(t, { id: null, name: "Team B", players: pool.filter((_, i) => i % 2 === 1) });
+  ui.tournamentTeamBusy = false;
+  ui.tournamentTeamError = result.error || null;
+  fetchClubTournamentDetail(t.id).then(render);
 }
 
 /* --- Premier: cross-club players/stats + claiming --- */
@@ -3412,7 +4647,7 @@ function renderPremierScreen(){
       ${renderBackBar("Home", "home")}
       <h1>🏆 Premier</h1>
       <p class="tagline">Cross-club players, teams and stats.</p>
-      ${!p ? `<p class="hint">Loading…</p>` : `
+      ${!p ? `${loadingHtml()}` : `
         <div class="home-grid">
           <button data-action="go-view" data-view="premierPlayers" class="home-card primary-card">
             <span class="home-card-icon">🧑‍🤝‍🧑</span><span class="home-card-title">Players</span>
@@ -3440,7 +4675,7 @@ function renderPremierPlayers(){
     <div class="screen">
       ${renderBackBar("Premier", "premier")}
       <h1>🧑‍🤝‍🧑 Players</h1>
-      ${!p ? `<p class="hint">Loading…</p>` : `
+      ${!p ? `${loadingHtml()}` : `
         ${isAdmin && p.pendingClaims.length ? `
           <h3>Pending claim requests</h3>
           ${p.pendingClaims.map(c => `
@@ -3482,7 +4717,7 @@ function renderPremierTeams(){
     <div class="screen">
       ${renderBackBar("Premier", "premier")}
       <h1>🛡️ Teams</h1>
-      ${!p ? `<p class="hint">Loading…</p>` : (
+      ${!p ? `${loadingHtml()}` : (
         p.premierMatches.length
           ? renderStandingsTable(computeStandings(p.premierMatches.map(m => m.data), PREMIER_STANDINGS_DISPLAY_PRESET), true)
           : `<p class="hint">No Premier matches yet — organizing a Premier tournament (open for any club to join) is coming soon.</p>`
@@ -3497,7 +4732,7 @@ function renderPremierStats(){
     <div class="screen">
       ${renderBackBar("Premier", "premier")}
       <h1>📊 Stats</h1>
-      ${!p ? `<p class="hint">Loading…</p>` : (
+      ${!p ? `${loadingHtml()}` : (
         p.premierMatches.length
           ? renderLeaderboards(aggregatePlayerStats(p.premierMatches.map(m => m.data)))
           : `<p class="hint">No Premier matches yet.</p>`
@@ -3577,9 +4812,20 @@ function renderMatchSetup(){
         <input type="hidden" name="presetId" value="${preset.id || ""}">
         <h3 class="section-label">Teams</h3>
         ${pickTeams ? `
-        <label>Team A<select name="teamAId">${savedTeams.map((t, i) => `<option value="${t.id}" ${i === 0 ? "selected" : ""}>${escapeHtml(t.name)} (${t.players.length})</option>`).join("")}</select></label>
-        <label>Team B<select name="teamBId">${savedTeams.map((t, i) => `<option value="${t.id}" ${i === 1 ? "selected" : ""}>${escapeHtml(t.name)} (${t.players.length})</option>`).join("")}</select></label>
-        <p class="hint">From this tournament's teams. Only their players are suggested while scoring.</p>
+        <div class="versus-picker">
+          ${["A", "B"].map((side, s) => `
+            <fieldset class="team-pick-col" data-side="${side}" data-current="${savedTeams[s].id}">
+              <legend>${side === "A" ? "Team A" : "Team B"}</legend>
+              ${savedTeams.map((t, i) => `
+                <label class="team-pick team-c${i % 4}">
+                  <input type="radio" name="team${side}Id" value="${t.id}" ${i === s ? "checked" : ""}>
+                  <span class="team-badge">${escapeHtml(nameInitials(t.name))}</span>
+                  <span class="team-pick-text"><b>${escapeHtml(t.name)}</b><span class="muted">${t.players.length} player${t.players.length === 1 ? "" : "s"}${t.players.length ? ` · ${escapeHtml(t.players.slice(0, 3).map(p => p.name.split(/\s+/)[0]).join(", "))}${t.players.length > 3 ? "…" : ""}` : ""}</span></span>
+                </label>`).join("")}
+            </fieldset>
+            ${side === "A" ? `<div class="vs-badge">VS</div>` : ""}`).join("")}
+        </div>
+        <p class="hint">From this tournament's teams. Only their players are suggested while scoring. Swap players between the sides for this match from ⋯ Match options once it starts.</p>
         ` : `
         <label>${clubMode && ui.clubMatchSetupType === "friendly" ? "Home team name" : "Team A name"}<input name="teamA" required maxlength="24" value="${clubMode && ui.clubMatchSetupType === "friendly" ? escapeHtml(clubName) : ""}" placeholder="e.g. Lions" list="teams-datalist"></label>
         <label>${clubMode && ui.clubMatchSetupType === "friendly" ? "Visiting team name" : "Team B name"}<input name="teamB" required maxlength="24" placeholder="e.g. Tigers" list="teams-datalist"></label>
@@ -3607,10 +4853,10 @@ function renderMatchSetup(){
         <h3 class="section-label">Batting first</h3>
         <fieldset class="tile-fieldset">
           <legend>Who bats first?</legend>
-          <label><input type="radio" name="battingFirst" value="A" checked> Team A</label>
-          <label><input type="radio" name="battingFirst" value="B"> Team B</label>
+          <label><input type="radio" name="battingFirst" value="A" checked> <span data-bat-label="A">${pickTeams ? escapeHtml(savedTeams[0].name) : clubMode && ui.clubMatchSetupType === "friendly" && clubName ? escapeHtml(clubName) : "Team A"}</span></label>
+          <label><input type="radio" name="battingFirst" value="B"> <span data-bat-label="B">${pickTeams ? escapeHtml(savedTeams[1].name) : "Team B"}</span></label>
         </fieldset>
-        <p class="hint">Openers and the first bowler are asked for on the next screen.</p>
+        <p class="hint">Openers and the first bowler are asked for on the next screen. Got the toss wrong? You can flip it there.</p>
         <button type="submit" class="primary">Start match</button>
       </form>
     </div>
@@ -3623,13 +4869,14 @@ function handleMatchSetupSubmit(e){
   const f = new FormData(e.target);
   let teamA = (f.get("teamA") || "").trim() || "Team A";
   let teamB = (f.get("teamB") || "").trim() || "Team B";
-  let squads = null;
+  let squads = null, guestNames = [];
   if (f.get("teamAId")){
     const saved = (ui.clubTournament && ui.clubTournament.teams) || [];
     const ta = saved.find(t => t.id === f.get("teamAId")), tb = saved.find(t => t.id === f.get("teamBId"));
     if (!ta || !tb || ta.id === tb.id){ showFormError(e.target, "Pick two different teams."); return; }
     teamA = ta.name; teamB = tb.name;
     squads = { A: ta.players.map(p => p.name), B: tb.players.map(p => p.name) };
+    guestNames = [...ta.players, ...tb.players].filter(p => p.guest).map(p => p.name);
   }
   const oversLimit = parseOptionalLimit(f.get("overs"), 1);
   const playersPerSide = parseOptionalLimit(f.get("players"), 2);
@@ -3659,6 +4906,7 @@ function handleMatchSetupSubmit(e){
     state.match.matchType = ui.clubMatchSetupType;
     // Read by playerTeamInMatch (side checks) and the squad datalists.
     if (squads) state.match.squads = squads;
+    if (guestNames.length) state.match.guestNames = guestNames;
   }
   state.snapshots = [];
   save(); render();
@@ -3678,47 +4926,35 @@ function renderOpeningModal(match){
           ${renderNameCombo(`${escapeHtml(teamName(match, inn.bowlingTeam))} bowler`, `name="bowler" required maxlength="24" placeholder="Search players"`, pickCandidates(match, pickPool(inn.bowlingTeam), "bowler"))}
           <button type="submit" class="primary">Start innings</button>
         </form>
-        <button type="button" data-action="open-forfeit" class="link-btn">Forfeit match instead</button>
+        ${match.innings.length === 1 ? `<button type="button" data-action="swap-toss" class="link-btn">Wrong toss? ${escapeHtml(teamName(match, inn.bowlingTeam))} bats first instead</button>` : ""}
+        <button type="button" data-action="open-match-menu" class="link-btn">Match options: cancel, forfeit${match.squads ? ", switch players" : ""}</button>
+        ${state.snapshots.length ? `<div class="modal-footer-hint"><p class="hint">${match.innings.length === 1 ? "Undo goes back to the match as it was before the restart." : "Undo goes back to the innings break."}</p><button type="button" data-action="undo" class="undo-chip">UNDO</button></div>` : ""}
       </div>
     </div>
   `;
 }
 
-/* Selecting a team is a separate tap from confirming (ui.forfeitTeam),
-   unlike the wicket modal's simple-type tiles which fire immediately --
-   forfeiting has no working undo path in practice (pushSnapshot() runs,
-   but the Result screen it lands on has no Undo control), so it's
-   treated as the one genuinely irreversible action worth a confirm step. */
-function renderForfeitModal(match){
-  const cur = currentInnings(match);
+/* Forfeit goes through the shared confirmation sheet, with the two teams as
+   `choices`: picking a team and confirming are two separate taps -- a
+   forfeit has no working undo (the Result screen has no Undo control). */
+function askForfeit(){
+  const m = state.match;
+  if (!m || m.status === "complete") return;
+  ui.matchMenu = null;
+  const cur = currentInnings(m);
   const order = cur.battingTeam === "A" ? ["A", "B"] : ["B", "A"];
-  return `
-    <div class="modal-backdrop">
-      <div class="modal danger">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <span style="font-size:1.2rem;">🚩</span>
-          <h2 style="margin:0;">Forfeit this match</h2>
-        </div>
-        <div class="dismissal-banner">
-          <span class="detail" style="text-align:left;flex-grow:1;">The match ends immediately at <span class="n" style="color:var(--text);font-weight:700;">${cur.runs}-${cur.wickets} (${oversDisplay(cur.legalBalls, cur.ballsPerOver)})</span>. No result margin is calculated, and the innings so far is excluded from net run rate.</span>
-        </div>
-        <div class="section-label">Which team forfeits?</div>
-        <div class="bowler-pick-list">
-          ${order.map(key => `
-            <button type="button" data-action="pick-forfeit-team" data-team="${key}" class="bowler-pick-row ${ui.forfeitTeam === key ? "active" : ""}" style="height:64px;">
-              <span class="name">${escapeHtml(teamName(match, key))}</span>
-              <span class="figs">${escapeHtml(forfeitTeamLine(match, key))}</span>
-            </button>
-          `).join("")}
-        </div>
-        <p class="hint">Available at any point — before the toss, mid-innings, at the break or mid-chase. It interrupts whatever modal is open.</p>
-        <div style="display:flex;gap:10px;margin-top:2px;">
-          <button data-action="close-forfeit-modal" class="ghost" style="width:112px;flex-shrink:0;">Cancel</button>
-          <button data-action="confirm-forfeit" class="primary danger-confirm" style="flex-grow:1;" ${ui.forfeitTeam ? "" : "disabled"}>End match</button>
-        </div>
-      </div>
-    </div>
-  `;
+  askConfirm({
+    title: "Forfeit this match?", icon: "🚩",
+    body: `<p>The match ends now at <b class="n">${cur.runs}-${cur.wickets} (${oversDisplay(cur.legalBalls, cur.ballsPerOver)})</b> and the other team wins. No margin is worked out, and this innings is left out of net run rate.</p><p><b>Which team forfeits?</b></p>`,
+    choices: order.map(key => ({ value: key, label: teamName(m, key), sub: forfeitTeamLine(m, key) })),
+    confirmLabel: "End match",
+    onConfirm: team => {
+      pushSnapshot();
+      forfeitMatch(state.match, team);
+      maybeArchiveCompletedMatch(state.match);
+      save();
+    }
+  });
 }
 
 /* "Batting"/"Bowling" here means "currently" or "next" -- at the break,
@@ -3735,12 +4971,176 @@ function forfeitTeamLine(match, teamKey){
   return `Bowling · ${scoreStr}${allOut ? " all out" : ""}`;
 }
 
+/* Live screen + new-batsman/new-bowler sheets: close the innings by hand
+   when there's no overs or players limit (see canEndInningsByHand). Asks
+   first (handleEndInnings) -- in the 2nd innings this ends the match. */
+function renderEndInningsButton(match, inn, inline){
+  if (!canEndInningsByHand(inn)) return "";
+  const last = match.innings.length === 2;
+  return `<button type="button" data-action="end-innings" class="link-btn${inline ? "" : " end-innings-sheet"}">${last ? "End innings · finish match" : "End innings"}</button>`;
+}
+
+/* "Match options" (the top bar's ⋯, or the opening sheet's link): change
+   who bats first, switch players between squads, forfeit, cancel. One
+   sheet whose content follows ui.matchMenu ("menu" | "squads"), like the
+   wicket sheet -- never a separate screen. Checked in render() before the
+   opening/batsman/bowler sheets, so it can interrupt any of them. The
+   risky rows (toss restart, forfeit, cancel) go through askConfirm. */
+function renderMatchMenuModal(match){
+  const view = ui.matchMenu;
+  const cur = currentInnings(match);
+  const started = matchHasStarted(match);
+  const otherFirst = match.battingFirst === "A" ? "B" : "A";
+  const scoreLine = `${cur.runs}-${cur.wickets} (${oversDisplay(cur.legalBalls, cur.ballsPerOver)})`;
+  const sheet = (inner, danger) => `<div class="modal-backdrop"><div class="modal${danger ? " danger" : ""}">${inner}</div></div>`;
+
+  if (view === "squads" && match.squads){
+    const side = key => {
+      const other = key === "A" ? "B" : "A";
+      const names = match.squads[key] || [];
+      return `
+        <div class="squad-col">
+          <div class="squad-col-head"><span class="team-dot team-dot-${key}"></span><b>${escapeHtml(teamName(match, key))}</b><span class="muted n">${names.length}</span></div>
+          ${names.length ? names.map(n => playerHasPlayed(match, n)
+            ? `<div class="squad-player played"><span class="name">${escapeHtml(n)}<span class="sub">${isGuestInMatch(match, n) ? "guest · " : ""}played</span></span></div>`
+            : `<button type="button" data-action="move-squad-player" data-name="${escapeHtml(n)}" class="squad-player" aria-label="Move ${escapeHtml(n)} to ${escapeHtml(teamName(match, other))}"><span class="name">${escapeHtml(n)}${isGuestInMatch(match, n) ? `<span class="sub guest">guest</span>` : ""}</span><span class="move">${key === "A" ? "→" : "←"}</span></button>`
+          ).join("") : `<p class="hint">Nobody yet.</p>`}
+        </div>`;
+    };
+    const inSquads = new Set([...(match.squads.A || []), ...(match.squads.B || [])].map(n => n.toLowerCase()));
+    const addable = suggestionPlayerNames().filter(n => !inSquads.has(n.toLowerCase()));
+    return sheet(`
+      <div class="wicket-modal-head"><h2>Switch players</h2><span class="n batter">this match only</span></div>
+      <p class="hint" style="margin-top:0;">Tap a player to move them to the other side. Anyone who has already batted, bowled or fielded stays where they are. The tournament's saved teams don't change.</p>
+      ${ui.squadError ? `<p class="form-error">${escapeHtml(ui.squadError)}</p>` : ""}
+      <div class="squad-board">${side("A")}${side("B")}</div>
+      <form id="squad-add-form" class="squad-add">
+        <div class="section-label">Add a late arrival</div>
+        <div class="tile-fieldset">
+          <label><input type="radio" name="side" value="A" checked> ${escapeHtml(teamName(match, "A"))}</label>
+          <label><input type="radio" name="side" value="B"> ${escapeHtml(teamName(match, "B"))}</label>
+        </div>
+        ${renderNameCombo("", `name="name" required maxlength="24" placeholder="Search the roster or type a name"`, addable)}
+        <div class="tile-fieldset">
+          <label><input type="radio" name="kind" value="club" checked> Club player</label>
+          <label><input type="radio" name="kind" value="guest"> Guest</label>
+        </div>
+        <p class="hint" style="margin-top:-4px;">A new club player joins the club roster once they play. A guest is never stored in the club.</p>
+        <button type="submit" class="ghost" style="width:100%;">Add to squad</button>
+      </form>
+      <button type="button" data-action="close-match-menu" class="primary">Done</button>`);
+  }
+  const row = (action, icon, title, sub, extra) => `
+    <button type="button" data-action="${action}" ${extra || ""} class="menu-row">
+      <span class="menu-row-icon">${icon}</span>
+      <span class="menu-row-text"><span class="title">${title}</span><span class="sub">${sub}</span></span>
+      <span class="menu-row-chev">›</span>
+    </button>`;
+  return sheet(`
+    <div class="wicket-modal-head"><h2>Match options</h2><span class="n batter">${escapeHtml(match.teamA)} v ${escapeHtml(match.teamB)} · ${scoreLine}</span></div>
+    <div class="menu-list">
+      ${row("swap-toss", "⇄", "Change who bats first", started
+        ? `Toss got reversed? Restarts from ball one with ${escapeHtml(teamName(match, otherFirst))} batting`
+        : `Nothing bowled yet: ${escapeHtml(teamName(match, otherFirst))} bats first instead`)}
+      ${match.squads ? row("match-menu-view", "👥", "Switch players between sides", "Move a player to the other team, or add a late arrival", `data-view="squads"`) : ""}
+      ${row("open-forfeit", "🚩", "Forfeit", "End now and award the match to the other team")}
+      ${row("ask-cancel-match", "✕", "Cancel match", "Started by mistake? Discard it with no result")}
+    </div>
+    <button type="button" data-action="close-match-menu" class="ghost" style="width:100%;margin-top:4px;">Close</button>`);
+}
+
+/* Flip who bats first by restarting the fixture (restartMatch). Snapshotted
+   first, so the opening sheet's Undo can bring the old match back. */
+function swapToss(){
+  const m = state.match;
+  if (!m || m.status === "complete") return;
+  pushSnapshot();
+  state.match = restartMatch(m, m.battingFirst === "A" ? "B" : "A");
+  ui.matchMenu = null; ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker";
+  save(); render();
+}
+
+/* Before anything is recorded the flip is instant (nothing to lose); after,
+   it restarts from ball one, so it asks first. */
+function askSwapToss(){
+  const m = state.match;
+  if (!m || m.status === "complete") return;
+  ui.matchMenu = null;
+  if (!matchHasStarted(m)){ swapToss(); return; }
+  const cur = currentInnings(m);
+  const other = teamName(m, m.battingFirst === "A" ? "B" : "A");
+  askConfirm({
+    title: "Change who bats first?", icon: "⇄",
+    body: `<p><b>${escapeHtml(other)}</b> will bat first instead. The match restarts from ball one with the same settings, so everything scored so far (<b class="n">${m.innings.length > 1 ? "both innings" : `${cur.runs}-${cur.wickets} (${oversDisplay(cur.legalBalls, cur.ballsPerOver)})`}</b>) is discarded.</p><p class="hint">Undo on the openers sheet brings it back.</p>`,
+    confirmLabel: `Restart with ${other} batting`,
+    onConfirm: () => swapToss()
+  });
+}
+function askCancelMatch(){
+  const m = state.match;
+  if (!m || m.status === "complete") return;
+  ui.matchMenu = null;
+  const cur = currentInnings(m);
+  askConfirm({
+    title: "Cancel this match?", icon: "✕",
+    body: `<p>Started by mistake? The match is thrown away: no result, and nothing goes into stats, standings${m.clubId ? " or the club's cloud records" : ""}.${matchHasStarted(m) ? ` What's been scored so far (<b class="n">${cur.runs}-${cur.wickets}</b>) is lost.` : ""} This can't be undone.</p>${m.clubId ? `<p class="hint">Players already added to the club roster during this match stay on it.</p>` : ""}`,
+    confirmLabel: "Cancel match", cancelLabel: "Keep playing",
+    onConfirm: () => cancelMatch()
+  });
+}
+
+/* Throw away a match in progress: nothing is archived or synced (archiving
+   only ever happens on completion -- see maybeArchiveCompletedMatch), so
+   dropping state.match is the whole job. No undo: there's no match left
+   to undo into, which is why the sheet asks first. */
+function cancelMatch(){
+  if (!state.match || state.match.status === "complete") return;
+  leaveMatch();
+}
+
+/* Clear state.match and go back to wherever the match was started from.
+   Shared by the Result screen's exit button and cancelMatch. */
+function leaveMatch(){
+  const tournamentId = state.match.tournamentId;
+  const clubId = state.match.clubId;
+  state.match = null; state.snapshots = []; ui = defaultUi();
+  if (clubId && tournamentId){
+    // a club's own Local-tier tournament -- tournamentId is a cloud
+    // `tournaments` row here, NOT a key into local state.tournaments.
+    ui.currentClubId = clubId; ui.currentTournamentId = tournamentId; state.view = "clubTournamentDashboard";
+    fetchClubTournamentDetail(tournamentId).then(render);
+  }
+  else if (clubId){ ui.currentClubId = clubId; state.view = "clubHome"; fetchClubDetail(clubId).then(render); }
+  else if (tournamentId){ state.activeTournamentId = tournamentId; state.view = "tournamentDashboard"; }
+  else state.view = "home";
+  save(); render();
+}
+
+function builderRosterMatchName(name){
+  const key = (name || "").trim().toLowerCase();
+  return !!key && suggestionPlayerNames().some(n => n.toLowerCase() === key);
+}
+function handleSquadAddSubmit(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const name = resolveTypedName(f.get("name"));
+  const side = f.get("side") === "B" ? "B" : "A";
+  const guest = f.get("kind") === "guest";
+  const err = guest && builderRosterMatchName(name)
+    ? `${name} is on the club roster. Add them as a club player instead.`
+    : addSquadPlayer(state.match, name, side);
+  ui.squadError = err;
+  if (!err && guest) state.match.guestNames = [...(state.match.guestNames || []), name];
+  if (!err) save(); // roster/global registration happens when they actually play (registerMatchPlayer)
+  render();
+}
+
 function handleOpeningSubmit(e){
   e.preventDefault();
   const f = new FormData(e.target);
-  const striker = (f.get("striker") || "").trim();
-  const nonStriker = (f.get("nonStriker") || "").trim();
-  const bowler = (f.get("bowler") || "").trim();
+  const striker = resolveTypedName(f.get("striker"));
+  const nonStriker = resolveTypedName(f.get("nonStriker"));
+  const bowler = resolveTypedName(f.get("bowler"));
   if (!striker || !nonStriker || !bowler) return;
   if (striker.toLowerCase() === nonStriker.toLowerCase()){
     showFormError(e.target, "Striker and non-striker must be different players."); return;
@@ -3796,9 +5196,10 @@ function renderNewBatsmanModal(inn, slot){
           <button type="submit" class="primary">Send in</button>
         </form>
         <div class="modal-footer-hint">
-          <p class="hint">Scoring is paused until a name is entered. There is no dismiss.</p>
+          <p class="hint">Scoring is paused until a name is entered.</p>
           <button type="button" data-action="undo" class="undo-chip" ${state.snapshots.length ? "" : "disabled"}>UNDO BALL</button>
         </div>
+        ${renderEndInningsButton(state.match, inn)}
       </div>
     </div>
   `;
@@ -3806,7 +5207,7 @@ function renderNewBatsmanModal(inn, slot){
 
 function handleNewBatsmanSubmit(e){
   e.preventDefault();
-  submitNewBatsman((new FormData(e.target).get("name") || "").trim(), e.target);
+  submitNewBatsman(resolveTypedName(new FormData(e.target).get("name")), e.target);
 }
 
 /* The one place a new batsman's name is checked and applied. */
@@ -3873,6 +5274,7 @@ function renderNewBowlerModal(inn){
           <p class="hint">Strike has already been swapped for the new over.</p>
           <button type="button" data-action="undo" class="undo-chip" ${state.snapshots.length ? "" : "disabled"}>UNDO BALL</button>
         </div>
+        ${renderEndInningsButton(state.match, inn)}
       </div>
     </div>
   `;
@@ -3891,7 +5293,7 @@ function confirmNewBowler(name){
 
 function handleNewBowlerSubmit(e){
   e.preventDefault();
-  submitNewBowler((new FormData(e.target).get("name") || "").trim(), e.target);
+  submitNewBowler(resolveTypedName(new FormData(e.target).get("name")), e.target);
 }
 
 /* A typed/searched name -- unlike the "already bowled" rows (pick-bowler),
@@ -3908,8 +5310,13 @@ function submitNewBowler(name, form){
 }
 
 function showFormError(form, msg){
-  const el = form.querySelector(".form-error");
-  if (el) el.textContent = msg;
+  const el = form && form.querySelector(".form-error");
+  if (el) el.textContent = friendlyError(msg);
+}
+/* A raw fetch failure reads as gibberish ("TypeError: Failed to fetch"). */
+function friendlyError(msg){
+  return msg && /failed to fetch|networkerror|load failed|network request failed/i.test(String(msg))
+    ? "You're offline. This needs an internet connection — try again when you're back online." : msg;
 }
 
 /* --- wicket modal (caught / run-out both capture an optional-or-required fielder) --- */
@@ -4017,7 +5424,7 @@ function confirmWicket(type){
 function handleWicketFielderSubmit(e){
   e.preventDefault();
   const f = new FormData(e.target);
-  const fielder = (f.get("fielder") || "").trim();
+  const fielder = resolveTypedName(f.get("fielder"));
   const match = state.match;
   if (fielder){
     const sideConflict = playerSideConflict(match, fielder, currentInnings(match).bowlingTeam);
@@ -4062,22 +5469,33 @@ function handleBallClick(runs){
   save(); render();
 }
 
-/* Two taps (ui.endInningsConfirm), like forfeit: closing the 1st innings
-   lands on the innings break, which has no Undo control. Any other click
-   clears the pending confirm (see the click dispatcher). */
+/* Asks first: closing the 1st innings lands on the innings break, which has
+   no Undo control, and closing the 2nd ends the match. */
 function handleEndInnings(){
-  if (!ui.endInningsConfirm){ ui.endInningsConfirm = true; render(); return; }
-  ui.endInningsConfirm = false;
-  pushSnapshot();
-  endInnings(state.match);
-  maybeArchiveCompletedMatch(state.match);
-  save(); render();
+  const m = state.match;
+  const inn = m && currentInnings(m);
+  if (!inn || !canEndInningsByHand(inn)) return;
+  const last = m.innings.length === 2;
+  const score = `${inn.runs}-${inn.wickets} (${oversDisplay(inn.legalBalls, inn.ballsPerOver)})`;
+  askConfirm({
+    title: last ? "End the match now?" : "End this innings?", icon: "⏹",
+    body: `<p>${escapeHtml(teamName(m, inn.battingTeam))} finish on <b class="n">${score}</b>. ${last
+      ? "The result is worked out from the scores as they stand."
+      : `${escapeHtml(teamName(m, inn.bowlingTeam))} will need <b class="n">${inn.runs + 1}</b> to win.`}</p>`,
+    confirmLabel: last ? "End match" : "End innings",
+    onConfirm: () => {
+      pushSnapshot();
+      endInnings(state.match);
+      maybeArchiveCompletedMatch(state.match);
+      save();
+    }
+  });
 }
 
 function handleUndo(){
   if (!state.snapshots.length) return;
   state.match = state.snapshots.pop();
-  ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.forfeitFlow = false; ui.forfeitTeam = null; ui.endInningsConfirm = false;
+  ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.confirm = null; ui.matchMenu = null;
   save(); render();
 }
 
@@ -4222,7 +5640,7 @@ function renderLive(match){
 
       <div class="live-links">
         <button data-action="toggle-scorecard" class="link-btn">${ui.showFullScorecard ? "Hide" : "Show"} full scorecard</button>
-        ${inn.oversLimit == null ? `<button data-action="end-innings" class="link-btn" ${ui.endInningsConfirm ? `style="color:var(--wicket);font-weight:700;"` : ""}>${ui.endInningsConfirm ? "Tap again to end innings" : "End innings"}</button>` : ""}
+        ${canEndInningsByHand(inn) ? renderEndInningsButton(match, inn, true) : ""}
       </div>
       ${ui.showFullScorecard ? renderInningsSummary(match, inn) : ""}
     </div>
@@ -5126,6 +6544,8 @@ function render(){
   // renders the same form) is redundant clutter, not a shortcut to anywhere.
   const onAuthScreen = state.view === "signIn" || state.view === "signUp" || state.view === "account";
   root.classList.toggle("live-mode", !!(inProgress && !away && m.status !== "innings_break"));
+  // Loading indicators are off while a match is on screen (see "activity").
+  document.body.classList.toggle("live-scoring", !!(inProgress && !away));
   root.innerHTML = renderTopBar(canNavigate, onAuthScreen) + html + renderPlayersDatalist() + renderTeamsDatalist()
     + (canNavigate ? renderSideMenu() : "");
 
@@ -5137,16 +6557,23 @@ function render(){
   const pm = ui.playerModal;
   const pmValid = pm && (!inProgress || away) && (
     (pm.kind === "add" && state.view === "clubPlayers") ||
-    (pm.kind === "edit" && state.view === "playerProfile" && ui.profile && ui.profile.data && ui.profile.data.can_see_contact) ||
-    (pm.kind === "remove" && (state.view === "clubPlayers" || state.view === "playerProfile")));
+    (pm.kind === "edit" && state.view === "playerProfile" && ui.profile && ui.profile.data && ui.profile.data.can_see_contact));
   if (pm && !pmValid) ui.playerModal = null;
-  if (pmValid){
-    modalKey = pm.kind === "remove" ? `remove:${pm.id}:${pm.busy ? 1 : 0}:${pm.error || ""}` : pm.kind;
-    modalHtml = pm.kind === "add" ? renderClubAddPlayerModal() : pm.kind === "edit" ? renderPlayerEditModal() : renderRemovePlayerModal();
+  const teamEditOpen = ui.tournamentTeamEdit && state.view === "clubTournamentDashboard" && ui.clubTournament && !ui.clubTournament.teams_unavailable && (!inProgress || away);
+  if (ui.confirm){
+    // The shared confirmation sheet sits above everything (see askConfirm).
+    modalHtml = renderConfirmModal();
+  } else if (ui.syncSheet && session){
+    modalHtml = renderSyncSheet();
+  } else if (pmValid){
+    modalKey = pm.kind;
+    modalHtml = pm.kind === "add" ? renderClubAddPlayerModal() : renderPlayerEditModal();
+  } else if (teamEditOpen){
+    modalHtml = renderTournamentTeamModal();
   } else if (away){
     modalHtml = "";
-  } else if (m && m.status !== "complete" && ui.forfeitFlow){
-    modalHtml = renderForfeitModal(m);
+  } else if (m && m.status !== "complete" && ui.matchMenu){
+    modalHtml = renderMatchMenuModal(m);
   } else if (m && m.status === "opening"){
     modalHtml = renderOpeningModal(m);
   } else if (m && m.status === "live"){
@@ -5157,12 +6584,25 @@ function render(){
     else if (ui.wicketFlow) modalHtml = renderWicketModal(inn);
   }
   if (!(modalKey && modalRoot.dataset.modalKey === modalKey)){
+    // Re-rendering the same sheet (a tap inside it) keeps its scroll position
+    // and skips the slide-up animation -- see data-keep-scroll.
+    const prev = modalRoot.querySelector("[data-keep-scroll]");
+    const keep = prev ? { key: prev.dataset.keepScroll, top: prev.scrollTop } : null;
     modalRoot.innerHTML = modalHtml;
     modalRoot.dataset.modalKey = modalKey;
+    const again = keep && modalRoot.querySelector(`[data-keep-scroll="${keep.key}"]`);
+    if (again){ again.classList.add("no-anim"); again.scrollTop = keep.top; }
     if (modalKey === "add"){ const first = modalRoot.querySelector('input[name="name"]'); if (first) first.focus(); }
   }
+  // The DOM was just replaced: put the tapped button's spinner back.
+  if (activity.shown || document.querySelector(".is-loading")) applyActivity();
 }
 
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest("[data-action]");
+  if (b) noteTrigger(b);
+}, true);
+document.addEventListener("submit", (e) => { noteTrigger(e.target); }, true);
 document.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-action]");
   if (!btn) return;
@@ -5177,8 +6617,24 @@ document.addEventListener("click", (e) => {
     // drops straight back onto it.
     if (state.match && state.match.status !== "complete" && action !== "resume-match") ui.awayFromMatch = true;
   }
-  if (action !== "end-innings") ui.endInningsConfirm = false;
-  if (action !== "delete-tournament-team") ui.tournamentTeamDelete = null;
+  if (action === "confirm-ok"){ runConfirm(); return; }
+  if (action === "open-sync-sheet"){ ui.syncSheet = true; render(); return; }
+  if (action === "close-sync-sheet"){ ui.syncSheet = false; render(); return; }
+  if (action === "sync-now"){ retryFailedOps(myOps().filter(o => o.failed).map(o => o.id)); syncNow(); return; }
+  if (action === "sync-retry"){ retryFailedOps([btn.dataset.id]); return; }
+  if (action === "sync-discard"){
+    const op = myOps().find(o => o.id === btn.dataset.id);
+    if (!op) return;
+    askConfirm({
+      title: "Discard this change?", icon: "🗑",
+      body: `<p><b>${escapeHtml(describeOp(op))}</b> will never reach the cloud. It's removed from this device's sync queue${op.kind === "match" ? " (the match stays in this device's history)" : ""}.</p>`,
+      confirmLabel: "Discard",
+      onConfirm: () => { discardOp(op.id); }
+    });
+    return;
+  }
+  if (action === "confirm-cancel"){ cancelConfirm(); return; }
+  if (action === "confirm-pick"){ if (ui.confirm && !ui.confirm.busy){ ui.confirm.choice = btn.dataset.value; ui.confirm.error = null; render(); } return; }
   if (action === "ball") handleBallClick(parseInt(btn.dataset.runs, 10));
   else if (action === "end-innings") handleEndInnings();
   else if (action === "toggle-extra"){ ui.pendingExtra = (ui.pendingExtra === btn.dataset.extra) ? null : btn.dataset.extra; render(); }
@@ -5199,37 +6655,24 @@ document.addEventListener("click", (e) => {
   }
   else if (action === "runout-runs"){ ui.runoutRuns = parseInt(btn.dataset.runs, 10); render(); }
   else if (action === "resume-match"){ ui.awayFromMatch = false; render(); }
-  else if (action === "open-forfeit"){ ui.forfeitFlow = true; ui.forfeitTeam = null; render(); }
-  else if (action === "close-forfeit-modal"){ ui.forfeitFlow = false; ui.forfeitTeam = null; render(); }
-  else if (action === "pick-forfeit-team"){ ui.forfeitTeam = btn.dataset.team; render(); }
-  else if (action === "confirm-forfeit"){
-    if (!ui.forfeitTeam) return;
-    pushSnapshot();
-    forfeitMatch(state.match, ui.forfeitTeam);
-    maybeArchiveCompletedMatch(state.match);
-    ui.forfeitFlow = false; ui.forfeitTeam = null;
-    save(); render();
+  else if (action === "open-forfeit") askForfeit();
+  else if (action === "open-match-menu"){ ui.matchMenu = "menu"; ui.squadError = null; render(); }
+  else if (action === "match-menu-view"){ ui.matchMenu = btn.dataset.view; ui.squadError = null; render(); }
+  else if (action === "close-match-menu"){ ui.matchMenu = null; ui.squadError = null; render(); }
+  else if (action === "swap-toss") askSwapToss();
+  else if (action === "ask-cancel-match") askCancelMatch();
+  else if (action === "move-squad-player"){
+    const err = moveSquadPlayer(state.match, btn.dataset.name);
+    ui.squadError = err;
+    if (!err) save();
+    render();
   }
   else if (action === "undo") handleUndo();
   else if (action === "toggle-scorecard"){ ui.showFullScorecard = !ui.showFullScorecard; render(); }
   else if (action === "start-second-innings"){ pushSnapshot(); startSecondInnings(state.match); save(); render(); }
   else if (action === "share-image") shareScorecardImage(state.match);
   else if (action === "export-pdf") window.print();
-  else if (action === "finish-match"){
-    const tournamentId = state.match.tournamentId;
-    const clubId = state.match.clubId;
-    state.match = null; state.snapshots = []; ui = defaultUi();
-    if (clubId && tournamentId){
-      // a club's own Local-tier tournament -- tournamentId is a cloud
-      // `tournaments` row here, NOT a key into local state.tournaments.
-      ui.currentClubId = clubId; ui.currentTournamentId = tournamentId; state.view = "clubTournamentDashboard";
-      fetchClubTournamentDetail(tournamentId).then(render);
-    }
-    else if (clubId){ ui.currentClubId = clubId; state.view = "clubHome"; fetchClubDetail(clubId).then(render); }
-    else if (tournamentId){ state.activeTournamentId = tournamentId; state.view = "tournamentDashboard"; }
-    else state.view = "home";
-    save(); render();
-  }
+  else if (action === "finish-match") leaveMatch();
   else if (action === "toggle-sound"){
     state.soundEnabled = !state.soundEnabled;
     save(); render();
@@ -5289,7 +6732,7 @@ document.addEventListener("click", (e) => {
   else if (action === "add-existing-club-player"){
     const form = btn.closest("form");
     btn.disabled = true;
-    addExistingPlayerToClub(ui.currentClubId, btn.dataset.id).then(r => {
+    addExistingPlayerToClub(ui.currentClubId, btn.dataset.id, btn.dataset.name).then(r => {
       if (r.error){ btn.disabled = false; if (form) showFormError(form, r.error); return; }
       ui.playerModal = null;
       ui.clubAddMessage = `${btn.dataset.name} added to the club from the platform.`;
@@ -5297,21 +6740,7 @@ document.addEventListener("click", (e) => {
       fetchClubDetail(ui.currentClubId).then(render);
     });
   }
-  else if (action === "ask-remove-club-player"){ ui.playerModal = { kind: "remove", id: btn.dataset.id, name: btn.dataset.name, busy: false, error: null }; render(); }
-  else if (action === "confirm-remove-club-player"){
-    const pmr = ui.playerModal;
-    if (!pmr || pmr.kind !== "remove" || pmr.busy) return;
-    pmr.busy = true; pmr.error = null; render();
-    removePlayerFromClub(ui.currentClubId, pmr.id).then(r => {
-      if (ui.playerModal !== pmr) return;
-      if (r.error){ pmr.busy = false; pmr.error = r.error; render(); return; }
-      ui.playerModal = null;
-      ui.clubAddMessage = `${pmr.name} was removed from the club roster.`;
-      if (state.view === "playerProfile") state.view = "clubPlayers";
-      save(); render();
-      fetchClubDetail(ui.currentClubId).then(render);
-    });
-  }
+  else if (action === "ask-remove-club-player") askRemoveClubPlayer(btn.dataset.id, btn.dataset.name);
   else if (action === "go-club-view"){
     ui.currentClubId = state.activeClubId; ui.editingClubMatchPreset = null; ui.editingClubTournamentPreset = null;
     state.view = btn.dataset.view; render();
@@ -5339,24 +6768,32 @@ document.addEventListener("click", (e) => {
   }
   else if (action === "new-tournament-team" && ui.clubTournament){
     const n = ui.clubTournament.teams.length;
-    ui.tournamentTeamEdit = { id: null, name: n < 26 ? `Team ${String.fromCharCode(65 + n)}` : "", playerIds: [] };
-    ui.tournamentTeamDelete = null; render();
+    ui.tournamentTeamEdit = teamEditState(null, n < 26 ? `Team ${String.fromCharCode(65 + n)}` : "", []);
+    render();
   }
   else if (action === "edit-tournament-team" && ui.clubTournament){
     const team = ui.clubTournament.teams.find(t => t.id === btn.dataset.id);
-    if (team){ ui.tournamentTeamEdit = { id: team.id, name: team.name, playerIds: team.players.map(p => p.id) }; ui.tournamentTeamDelete = null; render(); }
+    if (team){ ui.tournamentTeamEdit = teamEditState(team.id, team.name, team.players.map(p => p.id)); render(); }
   }
-  else if (action === "cancel-tournament-team"){ ui.tournamentTeamEdit = null; render(); }
-  else if (action === "delete-tournament-team" && ui.clubTournament){
-    // Two taps: the first arms this row's button, the second deletes.
-    if (ui.tournamentTeamDelete !== btn.dataset.id){ ui.tournamentTeamDelete = btn.dataset.id; render(); return; }
-    ui.tournamentTeamDelete = null;
-    const tid = ui.clubTournament.id;
-    deleteTournamentTeam(tid, btn.dataset.id).then(result => {
-      ui.tournamentTeamError = result.error || null;
-      fetchClubTournamentDetail(tid).then(render);
-    });
+  else if (action === "cancel-tournament-team") closeTeamEdit();
+  else if (action === "team-builder-toggle" && ui.tournamentTeamEdit){
+    const edit = ui.tournamentTeamEdit, id = btn.dataset.id;
+    edit.playerIds = edit.playerIds.includes(id) ? edit.playerIds.filter(x => x !== id) : [...edit.playerIds, id];
+    edit.notice = null;
+    render();
   }
+  else if (action === "team-builder-add-free" && ui.tournamentTeamEdit){
+    // Adds the free (not-on-another-team) rows the search currently shows.
+    const form = btn.closest("form");
+    const ids = [...form.querySelectorAll('.pick-row[data-free="1"]:not([hidden])')].map(el => el.dataset.id);
+    const edit = ui.tournamentTeamEdit;
+    edit.playerIds = [...edit.playerIds, ...ids.filter(id => !edit.playerIds.includes(id))];
+    render();
+  }
+  else if (action === "quick-split-teams") quickSplitTeams();
+  else if (action === "team-builder-guest" && ui.tournamentTeamEdit) addBuilderGuest();
+  else if (action === "team-builder-new-player" && ui.tournamentTeamEdit) addBuilderClubPlayer();
+  else if (action === "delete-tournament-team" && ui.clubTournament) askDeleteTournamentTeam(btn.dataset.id);
   else if (action === "go-club-tournament-match-setup"){
     ui.matchSetupPresetId = null; ui.clubMatchSetupType = "tournament"; state.view = "matchSetup"; render();
   }
@@ -5388,16 +6825,23 @@ document.addEventListener("click", (e) => {
   else if (action === "switch-tournament-tab"){ ui.tournamentTab = btn.dataset.tab; render(); }
   else if (action === "select-team"){ ui.selectedTeamId = btn.dataset.id; render(); }
   else if (action === "delete-team"){
-    if (!confirm("Delete this team? Past match history is unaffected.")) return;
-    deleteTeam(btn.dataset.id);
-    if (ui.selectedTeamId === btn.dataset.id) ui.selectedTeamId = null;
-    save(); render();
+    const id = btn.dataset.id, team = state.teams[id];
+    askConfirm({
+      title: `Delete ${team ? team.name : "this team"}?`, icon: "🗑",
+      body: `<p>The team is removed from this device. Its players stay in your players list, and past match history is unaffected.</p>`,
+      confirmLabel: "Delete team",
+      onConfirm: () => { deleteTeam(id); if (ui.selectedTeamId === id) ui.selectedTeamId = null; save(); }
+    });
   }
   else if (action === "remove-player"){ removePlayerFromTeam(btn.dataset.team, btn.dataset.player); save(); render(); }
   else if (action === "delete-player"){
-    if (!confirm("Delete this player? They'll be removed from every team, but past match history is unaffected.")) return;
-    deletePlayer(btn.dataset.id);
-    save(); render();
+    const id = btn.dataset.id, pl = state.players[id];
+    askConfirm({
+      title: `Delete ${pl ? pl.name : "this player"}?`, icon: "🗑",
+      body: `<p>They're removed from every team on this device. Past match history is unaffected.</p>`,
+      confirmLabel: "Delete player",
+      onConfirm: () => { deletePlayer(id); save(); }
+    });
   }
   else if (action === "move-player"){
     const row = btn.closest(".roster-row");
@@ -5409,21 +6853,40 @@ document.addEventListener("click", (e) => {
   else if (action === "new-match-preset"){ ui.editingMatchPreset = {}; render(); }
   else if (action === "edit-match-preset"){ ui.editingMatchPreset = Object.assign({}, state.matchPresets[btn.dataset.id]); render(); }
   else if (action === "delete-match-preset"){
-    if (!confirm("Delete this match preset?")) return;
-    deleteMatchPreset(btn.dataset.id); save(); render();
+    const id = btn.dataset.id, pr = state.matchPresets[id];
+    askConfirm({
+      title: pr ? `Delete the ${pr.name} preset?` : "Delete this preset?", icon: "🗑",
+      body: `<p>Matches already played keep their conditions. Tournament presets that use it will need a new match preset.</p>`,
+      confirmLabel: "Delete preset",
+      onConfirm: () => { deleteMatchPreset(id); save(); }
+    });
   }
   else if (action === "new-tournament-preset"){ ui.editingTournamentPreset = {}; render(); }
   else if (action === "edit-tournament-preset"){ ui.editingTournamentPreset = Object.assign({}, state.tournamentPresets[btn.dataset.id]); render(); }
   else if (action === "delete-tournament-preset"){
-    if (!confirm("Delete this tournament preset?")) return;
-    deleteTournamentPreset(btn.dataset.id); save(); render();
+    const id = btn.dataset.id, pr = state.tournamentPresets[id];
+    askConfirm({
+      title: pr ? `Delete the ${pr.name} preset?` : "Delete this preset?", icon: "🗑",
+      body: `<p>Existing tournaments keep their settings.</p>`,
+      confirmLabel: "Delete preset",
+      onConfirm: () => { deleteTournamentPreset(id); save(); }
+    });
   }
   else if (action === "cancel-preset-edit"){ ui.editingMatchPreset = null; ui.editingTournamentPreset = null; render(); }
   else if (action === "club-new-match-preset"){ ui.editingClubMatchPreset = {}; render(); }
   else if (action === "club-edit-match-preset"){ ui.editingClubMatchPreset = Object.assign({}, clubPresetList("match", ui.currentClubId).find(p => p.id === btn.dataset.id)); render(); }
   else if (action === "club-delete-match-preset" || action === "club-delete-tournament-preset"){
-    if (!confirm("Delete this club preset?")) return;
-    deleteClubPreset(ui.currentClubId, btn.dataset.id).then(() => fetchClubDetail(ui.currentClubId).then(render));
+    const clubId = ui.currentClubId, id = btn.dataset.id;
+    const pr = clubPresetList(action === "club-delete-match-preset" ? "match" : "tournament", clubId).find(p => p.id === id);
+    askConfirm({
+      title: pr ? `Delete the ${pr.name} preset?` : "Delete this preset?", icon: "🗑",
+      body: `<p>It's removed for everyone in ${escapeHtml(currentClubName() || "this club")}. Matches already played keep their conditions.</p>`,
+      confirmLabel: "Delete preset", busyLabel: "Deleting…",
+      onConfirm: () => deleteClubPreset(clubId, id).then(r => {
+        if (r && r.error) return r;
+        fetchClubDetail(clubId).then(render);
+      })
+    });
   }
   else if (action === "club-new-tournament-preset"){ ui.editingClubTournamentPreset = {}; render(); }
   else if (action === "club-edit-tournament-preset"){ ui.editingClubTournamentPreset = Object.assign({}, clubPresetList("tournament", ui.currentClubId).find(p => p.id === btn.dataset.id)); render(); }
@@ -5438,6 +6901,7 @@ document.addEventListener("submit", (e) => {
   const id = e.target.getAttribute("id");
   if (id === "match-setup-form") handleMatchSetupSubmit(e);
   else if (id === "opening-form") handleOpeningSubmit(e);
+  else if (id === "squad-add-form") handleSquadAddSubmit(e);
   else if (id === "new-batsman-form") handleNewBatsmanSubmit(e);
   else if (id === "new-bowler-form") handleNewBowlerSubmit(e);
   else if (id === "wicket-fielder-form") handleWicketFielderSubmit(e);
@@ -5482,12 +6946,52 @@ document.addEventListener("focusout", (e) => {
     combo.querySelector(".combo-list").hidden = true;
   }, 200);
 });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.classList && e.target.classList.contains("team-builder-search")) e.preventDefault();
+  if (e.key === "Escape"){
+    if (ui.confirm) cancelConfirm();
+    else if (ui.tournamentTeamEdit && document.querySelector(".team-modal")) closeTeamEdit();
+  }
+});
 document.addEventListener("pointerdown", (e) => {
   if (e.target.closest && e.target.closest(".combo-opt")) e.preventDefault();
 });
 document.addEventListener("input", (e) => {
   // Search-select (renderNameCombo): narrow the list as you type.
   if (e.target.closest && e.target.closest(".combo")){ updateCombo(e.target, true); return; }
+  // Team builder: keep the name in ui, and filter roster rows without a re-render.
+  const builder = e.target.closest && e.target.closest("#tournament-team-form");
+  if (builder && ui.tournamentTeamEdit){
+    if (e.target.name === "teamName"){
+      ui.tournamentTeamEdit.name = e.target.value;
+      const badge = builder.querySelector(".team-badge"); if (badge) badge.textContent = nameInitials(e.target.value || "?");
+    } else if (e.target.name === "teamSearch"){
+      ui.tournamentTeamEdit.search = e.target.value;
+      const q = e.target.value.trim().toLowerCase();
+      let shown = 0, free = 0;
+      builder.querySelectorAll(".pick-row").forEach(row => {
+        row.hidden = !!q && !row.dataset.label.includes(q);
+        if (!row.hidden){ shown++; if (row.dataset.free === "1") free++; }
+      });
+      const none = builder.querySelector(".no-results"); if (none) none.hidden = shown > 0;
+      const addFree = builder.querySelector('[data-action="team-builder-add-free"]');
+      if (addFree){ addFree.disabled = !free; addFree.textContent = `+ All free${free ? ` (${free})` : ""}`; }
+      const card = builder.querySelector(".builder-add");
+      if (card){
+        const typed = e.target.value.trim();
+        card.querySelector(".builder-add-title").innerHTML = typed ? `Add “<span class="q">${escapeHtml(typed)}</span>”` : `Someone new? <span class="muted">Type their name in the search box.</span>`;
+        card.querySelectorAll(".builder-add-actions button").forEach(b => { b.disabled = !typed || !!ui.tournamentTeamEdit.adding; });
+      }
+    }
+    return;
+  }
+  // Match setup: "Who bats first?" tiles follow the typed team names.
+  if (e.target.closest && e.target.closest("#match-setup-form") && (e.target.name === "teamA" || e.target.name === "teamB")){
+    const key = e.target.name === "teamA" ? "A" : "B";
+    const lbl = document.querySelector(`#match-setup-form [data-bat-label="${key}"]`);
+    if (lbl) lbl.textContent = e.target.value.trim() || `Team ${key}`;
+    return;
+  }
   const form = e.target.closest && e.target.closest("#club-add-player-form");
   if (!form || e.target.name !== "name" || !supabaseClient) return;
   const box = form.querySelector(".platform-suggest");
@@ -5509,10 +7013,26 @@ document.addEventListener("change", (e) => {
   // the roster finishing loading) doesn't drop half-made picks.
   if (e.target.closest && e.target.closest("#tournament-team-form") && ui.tournamentTeamEdit){
     if (e.target.name === "teamName") ui.tournamentTeamEdit.name = e.target.value;
-    else if (e.target.name === "teamPlayerIds"){
-      const ids = ui.tournamentTeamEdit.playerIds, id = e.target.value;
-      ui.tournamentTeamEdit.playerIds = e.target.checked ? (ids.includes(id) ? ids : [...ids, id]) : ids.filter(x => x !== id);
+    return;
+  }
+  if ((e.target.name === "teamAId" || e.target.name === "teamBId") && e.target.closest("#match-setup-form")){
+    // Picking the team the other side has swaps the two sides, so the pair
+    // can never be one team twice (and two teams can still be flipped).
+    const form = e.target.closest("form");
+    const col = e.target.closest(".team-pick-col");
+    const otherSide = col.dataset.side === "A" ? "B" : "A";
+    const otherCol = form.querySelector(`.team-pick-col[data-side="${otherSide}"]`);
+    const otherChecked = otherCol.querySelector("input:checked");
+    if (otherChecked && otherChecked.value === e.target.value){
+      const back = otherCol.querySelector(`input[value="${col.dataset.current}"]`);
+      if (back){ back.checked = true; otherCol.dataset.current = back.value; }
     }
+    col.dataset.current = e.target.value;
+    ["A", "B"].forEach(k => {
+      const r = form.querySelector(`input[name="team${k}Id"]:checked`);
+      const lbl = form.querySelector(`[data-bat-label="${k}"]`);
+      if (r && lbl) lbl.textContent = r.closest("label").querySelector("b").textContent;
+    });
     return;
   }
   if (e.target.name === "teamIds"){
@@ -5545,6 +7065,12 @@ document.addEventListener("change", (e) => {
 load();
 render();
 initAuth();
+// Offline-first sync triggers: coming back online, returning to the app, and
+// a slow heartbeat while anything is still waiting.
+window.addEventListener("online", () => handleBackOnline());
+window.addEventListener("offline", () => render());
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") scheduleSync(0); });
+setInterval(() => { if (pendingCount()) scheduleSync(0); }, 60000);
 
 if ("serviceWorker" in navigator){
   navigator.serviceWorker.register("sw.js").catch(() => {});
