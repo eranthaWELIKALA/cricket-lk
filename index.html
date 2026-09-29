@@ -250,6 +250,7 @@
     content:"";position:absolute;top:10px;left:50%;transform:translateX(-50%);
     width:40px;height:4px;border-radius:4px;background:var(--line-strong);
   }
+  .pick-slot{ padding:2px 10px; min-height:0; font-size:.8rem; font-weight:700; border-radius:999px; border:2px dashed var(--accent); background:transparent; color:var(--accent); box-shadow:none; }
   .wicket-modal-head{ display:flex; align-items:baseline; gap:8px; margin-bottom:4px; }
   .wicket-modal-head .batter{ flex-grow:1; text-align:right; font-size:.75rem; color:var(--muted); font-variant-numeric:tabular-nums; }
   .freehit-note{
@@ -375,7 +376,7 @@
   .pending-tag{ display:inline-block; margin-left:6px; padding:1px 6px; border-radius:5px; border:1px dashed var(--muted); color:var(--muted); font-size:.58rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; vertical-align:middle; }
 
   /* Shared confirmation sheet (askConfirm / renderConfirmModal) */
-  .modal.no-anim{animation:none;}
+  .modal.no-anim, .modal-backdrop.no-anim, .screen.no-anim, .score-tile.no-anim, .chip.no-anim{animation:none;}
   .confirm-modal{max-width:460px;}
   .confirm-head{display:flex;align-items:center;gap:12px;margin:4px 0 6px;}
   .confirm-head h2{margin:0;font-size:1.2rem;line-height:1.25;}
@@ -496,11 +497,11 @@
   .settings-row-sub{ font-size:.78rem; color:var(--muted); }
 
   /* --- animation: every render replaces innerHTML wholesale, so these
-     keyframes simply replay on every re-render without any JS bookkeeping.
-     Every render() call replaces the whole .screen wholesale — including on
-     rapid, same-screen updates like each ball scored — so this needs to stay
-     a fast, shallow settle (never fully transparent) rather than a full
-     fade-in, or the live-scoring screen visibly flickers on every tap. --- */
+     keyframes would replay on every re-render. render() adds .no-anim to
+     anything that was already on screen (same screen, same sheet, an open
+     scrim, a ball chip already shown, an unchanged score), so only what's
+     actually new animates. screenIn still stays a shallow settle (never
+     fully transparent) for real screen changes. --- */
   @keyframes screenIn{ from{ opacity:.72; transform:translateY(3px); } to{ opacity:1; transform:translateY(0); } }
   @keyframes backdropIn{ from{ opacity:0; } to{ opacity:1; } }
   @keyframes modalUp{ from{ opacity:0; transform:translateY(24px); } to{ opacity:1; transform:translateY(0); } }
@@ -1545,6 +1546,13 @@ function moveSquadPlayer(match, name){
   match.squads[from] = match.squads[from].filter(n => n.toLowerCase() !== key);
   match.squads[to] = [...(match.squads[to] || []), real];
   return null;
+}
+/* A saved guest team (state.teams, { playerIds }) -> squad names, so guest
+   matches get the same per-side squads club tournament teams give. Unknown
+   ids are skipped; null team -> []. `players` is state.players. */
+function guestTeamSquad(team, players){
+  if (!team) return [];
+  return (team.playerIds || []).map(id => players[id] && players[id].name).filter(Boolean);
 }
 function addSquadPlayer(match, name, teamKey){
   if (!match.squads) return "This match has no squads.";
@@ -2774,7 +2782,7 @@ const rejectMergeRequest = requestId => ownershipRpc("reject_merge", { _request_
 var state = defaultState();
 function defaultUi(){
   return {
-    pendingExtra: null, wicketFlow: null, runoutRuns: 0, runoutEnd: "striker", showFullScorecard: false, confirm: null, syncSheet: false, matchMenu: null, squadError: null, awayFromMatch: false, clubRosterLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
+    pendingExtra: null, wicketFlow: null, runoutRuns: 0, runoutEnd: "striker", showFullScorecard: false, confirm: null, syncSheet: false, matchMenu: null, squadError: null, pickDismissed: null, awayFromMatch: false, clubRosterLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
     matchSetupPresetId: null,
     tournamentSetupPresetId: null, tournamentSetupTeamIds: [],
     tournamentTab: "standings",
@@ -3114,8 +3122,10 @@ function renderPlayersDatalist(){
    who aren't on the home club's roster, so there's nothing to offer them. */
 function pickPool(teamKey){
   const m = state.match;
-  if (m && m.squads) return m.squads[teamKey] || [];
   if (m && m.clubId && m.matchType === "friendly" && teamKey === "B") return [];
+  // A side with no saved players (e.g. a typed guest team) still gets the
+  // usual list; pickCandidates drops anyone who belongs to the other side.
+  if (m && m.squads && (m.squads[teamKey] || []).length) return m.squads[teamKey];
   return suggestionPlayerNames();
 }
 /* A search-select for the in-match name boxes. Native <datalist> popups are
@@ -3562,6 +3572,7 @@ function handleBack(){
     if (ui.matchMenu){ ui.matchMenu = ui.matchMenu === "menu" ? null : "menu"; ui.squadError = null; render(); return true; }
     if (ui.wicketFlow){ ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; render(); return true; }
     if (ui.pendingExtra){ ui.pendingExtra = null; render(); return true; }
+    if (pendingPickKey(m) && !pickSheetDismissed(m)){ dismissPick(); return true; }
     if (ui.showFullScorecard){ ui.showFullScorecard = false; render(); return true; }
     askConfirm({
       title: "Leave live scoring?", icon: "🏏", tone: "primary",
@@ -5145,6 +5156,7 @@ function renderMatchSetup(){
         <label>${clubMode && ui.clubMatchSetupType === "friendly" ? "Home team name" : "Team A name"}<input name="teamA" required maxlength="24" value="${clubMode && ui.clubMatchSetupType === "friendly" ? escapeHtml(clubName) : ""}" placeholder="e.g. Lions" list="teams-datalist"></label>
         <label>${clubMode && ui.clubMatchSetupType === "friendly" ? "Visiting team name" : "Team B name"}<input name="teamB" required maxlength="24" placeholder="e.g. Tigers" list="teams-datalist"></label>
         ${inTournament && !pickTeams ? `<p class="hint">Tip: add teams on the tournament page to pick them here.</p>` : ""}
+        ${!clubMode && Object.keys(state.teams).length ? `<p class="hint">Type a saved team's name to bring its players along — only they're suggested for that side while scoring, and ⋯ Match options can switch players between sides.</p>` : ""}
         `}
         <h3 class="section-label">Playing conditions</h3>
         <div class="field-row">
@@ -5192,6 +5204,14 @@ function handleMatchSetupSubmit(e){
     teamA = ta.name; teamB = tb.name;
     squads = { A: ta.players.map(p => p.name), B: tb.players.map(p => p.name) };
     guestNames = [...ta.players, ...tb.players].filter(p => p.guest).map(p => p.name);
+  } else if (!(ui.currentClubId && ui.clubMatchSetupType)){
+    // Guest match: a name that matches a saved guest team brings its players
+    // along as that side's squad (same as picking a club tournament team).
+    const saved = n => Object.values(state.teams).find(t => t.name.toLowerCase() === n.toLowerCase());
+    const ta = saved(teamA), tb = saved(teamB);
+    if (ta) teamA = ta.name; if (tb) teamB = tb.name;   // the saved spelling
+    const A = guestTeamSquad(ta, state.players), B = guestTeamSquad(tb, state.players);
+    if (A.length || B.length) squads = { A, B };
   }
   const oversLimit = parseOptionalLimit(f.get("overs"), 1);
   const playersPerSide = parseOptionalLimit(f.get("players"), 2);
@@ -5222,7 +5242,7 @@ function handleMatchSetupSubmit(e){
     // Read by playerTeamInMatch (side checks) and the squad datalists.
     if (squads) state.match.squads = squads;
     if (guestNames.length) state.match.guestNames = guestNames;
-  }
+  } else if (squads) state.match.squads = squads;
   state.snapshots = [];
   save(); render();
 }
@@ -5232,7 +5252,7 @@ function renderOpeningModal(match){
   const inn = currentInnings(match);
   return `
     <div class="modal-backdrop">
-      <div class="modal">
+      <div class="modal" data-keep-scroll="opening">
         <h2>${escapeHtml(teamName(match, inn.battingTeam))} — opening players</h2>
         <form id="opening-form">
           <div class="form-error"></div>
@@ -5307,7 +5327,7 @@ function renderMatchMenuModal(match){
   const started = matchHasStarted(match);
   const otherFirst = match.battingFirst === "A" ? "B" : "A";
   const scoreLine = `${cur.runs}-${cur.wickets} (${oversDisplay(cur.legalBalls, cur.ballsPerOver)})`;
-  const sheet = (inner, danger) => `<div class="modal-backdrop"><div class="modal${danger ? " danger" : ""}">${inner}</div></div>`;
+  const sheet = (inner, danger) => `<div class="modal-backdrop"><div class="modal${danger ? " danger" : ""}" data-keep-scroll="match-${view}">${inner}</div></div>`;
 
   if (view === "squads" && match.squads){
     const side = key => {
@@ -5326,7 +5346,7 @@ function renderMatchMenuModal(match){
     const addable = suggestionPlayerNames().filter(n => !inSquads.has(n.toLowerCase()));
     return sheet(`
       <div class="wicket-modal-head"><h2>Switch players</h2><span class="n batter">this match only</span></div>
-      <p class="hint" style="margin-top:0;">Tap a player to move them to the other side. Anyone who has already batted, bowled or fielded stays where they are. The tournament's saved teams don't change.</p>
+      <p class="hint" style="margin-top:0;">Tap a player to move them to the other side. Anyone who has already batted, bowled or fielded stays where they are. ${match.clubId ? "The tournament's saved teams don't change." : "Your saved teams don't change."}</p>
       ${ui.squadError ? `<p class="form-error">${escapeHtml(ui.squadError)}</p>` : ""}
       <div class="squad-board">${side("A")}${side("B")}</div>
       <form id="squad-add-form" class="squad-add">
@@ -5335,12 +5355,13 @@ function renderMatchMenuModal(match){
           <label><input type="radio" name="side" value="A" checked> ${escapeHtml(teamName(match, "A"))}</label>
           <label><input type="radio" name="side" value="B"> ${escapeHtml(teamName(match, "B"))}</label>
         </div>
-        ${renderNameCombo("", `name="name" required maxlength="24" placeholder="Search the roster or type a name"`, addable)}
+        ${renderNameCombo("", `name="name" required maxlength="24" placeholder="${match.clubId ? "Search the roster or type a name" : "Search players or type a name"}"`, addable)}
+        ${match.clubId ? `
         <div class="tile-fieldset">
           <label><input type="radio" name="kind" value="club" checked> Club player</label>
           <label><input type="radio" name="kind" value="guest"> Guest</label>
         </div>
-        <p class="hint" style="margin-top:-4px;">A new club player joins the club roster once they play. A guest is never stored in the club.</p>
+        <p class="hint" style="margin-top:-4px;">A new club player joins the club roster once they play. A guest is never stored in the club.</p>` : ""}
         <button type="submit" class="ghost" style="width:100%;">Add to squad</button>
       </form>
       <button type="button" data-action="close-match-menu" class="primary">Done</button>`);
@@ -5441,7 +5462,7 @@ function handleSquadAddSubmit(e){
   const f = new FormData(e.target);
   const name = resolveTypedName(f.get("name"));
   const side = f.get("side") === "B" ? "B" : "A";
-  const guest = f.get("kind") === "guest";
+  const guest = !!state.match.clubId && f.get("kind") === "guest"; // guest matches have no club/guest split
   const err = guest && builderRosterMatchName(name)
     ? `${name} is on the club roster. Add them as a club player instead.`
     : addSquadPlayer(state.match, name, side);
@@ -5494,7 +5515,7 @@ function renderNewBatsmanModal(inn, slot){
   const dismissed = lastFow && lastFow.batsman ? inn.batting.stats[lastFow.batsman] : null;
   return `
     <div class="modal-backdrop">
-      <div class="modal">
+      <div class="modal" data-keep-scroll="new-batsman">
         <div class="wicket-modal-head">
           <h2>New batsman</h2>
           <span class="end-badge">${endBadge}</span>
@@ -5512,10 +5533,11 @@ function renderNewBatsmanModal(inn, slot){
           <button type="submit" class="primary">Send in</button>
         </form>
         <div class="modal-footer-hint">
-          <p class="hint">Scoring is paused until a name is entered.</p>
+          <p class="hint">Scoring is paused until a name is entered. Pick later to do something else first.</p>
           <button type="button" data-action="undo" class="undo-chip" ${state.snapshots.length ? "" : "disabled"}>UNDO BALL</button>
         </div>
         ${renderEndInningsButton(state.match, inn)}
+        ${renderPickLaterButton()}
       </div>
     </div>
   `;
@@ -5560,7 +5582,7 @@ function renderNewBowlerModal(inn){
   const pickable = inn.bowling.order.filter(name => name !== inn.lastOverBowler);
   return `
     <div class="modal-backdrop">
-      <div class="modal">
+      <div class="modal" data-keep-scroll="new-bowler">
         <div class="wicket-modal-head">
           <h2>New bowler</h2>
           <span class="n batter">${overNumber}${ordinalSuffix(overNumber)} over · ${bpo} balls</span>
@@ -5591,6 +5613,7 @@ function renderNewBowlerModal(inn){
           <button type="button" data-action="undo" class="undo-chip" ${state.snapshots.length ? "" : "disabled"}>UNDO BALL</button>
         </div>
         ${renderEndInningsButton(state.match, inn)}
+        ${renderPickLaterButton()}
       </div>
     </div>
   `;
@@ -5664,7 +5687,7 @@ function renderWicketModal(inn){
 
   return `
     <div class="modal-backdrop">
-      <div class="modal">
+      <div class="modal" data-keep-scroll="wicket">
         <div class="wicket-modal-head">
           <h2>How out?</h2>
           ${strikerStats ? `<span class="batter">${escapeHtml(inn.striker)} ${strikerStats.runs} (${strikerStats.balls})</span>` : ""}
@@ -5808,6 +5831,41 @@ function handleEndInnings(){
   });
 }
 
+/* The new-batsman / new-bowler sheet can be closed ("Pick later") so the
+   scorer can use the rest of the app -- the scorecard, match options, the
+   menu -- while the next name isn't known yet. Scoring stays blocked: a
+   tap on a run, extra or Wicket just brings the sheet back (reopenPick).
+   The dismissal is remembered by a key for *this* pause (innings, balls,
+   wickets, which slot), so any change -- a name entered, Undo, a restart --
+   makes the next pause ask again on its own. ui-only, never persisted. */
+function pendingPickKey(match){
+  if (!match || match.status !== "live") return null;
+  const inn = currentInnings(match);
+  const slot = pendingBatsmanSlot(inn);
+  const at = `${match.innings.length}:${inn.legalBalls}:${inn.wickets}`;
+  if (slot) return `bat:${at}:${slot}`;
+  if (!inn.bowler) return `bowl:${at}`;
+  return null;
+}
+function pickSheetDismissed(match){
+  const key = pendingPickKey(match);
+  return !!key && ui.pickDismissed === key;
+}
+function dismissPick(){
+  ui.pickDismissed = pendingPickKey(state.match);
+  render();
+}
+/* Returns true (and reopens the sheet) when a scoring tap has to wait for a name. */
+function reopenPick(){
+  if (!pickSheetDismissed(state.match)) return false;
+  ui.pickDismissed = null; ui.pendingExtra = null; ui.wicketFlow = null;
+  render();
+  return true;
+}
+function renderPickLaterButton(){
+  return `<button type="button" data-action="dismiss-pick" class="ghost" style="width:100%;margin-top:10px;">Pick later</button>`;
+}
+
 function handleUndo(){
   if (!state.snapshots.length) return;
   state.match = state.snapshots.pop();
@@ -5834,13 +5892,15 @@ function renderOverRow(label, events, bpo, dimmed){
   const slots = [];
   for (let i = 0; i < slotCount; i++){
     const ev = events[i];
-    if (!ev){ slots.push(`<span class="chip empty"></span>`); continue; }
+    // data-chip: render() only lets a chip that wasn't there before pop in.
+    const key = escapeHtml(`${label}:${i}:${ev ? ev.display : ""}`);
+    if (!ev){ slots.push(`<span class="chip empty" data-chip="${key}"></span>`); continue; }
     let cls = "chip";
     if (ev.isWicket) cls += " wicket";
     else if (ev.runs === 4) cls += " four";
     else if (ev.runs === 6) cls += " six";
     else if (/^(Wd|Nb)/.test(ev.display)) cls += " extra";
-    slots.push(`<span class="${cls}">${escapeHtml(ev.display)}</span>`);
+    slots.push(`<span class="${cls}" data-chip="${key}">${escapeHtml(ev.display)}</span>`);
   }
   const total = events.reduce((sum, ev) => sum + (ev.runs || 0), 0);
   return `
@@ -5864,6 +5924,9 @@ function renderLive(match){
   const bowlerStats = inn.bowler ? inn.bowling.stats[inn.bowler] : null;
   const sr = (s) => s.balls ? ((s.runs / s.balls) * 100).toFixed(1) : "0.0";
   const econ = (b) => b.legalBalls ? (b.runs / (b.legalBalls / bpo)).toFixed(2) : "0.00";
+  const later = pickSheetDismissed(match);
+  const pickBtn = label => `<button type="button" data-action="reopen-pick" class="pick-slot">+ ${label}</button>`;
+  const slotName = (name, label) => name ? escapeHtml(name) : later ? pickBtn(label) : "—";
 
   const overNumber = Math.floor(inn.legalBalls / bpo) + 1;
   const prevOver = inn.overs.length ? inn.overs[inn.overs.length - 1] : null;
@@ -5900,7 +5963,7 @@ function renderLive(match){
       <div class="matchup-card">
         <div class="matchup-head"><span>BATTER</span><span style="width:34px;">R</span><span style="width:30px;">B</span><span style="width:24px;">4s</span><span style="width:24px;">6s</span><span style="width:46px;">SR</span></div>
         <div class="matchup-row">
-          <span class="matchup-marker striker"></span><span class="name">${escapeHtml(inn.striker) || "—"}</span>
+          <span class="matchup-marker striker"></span><span class="name">${slotName(inn.striker, "Pick batsman")}</span>
           <span class="stat emph" style="width:34px;">${strikerStats ? strikerStats.runs + "*" : ""}</span>
           <span class="stat" style="width:30px;">${strikerStats ? strikerStats.balls : ""}</span>
           <span class="stat" style="width:24px;">${strikerStats ? strikerStats.fours : ""}</span>
@@ -5908,7 +5971,7 @@ function renderLive(match){
           <span class="stat" style="width:46px;">${strikerStats ? sr(strikerStats) : ""}</span>
         </div>
         <div class="matchup-row muted">
-          <span class="matchup-marker nonstriker"></span><span class="name">${alone ? "Batting alone" : escapeHtml(inn.nonStriker) || "—"}</span>
+          <span class="matchup-marker nonstriker"></span><span class="name">${alone ? "Batting alone" : slotName(inn.nonStriker, "Pick batsman")}</span>
           <span class="stat emph" style="width:34px;">${nonStrikerStats ? nonStrikerStats.runs + "*" : ""}</span>
           <span class="stat" style="width:30px;">${nonStrikerStats ? nonStrikerStats.balls : ""}</span>
           <span class="stat" style="width:24px;">${nonStrikerStats ? nonStrikerStats.fours : ""}</span>
@@ -5917,7 +5980,7 @@ function renderLive(match){
         </div>
         <div class="matchup-head bowler-head"><span>BOWLER</span><span style="width:38px;">O</span><span style="width:24px;">M</span><span style="width:28px;">R</span><span style="width:24px;">W</span><span style="width:46px;">ECON</span></div>
         <div class="matchup-row">
-          <span class="matchup-marker bowler"></span><span class="name">${escapeHtml(inn.bowler) || "—"}</span>
+          <span class="matchup-marker bowler"></span><span class="name">${slotName(inn.bowler, "Pick bowler")}</span>
           <span class="stat" style="width:38px;">${bowlerStats ? oversDisplay(bowlerStats.legalBalls, bpo) : ""}</span>
           <span class="stat" style="width:24px;">${bowlerStats ? bowlerStats.maidens : ""}</span>
           <span class="stat" style="width:28px;">${bowlerStats ? bowlerStats.runs : ""}</span>
@@ -6723,6 +6786,7 @@ function handleTournamentStartMatchSubmit(e){
     presetId: matchPreset.id, presetName: matchPreset.name,
     tournamentId: t.id
   });
+  state.match.squads = { A: guestTeamSquad(state.teams[teamAId], state.players), B: guestTeamSquad(state.teams[teamBId], state.players) };
   state.snapshots = [];
   save(); render();
 }
@@ -6864,8 +6928,23 @@ function render(){
   // Loading indicators are off while a match is on screen (see "activity").
   document.body.classList.toggle("live-scoring", !!(inProgress && !away));
   const appDrafts = captureFormDrafts(root);
+  // Same screen re-rendered (a tap, a sheet opening, a ball scored): skip the
+  // screen's settle animation, and only pulse the score when it changed --
+  // replaying them on every render is what made taps flicker.
+  const screenKey = navKey() + (m ? ":" + m.status : "");
+  const sameScreen = root.dataset.screenKey === screenKey;
+  const prevScore = sameScreen ? (root.querySelector(".score-n") || {}).textContent : null;
+  const prevChips = sameScreen ? new Set([...root.querySelectorAll("[data-chip]")].map(c => c.dataset.chip)) : null;
   root.innerHTML = renderTopBar(canNavigate, onAuthScreen) + html + renderPlayersDatalist() + renderTeamsDatalist()
     + (canNavigate ? renderSideMenu() : "");
+  root.dataset.screenKey = screenKey;
+  if (sameScreen){
+    const scr = root.querySelector(".screen");
+    if (scr) scr.classList.add("no-anim");
+    const score = root.querySelector(".score-n");
+    if (score && score.textContent === prevScore) root.querySelector(".score-tile").classList.add("no-anim");
+    root.querySelectorAll("[data-chip]").forEach(c => { if (prevChips.has(c.dataset.chip)) c.classList.add("no-anim"); });
+  }
   restoreFormDrafts(root, appDrafts);
 
   const modalRoot = document.getElementById("modal-root");
@@ -6898,8 +6977,9 @@ function render(){
   } else if (m && m.status === "live"){
     const inn = currentInnings(m);
     const slot = pendingBatsmanSlot(inn);
-    if (slot) modalHtml = renderNewBatsmanModal(inn, slot);
-    else if (!inn.bowler) modalHtml = renderNewBowlerModal(inn);
+    const later = pickSheetDismissed(m);
+    if (slot){ if (!later) modalHtml = renderNewBatsmanModal(inn, slot); }
+    else if (!inn.bowler){ if (!later) modalHtml = renderNewBowlerModal(inn); }
     else if (ui.wicketFlow) modalHtml = renderWicketModal(inn);
   }
   if (!(modalKey && modalRoot.dataset.modalKey === modalKey)){
@@ -6907,8 +6987,12 @@ function render(){
     // and skips the slide-up animation -- see data-keep-scroll.
     const prev = modalRoot.querySelector("[data-keep-scroll]");
     const keep = prev ? { key: prev.dataset.keepScroll, top: prev.scrollTop } : null;
+    const hadBackdrop = !!modalRoot.querySelector(".modal-backdrop");
     const modalDrafts = captureFormDrafts(modalRoot);
     modalRoot.innerHTML = modalHtml;
+    // Sheet -> sheet (e.g. wicket -> new batsman): the scrim is already up.
+    const backdrop = hadBackdrop && modalRoot.querySelector(".modal-backdrop");
+    if (backdrop) backdrop.classList.add("no-anim");
     modalRoot.dataset.modalKey = modalKey;
     restoreFormDrafts(modalRoot, modalDrafts);
     const again = keep && modalRoot.querySelector(`[data-keep-scroll="${keep.key}"]`);
@@ -6920,7 +7004,10 @@ function render(){
   const confirmTop = prevConfirm ? prevConfirm.scrollTop : null;
   confirmRoot.innerHTML = ui.confirm ? renderConfirmModal() : "";
   const againConfirm = confirmTop != null && confirmRoot.querySelector("[data-keep-scroll]");
-  if (againConfirm){ againConfirm.classList.add("no-anim"); againConfirm.scrollTop = confirmTop; }
+  if (againConfirm){
+    againConfirm.classList.add("no-anim"); againConfirm.scrollTop = confirmTop;
+    againConfirm.closest(".modal-backdrop").classList.add("no-anim");
+  }
   // The DOM was just replaced: put the tapped button's spinner back.
   if (activity.shown || document.querySelector(".is-loading")) applyActivity();
 }
@@ -6967,7 +7054,10 @@ document.addEventListener("click", (e) => {
   }
   if (action === "confirm-cancel"){ cancelConfirm(); return; }
   if (action === "confirm-pick"){ if (ui.confirm && !ui.confirm.busy){ ui.confirm.choice = btn.dataset.value; ui.confirm.error = null; render(); } return; }
+  if ((action === "ball" || action === "toggle-extra" || action === "open-wicket") && reopenPick()) return;
   if (action === "ball") handleBallClick(parseInt(btn.dataset.runs, 10));
+  else if (action === "dismiss-pick") dismissPick();
+  else if (action === "reopen-pick") reopenPick();
   else if (action === "end-innings") handleEndInnings();
   else if (action === "toggle-extra"){ ui.pendingExtra = (ui.pendingExtra === btn.dataset.extra) ? null : btn.dataset.extra; render(); }
   else if (action === "open-wicket"){ ui.wicketFlow = "menu"; render(); }

@@ -621,6 +621,18 @@ async function main(){
     assert(win.addSquadPlayer(m, "  ", "A") !== null, "a blank name is rejected");
   }
 
+  // --- 25b. saved guest teams give guest matches the same squads ---
+  {
+    const players = { p1: { name: "Kusal" }, p2: { name: "Dinesh" } };
+    const got = win.guestTeamSquad({ playerIds: ["p1", "gone", "p2"] }, players);
+    assert(JSON.stringify(got) === JSON.stringify(["Kusal", "Dinesh"]), "guest team -> squad names, unknown ids skipped");
+    assert(win.guestTeamSquad(null, players).length === 0, "no saved team -> empty squad");
+    const m = createMatch({ teamA: "Reds", teamB: "Blues", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    m.squads = { A: got, B: [] };
+    assert(win.playerSideConflict(m, "Kusal", "B"), "a guest squad player can't be picked for the other side before playing");
+    assert(!win.pickCandidates(m, ["Kusal", "Wanindu"], "bowler").includes("Kusal"), "the other side's squad isn't offered to bowl");
+  }
+
   // --- 26. innings with no overs/players limit can be closed by hand ---
   {
     const limited = createMatch({ teamA: "A", teamB: "B", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });

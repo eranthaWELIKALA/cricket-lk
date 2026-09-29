@@ -71,6 +71,13 @@ one thing this file most needs you to preserve:
 - `inn.striker === null` or `inn.nonStriker === null` → new-batsman
   modal, targeting whichever slot is null.
 - `inn.bowler === null` → new-bowler modal.
+- Either sheet can be closed with **Pick later** (or the back button) so the
+  scorer can use the menu, match options or scorecard meanwhile:
+  `ui.pickDismissed` holds `pendingPickKey(match)` (innings/balls/wickets/
+  slot), so the sheet stays closed only for *that* pause, and the live
+  screen shows a `+ Pick batsman/bowler` chip (`reopen-pick`) in the empty
+  slot. Any run/extra/Wicket tap calls `reopenPick()` first and records
+  nothing — scoring still can't happen with a null slot.
 - `render()` checks these in that order every render; it does not use a
   separate "waiting for input" status. If you add a new kind of pause,
   follow the same pattern (a null field the render function notices)
@@ -448,8 +455,14 @@ stays as it is. `admin.html` keeps its own typed-confirmation prompts (it's
 a separate page).
 
 Re-rendering a sheet that carries `data-keep-scroll="<key>"` (the confirm
-sheet, the team builder) keeps its scroll position and adds `.no-anim`, so a
-tap inside doesn't jump to the top or replay the slide-up animation.
+sheet, the team builder, and every in-match sheet: opening, new batsman/
+bowler, wicket, match options) keeps its scroll position and adds `.no-anim`, so a
+tap inside doesn't jump to the top or replay the slide-up animation. **Give
+any new sheet a `data-keep-scroll` key**, or taps inside it will flicker.
+`render()` also skips the backdrop fade when a sheet was already open
+(sheet → sheet), the `.screen` settle on a same-screen re-render
+(`#app[data-screen-key]`), the score pulse when the score didn't change,
+and the pop on over-row chips already shown (`data-chip`).
 
 ## Back button (phone back / back gesture)
 
@@ -1166,6 +1179,13 @@ setup swaps the typed name boxes for two team selects and stores
 `match.squads = { A: [names], B: [names] }`. `playerTeamInMatch` checks squads
 *before* usage, so the side-conflict rule fires before a squad player has
 even batted; a name in neither squad (a late sub) falls back to usage.
+**Guest matches get squads too** (`guestTeamSquad`, ENGINE, tested): a
+guest tournament match takes both saved teams' `playerIds`, and guest match
+setup does the same when a typed team name matches a saved guest team
+(case-insensitive; the other side may be `[]`). So side-scoped suggestions,
+the side-conflict check and ⋯ → Switch players work the same as in a club
+match; the sheet just hides the club/guest choice (`!match.clubId`). A side
+whose squad is empty falls back to the normal suggestion list in `pickPool`.
 Squads also scope the in-match search-select options to each side (see "In-match
 name boxes are a search-select" above).
 **Adding people who aren't on the roster.** The builder's search box doubles
