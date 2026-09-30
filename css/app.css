@@ -1,0 +1,895 @@
+/* Cricket.lk styles. Theme tokens are the :root custom properties at the top (see CLAUDE.md "Theme & sound"). */
+:root{
+  --bg:#050B0A; --bg-2:#0A1613;
+  --panel:rgba(255,255,255,.05); --panel-2:rgba(255,255,255,.07);
+  --panel-solid:#101E1B; --line:rgba(255,255,255,.10); --line-strong:rgba(255,255,255,.20);
+  --text:#F4F8F6; --muted:#8FA9A0;
+  --accent:#FFC247; --accent-rgb:255,194,71; --accent-light:#FFD873; --accent-dim:#B4791C; --accent-ink:#231200;
+  --accent-2:#33E29B; --accent-2-rgb:51,226,155; --accent-2-light:#5FF0AE; --accent-2-dim:#1C8F63; --accent-2-ink:#022417;
+  --danger:#FF5D70; --wicket:#FF4D63; --info:#5FC7FF;
+  --radius-lg:14px; --radius-md:10px; --radius-sm:7px;
+  --shadow-card:3px 3px 0 rgba(0,0,0,.35);
+  --shadow-btn:3px 3px 0 rgba(0,0,0,.4);
+  --shadow-glow-gold:0 0 0 1px rgba(var(--accent-rgb),.35), 0 8px 24px -8px rgba(var(--accent-rgb),.35);
+  --shadow-glow-green:0 0 0 1px rgba(var(--accent-2-rgb),.35), 0 8px 24px -8px rgba(var(--accent-2-rgb),.35);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:
+    radial-gradient(circle at 1px 1px, rgba(255,255,255,.07) 1px, transparent 0) 0 0/24px 24px,
+    radial-gradient(900px 480px at 12% -8%, rgba(var(--accent-2-rgb),.22), transparent 60%),
+    radial-gradient(760px 420px at 108% 6%, rgba(var(--accent-rgb),.18), transparent 58%),
+    radial-gradient(820px 560px at 50% 115%, rgba(95,199,255,.09), transparent 62%),
+    linear-gradient(180deg, var(--bg-2), var(--bg) 45%);
+  background-attachment:fixed;
+  color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-tap-highlight-color:transparent;
+}
+#app{max-width:520px;margin:0 auto;padding:16px 16px calc(24px + env(safe-area-inset-bottom));min-height:100vh;position:relative;}
+/* Live scoring is one fixed viewport, no page scroll: #app becomes a
+   full-height flex column, the top bar and cards keep their natural
+   height, and the run pad (the only flexible child) stretches to eat
+   whatever's left. Expanding the full scorecard is the one case that
+   can outgrow the screen, so .screen.live scrolls internally then. */
+#app.live-mode{ height:100vh; height:100dvh; min-height:0; display:flex; flex-direction:column; padding-bottom:calc(12px + env(safe-area-inset-bottom)); overflow:hidden; }
+#app.live-mode > .topbar{ position:relative; flex-shrink:0; margin-bottom:10px; }
+#app.live-mode > .screen.live{ flex:1 1 auto; min-height:0; display:flex; flex-direction:column; overflow-y:auto; padding-top:0; }
+.screen.live > *{ flex-shrink:0; }
+.screen.live > .run-pad{ flex:1 0 100px; grid-auto-rows:1fr; margin-bottom:8px; }
+.screen.live .run-pad .run-btn{ padding:0; height:100%; min-height:44px; }
+.screen.live > .link-btn, .screen.live > .live-links .link-btn{ padding:4px; font-size:.8rem; }
+.live-links{ display:flex; justify-content:center; gap:16px; }
+@media (max-height:760px){
+  #app.live-mode .over-row.dimmed{ display:none; }
+  #app.live-mode .score-bento{ margin-bottom:6px; }
+  #app.live-mode .matchup-card, #app.live-mode .over-card{ margin-bottom:6px; }
+  #app.live-mode .matchup-row{ margin-top:4px; }
+  #app.live-mode .score-tile .score-n{ font-size:1.7rem; }
+  #app.live-mode .target-tile .need-n{ font-size:1.4rem; }
+  #app.live-mode .extra-pad button{ height:40px; }
+  #app.live-mode .wicket-btn{ height:48px; }
+}
+@media (max-height:700px){
+  #app.live-mode{ padding-left:12px; padding-right:12px; }
+  #app.live-mode > .topbar{ margin:-16px -12px 6px; padding-top:calc(6px + env(safe-area-inset-top)); padding-bottom:6px; }
+  #app.live-mode .partnership-row{ display:none; }
+  #app.live-mode .over-card, #app.live-mode .matchup-card{ padding:6px 10px 7px; }
+  #app.live-mode .over-row{ margin-top:5px; }
+  #app.live-mode .matchup-head.bowler-head{ margin-top:6px; padding-top:5px; }
+  #app.live-mode .score-tile{ padding:6px 10px 6px; }
+  #app.live-mode .target-tile{ padding:6px 10px 6px; }
+  #app.live-mode .score-tile .score-n{ font-size:1.5rem; }
+  #app.live-mode .score-tile .score-sub{ margin-top:2px; }
+  #app.live-mode .target-tile .rrr{ margin-top:3px; padding-top:3px; }
+  #app.live-mode .screen.live > .run-pad, #app.live-mode > .screen.live > .run-pad{ flex-basis:88px; gap:6px; }
+  #app.live-mode .run-pad .run-btn:not(.undo){ font-size:1.15rem; min-height:38px; }
+  #app.live-mode .extra-pad button{ height:36px; }
+  #app.live-mode .wicket-btn{ height:42px; }
+  #app.live-mode .screen.live > .link-btn, #app.live-mode .screen.live > .live-links .link-btn{ padding:2px; }
+}
+h1,h2,h3{margin:0 0 8px;letter-spacing:-.02em;}
+h1{font-size:2rem;font-weight:800;}
+h2{font-weight:800;}
+p{margin:0 0 12px;color:var(--muted);}
+.tagline{margin-top:-4px;}
+label{display:block;font-size:.85rem;color:var(--muted);margin-bottom:12px;}
+input[type=text],input[type=number],input[type=email],input[type=password],input[type=tel],input:not([type]),select{
+  display:block;width:100%;margin-top:4px;padding:12px 13px;border-radius:var(--radius-sm);
+  border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:1rem;
+  transition:border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+/* Custom chevron replaces the native select arrow (which doesn't
+   reliably adapt to the app's own light/dark themes) -- a neutral
+   mid-gray reads fine against every THEME_PRESETS panel color. */
+select{
+  appearance:none;-webkit-appearance:none;-moz-appearance:none;cursor:pointer;padding-right:38px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath d='M2 5l5 5 5-5' fill='none' stroke='%238a94a0' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 13px center;background-size:12px;
+}
+input::placeholder{color:var(--muted);opacity:.7;}
+input:focus,select:focus{outline:none;border-color:var(--accent-2);box-shadow:0 0 0 3px rgba(var(--accent-2-rgb),.18);background:rgba(255,255,255,.09);}
+input[type=color]{margin-top:4px;padding:2px;height:44px;width:100%;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--panel-2);cursor:pointer;}
+fieldset{border:2px solid var(--line-strong);border-radius:var(--radius-md);margin-bottom:12px;padding:12px 14px;}
+legend{color:var(--muted);font-size:.8rem;padding:0 4px;text-transform:uppercase;letter-spacing:.04em;}
+fieldset label{display:inline-flex;align-items:center;gap:6px;margin:4px 12px 4px 0;color:var(--text);}
+button{font:inherit;cursor:pointer;}
+button.primary{
+  width:100%;padding:14px;border:2px solid var(--accent-ink);border-radius:var(--radius-md);
+  background:var(--accent);
+  color:var(--accent-ink);font-weight:800;font-size:1.02rem;margin-top:6px;letter-spacing:-.01em;
+  box-shadow:var(--shadow-btn);
+}
+button.ghost{
+  padding:10px 14px;border-radius:var(--radius-sm);border:2px solid var(--line-strong);
+  background:var(--panel-2);color:var(--text);
+
+}
+button.link-btn{
+  display:block;width:100%;text-align:center;background:none;border:none;color:var(--accent-2);
+  padding:10px;font-size:.9rem;font-weight:600;
+}
+button:disabled{opacity:.4;cursor:not-allowed;box-shadow:none;}
+
+.screen{padding-top:4px;}
+.form-error{color:var(--wicket);font-size:.85rem;min-height:0;margin-bottom:4px;font-weight:600;}
+.form-error:empty{display:none;}
+
+/* --- live scoring: score/target bento, matchup card, over rail ---
+   ported from the "Resolved" Design canvas artboard; see CLAUDE.md's
+   "Theme & sound" section for the shared-primitive notes. */
+.score-bento{ display:flex; gap:10px; margin-bottom:10px; }
+.score-tile{
+  flex-grow:1; background:var(--panel-2); border:2px solid var(--accent-2); border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-card); padding:10px 12px 9px;
+}
+.score-tile .score-n{ font-size:2.1rem; font-weight:800; line-height:.95; color:var(--accent-2); font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+.score-tile .score-sub{ display:flex; align-items:baseline; gap:8px; margin-top:6px; font-variant-numeric:tabular-nums; }
+.score-tile .score-sub .crr{ flex-grow:1; text-align:right; font-size:.7rem; color:var(--muted); }
+.target-tile{
+  width:148px; flex-shrink:0; background:var(--accent); color:var(--accent-ink);
+  border:2px solid var(--bg); border-radius:var(--radius-lg); box-shadow:var(--shadow-card); padding:10px 12px 9px;
+}
+.target-tile .eyebrow{ font-size:.65rem; font-weight:800; letter-spacing:.1em; opacity:.68; }
+.target-tile .need-n{ font-size:1.7rem; font-weight:800; line-height:1.05; margin-top:2px; font-variant-numeric:tabular-nums; }
+.target-tile .need-sub{ font-size:.75rem; font-weight:700; opacity:.8; font-variant-numeric:tabular-nums; }
+.target-tile .rrr{ font-size:.75rem; font-weight:800; margin-top:5px; padding-top:5px; border-top:2px solid rgba(0,0,0,.25); font-variant-numeric:tabular-nums; }
+
+.innings-summary,.roster-card,.preset-form,.matchup-card,.over-card{
+  background:var(--panel);border:2px solid var(--line-strong);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-card);
+}
+.player-row{display:flex;justify-content:space-between;padding:7px 0;font-size:.95rem;border-bottom:1px solid var(--line);}
+.player-row:last-child{border-bottom:none;}
+
+.matchup-card{ padding:9px 12px 10px; margin-bottom:10px; }
+.matchup-head{ display:flex; align-items:center; gap:6px; font-size:.72rem; font-weight:800; letter-spacing:.08em; color:var(--muted); }
+.matchup-head span:first-child{ flex-grow:1; }
+.matchup-head span{ text-align:right; }
+.matchup-head.bowler-head{ margin-top:9px; padding-top:8px; border-top:2px solid var(--line-strong); }
+.matchup-row{ display:flex; align-items:center; gap:6px; margin-top:7px; }
+.matchup-row .name{ flex-grow:1; font-size:.8rem; font-weight:700; }
+.matchup-row.muted .name{ color:var(--muted); font-weight:600; }
+.matchup-row .stat{ text-align:right; font-size:.8rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+.matchup-row .stat.emph{ font-size:.9rem; font-weight:800; color:var(--text); }
+.matchup-marker{ flex-shrink:0; }
+.matchup-marker.striker{ width:0; height:0; border-left:7px solid var(--accent-2); border-top:5px solid transparent; border-bottom:5px solid transparent; }
+.matchup-marker.nonstriker{ width:7px; height:2px; background:var(--line-strong); }
+.matchup-marker.bowler{ width:7px; height:7px; border:2px solid var(--wicket); border-radius:50%; box-sizing:border-box; }
+.partnership-row{ display:flex; align-items:center; gap:6px; margin-top:9px; padding-top:8px; border-top:2px solid var(--line-strong); font-size:.72rem; font-weight:800; letter-spacing:.08em; color:var(--muted); }
+.partnership-row .val{ font-size:.85rem; font-weight:800; color:var(--text); font-variant-numeric:tabular-nums; letter-spacing:-.02em; margin-left:6px; }
+
+.over-card{ padding:9px 12px 10px; margin-bottom:10px; }
+.over-card-header{ display:flex; align-items:center; gap:8px; font-size:.72rem; font-weight:800; letter-spacing:.08em; color:var(--muted); }
+.over-row{ display:flex; align-items:center; gap:6px; margin-top:8px; }
+.over-row.dimmed{ opacity:.55; margin-top:6px; padding-top:6px; border-top:2px solid var(--line); }
+.over-row-label{ width:34px; flex-shrink:0; font-size:.72rem; font-weight:800; color:var(--muted); }
+.over-row-total{ margin-left:auto; padding-left:6px; font-size:.75rem; font-weight:700; font-variant-numeric:tabular-nums; }
+
+.freehit-badge{
+  display:inline-flex;margin-left:auto;background:var(--accent);color:var(--accent-ink);font-weight:800;
+  font-size:.68rem;padding:2px 8px;border-radius:6px;letter-spacing:.08em;border:2px solid var(--bg);
+}
+
+.chips{display:flex;flex-wrap:wrap;gap:7px;}
+.chip{
+  min-width:30px;height:30px;padding:0 6px;border-radius:8px;background:var(--panel-2);border:2px solid var(--line-strong);
+  display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;font-variant-numeric:tabular-nums;box-sizing:border-box;
+}
+.chip.wicket{background:var(--wicket);color:var(--bg);border-color:var(--bg);}
+.chip.four,.chip.six{background:var(--accent);color:var(--accent-ink);border-color:var(--bg);font-weight:800;}
+.chip.extra{background:none;border-color:var(--accent);color:var(--accent);}
+.chip.empty{color:var(--muted);background:none;border-style:dashed;}
+
+.run-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;}
+.run-pad.small{grid-template-columns:repeat(4,1fr);}
+.run-btn{
+  padding:17px 0;border-radius:var(--radius-md);border:2px solid var(--line-strong);background:var(--panel-2);color:var(--text);
+  font-size:1.3rem;font-weight:700;box-shadow:var(--shadow-card);
+}
+.run-btn.r1{background:rgba(var(--accent-2-rgb),.14);color:var(--accent-2);border-color:var(--accent-2);font-weight:800;}
+.run-btn.r4,.run-btn.r6{background:var(--accent);color:var(--accent-ink);border-color:var(--bg);font-weight:800;}
+.run-btn.undo{background:var(--panel);border-color:var(--line);color:var(--accent);font-size:.75rem;letter-spacing:.06em;font-weight:800;}
+.run-btn.active{outline:2px solid var(--accent);outline-offset:1px;}
+
+.extra-pad{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px;}
+.extra-pad button{
+  height:46px;padding:10px 2px;border-radius:var(--radius-sm);border:2px solid var(--line-strong);background:var(--panel-2);
+  color:var(--text);font-size:.75rem;font-weight:800;letter-spacing:.05em;box-shadow:var(--shadow-card);
+}
+.extra-pad button.active{background:var(--accent);color:var(--accent-ink);border-color:var(--bg);}
+.extra-hint{font-size:.8rem;color:var(--accent);margin-bottom:8px;}
+
+.action-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;margin-bottom:10px;}
+.wicket-btn{
+  height:56px;width:100%;padding:0;border-radius:var(--radius-md);border:2px solid var(--bg);
+  background:var(--wicket);color:var(--bg);font-weight:800;
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  box-shadow:var(--shadow-btn);
+}
+.wicket-btn .main{font-size:1.15rem;letter-spacing:.08em;}
+.wicket-btn .sub{font-size:.7rem;font-weight:700;opacity:.72;}
+
+table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:.85rem;}
+th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;}
+th{color:var(--muted);font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid var(--line-strong);}
+tbody tr:nth-child(even){background:rgba(255,255,255,.03);}
+td.status{color:var(--muted);font-size:.78rem;}
+.extras-line,.fow{font-size:.8rem;color:var(--muted);margin-bottom:10px;}
+.innings-summary{padding:14px 16px;margin-bottom:14px;overflow-x:auto;}
+.innings-summary .ov{color:var(--muted);font-weight:600;font-size:1rem;}
+
+.target-note{color:var(--accent-2);font-weight:600;}
+
+.modal-backdrop{
+  position:fixed;inset:0;background:rgba(2,6,5,.65);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+  display:flex;align-items:flex-end;justify-content:center;z-index:50;
+}
+.modal{
+  position:relative;background:var(--panel-solid);width:100%;max-width:520px;border-radius:18px 18px 0 0;
+  border:2px solid var(--line-strong);border-bottom:none;
+  padding:22px 18px calc(20px + env(safe-area-inset-bottom));max-height:88vh;overflow-y:auto;
+  box-shadow:0 -20px 60px -20px rgba(0,0,0,.65);
+}
+.modal::before{
+  content:"";position:absolute;top:10px;left:50%;transform:translateX(-50%);
+  width:40px;height:4px;border-radius:4px;background:var(--line-strong);
+}
+.pick-slot{ padding:2px 10px; min-height:0; font-size:.8rem; font-weight:700; border-radius:999px; border:2px dashed var(--accent); background:transparent; color:var(--accent); box-shadow:none; }
+.wicket-modal-head{ display:flex; align-items:baseline; gap:8px; margin-bottom:4px; }
+.wicket-modal-head .batter{ flex-grow:1; text-align:right; font-size:.75rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+.freehit-note{
+  display:flex; align-items:center; gap:10px; background:var(--accent); color:var(--accent-ink);
+  border:2px solid var(--bg); border-radius:var(--radius-md); box-shadow:var(--shadow-card);
+  padding:9px 12px; margin-bottom:12px;
+}
+.freehit-note .tag{ font-size:.68rem; font-weight:800; letter-spacing:.1em; flex-shrink:0; }
+.freehit-note .desc{ flex-grow:1; font-size:.75rem; font-weight:700; opacity:.85; line-height:1.3; }
+
+.wicket-types{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:0;}
+.wicket-types.solo{grid-template-columns:1fr;}
+.wicket-types button{
+  height:52px;padding:4px;border-radius:var(--radius-md);border:2px solid var(--line-strong);background:var(--panel-2);color:var(--text);font-weight:700;font-size:.88rem;box-shadow:var(--shadow-card);
+}
+.wicket-types button.active,.wicket-types.solo button{
+  background:rgba(var(--accent-2-rgb),.16);border-color:var(--accent-2);color:var(--accent-2);font-weight:800;
+}
+
+.end-picker{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;margin-bottom:8px;}
+.end-tile{
+  height:64px;border-radius:var(--radius-md);border:2px solid var(--line-strong);background:var(--panel-2);
+  display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;padding:0 12px;
+  box-shadow:var(--shadow-card);color:var(--text);
+}
+.end-tile .role{font-size:.68rem;font-weight:800;letter-spacing:.1em;color:var(--muted);}
+.end-tile.active{background:rgba(255,77,99,.14);border-color:var(--wicket);}
+.end-tile.active .role{color:var(--wicket);}
+
+.fielder-box{margin-top:14px;background:var(--panel);border:2px solid var(--line-strong);border-radius:var(--radius-md);padding:10px 12px 12px;}
+.fielder-box-head{display:flex;align-items:center;gap:8px;}
+.fielder-box-head label{margin:0;font-size:.68rem;font-weight:800;letter-spacing:.1em;color:var(--muted);}
+.fielder-box input{margin-top:8px;}
+.required-badge{background:rgba(var(--accent-rgb),.16);border:2px solid var(--accent);color:var(--accent);border-radius:6px;padding:1px 6px;font-size:.65rem;font-weight:800;letter-spacing:.06em;}
+button.primary.danger-confirm{background:var(--wicket);color:var(--bg);border-color:var(--bg);}
+
+/* --- new-batsman / new-bowler modals --- */
+.dismissal-banner{
+  margin-top:12px;background:rgba(255,77,99,.1);border:2px solid rgba(255,77,99,.45);border-radius:var(--radius-md);
+  padding:9px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+}
+.dismissal-banner .name{font-size:.85rem;font-weight:700;}
+.dismissal-banner .detail{flex-grow:1;text-align:right;font-size:.72rem;color:var(--muted);}
+.end-badge{
+  background:rgba(var(--accent-2-rgb),.14);border:2px solid var(--accent-2);color:var(--accent-2);
+  border-radius:6px;padding:2px 7px;font-size:.65rem;font-weight:800;letter-spacing:.06em;
+}
+.bowler-pick-list{display:flex;flex-direction:column;gap:8px;margin:8px 0;}
+/* One-tap player chips in the batsman/bowler/fielder sheets -- scroll
+   inside the sheet rather than pushing its buttons off a short screen. */
+/* Search-select for in-match name boxes (renderNameCombo): our own list
+   under the input, shown only while it's focused -- see the JS side. */
+.combo{position:relative;}
+.combo-list{margin:-6px 0 12px;max-height:176px;overflow-y:auto;border:2px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--panel-solid);}
+.combo-list[hidden], .combo-opt[hidden]{display:none;}
+.combo-opt{display:block;width:100%;text-align:left;border:none;border-bottom:1px solid var(--line);border-radius:0;background:none;box-shadow:none;padding:11px 12px;font-size:.92rem;font-weight:600;color:var(--text);}
+.combo-opt:last-child{border-bottom:none;}
+.combo-opt .combo-nick{color:var(--muted);font-weight:600;font-size:.82rem;}
+.combo-opt .combo-nick::before{content:"“";} .combo-opt .combo-nick::after{content:"”";}
+.combo-opt .combo-jersey{float:right;color:var(--muted);font-size:.78rem;font-weight:700;font-variant-numeric:tabular-nums;}
+.combo-opt:active{background:var(--panel-2);}
+.bowler-pick-row{
+  height:52px;width:100%;background:var(--panel-2);border:2px solid var(--line-strong);border-radius:var(--radius-sm);
+  display:flex;align-items:center;gap:10px;padding:0 12px;box-shadow:var(--shadow-card);color:var(--text);box-sizing:border-box;
+}
+.bowler-pick-row .name{flex-grow:1;text-align:left;font-size:.9rem;font-weight:700;}
+.bowler-pick-row .figs{font-size:.8rem;color:var(--muted);}
+.bowler-pick-row.disabled{background:none;border-style:dashed;box-shadow:none;color:var(--muted);}
+.bowler-pick-row.active{background:rgba(var(--accent-2-rgb),.16);border-color:var(--accent-2);color:var(--accent-2);}
+.bowler-pick-row.active .figs{color:var(--accent-2);}
+.modal.danger{border-color:var(--wicket);}
+
+/* End innings by hand (no overs/players limit) -- live screen + sheets. */
+button.link-btn.end-innings-sheet{margin-top:10px;border:2px dashed var(--line-strong);border-radius:var(--radius-sm);}
+
+/* Loading indicators (see "activity" in the UI section). Only shown while
+   requests are in flight, never on the live-scoring screen. */
+.sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+.top-progress{ position:fixed; top:0; left:0; right:0; height:3px; z-index:80; pointer-events:none; overflow:hidden; opacity:0; transition:opacity .15s ease; }
+.top-progress::before{ content:""; position:absolute; top:0; bottom:0; left:-40%; width:40%; background:linear-gradient(90deg, transparent, var(--accent-2), var(--accent), transparent); }
+body.is-busy .top-progress{ opacity:1; }
+body.is-busy .top-progress::before{ animation:progressSlide 1.1s ease-in-out infinite; }
+body.live-scoring .top-progress{ display:none; }
+@keyframes progressSlide{ from{ left:-40%; } to{ left:100%; } }
+@keyframes spin{ to{ transform:rotate(360deg); } }
+.spinner{ display:inline-block; width:18px; height:18px; flex-shrink:0; border-radius:50%; border:2.5px solid var(--line-strong); border-top-color:var(--accent-2); animation:spin .75s linear infinite; }
+.loading-block{ display:flex; align-items:center; gap:10px; padding:14px 2px; color:var(--muted); font-size:.9rem; }
+/* The tapped button while its request runs: label hidden (keeps its size),
+   spinner in the middle, no second tap. */
+.is-loading{ position:relative; color:transparent !important; pointer-events:none; }
+.is-loading > *{ visibility:hidden; }
+.is-loading::after{
+  content:""; position:absolute; top:50%; left:50%; width:16px; height:16px; margin:-8px 0 0 -8px; border-radius:50%;
+  border:2.5px solid rgba(255,255,255,.25); border-top-color:var(--text); animation:spin .75s linear infinite;
+}
+button.is-loading:disabled{ opacity:.9; }
+button.primary.is-loading::after{ border-color:rgba(0,0,0,.2); border-top-color:var(--accent-ink); }
+button.primary.danger-confirm.is-loading::after{ border-color:rgba(0,0,0,.2); border-top-color:var(--bg); }
+@media (prefers-reduced-motion: reduce){
+  .spinner, .is-loading::after{ animation-duration:2s; }
+  body.is-busy .top-progress::before{ animation:none; left:0; width:100%; opacity:.6; }
+}
+
+/* Sync status (renderSyncPill / renderSyncSheet) */
+.topbar-sync{
+  display:inline-flex; align-items:center; gap:5px;
+  height:36px; padding:0 10px; border-radius:var(--radius-sm); border:2px solid var(--line-strong);
+  background:var(--panel-2); color:var(--muted); font-size:.75rem; font-weight:800; white-space:nowrap;
+}
+.topbar-sync .long{ display:none; }
+@media (min-width:520px){ .topbar-sync .short{ display:none; } .topbar-sync .long{ display:inline; } }
+.topbar-sync.pending, .topbar-sync.syncing{ color:var(--info); border-color:var(--info); }
+.topbar-sync.offline{ color:var(--accent); border-color:rgba(var(--accent-rgb),.6); }
+.topbar-sync.failed{ color:var(--wicket); border-color:var(--wicket); }
+.sync-list{ display:flex; flex-direction:column; gap:8px; margin:10px 0; }
+.sync-row{ display:flex; align-items:center; gap:10px; padding:9px 12px; background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-sm); }
+.sync-row.failed{ border-color:var(--wicket); }
+.sync-row-text{ flex-grow:1; display:flex; flex-direction:column; min-width:0; }
+.sync-row-text .title{ font-weight:700; font-size:.88rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sync-row-text .sub{ font-size:.72rem; color:var(--muted); }
+.sync-row.failed .sub{ color:var(--wicket); }
+.sync-row-actions{ display:flex; gap:6px; flex-shrink:0; }
+.pending-tag{ display:inline-block; margin-left:6px; padding:1px 6px; border-radius:5px; border:1px dashed var(--muted); color:var(--muted); font-size:.58rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; vertical-align:middle; }
+
+/* Shared confirmation sheet (askConfirm / renderConfirmModal) */
+.modal.no-anim, .modal-backdrop.no-anim, .screen.no-anim, .score-tile.no-anim, .chip.no-anim{animation:none;}
+.confirm-modal{max-width:460px;}
+.confirm-head{display:flex;align-items:center;gap:12px;margin:4px 0 6px;}
+.confirm-head h2{margin:0;font-size:1.2rem;line-height:1.25;}
+.confirm-icon{width:38px;height:38px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid var(--line-strong);background:var(--panel-2);font-size:1rem;font-weight:800;}
+.confirm-modal.danger .confirm-icon{border-color:var(--wicket);color:var(--wicket);background:rgba(255,77,99,.1);}
+.confirm-body{font-size:.9rem;line-height:1.45;color:var(--muted);}
+.confirm-body p{margin:8px 0;}
+.confirm-body b{color:var(--text);}
+.confirm-actions{display:flex;gap:10px;margin-top:14px;}
+.confirm-actions .ghost{width:120px;flex-shrink:0;}
+.confirm-actions .primary{margin-top:0;flex-grow:1;}
+
+/* Team builder as a sheet */
+.team-modal{border-color:var(--team-c, var(--line-strong));}
+.team-modal .team-builder{border:none;background:none;box-shadow:none;padding:0;margin:0;}
+.team-modal .pick-grid{max-height:none;overflow:visible;}
+/* bottom offset = the sheet's own bottom padding: sticky insets by it, which
+   would otherwise leave a strip of rows scrolling under the bar. */
+.team-modal .builder-bar{bottom:calc(-20px - env(safe-area-inset-bottom));margin:14px -18px calc(-20px - env(safe-area-inset-bottom));padding:12px 18px calc(12px + env(safe-area-inset-bottom));border-radius:0;}
+
+/* Match options sheet (renderMatchMenuModal) */
+.menu-list{display:flex;flex-direction:column;gap:8px;margin:12px 0 10px;}
+.menu-row{
+  display:flex;align-items:center;gap:12px;width:100%;min-height:62px;padding:10px 12px;text-align:left;
+  background:var(--panel-2);border:2px solid var(--line-strong);border-radius:var(--radius-md);color:var(--text);box-shadow:var(--shadow-card);
+}
+.menu-row:active{transform:translate(2px,2px);box-shadow:none;}
+.menu-row-icon{width:34px;height:34px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid var(--line-strong);font-size:1rem;font-weight:800;}
+.menu-row-text{flex-grow:1;display:flex;flex-direction:column;gap:2px;}
+.menu-row-text .title{font-weight:800;font-size:.92rem;}
+.menu-row-text .sub{font-size:.75rem;color:var(--muted);line-height:1.3;}
+.menu-row-chev{color:var(--muted);font-size:1.3rem;}
+.menu-row:last-child .menu-row-icon{color:var(--wicket);border-color:var(--wicket);}
+
+/* Switch players (match squads) */
+.squad-board{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0 14px;}
+.squad-col{background:var(--panel);border:2px solid var(--line-strong);border-radius:var(--radius-md);padding:8px;display:flex;flex-direction:column;gap:6px;min-width:0;}
+.squad-col-head{display:flex;align-items:center;gap:6px;padding:2px 2px 4px;font-size:.85rem;min-width:0;}
+.squad-col-head b{flex-grow:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.squad-col-head .muted{color:var(--muted);font-size:.75rem;}
+.team-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;background:var(--info);}
+.team-dot-B{background:var(--accent);}
+.squad-player{
+  display:flex;align-items:center;gap:6px;width:100%;min-height:40px;padding:6px 9px;background:var(--panel-2);
+  border:2px solid var(--line-strong);border-radius:var(--radius-sm);color:var(--text);font-size:.82rem;font-weight:700;text-align:left;
+}
+.squad-player .name{flex-grow:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.squad-player .move{color:var(--accent-2);font-weight:800;}
+.squad-player.played{background:none;border-style:dashed;color:var(--muted);}
+.squad-player .name .sub{display:block;font-size:.6rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:1px;}
+.squad-player .name .sub.guest{color:var(--info);}
+.squad-add{margin-bottom:6px;}
+.guest-tag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:5px;border:1px solid var(--info);color:var(--info);font-size:.58rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;vertical-align:middle;flex-shrink:0;}
+.player-chip.guest{border-style:dashed;}
+.builder-add{margin-top:10px;padding:10px 12px;border:2px dashed var(--line-strong);border-radius:var(--radius-md);background:var(--panel);}
+.builder-add-title{font-weight:800;font-size:.88rem;margin-bottom:8px;overflow-wrap:anywhere;}
+.builder-add-title .q{color:var(--accent-2);}
+.builder-add-title .muted{color:var(--muted);font-weight:600;}
+.builder-add-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.builder-add .hint{margin:8px 0 0;}
+.builder-notice{color:var(--accent-2);margin:4px 0 8px;}
+.builder-notice.error{color:var(--wicket);}
+
+.tag-pill{font-size:.7rem;font-weight:700;color:var(--muted);border:2px solid var(--line);border-radius:8px;padding:5px 9px;}
+.tag-pill.gold{color:var(--accent);border-color:rgba(var(--accent-rgb),.5);}
+.bowler-pick-row.disabled .name.strike{text-decoration:line-through;}
+.bowler-pick-row.disabled .reason{font-size:.7rem;font-weight:700;text-align:right;line-height:1.3;}
+.modal-footer-hint{display:flex;align-items:center;gap:8px;margin-top:14px;}
+.modal-footer-hint .hint{flex-grow:1;margin:0;line-height:1.4;}
+.undo-chip{
+  height:40px;padding:0 14px;background:var(--panel);border:2px solid var(--line-strong);border-radius:var(--radius-sm);
+  color:var(--accent);font-size:.72rem;font-weight:800;letter-spacing:.06em;box-shadow:var(--shadow-card);flex-shrink:0;
+}
+
+.n{font-variant-numeric:tabular-nums;}
+.hint{font-size:.85rem;color:var(--muted);}
+.name-link{ background:none; border:none; padding:0; color:var(--text); font:inherit; font-weight:700; text-align:left; text-decoration:underline; text-decoration-color:var(--line-strong); text-underline-offset:3px; }
+.profile-head{ display:flex; align-items:center; gap:14px; margin-bottom:6px; }
+.profile-photo{ width:64px; height:64px; border-radius:50%; object-fit:cover; border:2px solid var(--line-strong); flex-shrink:0; }
+.profile-head .avatar-badge{ width:64px; height:64px; font-size:1.7rem; }
+.profile-badges{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:4px; }
+.profile-photo-edit{ display:flex; align-items:center; gap:14px; margin-bottom:12px; }
+.profile-photo-edit .avatar-badge, .profile-photo-edit .profile-photo{ margin-bottom:0; width:64px; height:64px; }
+.file-btn{ display:inline-block; cursor:pointer; margin:0 6px 0 0; }
+.profile-head .avatar-badge{ margin-bottom:0; flex-shrink:0; }
+.profile-row{ display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); font-size:.9rem; }
+.profile-row:last-of-type{ border-bottom:none; }
+.profile-key{ color:var(--muted); font-size:.75rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+.tier-summary{ display:flex; gap:8px; flex-wrap:wrap; margin:-2px 0 4px; }
+.stat-sub{ margin:12px 0 6px; font-size:.7rem; font-weight:800; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
+.stat-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:8px; }
+.stat-tile{ display:flex; flex-direction:column; gap:2px; padding:10px 10px 9px; background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-md); box-shadow:var(--shadow-card); }
+.stat-num{ font-size:1.25rem; font-weight:800; }
+.stat-label{ font-size:.66rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.guest-note{ border-left:4px solid var(--info); padding-left:10px; margin:0 0 12px; font-size:.78rem; }
+
+/* --- auth screens (sign in/up, account) & settings rows -- a lone
+   form/button floating on the bare page background read as unfinished;
+   wrapping it in the same bordered-card language as everything else
+   ties it into the rest of the app. --- */
+.auth-card{
+  background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-lg);
+  padding:18px; box-shadow:var(--shadow-card); margin-top:14px;
+}
+.auth-card form{ margin:0; }
+.avatar-badge{
+  display:flex; align-items:center; justify-content:center;
+  width:52px; height:52px; border-radius:50%; margin-bottom:10px;
+  background:var(--accent-2); color:var(--accent-2-ink); border:2px solid var(--accent-2-ink);
+  font-size:1.4rem; font-weight:800;
+}
+.settings-row{
+  display:flex; justify-content:space-between; align-items:center; gap:10px;
+  background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-md);
+  padding:14px 16px; margin-bottom:8px; box-shadow:var(--shadow-card);
+}
+.settings-row-label{ font-weight:700; }
+.settings-row-sub{ font-size:.78rem; color:var(--muted); }
+
+/* --- animation: every render replaces innerHTML wholesale, so these
+   keyframes would replay on every re-render. render() adds .no-anim to
+   anything that was already on screen (same screen, same sheet, an open
+   scrim, a ball chip already shown, an unchanged score), so only what's
+   actually new animates. screenIn still stays a shallow settle (never
+   fully transparent) for real screen changes. --- */
+@keyframes screenIn{ from{ opacity:.72; transform:translateY(3px); } to{ opacity:1; transform:translateY(0); } }
+@keyframes backdropIn{ from{ opacity:0; } to{ opacity:1; } }
+@keyframes modalUp{ from{ opacity:0; transform:translateY(24px); } to{ opacity:1; transform:translateY(0); } }
+@keyframes chipPop{ from{ opacity:0; transform:scale(.5); } to{ opacity:1; transform:scale(1); } }
+@keyframes scorePulse{ 0%{ transform:scale(.96); } 60%{ transform:scale(1.02); } 100%{ transform:scale(1); } }
+@keyframes badgePulse{ 0%,100%{ opacity:1; } 50%{ opacity:.6; } }
+
+.screen{ animation:screenIn .15s ease; }
+.modal-backdrop{ animation:backdropIn .2s ease; }
+.modal{ animation:modalUp .28s cubic-bezier(.16,1,.3,1); }
+.chip{ animation:chipPop .22s cubic-bezier(.34,1.56,.64,1); }
+.score-tile{ animation:scorePulse .3s ease; }
+.freehit-badge{ animation:badgePulse 1.6s ease-in-out infinite; }
+button{ transition:transform .12s ease, background-color .15s ease, border-color .15s ease, opacity .15s ease, box-shadow .15s ease; }
+button:active:not(:disabled){ transform:scale(.96); }
+.home-card, .list-row, .preset-chip{ transition:transform .12s ease, border-color .15s ease, box-shadow .15s ease; }
+.home-card:active, .list-row:active{ transform:scale(.98); }
+
+/* --- topbar: one sticky row replaces the old three stacked floating
+   circles (sound/sign-in/menu) that used to sit independently at
+   top-right. It bleeds to #app's edges via negative margin equal to
+   #app's own padding, then re-applies that padding to itself. --- */
+.topbar{
+  position:sticky;top:0;z-index:40;
+  margin:-16px -16px 18px;padding:calc(12px + env(safe-area-inset-top)) 16px 12px;
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--bg-2);border-bottom:2px solid var(--line-strong);
+}
+.topbar-left{ display:flex;align-items:center;gap:8px;min-width:0;flex:1 1 auto;overflow:hidden; }
+.topbar-right{ display:flex;align-items:center;gap:8px;flex-shrink:0; }
+.topbar-brand{ font-weight:800;letter-spacing:-.01em;font-size:.95rem; }
+.topbar-match{ font-size:.8rem;font-weight:800;letter-spacing:.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.topbar-live{ display:flex;align-items:center;gap:8px;min-width:0;height:36px;padding:0 12px;border-radius:var(--radius-sm);background:var(--accent-2);color:var(--accent-2-ink);border:2px solid var(--bg);font-size:.75rem;font-weight:800;overflow:hidden;white-space:nowrap;text-overflow:ellipsis; }
+.topbar-live .live-dot{ background:var(--accent-2-ink); }
+.live-dot{ width:8px;height:8px;border-radius:50%;background:var(--wicket);flex-shrink:0;animation:liveDotPulse 1.6s ease-in-out infinite; }
+@keyframes liveDotPulse{ 50%{ opacity:.35; } }
+.topbar-icon-btn{
+  width:36px;height:36px;padding:0;border-radius:var(--radius-sm);flex-shrink:0;
+  background:var(--panel-2);border:2px solid var(--line-strong);color:var(--text);font-size:1rem;
+  display:flex;align-items:center;justify-content:center;
+}
+.topbar-signin{
+  height:36px;padding:0 14px;border-radius:var(--radius-sm);flex-shrink:0;
+  background:var(--accent);border:2px solid var(--accent-ink);color:var(--accent-ink);font-size:.82rem;font-weight:800;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+}
+
+/* --- home: asymmetric bento grid. .primary-card always spans the full
+   row (a hero tile) via grid-column, whatever screen's .home-grid it
+   turns up in (Home, Premier dashboard, club home) -- one rule instead
+   of bespoke per-screen markup. --- */
+.home-header{ margin-bottom:14px; }
+.home-header h1{ margin-bottom:2px; }
+.home-header .tagline{ margin-bottom:0; }
+/* A rotated "sticker" behind the wordmark instead of plain text --
+   small, deliberate flourish rather than a full illustration. */
+.brand-highlight{
+  display:inline-block; background:var(--accent-2); color:var(--accent-2-ink);
+  padding:0 8px; border-radius:6px; transform:rotate(-1.5deg);
+}
+.home-logo{ width:56px; height:56px; border-radius:var(--radius-md); object-fit:cover; margin-bottom:8px; border:2px solid var(--line-strong); }
+/* Phone-only "install / open the app" banner (see INSTALL PROMPT at the
+   end of the script). Static element outside #app, never on the live
+   scoring screen, no infinite animation. */
+.install-banner{
+  position:fixed; left:50%; transform:translateX(-50%); bottom:calc(12px + env(safe-area-inset-bottom)); z-index:45;
+  width:min(488px, calc(100vw - 32px)); display:flex; align-items:center; gap:10px;
+  background:var(--panel); color:var(--text); border:2px solid var(--line-strong); border-radius:var(--radius-md);
+  box-shadow:var(--shadow-card); padding:10px 10px 10px 12px; animation:backdropIn .2s ease-out;
+}
+.install-banner[hidden], body.live-scoring .install-banner{ display:none; }
+body.has-install-banner:not(.live-scoring) #app{ padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
+.install-banner img{ width:36px; height:36px; border-radius:8px; flex-shrink:0; }
+.install-banner-text{ flex:1; min-width:0; font-size:.8rem; line-height:1.3; }
+.install-banner-text strong{ display:block; font-size:.9rem; }
+.install-banner-text span{ color:var(--muted); }
+.install-banner-go{
+  flex-shrink:0; background:var(--accent); color:var(--accent-ink); border:2px solid var(--accent-dim); border-radius:var(--radius-sm);
+  box-shadow:var(--shadow-btn); font-weight:800; font-size:.85rem; padding:8px 12px; cursor:pointer;
+}
+.install-banner-go[hidden]{ display:none; }
+.install-banner-close{ flex-shrink:0; background:none; border:0; color:var(--muted); font-size:1.2rem; padding:4px 6px; cursor:pointer; }
+@media print{ .install-banner{ display:none !important; } }
+.back-bar{
+  display:inline-flex; align-items:center; gap:6px; height:38px; padding:0 12px 0 10px;
+  background:var(--panel); border:2px solid var(--line-strong); border-radius:var(--radius-sm); box-shadow:var(--shadow-card);
+  color:var(--muted); font-size:.72rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; margin-bottom:14px;
+}
+.club-switcher{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-md);
+  padding:10px 14px; margin-bottom:18px;
+}
+.club-switcher-label{ font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); font-weight:800; }
+.club-switcher select{ width:auto; margin:0; padding:6px 30px 6px 10px; font-size:.85rem; background-position:right 10px center; background-size:11px; }
+.home-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:20px; }
+.home-card{
+  display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left;
+  background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-lg); padding:16px; color:var(--text);
+  box-shadow:var(--shadow-card);
+}
+.home-card.primary-card{
+  position:relative;
+  grid-column:1 / -1;
+  display:grid; grid-template-columns:auto 1fr; column-gap:14px; align-items:center;
+  background:var(--accent-2); color:var(--accent-2-ink); border-color:var(--accent-2-ink);
+  padding:18px;
+}
+.home-card.primary-card::after{
+  content:"→"; position:absolute; top:14px; right:16px; font-size:1.4rem; font-weight:900; opacity:.55;
+}
+/* Icon badges: a fixed square instead of a bare emoji, cycling through
+   four accent colors across the grid (skipping the hero tile, which
+   already has its own full-bleed treatment) -- turns the "wall of
+   identical gray boxes" look into a color-coded dashboard without
+   needing per-card markup. */
+.home-card-icon{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:38px; height:38px; font-size:1.2rem; margin-bottom:2px;
+  background:var(--panel); border:2px solid var(--line-strong); border-radius:var(--radius-sm);
+}
+.home-grid button.home-card:not(.primary-card):nth-of-type(4n+2) .home-card-icon{ background:rgba(var(--accent-rgb),.18); border-color:var(--accent); }
+.home-grid button.home-card:not(.primary-card):nth-of-type(4n+3) .home-card-icon{ background:rgba(95,199,255,.18); border-color:var(--info); }
+.home-grid button.home-card:not(.primary-card):nth-of-type(4n) .home-card-icon{ background:rgba(255,93,112,.18); border-color:var(--danger); }
+.home-grid button.home-card:not(.primary-card):nth-of-type(4n+1) .home-card-icon{ background:rgba(var(--accent-2-rgb),.18); border-color:var(--accent-2); }
+.home-card.primary-card .home-card-icon{
+  grid-row:1 / 3; width:52px; height:52px; font-size:1.9rem;
+  background:rgba(0,0,0,.12); border-color:var(--accent-2-ink);
+}
+.home-card-title{ font-weight:800; font-size:.98rem; margin-top:6px; }
+.home-card.primary-card .home-card-title{ grid-column:2; margin-top:0; font-size:1.2rem; align-self:end; }
+.home-card-sub{ font-size:.78rem; color:var(--muted); }
+.home-card.primary-card .home-card-sub{ grid-column:2; align-self:start; color:var(--accent-2-ink); opacity:.75; }
+.home-section{ margin-top:6px; }
+/* .section-label: the same uppercase-eyebrow-with-bullet treatment as
+   Home's section headers, reusable anywhere a screen needs a plain
+   in-page section divider (Club home, Settings, tournament fixtures)
+   instead of a bare default-styled <h3>. */
+.home-section h3, .section-label{
+  display:flex; align-items:center; gap:7px;
+  color:var(--muted); font-size:.78rem; text-transform:uppercase; letter-spacing:.08em; margin:18px 0 8px; font-weight:800;
+}
+.home-section h3::before, .section-label::before{ content:""; width:8px; height:8px; border-radius:2px; background:var(--accent-2); flex-shrink:0; }
+
+.list-row{
+  display:flex; justify-content:space-between; align-items:center; width:100%;
+  background:var(--panel-2); border:2px solid var(--line); border-left:5px solid var(--accent-2); border-radius:var(--radius-md);
+  padding:13px 15px; margin-bottom:8px; color:var(--text); text-align:left; font-size:.95rem;
+}
+.list-row.active{ border-color:var(--accent-2); border-left-color:var(--accent-2); box-shadow:0 0 0 1px var(--accent-2) inset; }
+.list-row .chevron{ color:var(--muted); }
+.list-row .muted{ color:var(--muted); font-size:.8rem; }
+/* Club roster row: open-profile button + a separate remove button (no nested buttons). */
+.list-row.roster-row{ padding:0; }
+.roster-row .roster-open{ flex-grow:1; display:flex; justify-content:space-between; align-items:center; gap:10px; background:none; border:none; color:inherit; font:inherit; text-align:left; padding:13px 10px 13px 15px; }
+.roster-row .roster-remove{ flex-shrink:0; width:44px; align-self:stretch; background:none; border:none; border-left:2px solid var(--line); color:var(--muted); font-size:.9rem; }
+.roster-row .roster-remove:hover{ color:var(--wicket); }
+.danger-text{ color:var(--wicket) !important; }
+.jersey-no{ color:var(--accent); font-variant-numeric:tabular-nums; }
+/* Floating add button (club Players). Static -- no infinite animation on an
+   always-on-screen control (see CLAUDE.md "Theme & sound"). Below the
+   modal backdrop (50) and the side menu (49/50). */
+.fab{
+  position:fixed; right:max(16px, calc((100vw - 520px) / 2 + 16px)); bottom:calc(20px + env(safe-area-inset-bottom)); z-index:30;
+  width:58px; height:58px; border-radius:50%; background:var(--accent); color:var(--accent-ink);
+  border:2px solid var(--bg); box-shadow:var(--shadow-btn); font-size:1.9rem; font-weight:800; line-height:1; padding:0;
+}
+.fab:active{ transform:scale(.94); }
+.fab-spacer{ height:84px; }
+/* Add-player sheet: existing platform players matching the typed name. */
+.suggest-row{ display:flex; align-items:center; gap:10px; padding:8px 10px; margin-bottom:6px; background:var(--panel-2); border:2px solid var(--line); border-radius:var(--radius-sm); }
+.suggest-row .suggest-name{ flex-grow:1; font-size:.9rem; font-weight:700; min-width:0; overflow-wrap:anywhere; line-height:1.3; }
+.suggest-avatar{ width:32px; height:32px; border-radius:50%; object-fit:cover; flex-shrink:0; margin:0; font-size:.85rem; }
+.suggest-row button{ flex-shrink:0; margin:0; }
+
+/* --- presets / tabs / shared form bits --- */
+.preset-picker{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+.preset-chip{ padding:9px 15px; border-radius:var(--radius-sm); border:2px solid var(--line-strong); background:var(--panel-2); color:var(--text); font-size:.85rem; font-weight:700; }
+.preset-chip.active{ background:var(--accent-2); color:var(--accent-2-ink); border-color:var(--accent-2-ink); font-weight:800; }
+
+.theme-gallery{ display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; margin-bottom:16px; }
+.theme-swatch{
+  display:flex; flex-direction:column; align-items:flex-start; gap:10px; padding:14px; border-radius:var(--radius-md);
+  border:2px solid var(--line-strong); text-align:left; box-shadow:var(--shadow-card);
+}
+.theme-swatch.active{ border-color:var(--accent-2); box-shadow:0 0 0 2px var(--accent-2), var(--shadow-card); }
+.theme-swatch-dots{ display:flex; gap:6px; }
+.theme-swatch-dots span{ width:16px; height:16px; border-radius:50%; box-shadow:0 0 0 1px rgba(0,0,0,.15) inset; }
+.theme-swatch-name{ font-size:.85rem; font-weight:700; }
+
+.side-menu-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:49; }
+.side-menu{
+  position:fixed; top:0; left:0; bottom:0; width:min(280px,80vw); z-index:50; padding:20px 16px;
+  background:var(--panel-solid); border-right:2px solid var(--line-strong);
+  display:flex; flex-direction:column; gap:4px; overflow-y:auto;
+}
+.side-menu h2{ margin:0 0 14px; }
+.side-menu-item{
+  display:flex; align-items:center; gap:12px; padding:12px 10px; border-radius:var(--radius-sm);
+  background:none; border:none; color:var(--text); font-weight:600; text-align:left; width:100%;
+}
+.side-menu-item:hover{ background:var(--panel); }
+.side-menu-item .icon{ font-size:1.1rem; width:22px; text-align:center; }
+.side-menu-close{ align-self:flex-end; margin-bottom:4px; }
+
+.field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.check-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.inline-num{ display:inline-block; width:54px !important; margin:0 !important; padding:6px 8px !important; }
+
+/* A fieldset of radios restyled as a tile picker -- same underlying
+   <input type=radio> semantics, purely a CSS reskin (see Match Setup's
+   "Who bats first?"), so it stays a real, submittable radio group. */
+.tile-fieldset{ border:none; margin:0 0 12px; padding:0; display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.tile-fieldset legend{ display:none; }
+.tile-fieldset label{
+  position:relative; display:flex; align-items:center; justify-content:center; height:52px; margin:0;
+  border:2px solid var(--line-strong); border-radius:var(--radius-md); background:var(--panel-2);
+  font-size:.85rem; font-weight:700; color:var(--text); box-shadow:var(--shadow-card); text-align:center;
+}
+.tile-fieldset input{ position:absolute; opacity:0; }
+.tile-fieldset label:has(input:checked){ background:rgba(95,199,255,.14); border-color:var(--info); color:var(--info); font-weight:800; }
+
+/* Segmented chip tabs, matching .preset-chip's language, instead of a
+   plain underline -- underline tabs on a flat background disappeared
+   into the "everything is a thin gray line" boredom this pass fixes. */
+.tab-row{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+.tab-btn{
+  background:var(--panel-2); border:2px solid var(--line-strong); color:var(--muted);
+  padding:8px 14px; margin-right:0; font-size:.85rem; font-weight:700; border-radius:var(--radius-sm);
+}
+.tab-btn.active{ background:var(--accent-2); color:var(--accent-2-ink); border-color:var(--accent-2-ink); font-weight:800; }
+
+.preset-list{ margin-bottom:10px; }
+.preset-row{
+  background:var(--panel); border:2px solid var(--line-strong); border-radius:var(--radius-md); padding:13px 15px; margin-bottom:8px;
+}
+.preset-row.builtin{ border-color:var(--accent); }
+.preset-row .muted{ color:var(--muted); font-size:.78rem; margin-top:2px; }
+.preset-row-head{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:11px; }
+.preset-row-head b{ font-size:.95rem; }
+.row-actions{ display:flex; gap:6px; flex-shrink:0; margin-left:auto; }
+.preset-form{ padding:16px; margin-top:10px; }
+
+/* --- club tournament teams: cards, builder, match-setup versus picker ---
+   team-c0..3 set --team-c, cycling the same four accents as Home's card
+   badges; it's position-based, there's no per-team color in the data. */
+.team-c0{ --team-c:var(--info); --team-c-bg:rgba(95,199,255,.14); }
+.team-c1{ --team-c:var(--accent); --team-c-bg:rgba(var(--accent-rgb),.14); }
+.team-c2{ --team-c:var(--accent-2); --team-c-bg:rgba(var(--accent-2-rgb),.14); }
+.team-c3{ --team-c:var(--danger); --team-c-bg:rgba(255,93,112,.14); }
+.team-badge{
+  width:40px; height:40px; flex-shrink:0; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  background:var(--team-c-bg, var(--panel-2)); border:2px solid var(--team-c, var(--line-strong)); color:var(--team-c, var(--text));
+  font-weight:800; font-size:.85rem; letter-spacing:.02em;
+}
+.team-grid{ display:grid; grid-template-columns:1fr; gap:10px; margin-bottom:10px; }
+@media (min-width:640px){ .team-grid{ grid-template-columns:1fr 1fr; } }
+.team-card{
+  background:var(--panel); border:2px solid var(--line-strong); border-left:6px solid var(--team-c, var(--line-strong));
+  border-radius:var(--radius-md); padding:12px 14px; box-shadow:var(--shadow-card); display:flex; flex-direction:column; gap:10px;
+}
+.team-card.add{
+  border:2px dashed var(--line-strong); box-shadow:none; background:none; color:var(--accent-2);
+  align-items:center; justify-content:center; flex-direction:row; min-height:64px; font-weight:800; font-size:.95rem;
+}
+.team-card.add .plus{ font-size:1.2rem; }
+.team-card-head{ display:flex; align-items:center; gap:10px; }
+.team-card-title{ display:flex; flex-direction:column; min-width:0; }
+.team-card-title b{ font-size:1rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.team-card-title .muted{ color:var(--muted); font-size:.75rem; }
+.team-card-actions{ display:flex; gap:6px; margin-left:auto; flex-shrink:0; }
+.icon-btn{
+  width:38px; height:38px; padding:0; display:inline-flex; align-items:center; justify-content:center;
+  border-radius:var(--radius-sm); border:2px solid var(--line-strong); background:var(--panel-2); color:var(--text);
+}
+.icon-btn:active{ transform:translate(1px,1px); }
+.icon-btn.danger{ color:var(--wicket); }
+.icon-btn.danger:hover{ border-color:var(--wicket); }
+.team-roster{ display:flex; flex-wrap:wrap; gap:6px; }
+.player-chip{
+  display:inline-flex; align-items:center; gap:6px; padding:3px 9px 3px 3px; border-radius:999px;
+  background:var(--panel-2); border:2px solid var(--line); font-size:.78rem; font-weight:700; color:var(--text);
+}
+.player-chip.more{ padding:3px 10px; color:var(--muted); }
+button.player-chip.on{ border-color:var(--team-c, var(--accent-2)); background:var(--team-c-bg, var(--panel-2)); }
+.player-chip .x{ color:var(--muted); font-size:.95rem; margin-left:2px; }
+.mini-avatar{
+  width:24px; height:24px; flex-shrink:0; border-radius:50%; display:inline-flex; align-items:center; justify-content:center;
+  background:var(--bg-2); border:1px solid var(--line-strong); font-size:.6rem; font-weight:800; color:var(--muted);
+}
+.team-builder{
+  background:var(--panel); border:2px solid var(--team-c, var(--line-strong)); border-radius:var(--radius-md);
+  padding:14px; box-shadow:var(--shadow-card); margin-bottom:12px;
+}
+.team-builder .team-card-head{ margin-bottom:12px; }
+.team-builder .team-roster.picked{ margin-bottom:8px; }
+.team-builder .move-note{ color:var(--accent); }
+.builder-tools{ display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+.builder-tools input{ margin:0; flex:1; min-width:0; }
+.builder-tools button{ flex-shrink:0; }
+.pick-grid{ display:grid; grid-template-columns:1fr; gap:6px; max-height:46vh; overflow-y:auto; padding:2px; }
+@media (min-width:480px){ .pick-grid{ grid-template-columns:1fr 1fr; } }
+.pick-row{
+  display:flex; align-items:center; gap:8px; min-height:46px; padding:6px 10px; text-align:left; width:100%;
+  background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-sm); color:var(--text); font-size:.85rem; font-weight:700;
+}
+.pick-row[hidden], .pick-grid .no-results[hidden]{ display:none; }
+.pick-row:active{ border-color:var(--team-c, var(--accent-2)); }
+.pick-row .name{ flex-grow:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pick-row .state{ color:var(--team-c, var(--accent-2)); font-weight:800; flex-shrink:0; }
+.pick-row.taken{ border-style:dashed; }
+.pick-row.taken .state{ color:var(--muted); font-size:.7rem; }
+.builder-bar{
+  position:sticky; bottom:0; display:flex; gap:10px; margin:12px -14px -14px; padding:12px 14px;
+  background:var(--panel-solid); border-top:2px solid var(--line-strong); border-radius:0 0 var(--radius-md) var(--radius-md);
+}
+.builder-bar .ghost{ width:104px; flex-shrink:0; }
+.builder-bar .primary{ margin-top:0; flex-grow:1; }
+
+.versus-picker{ display:grid; grid-template-columns:1fr auto 1fr; gap:8px; align-items:start; margin-bottom:8px; }
+.team-pick-col{ border:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; min-width:0; }
+.team-pick-col legend{ padding:0 0 6px; }
+.team-pick{
+  position:relative; display:flex !important; align-items:center; gap:8px; margin:0 !important; padding:8px; min-height:60px;
+  background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-md); box-shadow:var(--shadow-card); cursor:pointer;
+}
+.team-pick input{ position:absolute; opacity:0; pointer-events:none; }
+.team-pick .team-badge{ width:32px; height:32px; font-size:.72rem; }
+.team-pick-text{ display:flex; flex-direction:column; min-width:0; }
+.team-pick-text b{ font-size:.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.team-pick-text .muted{ font-size:.68rem; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.team-pick:has(input:checked){ border-color:var(--team-c); background:var(--team-c-bg); }
+.vs-badge{ align-self:center; margin-top:22px; font-size:.7rem; font-weight:800; letter-spacing:.08em; color:var(--muted); border:2px solid var(--line-strong); border-radius:999px; padding:6px 7px; }
+
+/* --- teams & players --- */
+.roster-card{ padding:16px; margin-top:12px; }
+.roster-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.roster-row{ align-items:center; }
+.roster-actions{ display:flex; gap:6px; align-items:center; }
+.roster-actions select{ width:auto; margin:0; padding:6px 26px 6px 8px; font-size:.8rem; background-position:right 8px center; background-size:10px; }
+
+/* --- standings / fixtures / leaderboards --- */
+.standings-table td, .standings-table th{ text-align:center; }
+.standings-table td:first-child, .standings-table th:first-child{ text-align:left; }
+.fixtures{ margin-bottom:14px; }
+.fixture-row{
+  display:flex; justify-content:space-between; background:var(--panel-2); border:2px solid var(--line); border-left:5px solid var(--accent-2); border-radius:var(--radius-sm);
+  padding:11px 13px; margin-bottom:6px; font-size:.9rem;
+}
+.fixture-result{ color:var(--accent-2); font-weight:700; }
+/* Each leaderboard table now sits in its own bordered card instead of
+   floating bare on the page background -- same reasoning as .leaderboard
+   tables being the most "boring" looking part of Stats/tournament dashboards. */
+.leaderboard{
+  background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-md);
+  padding:14px 14px 4px; margin-bottom:14px; box-shadow:var(--shadow-card);
+}
+.leaderboard h3{ font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-bottom:8px; font-weight:800; }
+.leaderboard table{ margin-bottom:6px; }
+.leaderboard.mvp{ background:rgba(var(--accent-rgb),.1); border-color:var(--accent); }
+.leaderboard.mvp h3{ color:var(--accent); }
+.leaderboard .hint{ font-size:.68rem; margin:0 0 8px; line-height:1.5; }
+
+/* --- MVP / MOTM / share --- */
+.mvp-callout{
+  background:var(--accent); color:var(--accent-ink); border:2px solid var(--accent-ink);
+  border-radius:var(--radius-lg); padding:16px; display:flex; flex-direction:column; gap:2px; margin-bottom:16px;
+  box-shadow:var(--shadow-card);
+}
+.mvp-label{ font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; opacity:.75; font-weight:700; }
+.mvp-name{ font-size:1.35rem; font-weight:800; }
+.mvp-points{ font-size:.85rem; font-weight:700; }
+.motm-card{
+  background:rgba(var(--accent-rgb),.1); border:2px solid var(--accent); border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-card); padding:10px 12px 11px; margin-bottom:10px; display:flex; flex-direction:column; gap:4px;
+}
+.motm-label{ font-size:.75rem; color:var(--accent); text-transform:uppercase; letter-spacing:.06em; font-weight:800; }
+.motm-name{ font-size:1.15rem; font-weight:800; color:var(--text); }
+.motm-line{ font-size:.78rem; color:var(--muted); }
+.motm-card .inline-form{ margin-top:4px; margin-bottom:0; }
+.result-hero{
+  background:var(--accent-2); color:var(--accent-2-ink); border:2px solid var(--bg); border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-card); padding:12px 14px 13px; margin-bottom:10px;
+}
+.result-hero .eyebrow{ font-size:.65rem; font-weight:800; letter-spacing:.12em; opacity:.65; }
+.result-hero h2{ font-size:1.35rem; font-weight:800; line-height:1.15; margin:4px 0 0; }
+.result-hero .detail{ font-size:.72rem; font-weight:700; opacity:.75; margin-top:6px; }
+.share-row{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 0; }
+
+.inline-form{ display:flex; gap:8px; margin-bottom:14px; }
+.inline-form input, .inline-form select{ margin:0; flex:1; }
+.inline-form button{ flex-shrink:0; margin-top:0; width:auto; white-space:nowrap; }
+
+button.small{ padding:8px 12px; font-size:.8rem; border-radius:var(--radius-sm); }
+button.primary.small{ width:auto; }
+
+/* --- print: "Export PDF" is window.print() on the result screen --- */
+@media print{
+  body{ background:#fff; color:#000; }
+  #modal-root, #confirm-root, .share-row, .motm-card form, button, .topbar{ display:none !important; }
+  .innings-summary, .motm-card, .result-hero{ background:#fff; border:1px solid #ccc; color:#000; box-shadow:none; }
+  .motm-name{ color:#000; }
+  table, th, td{ border-color:#ccc; color:#000; }
+  th{ color:#555; }
+}

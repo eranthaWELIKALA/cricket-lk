@@ -1,7 +1,7 @@
 # Cricket.lk
 
-Ball-by-ball cricket scorer. Installable PWA, single HTML file, no
-framework, no build step.
+Ball-by-ball cricket scorer. Installable PWA, no framework, no build
+step — plain HTML, CSS and script files.
 
 Tracks a full two-innings limited-overs match: runs, wickets, extras
 (wides, no-balls, byes, leg-byes), free hits, overs, run rate, required
@@ -51,7 +51,7 @@ localhost** — opening `index.html` directly from the filesystem
 cache.
 
 There is no build step and no package.json dependency for the app
-itself — `index.html` is the entire product. `package.json` only exists
+itself — `index.html`, `css/` and `js/` are the entire product. `package.json` only exists
 for the dev-time test dependency (`jsdom`).
 
 ## Deploying
@@ -81,7 +81,9 @@ gh api repos/<owner>/<name>/pages -X POST -f "source[branch]=master" -f "source[
 
 | File | Purpose |
 |---|---|
-| `index.html` | Everything — markup, CSS, and JS in one file. See below for internal structure. |
+| `index.html` | The page shell; loads `css/app.css` and the `js/` files in order. |
+| `css/app.css` | All styles (theme tokens at the top). |
+| `js/` | The app's code as ordered plain scripts: `engine.js` (pure scoring/stats), `storage.js`, `cloud.js`, and `ui/` (state, router, screens, match, render, events). See CLAUDE.md "Code layout". |
 | `admin.html` | Platform admin portal (claim/merge review, players, clubs, matches, users, audit log). Desktop-first, online-only, needs `supabase/011_admin_portal.sql`. |
 | `manifest.webmanifest` | Home-screen install metadata. |
 | `sw.js` | Service worker: offline cache only (no notifications in this app). |

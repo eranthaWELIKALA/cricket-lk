@@ -1,6 +1,35 @@
 /* Cricket.lk service worker: offline cache only, no notifications (yet). */
-const CACHE = "cricket-lk-v7";
-const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-512-maskable.png", "./apple-touch-icon.png", "./favicon-32.png", "./icon.svg"];
+const CACHE = "cricket-lk-v8";
+// The app's own code: index.html's stylesheet and <script src> files, in the
+// same order. test.js checks this list against index.html, so a file added
+// there and not here fails the tests instead of breaking offline use.
+const APP_CODE = [
+  "./css/app.css",
+  "./js/reference-data.js",
+  "./js/engine.js",
+  "./js/storage.js",
+  "./js/cloud.js",
+  "./js/ui/state.js",
+  "./js/ui/common.js",
+  "./js/ui/chrome.js",
+  "./js/ui/router.js",
+  "./js/ui/menus.js",
+  "./js/ui/screens/home-account.js",
+  "./js/ui/screens/clubs.js",
+  "./js/ui/screens/club-tournaments.js",
+  "./js/ui/screens/premier.js",
+  "./js/ui/match/setup.js",
+  "./js/ui/match/sheets.js",
+  "./js/ui/match/live.js",
+  "./js/ui/match/result.js",
+  "./js/ui/screens/guest.js",
+  "./js/ui/screens/stats.js",
+  "./js/ui/render.js",
+  "./js/ui/events.js",
+  "./js/boot.js",
+  "./js/install-prompt.js"
+];
+const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-512-maskable.png", "./apple-touch-icon.png", "./favicon-32.png", "./icon.svg", ...APP_CODE];
 // supabase-js (loaded dynamically by index.html's loadSupabaseLib). Cached so
 // a signed-in user can still boot into their clubs offline -- keep in step
 // with SUPABASE_JS_CDN_URL in index.html.
@@ -22,15 +51,27 @@ self.addEventListener("activate", e => {
   );
 });
 
-// Network first for the page so updates land; stale-while-revalidate for the
-// supabase-js CDN script; cache first for everything else. Supabase API
-// calls themselves are never cached here -- the app keeps its own read cache
-// and outbox (see "offline-first" in index.html).
+// Network first -- refreshing the cached copy -- for the page and the app's
+// own code (css/, js/), so a deploy lands in one go and the page and its
+// scripts never come from different versions; stale-while-revalidate for the
+// supabase-js CDN script; cache first for everything else (icons). Supabase
+// API calls themselves are never cached here -- the app keeps its own read
+// cache and outbox (see "Offline-first sync" in CLAUDE.md).
+function networkFirst(req, cacheKey){
+  return fetch(req).then(res => {
+    if (res && res.ok) caches.open(CACHE).then(c => c.put(cacheKey, res.clone()));
+    return res;
+  }).catch(() => caches.match(cacheKey));
+}
 self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET") return;
   if (req.mode === "navigate"){
-    e.respondWith(fetch(req).catch(() => caches.match("./index.html")));
+    // Only the scorer page is kept for offline (admin.html isn't -- it's
+    // useless without the database, and falls back to the scorer offline).
+    const path = new URL(req.url).pathname;
+    const isScorer = path.endsWith("/") || path.endsWith("/index.html");
+    e.respondWith(isScorer ? networkFirst(req, "./index.html") : fetch(req).catch(() => caches.match("./index.html")));
     return;
   }
   if (req.url.startsWith("https://cdn.jsdelivr.net/npm/@supabase/")){
@@ -43,5 +84,6 @@ self.addEventListener("fetch", e => {
   }
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // Supabase API etc.: straight to the network
+  if (/\.(js|css)$/.test(url.pathname)){ e.respondWith(networkFirst(req, req.url)); return; }
   e.respondWith(caches.match(req).then(hit => hit || fetch(req)));
 });

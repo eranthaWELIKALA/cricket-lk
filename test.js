@@ -1,9 +1,28 @@
 const fs = require("fs");
 const { JSDOM } = require("jsdom");
 
-const html = fs.readFileSync(__dirname + "/index.html", "utf8");
+// index.html loads its code as ordered classic scripts (js/...) and a
+// stylesheet; inline them so jsdom runs the same code, in the same order,
+// without needing a web server.
+const html = fs.readFileSync(__dirname + "/index.html", "utf8")
+  .replace(/<script src="([^"]+)"><\/script>/g, (_, src) =>
+    `<script>${fs.readFileSync(__dirname + "/" + src, "utf8").replace(/<\/script/gi, "<\\/script")}</script>`)
+  .replace(/<link rel="stylesheet" href="([^"]+)">/g, (_, href) => `<style>${fs.readFileSync(__dirname + "/" + href, "utf8")}</style>`);
 const dom = new JSDOM(html, { runScripts: "dangerously", resources: "usable", url: "http://localhost/" });
 const win = dom.window;
+
+// sw.js must precache exactly the code index.html loads, or the app breaks
+// offline the first time a file is added (see CLAUDE.md "Code layout").
+{
+  const page = fs.readFileSync(__dirname + "/index.html", "utf8");
+  const loaded = [...page.matchAll(/<link rel="stylesheet" href="([^"]+)">|<script src="([^"]+)"><\/script>/g)].map(m => "./" + (m[1] || m[2]));
+  const sw = fs.readFileSync(__dirname + "/sw.js", "utf8");
+  const listed = [...sw.match(/const APP_CODE = \[([\s\S]*?)\];/)[1].matchAll(/"([^"]+)"/g)].map(m => m[1]);
+  if (JSON.stringify(loaded) !== JSON.stringify(listed)){
+    console.error("FAIL: sw.js APP_CODE doesn't match the files index.html loads:\n  page: " + loaded.join(" ") + "\n  sw:   " + listed.join(" "));
+    process.exitCode = 1;
+  } else console.log("ok: sw.js precaches every file index.html loads (" + listed.length + ")");
+}
 
 function wait(ms){ return new Promise(r => setTimeout(r, ms)); }
 

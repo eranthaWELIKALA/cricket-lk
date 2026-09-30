@@ -1,7 +1,7 @@
 # Cricket.lk
 
-Ball-by-ball cricket scoring PWA. Installable, single HTML file, no
-framework, no build step.
+Ball-by-ball cricket scoring PWA. Installable, no framework, no build
+step: `index.html` plus plain script files (see "Code layout").
 
 ## Run it
 
@@ -13,9 +13,53 @@ The service worker requires **HTTPS or localhost** — `file://` gives
 you the scorer but no install prompt and no offline cache. Don't "fix"
 that; it's a platform restriction, not a bug.
 
-## `index.html` internal structure
+## Code layout
 
-Numbered sections, in order, findable by searching for the heading text:
+`index.html` is just the markup shell; the styles are `css/app.css` and the
+code is **classic `<script src>` files, loaded in a fixed order** at the end
+of `index.html`:
+
+| File | What's in it |
+|---|---|
+| `js/reference-data.js` | 1. REFERENCE DATA |
+| `js/engine.js` | 2. ENGINE — pure, zero DOM access (the block to port for a native app) |
+| `js/storage.js` | 3. STORAGE — `DB` |
+| `js/cloud.js` | 4. CLOUD — Supabase, auth, outbox sync, read cache, cloud RPCs |
+| `js/ui/state.js` | `state`/`ui`, `load`/`save`/migration/purges, guest data helpers |
+| `js/ui/common.js` | `escapeHtml`, theme, `SFX`, name search-selects, back bar |
+| `js/ui/chrome.js` | top bar, loading indicators, shared confirmation sheet |
+| `js/ui/router.js` | page navigation (routes, history, back interception, unsaved-input checks) |
+| `js/ui/menus.js` | sync pill/sheet, side menu |
+| `js/ui/screens/*.js` | `home-account`, `clubs` (+ profiles, player modals), `club-tournaments` (+ team builder), `premier`, `guest` (teams/players/presets/tournaments), `stats` |
+| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `live`, `result` (+ scorecards, share/export) |
+| `js/ui/render.js` | `render()` |
+| `js/ui/events.js` | the delegated listeners |
+| `js/boot.js` | boot: `load()`, first route + render, `initAuth()`, sync triggers, service worker |
+| `js/install-prompt.js` | the phone install banner |
+
+**They're one program, not modules.** Classic scripts share one global scope
+— top-level `function`s, `var`s *and* `let`/`const` in one file are visible
+in every other — so code calls across files freely, exactly as it did when
+this was one inline script (it was split mechanically, byte-for-byte, in
+that order). Rules that follow from that:
+- **Order matters only for code that runs at load time.** Function bodies can
+  use anything from any file, but a top-level statement that runs code (a
+  `const X = f()`, an IIFE, `load()`) may only use what earlier files (or
+  earlier lines) declared — `function` hoisting doesn't cross files.
+  Registering a listener is fine anywhere (its handler runs later). Keep
+  run-at-load code in `boot.js`, the last file before the install banner.
+- **Top-level names must be unique across all files** (a second `let x`
+  anywhere is a SyntaxError that stops that whole file).
+- **Adding a file:** add its `<script src>` to `index.html` in the right
+  place *and* to `APP_CODE` in `sw.js` (same order). `test.js` fails if the
+  two lists differ, and inlines every file (in order) before handing the page
+  to jsdom, so tests see exactly what the browser runs.
+- Not ES modules on purpose: `import`/`export` would mean wiring hundreds of
+  cross-references (render ↔ cloud ↔ screens) by hand, break `file://` (module
+  scripts need CORS) and the `win.X`/injected-script access `test.js` relies on.
+- The numbered section headings below still exist, at the top of their files.
+
+Sections, in load order:
 
 1. **`REFERENCE DATA`** — `WICKET_LABELS` (dismissal display strings),
    `MVP_POINTS` (the fixed MOTM/MVP point formula — see "Stats & MVP"
@@ -716,7 +760,7 @@ Result until `state.match` is cleared.
 
 `SFX` (next to `escapeHtml`, in `UI`) is a tiny synthesized sound
 engine — plain Web Audio oscillators, no audio files, so it stays
-inside the single-file/offline constraints. It's muted by
+inside the no-dependency/offline constraints. It's muted by
 `state.soundEnabled` (persisted, default on) and toggled by the sound
 button inside `renderTopBar()`. **Don't add an infinite CSS animation to
 `.topbar-icon-btn`/`.topbar-signin`** (or any other always-on-screen,
@@ -825,7 +869,7 @@ practice.
 Cloud features (clubs, tournament organizing, player claiming — see the
 implementation plan for the full roadmap) are layered on top of the
 originally 100%-local app via Supabase (Postgres + Auth + Row Level
-Security), added in the `CLOUD` section of `index.html`. Two constants,
+Security), added in the `CLOUD` section (`js/cloud.js`). Two constants,
 `SUPABASE_URL`/`SUPABASE_ANON_KEY`, gate all of it — left blank (the
 default in this repo), `initAuth()` returns immediately, no network
 request is made, and every screen behaves exactly as it did before cloud
@@ -984,7 +1028,9 @@ is next online. Three pieces, all in the CLOUD section:
   and the tournament overlay also folds this device's archived matches for
   it, so standings count a match scored offline. Pending items render with
   a "not synced" tag.
-- **Offline sign-in.** `sw.js` (cache `cricket-lk-v7`) precaches the
+- **Offline sign-in.** `sw.js` (cache `cricket-lk-v8`; the page and the app's
+  own `css/`/`js/` files are network-first, refreshing the cache, so a deploy
+  never mixes versions) precaches the
   supabase-js CDN script and serves it stale-while-revalidate — keep its URL
   in step with `SUPABASE_JS_CDN_URL`. Offline, `supabase.auth.getSession()`
   can hang retrying a token refresh, so `initAuth` doesn't wait on it: it uses
