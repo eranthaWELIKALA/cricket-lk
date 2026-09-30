@@ -958,7 +958,7 @@ is next online. Three pieces, all in the CLOUD section:
   and the tournament overlay also folds this device's archived matches for
   it, so standings count a match scored offline. Pending items render with
   a "not synced" tag.
-- **Offline sign-in.** `sw.js` (cache `cricket-lk-v5`) precaches the
+- **Offline sign-in.** `sw.js` (cache `cricket-lk-v6`) precaches the
   supabase-js CDN script and serves it stale-while-revalidate — keep its URL
   in step with `SUPABASE_JS_CDN_URL`. Offline, `supabase.auth.getSession()`
   can hang retrying a token refresh, so `initAuth` doesn't wait on it: it uses
@@ -1269,6 +1269,24 @@ capture ids as superuser first). The 009 scenarios (46 checks: manage rule per
 actor, claimed-club lockout, one-claim-per-user, direct-write blocks, merge
 alias/roster/blank-fill/deletion, alias resolution, no contact leak) all passed
 this way.
+
+## Install prompt (phones only)
+
+A static `#install-banner` (outside `#app`, DOM-only, never through
+`render()`; the `INSTALL PROMPT` block at the end of the script) asks phone
+visitors to install. **A page can't install itself or launch an installed
+PWA**, so this is as far as it goes:
+- Android/Chromium: `beforeinstallprompt` is held (`preventDefault`) and
+  `prompt()` runs only from the banner's Install button (needs a user tap).
+  If it never fires, `getInstalledRelatedApps()` (manifest
+  `related_applications` webapp entry) or the `cricket.lk.installed` flag
+  (set whenever the app runs standalone) shows "open it from your home
+  screen" instead.
+- iOS: no install API; the banner explains Share → Add to Home Screen.
+  Home-screen apps on iOS don't share storage with Safari, so the flag
+  can't be read there — and a match scored in Safari won't be in the app.
+Hidden when standalone, on desktop, on the live scoring screen
+(`body.live-scoring`) and in print; ✕ or declining snoozes it for 7 days.
 
 ## Deployment
 
