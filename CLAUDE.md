@@ -320,7 +320,7 @@ a live match; tapping any side-menu item sets `ui.awayFromMatch` (in the
 is resumed via the top bar's green "Live · A v B" pill, a "Live match"
 side-menu item, or Home's "Resume live match" card (all `resume-match`).
 `awayFromMatch` lives in `ui`, deliberately **not** persisted: a reload
-always lands back on the match, so a scorer can never be stranded on
+always lands back on the match (whatever the URL said — see "Page navigation"), so a scorer can never be stranded on
 another screen with a match silently running underneath. While away,
 `render()` suppresses every match modal (opening/batsman/bowler/wicket/
 forfeit/match options), the ⋯ match-options icon is hidden, and match creation is blocked —
@@ -464,37 +464,63 @@ any new sheet a `data-keep-scroll` key**, or taps inside it will flicker.
 (`#app[data-screen-key]`), the score pulse when the score didn't change,
 and the pop on over-row chips already shown (`data-chip`).
 
-## Back button (phone back / back gesture)
+## Page navigation: URL routes & the back button
 
-No per-screen URLs. One "trap" history entry sits on top (`armNav()`); every
-back press pops it, `popstate` runs `handleBack()`, and the trap is re-pushed.
-`handleBack()` goes most specific first: confirm sheet (cancel) → side menu →
-sync sheet → player modal → team builder (`closeTeamEdit`) → live match
-(match menu, wicket sheet, pending extra, expanded scorecard, then **asks**
-"Leave live scoring?" — it only sets `ui.awayFromMatch`, nothing is lost) →
-Result (`leaveMatch()`, same as its button) → in-screen sub-forms (preset
-editors, claim/merge) → previous screen. At Home it returns false: the trap
-stays unarmed and a toast says "Press back again to exit" (at Home with a match
-running in the background, back resumes it instead).
-- **Previous screen** comes from `navStack`, filled by `noteNavigation()` in
-  `render()` from `navKey()` (`"match"`, `"result"` or `state.view`), so
-  existing `state.view = ...` code needs nothing extra. Arriving at Home clears
-  it; arriving at a screen already in it cuts back to there; setup screens and
-  Result (`NAV_TRANSIENT`) are never returned to. Empty stack (e.g. after a
-  reload) → the screen's own `.back-bar` target → Home. `goToView()` does the
-  lazy loads a screen needs when reached by back (`ui` may have been reset).
-- **Unsaved input asks first**: `formIsDirty()` compares every field with the
-  value it was rendered with. The on-screen back bar (`go-view` on a
-  `.back-bar`) goes through the same `leaveScreen()` check. Mark a control or
-  container `data-nav-ignore` if it shouldn't count.
+Every screen has a hash route (`ROUTES`, UI section: `#/`, `#/teams`,
+`#/clubs/<id>`, `#/clubs/<id>/players/<pid>`, `#/clubs/<id>/tournaments/<tid>`,
+`#/premier/players/<pid>`, `#/live`, `#/result`, …), so back, forward, reload
+and a pasted link go through the browser's own history. **Existing code
+doesn't change:** it still sets `state.view` (plus `ui.currentClubId` /
+`currentTournamentId`, `state.activeTournamentId`, `ui.profile`) and calls
+`render()`; `syncRoute()` at the end of `render()` builds the URL
+(`routeFor()` → `buildRoute`) and records it. `popstate` goes the other way:
+`applyRoute()` parses the URL (`parseRoute`) and sets that state, then
+`render()` lazy-loads whatever the screen needs (club, tournament, Premier data,
+a profile via `ui.profile.pending` → `loadPlayerProfile`). **Adding a screen:
+add a `ROUTES` row** (and a lazy load in `render()` if it fetches) — nothing
+else. `navKey()` gives `"match"` (in progress, not away), `"result"`, or
+`state.view`; going to any non-live route mid-match sets `ui.awayFromMatch`,
+and history-navigating off Result finishes that (already archived) match.
+
+History rules — these are what make it work on phones:
+- **Chrome skips history entries added without a user gesture** (back jumps
+  straight out of the app). So an entry is only *pushed* while
+  `navigator.userActivation.isActive` (a tap/key); redirects and async results
+  *replace*. Nothing is pushed at boot or while handling a back/forward press
+  (`navApplying`). The old one-entry "trap" was armed on `pointerdown`, which
+  isn't a gesture for touch — that's why back didn't work on phones.
+- **Opened straight onto a screen** (reload, relaunch, a link), the first tap
+  runs `ensureNavBase()`: that entry becomes Home and the screen is pushed on
+  top, so back lands on Home instead of closing the app (matters mid-match).
+- **Replaced, never returned to:** setup screens and Result (`NAV_TRANSIENT`),
+  Live → Result, sign-in/up once signed in, and whatever `leaveMatch()` leaves
+  (`navReplaceNext`). Home is the first entry, so back at Home exits the app.
+- **Sheets get their own entry** (same URL, `overlay: true`) when opened by a
+  tap (`overlayOpen()`: confirm, side menu, sync sheet, player modal, team
+  builder, match options, wicket sheet), so back closes them even on the first
+  entry; closing one by tap pops its entry again. The auto-opened pick sheets
+  aren't overlays — `interceptNav` handles them.
+- **Intercepted moves** (`interceptNav`, most specific first): close the top
+  sheet (`closeTopOverlay`) → the live match's pending extra / pick sheet
+  ("Pick later") / expanded scorecard → **"Leave live scoring?"** → in-screen
+  sub-forms (preset editors, claim/merge) → unsaved input ("Discard your
+  changes?", `formIsDirty`). The move is undone with `history.go(-delta)`
+  (`navSettling` swallows the resulting popstate) and, on confirm, redone with
+  `navBypass`. While it's being undone the URL isn't the screen's, so
+  `syncRoute()` does nothing (`navHold`/`navSettling`) — writing then would
+  overwrite the wrong entry.
+- **On-screen back bars** (`go-view` on `.back-bar` → `backBarTo`) really go
+  back when the previous entry is their target, otherwise replace this entry;
+  both ask first about unsaved input (`leaveScreen`).
 - **Typed input survives re-renders**: `captureFormDrafts`/`restoreFormDrafts`
   carry edited fields of each `form[id]` in `#app`/`#modal-root` across the
   `innerHTML` swap — only when the re-render left that field's default alone
   (so a preset pick still re-fills overs), and never for a just-submitted form
-  (`data-submitted`, cleared on the next edit).
-- Chrome skips history entries pushed before any user interaction, so the trap
-  is armed only from `pointerdown`/`keydown` or inside `popstate` — **don't arm
-  it at boot**, it would silently stop working.
+  (`data-submitted`, cleared on the next edit). Mark a control or container
+  `data-nav-ignore` if it shouldn't count as unsaved input.
+- Playwright's `goBack()` doesn't apply Chrome's skip rule, so it can't prove
+  the gesture rule — test with `devices["Pixel 5"]` + `tap()` for the logic,
+  and on a real phone for the rule itself.
 
 ## Innings break screen
 
@@ -958,7 +984,7 @@ is next online. Three pieces, all in the CLOUD section:
   and the tournament overlay also folds this device's archived matches for
   it, so standings count a match scored offline. Pending items render with
   a "not synced" tag.
-- **Offline sign-in.** `sw.js` (cache `cricket-lk-v6`) precaches the
+- **Offline sign-in.** `sw.js` (cache `cricket-lk-v7`) precaches the
   supabase-js CDN script and serves it stale-while-revalidate — keep its URL
   in step with `SUPABASE_JS_CDN_URL`. Offline, `supabase.auth.getSession()`
   can hang retrying a token refresh, so `initAuth` doesn't wait on it: it uses
