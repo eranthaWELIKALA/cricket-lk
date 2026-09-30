@@ -1028,7 +1028,7 @@ is next online. Three pieces, all in the CLOUD section:
   and the tournament overlay also folds this device's archived matches for
   it, so standings count a match scored offline. Pending items render with
   a "not synced" tag.
-- **Offline sign-in.** `sw.js` (cache `cricket-lk-v9`; the page and the app's
+- **Offline sign-in.** `sw.js` (cache `cricket-lk-v10`; the page and the app's
   own `css/`/`js/` files are network-first, refreshing the cache, so a deploy
   never mixes versions) precaches the
   supabase-js CDN script and serves it stale-while-revalidate — keep its URL
@@ -1364,7 +1364,13 @@ PWA**, so this is as far as it goes:
   `related_applications` webapp entry) or the `cricket.lk.installed` flag
   (set whenever the app runs standalone) shows "open it from your home
   screen" instead.
-- iOS: no install API; the banner explains Share → Add to Home Screen.
+- Every other browser has no install API (Firefox, Opera, Samsung Internet
+  without the event, Edge, any iOS browser, in-app webviews like
+  WhatsApp/Instagram): after 3s with no event and no detected install,
+  `manualInstallHint()` shows that browser's own menu path by user agent,
+  or "open in Chrome/Safari first" for in-app browsers. Keep the in-app
+  check first — webview UAs also contain "Chrome".
+- iOS: always the manual hint (Share → Add to Home Screen).
   Home-screen apps on iOS don't share storage with Safari, so the flag
   can't be read there — and a match scored in Safari won't be in the app.
 Hidden when standalone, on desktop, on the live scoring screen

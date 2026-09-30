@@ -5,8 +5,10 @@
    Browsers never let a page install itself or launch an installed PWA:
    - Android/Chromium fires `beforeinstallprompt`; we hold it and call
      prompt() only from the banner's button (a user gesture is required).
-   - iOS has no install API at all: the banner explains Share → Add to
-     Home Screen (and that an installed copy opens from the home screen).
+   - Every other browser (iOS in any browser, Firefox, Opera, Samsung
+     Internet without the event, in-app browsers like WhatsApp/Instagram)
+     has no install API: `manualInstallHint()` names that browser's own
+     menu path, or says to open the page in Chrome/Safari first.
    - "Already installed" is detected via getInstalledRelatedApps() (the
      manifest's related_applications webapp entry) or a flag set when the
      app last ran standalone; all we can do then is say "open it from your
@@ -64,14 +66,36 @@
   });
 
   const openHint = () => show("Cricket.lk is installed", "Open the app from your home screen — it works offline and full screen.");
+  const ALREADY = " Already installed? Open it from your home screen.";
+
+  // Install steps for browsers with no install API, by user agent. Pure
+  // text; the order matters (in-app webviews carry "Chrome" in their UA too).
+  function manualInstallHint(){
+    if (/FBAN|FBAV|FB_IAB|Instagram|WhatsApp|Line\/|Snapchat|Twitter|MicroMessenger|; wv\)/.test(ua)){
+      return isIOS
+        ? "This in-app browser can't install apps. Tap ⋯ → “Open in Safari”, then Share ⎋ → “Add to Home Screen”."
+        : "This in-app browser can't install apps. Tap ⋮ → “Open in Chrome”, then install from there.";
+    }
+    if (isIOS){
+      if (/CriOS|EdgiOS|FxiOS|OPiOS/.test(ua)) return "Tap Share ⎋ (address bar or menu) → “Add to Home Screen”. Not listed? Open this page in Safari." + ALREADY;
+      return "Tap Share ⎋ at the bottom → “Add to Home Screen”." + ALREADY;
+    }
+    if (/SamsungBrowser/.test(ua)) return "Tap the menu ☰ → “Add page to” → “Home screen”." + ALREADY;
+    if (/Firefox/.test(ua))        return "Tap the menu ⋮ → “Install” (or “Add to Home screen”)." + ALREADY;
+    if (/OPR\/|Opera/.test(ua))    return "Tap the menu ⋮ → “Add to Home screen”." + ALREADY;
+    if (/EdgA/.test(ua))           return "Tap the menu ⋯ → “Add to phone”." + ALREADY;
+    return "Tap your browser's menu ⋮ → “Install app” or “Add to Home screen”." + ALREADY;
+  }
+
   if (isIOS){
-    // iOS Safari keeps home-screen apps' storage separate, so the installed
-    // flag never reaches here: one message covers both cases.
-    show("Get the Cricket.lk app", "Tap Share ⎋ then “Add to Home Screen”. Already added? Open it from your home screen.");
+    // iOS keeps home-screen apps' storage separate from the browser, so the
+    // installed flag never reaches here: one message covers both cases.
+    show("Get the Cricket.lk app", manualInstallHint());
     return;
   }
-  // Android: give beforeinstallprompt a moment; if it never fires, the app
-  // is probably installed already.
+  // Android: give beforeinstallprompt a moment (Chromium only). If it never
+  // fires, the app is either installed already or this browser has no
+  // install API — then show that browser's manual steps.
   setTimeout(async () => {
     if (deferred || !banner.hidden) return;
     let installed = get(KEY_INSTALLED) === "1";
@@ -80,6 +104,8 @@
         installed = (await navigator.getInstalledRelatedApps()).length > 0;
       }
     } catch (_){}
+    if (deferred) return;
     if (installed) openHint();
-  }, 2500);
+    else show("Get the Cricket.lk app", manualInstallHint());
+  }, 3000);
 })();

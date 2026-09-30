@@ -1,5 +1,5 @@
 /* Cricket.lk service worker: offline cache only, no notifications (yet). */
-const CACHE = "cricket-lk-v9";
+const CACHE = "cricket-lk-v10";
 // The app's own code: index.html's stylesheet and <script src> files, in the
 // same order. test.js checks this list against index.html, so a file added
 // there and not here fails the tests instead of breaking offline use.
