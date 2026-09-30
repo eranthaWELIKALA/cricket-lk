@@ -555,7 +555,7 @@ button:active:not(:disabled){ transform:scale(.96); }
 .install-banner{
   position:fixed; left:50%; transform:translateX(-50%); bottom:calc(12px + env(safe-area-inset-bottom)); z-index:45;
   width:min(488px, calc(100vw - 32px)); display:flex; align-items:center; gap:10px;
-  background:var(--panel); color:var(--text); border:2px solid var(--line-strong); border-radius:var(--radius-md);
+  background:var(--panel-solid); color:var(--text); border:2px solid var(--line-strong); border-radius:var(--radius-md);
   box-shadow:var(--shadow-card); padding:10px 10px 10px 12px; animation:backdropIn .2s ease-out;
 }
 .install-banner[hidden], body.live-scoring .install-banner{ display:none; }
