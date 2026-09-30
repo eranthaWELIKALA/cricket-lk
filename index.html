@@ -1841,6 +1841,10 @@ function defaultState(){
     tournaments: {}, matchHistory: {},
     activeTournamentId: null,
     activeClubId: null, // which club (if any) Home's quick-action cards currently target -- see the CLOUD "clubs" section
+    // The club / club tournament the saved `view` is showing. ui.currentClubId /
+    // currentTournamentId aren't persisted, so without these a reload on a club
+    // screen had no id to load and spun on "Loading…" forever. See render().
+    viewClubId: null, viewTournamentId: null,
     clubDataReset202609: false, // one-time drop of local club-match copies after the cloud wipe -- see purgeLocalClubMatches()
     guestPlayersCleaned: false, // one-time purge of club-match names that leaked into state.players -- see purgeLeakedClubPlayers()
     soundEnabled: true,
@@ -2376,7 +2380,7 @@ async function doSignOut(){
   // with their user, until that user signs in again.
   cloudCache = null; DB.clear(CLOUD_CACHE_KEY);
   state.view = "home";
-  state.activeClubId = null;
+  state.activeClubId = null; state.viewClubId = null; state.viewTournamentId = null;
   ui.identity = null; ui.premier = null;
   ui.myClubs = null; ui.club = null; ui.currentClubId = null; // don't leak the previous account's clubs to whoever signs in next
   save(); render();
@@ -2810,7 +2814,7 @@ const rejectMergeRequest = requestId => ownershipRpc("reject_merge", { _request_
 var state = defaultState();
 function defaultUi(){
   return {
-    pendingExtra: null, wicketFlow: null, runoutRuns: 0, runoutEnd: "striker", showFullScorecard: false, confirm: null, syncSheet: false, matchMenu: null, squadError: null, pickDismissed: null, awayFromMatch: false, clubRosterLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
+    pendingExtra: null, wicketFlow: null, runoutRuns: 0, runoutEnd: "striker", showFullScorecard: false, confirm: null, syncSheet: false, matchMenu: null, squadError: null, pickDismissed: null, awayFromMatch: false, clubRosterLoading: null, clubTournamentLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
     matchSetupPresetId: null,
     tournamentSetupPresetId: null, tournamentSetupTeamIds: [],
     tournamentTab: "standings",
@@ -3445,12 +3449,11 @@ function armNav(){
 function goToView(view){
   if (["premierPlayers", "premierTeams", "premierStats"].includes(view) && !ui.premier) view = "premier";
   state.view = view;
-  if (view === "clubHome" && ui.currentClubId && (!ui.club || ui.club.id !== ui.currentClubId)){
+  // A stale club / tournament is dropped here; render() loads the right one.
+  if (view === "clubHome" && ui.currentClubId && ui.club && ui.club.id !== ui.currentClubId){
     ui.club = null;
-    fetchClubDetail(ui.currentClubId).then(render);
-  } else if (view === "clubTournamentDashboard" && ui.currentTournamentId && (!ui.clubTournament || ui.clubTournament.id !== ui.currentTournamentId)){
+  } else if (view === "clubTournamentDashboard" && ui.currentTournamentId && ui.clubTournament && ui.clubTournament.id !== ui.currentTournamentId){
     ui.clubTournament = null; ui.tournamentTeamEdit = null;
-    fetchClubTournamentDetail(ui.currentTournamentId).then(render);
   } else if (view === "premier" && !ui.premier){
     fetchPremierData().then(render);
   } else if (view === "myClubs" && !ui.myClubs){
@@ -5473,9 +5476,8 @@ function leaveMatch(){
     // a club's own Local-tier tournament -- tournamentId is a cloud
     // `tournaments` row here, NOT a key into local state.tournaments.
     ui.currentClubId = clubId; ui.currentTournamentId = tournamentId; state.view = "clubTournamentDashboard";
-    fetchClubTournamentDetail(tournamentId).then(render);
   }
-  else if (clubId){ ui.currentClubId = clubId; state.view = "clubHome"; fetchClubDetail(clubId).then(render); }
+  else if (clubId){ ui.currentClubId = clubId; state.view = "clubHome"; } // render() loads them
   else if (tournamentId){ state.activeTournamentId = tournamentId; state.view = "tournamentDashboard"; }
   else state.view = "home";
   save(); render();
@@ -6874,21 +6876,51 @@ function render(){
   }
   // ui isn't persisted, so a saved profile view has nothing to show after a reload.
   if (state.view === "playerProfile" && !ui.profile) state.view = "home";
-  // A persisted club view after a reload has no ui.currentClubId (ui isn't saved).
-  if (["clubPlayers", "clubPresets", "clubStats"].includes(state.view) && !ui.currentClubId){
-    if (state.activeClubId) ui.currentClubId = state.activeClubId; else state.view = "home";
+  // A persisted club view after a reload has no ui.currentClubId /
+  // currentTournamentId (ui isn't saved): take them from state.viewClubId /
+  // viewTournamentId, and if there's still nothing to show, fall back to a
+  // screen that can render instead of an endless spinner.
+  const CLUB_VIEWS = ["clubHome", "clubPlayers", "clubPresets", "clubStats", "clubTournamentSetup", "clubTournamentDashboard"];
+  if (!m && CLUB_VIEWS.includes(state.view)){
+    if (!ui.currentClubId) ui.currentClubId = state.viewClubId || (state.view !== "clubHome" ? state.activeClubId : null);
+    if (state.view === "clubTournamentDashboard" && !ui.currentTournamentId) ui.currentTournamentId = state.viewTournamentId;
+    if (state.view === "clubTournamentDashboard" && !ui.currentTournamentId) state.view = ui.currentClubId ? "clubHome" : "myClubs";
+    else if (!ui.currentClubId) state.view = state.view === "clubHome" ? "myClubs" : "home";
+  }
+  if (CLUB_VIEWS.includes(state.view) && (state.viewClubId !== ui.currentClubId || state.viewTournamentId !== ui.currentTournamentId)){
+    state.viewClubId = ui.currentClubId || null; state.viewTournamentId = ui.currentTournamentId || null;
+    save();
   }
   // Club data (roster, matches, presets) is loaded once per club the screen
   // in front of you needs: a club match, Home while acting as a club, or a
-  // club setup screen. Guarded by ui.clubRosterLoading so it never loops.
+  // club setup screen. ui.clubRosterLoading marks the one fetch in flight (so
+  // a re-render never fires a second) and is cleared when it lands, so a club
+  // whose data was dropped (ui.club = null) is loaded again.
   const wantClubId = m && m.clubId ? m.clubId
     : (!m && state.view === "home" && state.activeClubId && (ui.myClubs || []).some(c => c.id === state.activeClubId)) ? state.activeClubId
     : (!m && (state.view === "matchSetup" || state.view === "clubTournamentSetup") && ui.currentClubId && (state.view !== "matchSetup" || ui.clubMatchSetupType)) ? ui.currentClubId
-    : (!m && ["clubPlayers", "clubPresets", "clubStats", "clubTournamentDashboard"].includes(state.view) && ui.currentClubId) ? ui.currentClubId
+    : (!m && ["clubHome", "clubPlayers", "clubPresets", "clubStats", "clubTournamentDashboard"].includes(state.view) && ui.currentClubId) ? ui.currentClubId
     : null;
   if (wantClubId && supabaseClient && session && (!ui.club || ui.club.id !== wantClubId) && ui.clubRosterLoading !== wantClubId){
     ui.clubRosterLoading = wantClubId;
-    fetchClubDetail(wantClubId).then(render);
+    fetchClubDetail(wantClubId).then(() => {
+      if (ui.clubRosterLoading === wantClubId) ui.clubRosterLoading = null;
+      render();
+    });
+  }
+  // Same for a club tournament's dashboard (reached after a reload or by back,
+  // not through open-club-tournament). A tournament that can't be found (or
+  // isn't cached while offline) goes back to the club rather than spinning.
+  const wantTournamentId = !m && state.view === "clubTournamentDashboard" ? ui.currentTournamentId : null;
+  if (wantTournamentId && supabaseClient && session && (!ui.clubTournament || ui.clubTournament.id !== wantTournamentId) && ui.clubTournamentLoading !== wantTournamentId){
+    ui.clubTournamentLoading = wantTournamentId;
+    fetchClubTournamentDetail(wantTournamentId).then(() => {
+      if (ui.clubTournamentLoading === wantTournamentId) ui.clubTournamentLoading = null;
+      if (!ui.clubTournament && state.view === "clubTournamentDashboard" && ui.currentTournamentId === wantTournamentId){
+        state.view = "clubHome"; ui.currentTournamentId = null; save();
+      }
+      render();
+    });
   }
   let html;
   const inProgress = !!(m && m.status !== "complete");
@@ -7147,8 +7179,7 @@ document.addEventListener("click", (e) => {
   else if (action === "go-match-setup"){ ui.matchSetupPresetId = null; ui.clubMatchSetupType = null; state.view = "matchSetup"; render(); }
   else if (action === "go-my-clubs"){ state.view = "myClubs"; render(); fetchMyClubs().then(render); }
   else if (action === "open-club"){
-    ui.currentClubId = btn.dataset.id; ui.club = null; state.view = "clubHome"; render();
-    fetchClubDetail(btn.dataset.id).then(render);
+    ui.currentClubId = btn.dataset.id; ui.club = null; state.view = "clubHome"; render(); // render() loads it
   }
   else if (action === "open-player-profile"){
     ui.profile = { scope: btn.dataset.scope, id: btn.dataset.id, name: btn.dataset.name, data: null, loading: true, error: null, editing: false, message: null, aliases: [], claiming: false, merging: false };
@@ -7211,8 +7242,7 @@ document.addEventListener("click", (e) => {
     ui.clubTournamentSetupPresetId = btn.dataset.id; render();
   }
   else if (action === "open-club-tournament"){
-    ui.currentTournamentId = btn.dataset.id; ui.clubTournament = null; ui.tournamentTeamEdit = null; ui.tournamentTeamError = null; state.view = "clubTournamentDashboard"; render();
-    fetchClubTournamentDetail(btn.dataset.id).then(render);
+    ui.currentTournamentId = btn.dataset.id; ui.clubTournament = null; ui.tournamentTeamEdit = null; ui.tournamentTeamError = null; state.view = "clubTournamentDashboard"; render(); // render() loads it
   }
   else if (action === "new-tournament-team" && ui.clubTournament){
     const n = ui.clubTournament.teams.length;

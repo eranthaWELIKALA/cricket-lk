@@ -1020,7 +1020,17 @@ presets are chosen at match setup). `matchPresetCardHtml`/`tournamentPresetCardH
 are markup-only and shared; pass each role its own list and action names.
 `fetchClubDetail` is the single loader for a club's cloud data and `render()`
 lazy-loads it for whichever screen needs it (one guarded block,
-`ui.clubRosterLoading`). If you add a new kind of per-role data, add a row to
+`ui.clubRosterLoading` — the fetch *in flight*, cleared when it lands, so a
+club whose `ui.club` was dropped loads again). Club tournaments work the same
+way (`ui.clubTournamentLoading`; a tournament that no longer exists falls back
+to its club). Entry actions (`open-club`, `open-club-tournament`,
+`leaveMatch`, `goToView`) just set the ids and render — don't add a second,
+explicit fetch there. **Club screens survive a reload** through
+`state.viewClubId`/`viewTournamentId`, which `render()` keeps in step with
+`ui.currentClubId`/`currentTournamentId` on every club view (those `ui` ids
+aren't persisted). Without them, a saved `view: "clubHome"` came back with no
+id to load and spun on "Loading…" forever. With nothing to restore, `render()`
+falls back to My clubs / Home rather than a spinner. Sign-out clears both. If you add a new kind of per-role data, add a row to
 this table and don't fall back to the guest store for club/Premier.
 
 **Player profiles (club + Premier).** Tapping a player on the club Players
