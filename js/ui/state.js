@@ -73,16 +73,45 @@ function purgeLocalClubMatches(st){
   return removed;
 }
 
+/* One-time, per device: the cloud's matches and club tournaments were reset
+   (2026-10, scripts/reset_tournaments_matches_stats.sql) -- clubs, rosters,
+   players and presets were kept. Drop this device's archived club matches
+   (they'd keep feeding club stats via clubMatchesFor), queued match /
+   tournament / team ops (they'd re-upload what was wiped), and the cached
+   copies of club matches and tournaments. Unlike purgeLocalClubMatches the
+   selected club stays, since it still exists. Guest data and a match in
+   progress are left alone. Returns how many matches and ops were removed. */
+const RESET_202610_OP_KINDS = ["match", "tournament.create", "team.save", "team.delete"];
+function purgeClubResults(st, ops, cache){
+  let matches = 0;
+  Object.keys(st.matchHistory || {}).forEach(id => {
+    if (st.matchHistory[id] && st.matchHistory[id].clubId){ delete st.matchHistory[id]; matches++; }
+  });
+  st.viewTournamentId = null;
+  const keptOps = (ops || []).filter(o => !RESET_202610_OP_KINDS.includes(o.kind));
+  if (cache){
+    cache.tournaments = {};
+    Object.values(cache.clubs || {}).forEach(c => { c.matches = []; c.tournaments = []; });
+  }
+  return { matches, ops: (ops || []).length - keptOps.length, keptOps };
+}
+
 function load(){
   const data = DB.load(STORAGE_KEY);
   if (data){
     state = Object.assign(defaultState(), data);
     if (!state.guestPlayersCleaned){ purgeLeakedClubPlayers(state); state.guestPlayersCleaned = true; save(); }
     if (!state.clubDataReset202609){ purgeLocalClubMatches(state); state.clubDataReset202609 = true; save(); }
+    if (!state.clubResultsReset202610){
+      outbox = purgeClubResults(state, outbox, cloudCache).keptOps; saveOutbox();
+      if (cloudCache) saveCloudCache();
+      state.clubResultsReset202610 = true; save();
+    }
     applyTheme(); return;
   }
   state = migrateLegacy() || defaultState();
   state.clubDataReset202609 = true;   // nothing from before the wipe to purge on a fresh/legacy install
+  state.clubResultsReset202610 = true;
   applyTheme();
   save();
 }

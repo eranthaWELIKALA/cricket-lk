@@ -65,6 +65,7 @@ function defaultState(){
     // screen had no id to load and spun on "Loading…" forever. See render().
     viewClubId: null, viewTournamentId: null,
     clubDataReset202609: false, // one-time drop of local club-match copies after the cloud wipe -- see purgeLocalClubMatches()
+    clubResultsReset202610: false, // one-time drop of club matches/tournaments after the 2026-10 reset -- see purgeClubResults()
     guestPlayersCleaned: false, // one-time purge of club-match names that leaked into state.players -- see purgeLeakedClubPlayers()
     soundEnabled: true,
     themeId: "midnight", // see THEME_PRESETS (REFERENCE DATA) and applyTheme()

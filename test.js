@@ -175,6 +175,14 @@ async function main(){
     const st2 = { matchHistory: hist, activeClubId: "c1" };
     assert(win.purgeLocalClubMatches(st2) === 2 && Object.keys(st2.matchHistory).join() === "b" && st2.activeClubId === null,
       "purgeLocalClubMatches drops only club matches and clears the selected club");
+    const st3 = { matchHistory: { a: { id: "a", clubId: "c1" }, b: { id: "b" } }, activeClubId: "c1", viewTournamentId: "t1" };
+    const ops3 = [{ kind: "match" }, { kind: "roster.add" }, { kind: "tournament.create" }, { kind: "team.save" }, { kind: "preset.save" }];
+    const cache3 = { clubs: { c1: { roster: [1], matches: [1], tournaments: [1] } }, tournaments: { t1: {} } };
+    const r3 = win.purgeClubResults(st3, ops3, cache3);
+    assert(r3.matches === 1 && r3.ops === 3 && Object.keys(st3.matchHistory).join() === "b" && st3.activeClubId === "c1" && st3.viewTournamentId === null
+      && r3.keptOps.map(o => o.kind).join() === "roster.add,preset.save"
+      && !cache3.clubs.c1.matches.length && !cache3.clubs.c1.tournaments.length && cache3.clubs.c1.roster.length === 1 && !Object.keys(cache3.tournaments).length,
+      "purgeClubResults drops club matches/tournament ops and caches, keeps roster, presets and the selected club");
     const removed = win.purgeLeakedClubPlayers(st);
     assert(removed.join() === "Leak", "only a name seen solely in club matches is purged, got: " + removed.join());
     assert(!st.players.p_Leak, "the leaked club player is gone from the guest table");
