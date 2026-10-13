@@ -99,6 +99,9 @@ document.addEventListener("click", (e) => {
   }
   else if (action === "go-account"){ state.view = session ? "account" : "signIn"; render(); }
   else if (action === "sign-out"){ handleSignOut(); }
+  else if (action === "auth-mail-send"){ sendAuthMail(); }                // queued sign-up/resend: try now
+  else if (action === "auth-mail-cancel"){ cancelAuthMail(); render(); }
+  else if (action === "cancel-club-invite"){ handleCancelClubInvite(btn.dataset.id); }
   else if (action === "go-admin-portal"){ location.href = "admin.html"; } // platform admins only; admin.html re-checks server-side
   else if (action === "go-premier"){ state.view = "premier"; render(); } // render() loads it
   else if (action === "open-side-menu"){ ui.sideMenuOpen = true; render(); }

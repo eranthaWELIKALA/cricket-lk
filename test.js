@@ -759,6 +759,50 @@ async function main(){
     assert(/Kusal/.test(win.describeOp(ops[0])) && /Club Day/.test(win.describeOp(ops[2])), "describeOp names what's queued");
   }
 
+  // --- auth emails: the built-in mailer's rate limit is queued and retried, never shown raw ---
+  {
+    assert(win.isAuthRateLimit({ status: 429, message: "x" }) && win.isAuthRateLimit({ code: "over_email_send_rate_limit" }) && win.isAuthRateLimit({ message: "Email rate limit exceeded" }), "a 429 / email rate limit is recognised");
+    assert(!win.isAuthRateLimit({ status: 400, message: "Invalid login credentials" }) && !win.isAuthRateLimit(null), "other auth errors aren't");
+    assert(win.isEmailNotConfirmed({ code: "email_not_confirmed" }) && win.isEmailNotConfirmed({ message: "Email not confirmed" }), "an unconfirmed email is recognised");
+    assert(win.authMailDelay(1) === 60000 && win.authMailDelay(3) === 300000 && win.authMailDelay(9) === 600000, "retries back off 1m, 2m, 5m, then every 10m");
+
+    // win.eval runs in the page's own global scope, so top-level lets (authMail, supabaseClient) are reachable.
+    const runInPage = code => win.eval(code);
+    runInPage(`
+      window.__calls = [];
+      window.__prevClient = supabaseClient;
+      supabaseClient = { auth: {
+        signUp: async args => { __calls.push(["signUp", args.email, args.password]); return __calls.length === 1 ? { data: {}, error: { status: 429, code: "over_email_send_rate_limit", message: "email rate limit exceeded" } } : { data: { session: null }, error: null }; },
+        resend: async args => { __calls.push(["resend", args.email]); return { data: {}, error: null }; }
+      } };
+      state.match = null; // earlier tests leave a match on screen
+      state.view = "signUp"; render();
+      const form = document.getElementById("sign-up-form");
+      const field = n => form.querySelector('[name="' + n + '"]');
+      field("displayName").value = "Kusal"; field("email").value = "k@example.com"; field("password").value = "secret123";
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    `);
+    await wait(20);
+    win.eval("window.__job = authMail");
+    let job = win.__job;
+    assert(job && job.kind === "signup" && job.status === "waiting" && job.attempts === 1 && job.nextAt > Date.now(), "a rate-limited sign-up is queued for a retry");
+    assert(!/rate limit exceeded/.test(win.document.getElementById("app").textContent) && /Queued: email limit reached/.test(win.document.getElementById("app").textContent), "the screen explains the queue instead of the raw error");
+    assert(!win.document.getElementById("sign-up-form"), "the form is hidden while the sign-up waits (no double submit)");
+    assert(!JSON.stringify(win.DB.load(win.STORAGE_KEY) || {}).includes("secret123"), "the queued password is never saved to storage");
+
+    runInPage(`sendAuthMail()`);
+    await wait(20);
+    win.eval("window.__job = authMail; window.__view = state.view");
+    job = win.__job;
+    assert(win.__calls.length === 2 && job.status === "sent" && job.password === null, "the retry goes through and drops the password");
+    assert(win.__view === "signIn" && /Check your inbox/.test(win.document.getElementById("app").textContent), "then it's 'check your inbox' on Sign in, with a resend");
+
+    runInPage(`sendAuthMail()`);
+    await wait(20);
+    assert(win.__calls[2][0] === "resend" && win.__calls[2][1] === "k@example.com", "Resend email re-sends the confirmation (no password needed)");
+    runInPage(`cancelAuthMail(); supabaseClient = window.__prevClient; state.view = "home"; render();`);
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }

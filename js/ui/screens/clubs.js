@@ -53,6 +53,7 @@ function renderClubHome(){
 
         <h3 class="section-label">Admins</h3>
         ${club.members.map(m => `<div class="list-row"><span>${escapeHtml(m.displayName)}</span><span class="muted">${escapeHtml(m.role)}</span></div>`).join("")}
+        ${(club.invites || []).map(i => `<div class="list-row"><span>${escapeHtml(i.email)}<span class="pending-tag">invited</span></span><button type="button" data-action="cancel-club-invite" data-id="${escapeHtml(i.id)}" class="link-btn">Cancel</button></div>`).join("")}
         <form id="club-invite-admin-form" class="inline-form">
           <input name="email" type="email" placeholder="Email to add as admin" required>
           <button type="submit" class="ghost small">Invite</button>
@@ -578,7 +579,20 @@ function handleClubInviteAdminSubmit(e){
   if (!email) return;
   inviteClubAdmin(ui.currentClubId, email).then(result => {
     if (result && result.error){ showFormError(form, result.error); return; }
-    ui.clubInviteMessage = result.result === "ok" ? "Added." : result.result === "already_member" ? "Already an admin." : "No account found with that email.";
+    ui.clubInviteMessage = {
+      ok: "Added.",
+      already_member: "Already an admin.",
+      invited: `Invite saved. ${email} has no confirmed account yet: ask them to sign up with this email, and they'll become an admin as soon as they confirm it. The invite lasts 30 days.`,
+      already_invited: "Already invited. Waiting for them to sign up and confirm this email."
+    }[result.result] || "No account found with that email."; // "not_found": supabase/014 isn't run yet
+    form.reset();
+    fetchClubDetail(ui.currentClubId).then(render);
+  });
+}
+
+function handleCancelClubInvite(inviteId){
+  cancelClubInvite(inviteId).then(result => {
+    ui.clubInviteMessage = result.error ? friendlyError(result.error) : "Invite cancelled.";
     fetchClubDetail(ui.currentClubId).then(render);
   });
 }

@@ -155,6 +155,7 @@ function renderSignIn(){
       ${renderBackBar("Home", "home")}
       <h1>🔐 Sign in</h1>
       ${!supabaseClient ? `<p class="hint">Cloud features aren't configured on this deployment yet.</p>` : `
+        ${renderAuthMailCard()}
         <div class="auth-card">
           <form id="sign-in-form">
             <div class="form-error"></div>
@@ -174,7 +175,8 @@ function renderSignUp(){
     <div class="screen">
       ${renderBackBar("Home", "home")}
       <h1>✨ Sign up</h1>
-      ${!supabaseClient ? `<p class="hint">Cloud features aren't configured on this deployment yet.</p>` : `
+      ${!supabaseClient ? `<p class="hint">Cloud features aren't configured on this deployment yet.</p>` : authMail && authMail.kind === "signup" && authMail.status !== "failed" ? renderAuthMailCard() : `
+        ${renderAuthMailCard()}
         <div class="auth-card">
           <form id="sign-up-form">
             <div class="form-error"></div>
@@ -188,6 +190,45 @@ function renderSignUp(){
       `}
     </div>
   `;
+}
+
+/* The queued sign-up / confirmation email (authMail, CLOUD) -- shown on the
+   sign-in and sign-up screens: waiting out the mailer's rate limit, sent
+   ("check your inbox" + resend), unconfirmed (offer a resend) or failed. */
+function renderAuthMailCard(){
+  const job = authMail;
+  if (!job) return "";
+  const email = `<strong>${escapeHtml(job.email)}</strong>`;
+  const what = job.kind === "signup" ? "Your sign-up" : "The confirmation email";
+  let body;
+  if (job.status === "waiting"){
+    const at = new Date(job.nextAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    body = `
+      <p class="mvp-name">📮 Queued: email limit reached</p>
+      <p class="hint">We can only send a few emails an hour right now. ${what} for ${email} is queued, and we'll try again automatically at ${escapeHtml(at)}.
+        ${job.kind === "signup" ? "Keep this page open: closing it cancels the sign-up." : ""}</p>
+      <button type="button" data-action="auth-mail-send" class="ghost small">Try now</button>
+      <button type="button" data-action="auth-mail-cancel" class="link-btn">Cancel</button>`;
+  } else if (job.status === "sending"){
+    body = `<p class="mvp-name">📮 Sending…</p><p class="hint">${what} for ${email}.</p>`;
+  } else if (job.status === "sent"){
+    body = `
+      <p class="mvp-name">✉️ Check your inbox</p>
+      <p class="hint">We sent a confirmation link to ${email}. Open it, then sign in here. Can't find it? Check spam, or resend it.</p>
+      <button type="button" data-action="auth-mail-send" class="ghost small">Resend email</button>`;
+  } else if (job.status === "unconfirmed"){
+    body = `
+      <p class="mvp-name">✉️ Confirm your email first</p>
+      <p class="hint">${email} hasn't been confirmed yet. Open the link we emailed you, or get a new one.</p>
+      <button type="button" data-action="auth-mail-send" class="ghost small">Resend confirmation email</button>`;
+  } else {
+    body = `
+      <p class="mvp-name">Couldn't send the email</p>
+      <p class="hint">${escapeHtml(job.error || "")}</p>
+      ${job.kind === "resend" ? `<button type="button" data-action="auth-mail-send" class="ghost small">Try again</button>` : ""}
+      <button type="button" data-action="auth-mail-cancel" class="link-btn">Dismiss</button>`;
+  }
+  return `<div class="auth-card auth-mail-card" role="status">${body}</div>`;
 }
 
 function renderAccount(){
@@ -252,13 +293,25 @@ function handleSignInSubmit(e){
   const email = (f.get("email") || "").trim();
   const password = f.get("password") || "";
   supabaseClient.auth.signInWithPassword({ email, password }).then(({ data, error }) => {
-    if (error){ showFormError(form, error.message); return; }
-    session = data.session;
-    ui.myClubs = null; // force a fresh fetch under the newly-signed-in account
-    refreshProfileAndAdmin().then(() => {
-      state.view = "account";
-      save(); render();
-    });
+    if (isEmailNotConfirmed(error)){
+      // Offer a resend; it goes through the same rate-limit-aware queue.
+      cancelAuthMail();
+      queueAuthMail({ kind: "resend", email, status: "unconfirmed" });
+      render(); return;
+    }
+    if (error){ showFormError(form, isAuthRateLimit(error) ? "Too many sign-in attempts. Wait a minute and try again." : error.message); return; }
+    completeSignIn(data.session);
+  });
+}
+
+/* Shared by sign-in, sign-up and a queued sign-up that went through. */
+function completeSignIn(newSession){
+  cancelAuthMail();
+  session = newSession;
+  ui.myClubs = null; // force a fresh fetch under the newly-signed-in account
+  return refreshProfileAndAdmin().then(() => {
+    state.view = "account";
+    save(); render();
   });
 }
 
@@ -274,17 +327,21 @@ function handleSignUpSubmit(e){
     email, password,
     options: { data: { display_name: displayName } }
   }).then(({ data, error }) => {
+    if (error && isAuthRateLimit(error)){
+      // The mailer's hourly limit: queue it and keep retrying (see authMail).
+      cancelAuthMail();
+      queueAuthMail({ kind: "signup", email, displayName, password, status: "waiting" });
+      render(); return;
+    }
     if (error){ showFormError(form, error.message); return; }
     if (!data.session){
       // Email confirmation is required before a session exists.
+      cancelAuthMail();
+      queueAuthMail({ kind: "resend", email, status: "sent" });
       state.view = "signIn";
       save(); render();
       return;
     }
-    session = data.session;
-    refreshProfileAndAdmin().then(() => {
-      state.view = "account";
-      save(); render();
-    });
+    completeSignIn(data.session);
   });
 }

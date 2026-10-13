@@ -595,18 +595,20 @@ async function fetchClubDetail(clubId){
     cache.clubs[clubId] = Object.assign({}, server, { matches: server.matches.slice(0, 30) });
     saveCloudCache();
   }
-  const base = server || (cache && cache.clubs[clubId]) || { id: clubId, name: (ui.myClubs || []).find(c => c.id === clubId)?.name || "", members: [], roster: [], matches: [], tournaments: [], presets: { match: [], tournament: [] } };
+  const base = server || (cache && cache.clubs[clubId]) || { id: clubId, name: (ui.myClubs || []).find(c => c.id === clubId)?.name || "", members: [], roster: [], matches: [], tournaments: [], invites: [], presets: { match: [], tournament: [] } };
   ui.club = Object.assign(overlayClubData(base, myOps()), { fromCache: !server });
   ui.clubBusy = false;
 }
 async function fetchClubDetailFromServer(clubId){
-  const [clubRes, members, rosterRes, matchesRes, tournamentsRes, presetsRes] = await Promise.all([
+  const [clubRes, members, rosterRes, matchesRes, tournamentsRes, presetsRes, invitesRes] = await Promise.all([
     supabaseClient.from("clubs").select("id, name").eq("id", clubId).single(),
     fetchClubMembers(clubId),
     fetchRosterRows(clubId),
     supabaseClient.from("matches").select("id, match_type, data, played_at").eq("club_id", clubId).order("played_at", { ascending: false }).limit(50),
     supabaseClient.from("tournaments").select("id, name, created_at").eq("organizer_club_id", clubId).order("created_at", { ascending: false }),
-    supabaseClient.from("club_presets").select("id, kind, preset").eq("club_id", clubId).order("created_at")
+    supabaseClient.from("club_presets").select("id, kind, preset").eq("club_id", clubId).order("created_at"),
+    // Pending admin invites (supabase/014); an error just means it isn't run yet.
+    supabaseClient.from("club_invites").select("id, email, created_at").eq("club_id", clubId).order("created_at")
   ]);
   if ([clubRes, rosterRes, matchesRes].some(r => isNetworkError(r.error, isOnline()))) return null;
   const presetRows = presetsRes.data || [];
@@ -617,6 +619,7 @@ async function fetchClubDetailFromServer(clubId){
     roster: (rosterRes.data || []).map(r => r.players_public).filter(Boolean),
     matches: matchesRes.data || [],
     tournaments: tournamentsRes.data || [],
+    invites: invitesRes.error ? [] : (invitesRes.data || []),
     // This club's own presets (club_presets), same shape as the guest ones
     // plus the row id -- never mixed with state.matchPresets/tournamentPresets.
     presets: {
@@ -875,7 +878,88 @@ async function inviteClubAdmin(clubId, email){
   const offline = needsInternet(); if (offline) return offline;
   const { data, error } = await supabaseClient.rpc("invite_club_admin", { _club_id: clubId, _email: email });
   if (error) return { error: error.message };
-  return { result: data }; // "ok" | "not_found" | "already_member"
+  return { result: data }; // "ok" | "already_member" | "invited" | "already_invited" (014) | "not_found" (before 014)
+}
+/* Cancels a pending invite (014). Online-only like inviting itself. */
+async function cancelClubInvite(inviteId){
+  const offline = needsInternet(); if (offline) return offline;
+  const { error } = await supabaseClient.from("club_invites").delete().eq("id", inviteId);
+  return error ? { error: error.message } : { ok: true };
+}
+
+/* --- Auth emails and the built-in mailer's rate limit.
+   Supabase's default mailer sends only a few emails an hour for the whole
+   project, so a sign-up (or a "resend confirmation") can come back 429.
+   Instead of showing that raw error, the request waits in `authMail` and is
+   retried on its own, with growing gaps (authMailDelay), until it goes
+   through. A queued sign-up has to keep the password to retry, so this is
+   memory only -- never written to storage; closing the tab drops it, and
+   the card says so. A top-level `let` like `session`, not a `ui` field,
+   because `ui` is reset wholesale at times. One job at a time: it's the
+   one person on the sign-up/sign-in screen. */
+let authMail = null;      // { kind: "signup"|"resend", email, displayName, password, status, attempts, nextAt, error }
+let authMailTimer = null;
+const AUTH_MAIL_MAX_TRIES = 12; // about 1h40m of retrying with authMailDelay
+
+function isAuthRateLimit(err){
+  if (!err) return false;
+  return err.status === 429 || /rate.?limit|too many requests|only request this after/i.test(String(err.code || "") + " " + String(err.message || ""));
+}
+function isEmailNotConfirmed(err){
+  return !!err && (err.code === "email_not_confirmed" || /email not confirmed/i.test(String(err.message || "")));
+}
+/* Wait before the next try, after `attempts` failed ones: 1m, 2m, 5m, then every 10m. */
+function authMailDelay(attempts){
+  return [1, 2, 5, 10][Math.max(0, Math.min(attempts, 4) - 1)] * 60000;
+}
+function queueAuthMail(job){
+  authMail = Object.assign({ attempts: 0, error: null, nextAt: 0 }, job);
+  if (authMail.status === "waiting") authMailBackoff(authMail);
+}
+function authMailBackoff(job){
+  job.attempts++;
+  if (job.attempts >= AUTH_MAIL_MAX_TRIES){
+    job.status = "failed"; job.password = null;
+    job.error = "Still couldn't send the email after an hour and a half of trying. Please try again later.";
+    return;
+  }
+  job.status = "waiting";
+  job.nextAt = Date.now() + authMailDelay(job.attempts);
+  clearTimeout(authMailTimer);
+  authMailTimer = setTimeout(sendAuthMail, job.nextAt - Date.now());
+}
+function cancelAuthMail(){
+  clearTimeout(authMailTimer);
+  authMail = null;
+}
+/* Sends (or re-sends) the queued job now. A sign-up that comes back with a
+   session (email confirmation turned off) signs straight in. */
+async function sendAuthMail(){
+  const job = authMail;
+  if (!job || !supabaseClient || job.status === "sending") return;
+  clearTimeout(authMailTimer);
+  job.status = "sending"; job.error = null;
+  render();
+  let res;
+  try {
+    res = job.kind === "signup"
+      ? await supabaseClient.auth.signUp({ email: job.email, password: job.password, options: { data: { display_name: job.displayName } } })
+      : await supabaseClient.auth.resend({ type: "signup", email: job.email });
+  } catch (err){ res = { error: err }; }
+  if (authMail !== job) return; // cancelled or replaced meanwhile
+  const error = res && res.error;
+  if (!error){
+    // From here on "Resend email" only needs the address.
+    job.status = "sent"; job.kind = "resend"; job.password = null; job.displayName = null; job.attempts = 0;
+    const newSession = res.data && res.data.session;
+    if (newSession){ authMail = null; completeSignIn(newSession); return; }
+    if (state.view === "signUp"){ state.view = "signIn"; save(); }
+  } else if (isAuthRateLimit(error) || isNetworkError(error, isOnline())){
+    authMailBackoff(job);
+  } else {
+    job.status = "failed"; job.password = null; job.error = friendlyError(error.message);
+  }
+  render();
 }
 
 async function syncMatchToCloud(match, archived){

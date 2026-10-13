@@ -1216,6 +1216,37 @@ changes `origin_club_id`. Submitting the form still goes through
 `add_player_to_club` by name, which joins an exact-name match instead of
 creating one — the sheet's hint says so. Merge aliases aren't searched.
 
+## Club admin invites & auth emails (`supabase/014_club_invites.sql`)
+
+Supabase's built-in mailer only sends a few emails an hour for the whole
+project, and we don't run our own. So **inviting an admin never sends
+email**. `invite_club_admin` adds a *confirmed* account immediately (`ok`).
+For an address with no account, or only an unconfirmed one, it saves a
+`club_invites` row instead (`invited`, at most 50 per club, 30-day expiry).
+The `on_auth_user_email_confirmed` trigger on `auth.users` then makes that
+account an admin when the email is confirmed (on insert when confirmation is
+off, on update when the link is clicked). **Only a confirmed email accepts
+an invite**; otherwise anyone could register someone else's address and be
+made an admin. The trigger swallows its own errors so it can never break
+sign-up. Members see and cancel pending invites under Admins on club home
+(`cancelClubInvite`). Like inviting, cancelling is online-only and doesn't
+go through the outbox. An older client shows its "no account" text for
+`invited`. The `not_found` result now only comes from a server without 014.
+
+**Sign-up / confirmation emails are queued when rate-limited**
+(`authMail`, CLOUD). A 429 from `signUp` or `resend` (`isAuthRateLimit`)
+is never shown raw. The job waits and is retried on its own
+(`authMailDelay`: 1m, 2m, 5m, then every 10m, up to
+`AUTH_MAIL_MAX_TRIES`), and `renderAuthMailCard()` shows its state on Sign
+in / Sign up: queued (try now / cancel), sending, "check your inbox"
+(resend), unconfirmed (sign-in got `email_not_confirmed` → resend), or
+failed. A queued sign-up keeps the password so it can retry, so **the job
+is memory-only, never stored**. Closing the tab drops it, and the card says
+so. Once the sign-up goes through, the password is dropped and the job
+becomes a resend. Like `session`, it's a top-level `let`, not a `ui` field.
+Covered in `test.js`. A real fix for volume is custom SMTP in the Supabase
+dashboard, which needs no code change.
+
 ## Renaming a player (`supabase/013_rename_player.sql`)
 
 The profile's Edit sheet has a Name field for anyone who may manage the
