@@ -29,9 +29,7 @@ function renderClubTournamentSetup(){
         <input type="hidden" name="tournamentPresetId" value="${ui.clubTournamentSetupPresetId || ""}">
         ${!presets.length ? `<p class="hint">${ui.club && ui.club.id === ui.currentClubId ? "This club has no tournament presets yet — add one on the club page first." : "Loading this club's presets…"}</p>` : ""}
         ${presets.length ? `
-          <div class="preset-picker">
-            ${presets.map(p => `<button type="button" data-action="pick-club-tournament-preset" data-id="${p.id}" class="preset-chip ${p.id === ui.clubTournamentSetupPresetId ? "active" : ""}">${escapeHtml(p.name)}</button>`).join("")}
-          </div>
+          ${presetPickerHtml({ presets, activeId: ui.clubTournamentSetupPresetId, pickAction: "pick-club-tournament-preset", kind: "tournament", slot: "club-tournament-setup" })}
         ` : ""}
         <button type="submit" class="primary">Create tournament</button>
       </form>

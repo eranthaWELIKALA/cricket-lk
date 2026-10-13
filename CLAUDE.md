@@ -623,6 +623,17 @@ purely a CSS reskin of that same idea, not a step toward locking
 anything — it's still a real, submittable `<input type=radio>` group,
 just styled as two tiles instead of native bullets via `label:has(input:checked)`.
 
+**Every preset picker has an ⓘ** (`presetPickerHtml`, UI common): each chip
+is joined to an info button that opens a panel under the picker spelling the
+preset out in plain words — `describeMatchPreset`/`describeTournamentPreset`
+(ENGINE, tested). It's a tap, not a hover tooltip (phones have no hover), and
+it never picks the preset. `ui.presetInfo = { view, slot, kind, id }`; the
+panel only shows on the view it was opened on; ✕, Esc or the same ⓘ closes it.
+The tournament-preset editor's match-preset `<select>` uses the
+`.select-with-info` variant (`presetInfoButtonHtml(kind, null, slot)`), which
+describes whatever is selected and follows the selection. Use
+`presetPickerHtml` for any new preset picker.
+
 `renderMatchPresetsTab()`/`renderTournamentPresetsTab()`'s "BUILT IN"
 badge is informational only (id-matched against `DEFAULT_MATCH_PRESETS`/
 `DEFAULT_TOURNAMENT_PRESETS`) — it does not gate Edit/Delete. Once

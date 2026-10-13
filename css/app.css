@@ -670,6 +670,30 @@ body.has-install-banner:not(.live-scoring) #app{ padding-bottom:calc(96px + env(
 .preset-picker{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
 .preset-chip{ padding:9px 15px; border-radius:var(--radius-sm); border:2px solid var(--line-strong); background:var(--panel-2); color:var(--text); font-size:.85rem; font-weight:700; }
 .preset-chip.active{ background:var(--accent-2); color:var(--accent-2-ink); border-color:var(--accent-2-ink); font-weight:800; }
+/* Preset ⓘ (presetPickerHtml): the chip and its info button read as one
+   segmented pill; the panel is a flat card under the picker. */
+.preset-chip-group{ display:inline-flex; align-items:stretch; }
+.preset-chip-group .preset-chip{ border-top-right-radius:0; border-bottom-right-radius:0; }
+.preset-info-btn{
+  min-width:36px; padding:0 10px; margin:0; border:2px solid var(--line-strong); border-left:none;
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0; background:var(--panel-2); color:var(--muted);
+  font:italic 800 .85rem/1 Georgia, "Times New Roman", serif; box-shadow:none;
+}
+.preset-chip.active + .preset-info-btn{ border-color:var(--accent-2-ink); }
+.preset-info-btn.open{ background:var(--text); color:var(--bg); }
+.preset-info-btn:focus-visible, .preset-info-close:focus-visible{ outline:2px solid var(--accent-2); outline-offset:2px; }
+.select-with-info{ display:flex; align-items:flex-end; gap:8px; }
+.select-with-info label{ flex:1; min-width:0; }
+.select-with-info .preset-info-btn{ border-left:2px solid var(--line-strong); border-radius:var(--radius-sm); height:44px; margin-bottom:12px; }
+.preset-info{
+  margin:-4px 0 14px; padding:12px 14px; border:2px solid var(--line-strong); border-radius:var(--radius-md);
+  background:var(--panel-2); box-shadow:var(--shadow-card);
+}
+.preset-info-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+.preset-info-close{ padding:2px 8px; margin:0; background:none; border:none; box-shadow:none; color:var(--muted); font-size:1rem; }
+.preset-info dl{ display:grid; grid-template-columns:auto 1fr; gap:6px 12px; margin:0; font-size:.85rem; }
+.preset-info dt{ color:var(--muted); font-weight:700; }
+.preset-info dd{ margin:0; }
 
 .theme-gallery{ display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; margin-bottom:16px; }
 .theme-swatch{

@@ -215,6 +215,8 @@ document.addEventListener("click", (e) => {
     });
   }
   else if (action === "go-tournament-setup"){ ui.tournamentSetupPresetId = null; ui.tournamentSetupTeamIds = []; state.view = "tournamentSetup"; render(); }
+  else if (action === "preset-info"){ togglePresetInfo(btn); }
+  else if (action === "preset-info-close"){ ui.presetInfo = null; render(); }
   else if (action === "pick-match-preset"){ ui.matchSetupPresetId = btn.dataset.id; render(); }
   else if (action === "pick-tournament-preset"){ ui.tournamentSetupPresetId = btn.dataset.id; render(); }
   else if (action === "open-tournament"){ state.activeTournamentId = btn.dataset.id; state.view = "tournamentDashboard"; ui.tournamentTab = "standings"; render(); }
@@ -347,6 +349,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape"){
     if (ui.confirm) cancelConfirm();
     else if (ui.tournamentTeamEdit && document.querySelector(".team-modal")) closeTeamEdit();
+    else if (ui.presetInfo){ ui.presetInfo = null; render(); }
   }
 });
 document.addEventListener("pointerdown", (e) => {
@@ -405,6 +408,12 @@ document.addEventListener("input", (e) => {
 });
 
 document.addEventListener("change", (e) => {
+  // An open ⓘ panel next to the tournament-preset editor's match-preset
+  // select follows the selection.
+  if (e.target.name === "matchPresetId" && e.target.closest(".select-with-info") && presetInfoOpen("tournament-preset-editor")){
+    ui.presetInfo.id = e.target.value; render();
+    return;
+  }
   // Mirror the tournament-team form into ui so a background re-render (e.g.
   // the roster finishing loading) doesn't drop half-made picks.
   if (e.target.closest && e.target.closest("#tournament-team-form") && ui.tournamentTeamEdit){

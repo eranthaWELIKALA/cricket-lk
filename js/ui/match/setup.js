@@ -37,9 +37,7 @@ function renderMatchSetup(){
       <p class="tagline">${clubMode ? taglines[ui.clubMatchSetupType] : "Pick a preset, tweak anything, start scoring."}</p>
       ${clubMode && !presets.length ? `<p class="hint">${ui.club && ui.club.id === ui.currentClubId ? "This club has no presets yet — add some on the club page. You can still type the conditions below." : "Loading this club's presets…"}</p>` : ""}
       ${presets.length ? `
-        <div class="preset-picker">
-          ${presets.map(p => `<button type="button" data-action="pick-match-preset" data-id="${p.id}" class="preset-chip ${p.id === ui.matchSetupPresetId ? "active" : ""}">${escapeHtml(p.name)}</button>`).join("")}
-        </div>
+        ${presetPickerHtml({ presets, activeId: ui.matchSetupPresetId, pickAction: "pick-match-preset", kind: "match", slot: "match-setup" })}
       ` : ""}
       <form id="match-setup-form">
         <div class="form-error"></div>

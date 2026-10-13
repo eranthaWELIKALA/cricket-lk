@@ -181,3 +181,72 @@ function renderTeamsDatalist(){
 function renderBackBar(label, view){
   return `<button data-action="go-view" data-view="${view}" class="back-bar">‹ ${label}</button>`;
 }
+
+/* --- preset ⓘ: what a preset actually means, wherever one is picked.
+   Each chip gets a joined ⓘ button (preset-info); tapping it shows a panel
+   under the picker with the preset's rules in plain words (describeMatchPreset /
+   describeTournamentPreset, ENGINE). A tap, not a hover tooltip -- phones
+   have no hover. ui.presetInfo = { view, slot, kind, id }: `slot` names the
+   picker (one screen could have two), and the panel only shows on the view
+   it was opened on. Tap ⓘ again, ✕ or Esc to close. --- */
+function presetPickerHtml({ presets, activeId, pickAction, kind, slot }){
+  return `
+    <div class="preset-picker">
+      ${presets.map(p => `
+        <span class="preset-chip-group">
+          <button type="button" data-action="${pickAction}" data-id="${escapeHtml(p.id)}" class="preset-chip ${p.id === activeId ? "active" : ""}">${escapeHtml(p.name)}</button>
+          ${presetInfoButtonHtml(kind, p.id, slot, p.name)}
+        </span>
+      `).join("")}
+    </div>
+    ${presetInfoPanelHtml(slot)}
+  `;
+}
+/* `id` null: describes whatever the neighbouring <select> shows (.select-with-info). */
+function presetInfoButtonHtml(kind, id, slot, name){
+  const open = presetInfoOpen(slot, id);
+  return `<button type="button" data-action="preset-info" data-kind="${kind}" data-id="${escapeHtml(id || "")}" data-slot="${slot}" class="preset-info-btn ${open ? "open" : ""}" aria-label="What is ${escapeHtml(name || "this preset")}?" aria-expanded="${open}" aria-controls="preset-info-${slot}">i</button>`;
+}
+function presetInfoOpen(slot, id){
+  const p = ui.presetInfo;
+  return !!p && p.view === state.view && p.slot === slot && (id == null || p.id === id);
+}
+/* Looks a preset up in every list it could come from (guest, club, the
+   current setup's choices) -- ids don't collide across them. */
+function presetForInfo(kind, id){
+  const lists = kind === "match"
+    ? [Object.values(state.matchPresets), (ui.club && ui.club.presets && ui.club.presets.match) || []]
+    : [Object.values(state.tournamentPresets), (ui.club && ui.club.presets && ui.club.presets.tournament) || []];
+  for (const list of lists){ const hit = list.find(p => p.id === id); if (hit) return hit; }
+  return null;
+}
+function presetInfoPanelHtml(slot){
+  if (!presetInfoOpen(slot)) return "";
+  const { kind, id } = ui.presetInfo;
+  const p = presetForInfo(kind, id);
+  if (!p) return "";
+  let rows;
+  if (kind === "match") rows = describeMatchPreset(p);
+  else {
+    // A club tournament preset's matchPresetId is unused (see "Roles").
+    const mp = p.matchPresetId ? state.matchPresets[p.matchPresetId] : null;
+    rows = describeTournamentPreset(p, mp ? mp.name : null);
+  }
+  return `
+    <div class="preset-info" id="preset-info-${slot}" role="region" aria-label="About ${escapeHtml(p.name)}">
+      <div class="preset-info-head">
+        <b>${escapeHtml(p.name)}</b>
+        <button type="button" data-action="preset-info-close" class="preset-info-close" aria-label="Close">✕</button>
+      </div>
+      <dl>${rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join("")}</dl>
+    </div>
+  `;
+}
+function togglePresetInfo(btn){
+  let id = btn.dataset.id;
+  // The editor's <select> variant describes whatever is selected right now.
+  const sel = btn.closest(".select-with-info") && btn.closest(".select-with-info").querySelector("select");
+  if (sel) id = sel.value;
+  ui.presetInfo = presetInfoOpen(btn.dataset.slot, id) ? null : { view: state.view, slot: btn.dataset.slot, kind: btn.dataset.kind, id };
+  render();
+}

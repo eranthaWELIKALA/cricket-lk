@@ -241,7 +241,11 @@ function renderTournamentPresetForm(p, clubId){
       <label>Name<input name="name" required maxlength="30" value="${escapeHtml(p.name || "")}"></label>
       ${clubId
         ? `<input type="hidden" name="matchPresetId" value="">`
-        : `<label>Match preset<select name="matchPresetId">${Object.values(state.matchPresets).map(mp => `<option value="${mp.id}" ${mp.id === p.matchPresetId ? "selected" : ""}>${escapeHtml(mp.name)}</option>`).join("")}</select></label>`}
+        : `<div class="select-with-info">
+            <label>Match preset<select name="matchPresetId">${Object.values(state.matchPresets).map(mp => `<option value="${mp.id}" ${mp.id === p.matchPresetId ? "selected" : ""}>${escapeHtml(mp.name)}</option>`).join("")}</select></label>
+            ${presetInfoButtonHtml("match", null, "tournament-preset-editor", "the selected match preset")}
+          </div>
+          ${presetInfoPanelHtml("tournament-preset-editor")}`}
       <div class="field-row">
         <label>Win pts<input name="pointsForWin" type="number" min="0" max="10" value="${p.pointsForWin ?? 2}" required></label>
         <label>Tie pts<input name="pointsForTie" type="number" min="0" max="10" value="${p.pointsForTie ?? 1}" required></label>
@@ -328,9 +332,7 @@ function renderTournamentSetup(){
         <label>Tournament name<input name="name" required maxlength="40" placeholder="e.g. Sunday League 2026"></label>
         <input type="hidden" name="tournamentPresetId" value="${ui.tournamentSetupPresetId || ""}">
         ${presets.length ? `
-          <div class="preset-picker">
-            ${presets.map(p => `<button type="button" data-action="pick-tournament-preset" data-id="${p.id}" class="preset-chip ${p.id === ui.tournamentSetupPresetId ? "active" : ""}">${escapeHtml(p.name)}</button>`).join("")}
-          </div>
+          ${presetPickerHtml({ presets, activeId: ui.tournamentSetupPresetId, pickAction: "pick-tournament-preset", kind: "tournament", slot: "tournament-setup" })}
         ` : ""}
         <fieldset>
           <legend>Teams in this tournament</legend>

@@ -808,6 +808,42 @@ async function main(){
     runInPage(`cancelAuthMail(); supabaseClient = window.__prevClient; state.view = "home"; render();`);
   }
 
+  // --- preset ⓘ: plain-language description, and the panel wherever a preset is picked ---
+  {
+    const rows = Object.fromEntries(win.eval(`describeMatchPreset(DEFAULT_MATCH_PRESETS[0])`));
+    assert(rows.Overs === "20 overs per innings." && rows["Over length"] === "6 balls per over." && /11 a side\. All out at 10 wickets/.test(rows.Players), "match preset: overs, over length, players in words");
+    assert(/1 run, and the ball is bowled again\. The next ball is a free hit\./.test(rows["No-balls"]) && !rows.Fielder, "match preset: no-ball + free hit; no fielder row when not required");
+    const open = Object.fromEntries(win.describeMatchPreset({ ballsPerOver: 5, oversLimit: null, playersPerSide: 6, lastManStands: true, wide: { enabled: false }, noBall: { enabled: true, runs: 2 }, freeHitOnNoBall: false, requireFielderOnCatch: true, requireFielderOnRunout: true }));
+    assert(/No limit/.test(open.Overs) && /All out at 6 wickets \(last man stands/.test(open.Players) && open.Wides === "Not called." && /2 runs.*No free hit/.test(open["No-balls"]) && open.Fielder === "Must be named for catches and run-outs.", "match preset: no limit, last man stands, wides off, fielder rule");
+    assert(/Any number/.test(Object.fromEntries(win.describeMatchPreset({ ballsPerOver: 6, oversLimit: 1, playersPerSide: null })).Players), "match preset: no players limit, and '1 over' is singular" );
+    const tr = Object.fromEntries(win.describeTournamentPreset({ pointsForWin: 2, pointsForTie: 1, pointsForLoss: 0, useNRR: true }, "T20 (6-ball overs)"));
+    assert(tr.Matches === "Played as T20 (6-ball overs)." && tr.Points === "Win 2 · Tie 1 · Loss 0" && /NRR/.test(tr["Level on points"]), "tournament preset in words");
+    assert(/picked when each match is set up/.test(Object.fromEntries(win.describeTournamentPreset({ pointsForWin: 3, pointsForTie: 1, pointsForLoss: 0, useNRR: false }, null)).Matches), "club tournament preset: conditions come from match setup");
+
+    win.eval(`state.match = null; ui.presetInfo = null; ui.matchSetupPresetId = null; state.activeClubId = null; ui.clubMatchSetupType = null; state.view = "matchSetup"; render();`);
+    const doc = win.document;
+    const infoBtns = doc.querySelectorAll('#app .preset-info-btn');
+    assert(infoBtns.length === doc.querySelectorAll('#app .preset-chip').length && infoBtns.length > 0, "match setup: every preset chip has an ⓘ");
+    infoBtns[1].click();
+    let panel = doc.querySelector("#app .preset-info");
+    assert(panel && /T10/.test(panel.textContent) && /10 overs per innings/.test(panel.textContent), "tapping ⓘ shows that preset's rules (not the selected chip's)");
+    assert(doc.querySelectorAll('#app .preset-info-btn')[1].getAttribute("aria-expanded") === "true", "the open ⓘ is marked expanded");
+    assert(doc.querySelector('#app .preset-chip.active').dataset.id === "preset-t20", "ⓘ doesn't change which preset is picked");
+    doc.querySelectorAll('#app .preset-info-btn')[1].click();
+    assert(!doc.querySelector("#app .preset-info"), "tapping the same ⓘ again closes it");
+    doc.querySelectorAll('#app .preset-info-btn')[0].click();
+    doc.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    assert(!doc.querySelector("#app .preset-info"), "Esc closes it");
+
+    doc.querySelectorAll('#app .preset-info-btn')[2].click();
+    win.eval(`state.view = "tournamentSetup"; render();`);
+    assert(!doc.querySelector("#app .preset-info"), "an open panel doesn't follow you to another screen");
+    doc.querySelector('#app .preset-info-btn').click();
+    panel = doc.querySelector("#app .preset-info");
+    assert(panel && /Played as T20/.test(panel.textContent) && /Win 2 · Tie 1 · Loss 0/.test(panel.textContent), "tournament setup: ⓘ explains the points system");
+    win.eval(`ui.presetInfo = null; state.view = "home"; render();`);
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }

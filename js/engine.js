@@ -348,6 +348,34 @@ function conditionTagsFor(c){
   ].filter(Boolean);
 }
 
+/* Plain-language [label, text] rows for a preset's ⓘ panel (presetInfoHtml). */
+function describeMatchPreset(p){
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const wide = p.wide || {}, noBall = p.noBall || {};
+  const players = p.playersPerSide == null
+    ? "Any number. A side can't be bowled out."
+    : `${p.playersPerSide} a side. All out at ${p.lastManStands ? p.playersPerSide : p.playersPerSide - 1} wickets${p.lastManStands ? " (last man stands: the last batter bats alone)" : ""}.`;
+  const rows = [
+    ["Overs", p.oversLimit == null ? "No limit. The scorer ends the innings by hand." : `${plural(p.oversLimit, "over")} per innings.`],
+    ["Over length", `${plural(p.ballsPerOver, "ball")} per over.`],
+    ["Players", players],
+    ["Wides", wide.enabled === false ? "Not called." : `${plural(wide.runs ?? 1, "run")}, and the ball is bowled again.`],
+    ["No-balls", noBall.enabled === false ? "Not called." : `${plural(noBall.runs ?? 1, "run")}, and the ball is bowled again. ${p.freeHitOnNoBall !== false ? "The next ball is a free hit." : "No free hit."}`]
+  ];
+  const fielder = [p.requireFielderOnCatch && "catches", p.requireFielderOnRunout && "run-outs"].filter(Boolean);
+  if (fielder.length) rows.push(["Fielder", `Must be named for ${fielder.join(" and ")}.`]);
+  return rows;
+}
+/* `matchPresetName` is null for a club tournament preset, whose match
+   conditions are picked at each match's setup instead. */
+function describeTournamentPreset(t, matchPresetName){
+  return [
+    ["Matches", matchPresetName ? `Played as ${matchPresetName}.` : "Conditions are picked when each match is set up."],
+    ["Points", `Win ${t.pointsForWin} · Tie ${t.pointsForTie} · Loss ${t.pointsForLoss}`],
+    ["Level on points", t.useNRR !== false ? "Ranked by net run rate (NRR)." : "Stay level. NRR isn't used."]
+  ];
+}
+
 /* Escape a user's text for a PostgREST ilike pattern, so a typed % or _
    matches literally instead of acting as a wildcard. */
 function escapeLike(v){ return String(v || "").replace(/[\\%_]/g, c => "\\" + c); }
