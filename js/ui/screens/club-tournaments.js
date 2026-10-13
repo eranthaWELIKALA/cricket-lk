@@ -55,20 +55,70 @@ function handleClubTournamentSetupSubmit(e){
   });
 }
 
+/* Club and guest tournament dashboards share one shape: Overview (points
+   table), Teams (collapsed cards, tap one to see its players), Fixtures
+   (start a match + every completed one, tap for its scorecard) and Stats
+   (leaderboards, with their own sub-tabs). ui.tournamentTab picks the tab;
+   opening a tournament resets it to "overview". */
+const TOURNAMENT_TABS = [["overview", "Overview"], ["teams", "Teams"], ["fixtures", "Fixtures"], ["stats", "Stats"]];
+function tournamentTab(){ return TOURNAMENT_TABS.some(([id]) => id === ui.tournamentTab) ? ui.tournamentTab : "overview"; }
+
+/* Completed matches, newest first; each row opens the match's scorecard
+   sheet (open-match-detail). */
+function renderFixtureList(matches, empty){
+  const list = [...matches].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
+  if (!list.length) return `<p class="hint">${empty || "No matches played yet."}</p>`;
+  return `<div class="fixtures">${list.map(m => `
+    <button type="button" data-action="open-match-detail" data-id="${escapeHtml(m.id || "")}" class="fixture-row fixture-open">
+      <span class="fixture-main"><b>${escapeHtml(m.teamA)} v ${escapeHtml(m.teamB)}</b><span class="fixture-result">${escapeHtml(m.result || "")}</span></span>
+      <span class="fixture-meta">${m.completedAt ? new Date(m.completedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : ""}<span class="chevron">›</span></span>
+    </button>`).join("")}</div>`;
+}
+
+/* One team card, collapsed to its name + count until tapped
+   (ui.expandedTeamId). `players` is [{ name, guest? }]; `actions` is the
+   trusted HTML of the head's buttons (edit/delete) or "". */
+function teamCardHtml({ id, name, players, index, actions, pending }){
+  const open = ui.expandedTeamId === id;
+  const guests = players.filter(pl => pl.guest).length;
+  return `
+    <div class="team-card team-c${index % 4}${open ? " open" : ""}">
+      <div class="team-card-head">
+        <button type="button" data-action="toggle-team-card" data-id="${escapeHtml(id)}" class="team-card-toggle" aria-expanded="${open}">
+          <span class="team-badge">${escapeHtml(nameInitials(name))}</span>
+          <span class="team-card-title"><b>${escapeHtml(name)}${pending ? `<span class="pending-tag">not synced</span>` : ""}</b><span class="muted">${players.length} player${players.length === 1 ? "" : "s"}${guests ? ` · ${guests} guest${guests === 1 ? "" : "s"}` : ""}</span></span>
+          <span class="chevron">${open ? "▾" : "▸"}</span>
+        </button>
+        ${actions ? `<div class="team-card-actions">${actions}</div>` : ""}
+      </div>
+      ${open ? (players.length ? `<div class="team-roster">
+        ${players.map(pl => `<span class="player-chip${pl.guest ? " guest" : ""}"><span class="mini-avatar">${escapeHtml(nameInitials(pl.name))}</span>${escapeHtml(pl.name)}${pl.guest ? `<span class="guest-tag">guest</span>` : ""}</span>`).join("")}
+      </div>` : `<p class="hint">No players picked yet.</p>`) : ""}
+    </div>`;
+}
+
 function renderClubTournamentDashboard(){
   if (!session) return renderSignIn();
   const t = ui.clubTournament;
   const clubName = currentClubName();
+  if (!t) return `<div class="screen tournament">${renderBackBar(clubName || "Club", "clubHome")}${loadingHtml()}</div>`;
+  const tab = tournamentTab();
+  const matches = t.matches.map(m => m.data ? Object.assign({ id: m.id }, m.data) : null).filter(Boolean);
+  const startBtn = `<button data-action="go-club-tournament-match-setup" class="primary">Start match</button>`;
+  const p = t.tournament_preset || {};
   return `
     <div class="screen tournament">
       ${renderBackBar(clubName || "Club", "clubHome")}
-      ${!t ? `${loadingHtml()}` : `
-        <h1>🏆 ${escapeHtml(t.name)}</h1>
-        <button data-action="go-club-tournament-match-setup" class="primary">Start match</button>
-        ${renderTournamentTeams(t)}
-        ${t.matches.length ? renderStandingsTable(computeStandings(t.matches.map(m => m.data), t.tournament_preset), t.tournament_preset.useNRR) : `<p class="hint">No matches yet -- start one above.</p>`}
-        ${t.matches.length ? `<h3>Leaderboard</h3>${renderLeaderboards(aggregatePlayerStats(t.matches.map(m => m.data)))}` : ""}
-      `}
+      <h1>🏆 ${escapeHtml(t.name)}</h1>
+      <p class="tagline">${p.pointsForWin ?? 2}/${p.pointsForTie ?? 1}/${p.pointsForLoss ?? 0} pts${p.useNRR ? " · NRR" : ""} · ${matches.length} match${matches.length === 1 ? "" : "es"} played</p>
+      ${tabsHtml("switch-tournament-tab", TOURNAMENT_TABS, tab, "main-tabs")}
+      ${tab === "overview" ? `
+        ${matches.length ? renderStandingsTable(computeStandings(matches, p), p.useNRR) : `<p class="hint">No matches yet — start one to fill the points table.</p>`}
+        ${matches.length ? `<h3 class="section-label">Latest results</h3>${renderFixtureList(matches.sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)).slice(0, 3))}` : ""}
+        ${startBtn}` : ""}
+      ${tab === "teams" ? renderTournamentTeams(t) : ""}
+      ${tab === "fixtures" ? `${startBtn}<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches, "No matches yet — start one above.")}` : ""}
+      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches)) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
     </div>
   `;
 }
@@ -80,33 +130,20 @@ function renderClubTournamentDashboard(){
    changes history or standings. */
 function renderTournamentTeams(t){
   if (t.teams_unavailable){
-    return `<h3 class="section-label">Teams</h3><p class="hint">Saved teams need 012_tournament_teams.sql — run it in the Supabase SQL editor. You can still type team names at match setup.</p>`;
+    return `<p class="hint">Saved teams need 012_tournament_teams.sql — run it in the Supabase SQL editor. You can still type team names at match setup.</p>`;
   }
   const rosterReady = ui.club && ui.club.id === t.organizer_club_id;
   const assigned = new Set(t.teams.flatMap(team => team.players.map(pl => pl.id)));
   const unassigned = rosterReady ? ui.club.roster.filter(p => p.id && !assigned.has(p.id)) : [];
-  const CHIP_MAX = 10;
   return `
-    <h3 class="section-label">Teams</h3>
     ${ui.tournamentTeamError ? `<p class="form-error">${escapeHtml(ui.tournamentTeamError)}</p>` : ""}
     <div class="team-grid">
-      ${t.teams.map((team, i) => `
-        <div class="team-card team-c${i % 4}">
-          <div class="team-card-head">
-            <span class="team-badge">${escapeHtml(nameInitials(team.name))}</span>
-            <div class="team-card-title"><b>${escapeHtml(team.name)}${team.pending ? `<span class="pending-tag">not synced</span>` : ""}</b><span class="muted">${team.players.length} player${team.players.length === 1 ? "" : "s"}${team.players.some(pl => pl.guest) ? ` · ${team.players.filter(pl => pl.guest).length} guest${team.players.filter(pl => pl.guest).length === 1 ? "" : "s"}` : ""}</span></div>
-            <div class="team-card-actions">
-              <button data-action="edit-tournament-team" data-id="${team.id}" class="icon-btn" aria-label="Edit ${escapeHtml(team.name)}" title="Edit team">${ICON_EDIT}</button>
-              <button data-action="delete-tournament-team" data-id="${team.id}" class="icon-btn danger" aria-label="Delete ${escapeHtml(team.name)}" title="Delete team">${ICON_DELETE}</button>
-            </div>
-          </div>
-          ${team.players.length ? `<div class="team-roster">
-            ${team.players.slice(0, CHIP_MAX).map(pl => `<span class="player-chip${pl.guest ? " guest" : ""}"><span class="mini-avatar">${escapeHtml(nameInitials(pl.name))}</span>${escapeHtml(pl.name)}${pl.guest ? `<span class="guest-tag">guest</span>` : ""}</span>`).join("")}
-            ${team.players.length > CHIP_MAX ? `<span class="player-chip more">+${team.players.length - CHIP_MAX} more</span>` : ""}
-          </div>` : `<p class="hint">No players picked yet.</p>`}
-        </div>`).join("")}
+      ${t.teams.map((team, i) => teamCardHtml({ id: team.id, name: team.name, players: team.players, index: i, pending: team.pending, actions: `
+        <button data-action="edit-tournament-team" data-id="${team.id}" class="icon-btn" aria-label="Edit ${escapeHtml(team.name)}" title="Edit team">${ICON_EDIT}</button>
+        <button data-action="delete-tournament-team" data-id="${team.id}" class="icon-btn danger" aria-label="Delete ${escapeHtml(team.name)}" title="Delete team">${ICON_DELETE}</button>` })).join("")}
       <button data-action="new-tournament-team" class="team-card add" ${ui.tournamentTeamBusy ? "disabled" : ""}><span class="plus">＋</span><span>Add team</span></button>
     </div>
+    ${t.teams.length ? `<p class="hint">Tap a team to see its players.</p>` : ""}
     ${!t.teams.length ? `
       <p class="hint">Most club tournaments are two sides. Build them here, then pick them when you start a match.</p>
       ${rosterReady && unassigned.length >= 2 ? `<button data-action="quick-split-teams" class="ghost" style="width:100%;" ${ui.tournamentTeamBusy ? "disabled" : ""}>${ui.tournamentTeamBusy ? "Creating…" : `🎲 Split the roster into 2 random teams (${unassigned.length} players)`}</button>` : ""}

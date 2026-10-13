@@ -14,12 +14,54 @@ function handleBallClick(runs){
   save(); render();
 }
 
+/* An extra (wide / no-ball / bye / leg bye) always asks how many runs it was
+   worth in its own sheet, so the scorer can't record it without choosing.
+   ui.pendingExtra is both "is the sheet open" and which extra; a tap on a
+   tile goes through handleBallClick like the run pad used to. Each tile shows
+   the total the ball adds to the score (base run included) and the chip it
+   leaves in the over row. */
+function renderExtraRunsModal(inn){
+  const kind = ui.pendingExtra;
+  const cfg = {
+    wide:   { title: "Wide", base: inn.wideBaseRuns, from: 0, chip: n => n ? `Wd+${n}` : "Wd",
+              hint: `Pick the total for the ball: the wide itself (${inn.wideBaseRuns}) plus any runs taken or a boundary.` },
+    noball: { title: "No ball", base: inn.noBallBaseRuns, from: 0, chip: n => n ? `Nb+${n}` : "Nb",
+              hint: `Pick the total for the ball: the no-ball itself (${inn.noBallBaseRuns}) plus any runs off the bat.${inn.freeHitOnNoBall ? " The next ball is a free hit." : ""}` },
+    bye:    { title: "Bye", base: 0, from: 1, chip: n => `B${n}`,
+              hint: "Byes go on the team total, not against the bowler." },
+    legbye: { title: "Leg bye", base: 0, from: 1, chip: n => `Lb${n}`,
+              hint: "Leg byes go on the team total, not against the bowler." }
+  }[kind];
+  if (!cfg) return "";
+  const options = [];
+  for (let n = cfg.from; n <= 6; n++) options.push(n);
+  return `
+    <div class="modal-backdrop">
+      <div class="modal extra-runs-modal" data-keep-scroll="extra-runs">
+        <div class="wicket-modal-head">
+          <h2>${cfg.title} — how many runs?</h2>
+        </div>
+        <p class="hint">${escapeHtml(cfg.hint)}</p>
+        <div class="run-pad small extra-runs-pad">
+          ${options.map(n => `<button type="button" data-action="ball" data-runs="${n}" class="run-btn${n === 4 || (n === 6 && kind === "noball") ? " boundary" : ""}">
+            <span class="total">${cfg.base + n}</span><span class="chip-label">${cfg.chip(n)}</span>
+          </button>`).join("")}
+        </div>
+        <button type="button" data-action="close-extra" class="ghost" style="width:100%;margin-top:6px;">Cancel</button>
+      </div>
+    </div>
+  `;
+}
+
 /* Asks first: closing the 1st innings lands on the innings break, which has
    no Undo control, and closing the 2nd ends the match. */
 function handleEndInnings(){
   const m = state.match;
   const inn = m && currentInnings(m);
-  if (!inn || !canEndInningsByHand(inn)) return;
+  // Any match can be closed early from ⋯ Match options (rain, time,
+  // a declaration); the on-screen buttons only show with no limit.
+  if (!inn || inn.complete) return;
+  ui.matchMenu = null;
   const last = m.innings.length === 2;
   const score = `${inn.runs}-${inn.wickets} (${oversDisplay(inn.legalBalls, inn.ballsPerOver)})`;
   askConfirm({
@@ -75,7 +117,7 @@ function renderPickLaterButton(){
 function handleUndo(){
   if (!state.snapshots.length) return;
   state.match = state.snapshots.pop();
-  ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.confirm = null; ui.matchMenu = null; ui.liveScorecard = false;
+  ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.runoutAt = null; ui.confirm = null; ui.matchMenu = null; ui.liveScorecard = false;
   save(); render();
 }
 
@@ -216,7 +258,6 @@ function renderLive(match){
       <div class="extra-pad" style="grid-template-columns:repeat(${enabledExtras.length}, 1fr);">
         ${enabledExtras.map(e => `<button data-action="toggle-extra" data-extra="${e.extra}" class="${ui.pendingExtra === e.extra ? "active" : ""}">${e.label.toUpperCase()}</button>`).join("")}
       </div>
-      ${ui.pendingExtra ? `<div class="extra-hint">Tap the runs for this ${ui.pendingExtra === "noball" ? "no-ball" : ui.pendingExtra}. Tap the button again to cancel.</div>` : ""}
 
       <button data-action="open-wicket" class="wicket-btn">
         <span class="main">WICKET</span>

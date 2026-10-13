@@ -1,12 +1,29 @@
 /* Cricket.lk — match: opening/new batsman/new bowler/match options/wicket sheets.
    Classic script, loaded in order by index.html; all files share one global scope (see CLAUDE.md "Code layout"). */
 /* --- opening / new-batsman / new-bowler modals --- */
+/* The pick and wicket sheets cover the scoreboard, so they repeat the
+   essentials in one line: score, overs, and the chase (or run rate). */
+function renderSheetScore(match, inn){
+  const bpo = inn.ballsPerOver;
+  const need = inn.target != null ? Math.max(inn.target - inn.runs, 0) : null;
+  const ballsLeft = inn.oversLimit != null ? Math.max(inn.oversLimit * bpo - inn.legalBalls, 0) : null;
+  return `
+    <div class="sheet-score" aria-label="Current score">
+      <span class="team">${escapeHtml(teamName(match, inn.battingTeam))}</span>
+      <span class="n score">${inn.runs}-${inn.wickets}</span>
+      <span class="n ov">${oversDisplay(inn.legalBalls, bpo)}${inn.oversLimit != null ? `/${inn.oversLimit}` : ""} ov</span>
+      <span class="n info">${need != null
+        ? `Need ${need}${ballsLeft != null ? ` off ${ballsLeft}` : ""}`
+        : `CRR ${runRate(inn.runs, inn.legalBalls, bpo).toFixed(2)}`}</span>
+    </div>`;
+}
 function renderOpeningModal(match){
   const inn = currentInnings(match);
   return `
     <div class="modal-backdrop">
       <div class="modal" data-keep-scroll="opening">
         <h2>${escapeHtml(teamName(match, inn.battingTeam))} — opening players</h2>
+        ${inn.target != null ? renderSheetScore(match, inn) : ""}
         <form id="opening-form">
           <div class="form-error"></div>
           ${renderNameCombo("Striker", `name="striker" required maxlength="24" placeholder="Search players"`, pickCandidates(match, pickPool(inn.battingTeam), "batter"))}
@@ -140,6 +157,9 @@ function renderMatchMenuModal(match){
           <span class="menu-row-text"><span class="title">Show nicknames</span><span class="sub">Scoreboard and scorecard, where a player has one</span></span>
           <span class="toggle-pill ${state.useNicknames ? "on" : ""}" aria-hidden="true"><span></span></span>
         </button>` : ""}
+      ${!cur.complete ? row("end-innings", "⏹", match.innings.length === 2 ? "End innings · finish match" : "End innings", match.innings.length === 2
+        ? "Rain or time? Close the chase now and work out the result from the scores"
+        : `Rain, time or a declaration? Close ${escapeHtml(teamName(match, cur.battingTeam))}'s innings now`) : ""}
       ${row("open-forfeit", "🚩", "Forfeit", "End now and award the match to the other team")}
       ${row("ask-cancel-match", "✕", "Cancel match", "Started by mistake? Discard it with no result")}
     </div>
@@ -148,10 +168,9 @@ function renderMatchMenuModal(match){
 
 /* The live screen's full scorecard, as a sheet over the board
    (ui.liveScorecard) rather than growing the fixed-height screen. The
-   innings in play first, then the earlier one. Back / ✕ / Close closes it. */
+   innings in play opens first (renderScorecard: innings tabs, then
+   Scorecard / Ball by ball). Back / ✕ / Close closes it. */
 function renderLiveScorecardModal(match){
-  const cur = currentInnings(match);
-  const innings = [cur, ...match.innings.filter(i => i !== cur).reverse()];
   return `
     <div class="modal-backdrop">
       <div class="modal scorecard-modal" data-keep-scroll="live-scorecard" role="dialog" aria-label="Full scorecard">
@@ -160,7 +179,7 @@ function renderLiveScorecardModal(match){
           <span class="n batter">${escapeHtml(match.teamA)} v ${escapeHtml(match.teamB)}</span>
           <button type="button" data-action="close-live-scorecard" class="sheet-close" aria-label="Close scorecard">✕</button>
         </div>
-        ${innings.map(i => renderInningsSummary(match, i)).join("")}
+        ${renderScorecard(match)}
         <button type="button" data-action="close-live-scorecard" class="primary" style="width:100%;">Close</button>
       </div>
     </div>`;
@@ -173,7 +192,7 @@ function swapToss(){
   if (!m || m.status === "complete") return;
   pushSnapshot();
   state.match = restartMatch(m, m.battingFirst === "A" ? "B" : "A");
-  ui.matchMenu = null; ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker";
+  ui.matchMenu = null; ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.runoutAt = null;
   save(); render();
 }
 
@@ -300,6 +319,7 @@ function renderNewBatsmanModal(inn, slot){
           <h2>New batsman</h2>
           <span class="end-badge">${endBadge}</span>
         </div>
+        ${renderSheetScore(state.match, inn)}
         ${lastFow && dismissed ? `
           <div class="dismissal-banner">
             <span class="name">${escapeHtml(lastFow.batsman)}</span>
@@ -369,6 +389,7 @@ function renderNewBowlerModal(inn){
           <h2>New bowler</h2>
           <span class="n batter">${overNumber}${ordinalSuffix(overNumber)} over · ${bpo} balls</span>
         </div>
+        ${renderSheetScore(state.match, inn)}
         <form id="new-bowler-form">
           <div class="form-error"></div>
           ${renderNameCombo("Name", `name="name" required maxlength="24" placeholder="Search or type a bowler"`, pickCandidates(state.match, pickPool(inn.bowlingTeam), "bowler"))}
@@ -470,6 +491,11 @@ function renderWicketModal(inn){
     { type: "runout", label: "Run out" }
   ].filter(t => !inn.freeHit || t.type === "runout");
 
+  // Where the wicket was broken -- defaults to the end the out batter
+  // started the ball at until the scorer picks one.
+  const runoutAt = ui.runoutAt || ui.runoutEnd;
+  const runoutSurvivor = ui.runoutEnd === "striker" ? inn.nonStriker : inn.striker;
+
   const required = isRunout ? match.requireFielderOnRunout : match.requireFielderOnCatch;
 
   return `
@@ -479,6 +505,7 @@ function renderWicketModal(inn){
           <h2>How out?</h2>
           ${strikerStats ? `<span class="batter">${escapeHtml(inn.striker)} ${strikerStats.runs} (${strikerStats.balls})</span>` : ""}
         </div>
+        ${renderSheetScore(match, inn)}
         ${inn.freeHit ? `
           <div class="freehit-note"><span class="tag">FREE HIT</span><span class="desc">A run out is the only dismissal available</span></div>
         ` : ""}
@@ -497,7 +524,14 @@ function renderWicketModal(inn){
                 <span class="role">Non-striker</span><span class="n">${escapeHtml(inn.nonStriker)}${inn.batting.stats[inn.nonStriker] ? " " + inn.batting.stats[inn.nonStriker].runs : ""}</span>
               </button>` : ""}
             </div>
-            <p class="hint">The end you pick is vacated directly. Batsmen crossing is not modelled.</p>
+            <div class="section-label">Run out at which end?</div>
+            <div class="end-picker">
+              ${[["striker", "Keeper's end", "Striker's end"], ["nonStriker", "Bowler's end", "Non-striker's end"]].map(([end, label, sub]) => `
+                <button type="button" data-action="pick-runout-at" data-end="${end}" class="end-tile ${runoutAt === end ? "active" : ""}">
+                  <span class="role">${sub}</span><span class="n">${label}</span>
+                </button>`).join("")}
+            </div>
+            ${runoutSurvivor ? `<p class="hint">${escapeHtml(runoutSurvivor)} stays at the ${runoutAt === "striker" ? "bowler's" : "keeper's"} end; the new batter comes in at the ${runoutAt === "striker" ? "keeper's" : "bowler's"} end.</p>` : ""}
             <div class="section-label">Runs completed before the run out</div>
             <div class="run-pad small">
               ${[0, 1, 2, 3].map(n => `<button type="button" data-action="runout-runs" data-runs="${n}" class="run-btn ${ui.runoutRuns === n ? "active" : ""}">${n}</button>`).join("")}
@@ -560,12 +594,12 @@ function handleWicketFielderSubmit(e){
     if (match.requireFielderOnRunout && !fielder){ showFormError(e.target, "This preset requires naming the run-out taker."); return; }
     pushSnapshot();
     const inn = currentInnings(match);
-    recordBall(inn, { kind: "wicket", wicketType: "runout", runs: ui.runoutRuns, endComingIn: ui.runoutEnd, fielder: fielder || undefined });
+    recordBall(inn, { kind: "wicket", wicketType: "runout", runs: ui.runoutRuns, endComingIn: ui.runoutEnd, outEnd: ui.runoutAt || ui.runoutEnd, fielder: fielder || undefined });
     if (fielder) registerMatchPlayer(fielder, inn.bowlingTeam);
     afterBall(match);
     maybeArchiveCompletedMatch(match);
     SFX.wicket();
-    ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker";
+    ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.runoutAt = null;
     save(); render();
   } else if (ui.wicketFlow === "caught"){
     if (match.requireFielderOnCatch && !fielder){ showFormError(e.target, "This preset requires naming the catch taker."); return; }

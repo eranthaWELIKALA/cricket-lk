@@ -33,6 +33,112 @@ function renderInningsSummary(match, inn){
   `;
 }
 
+/* The tabbed scorecard: one tab per innings, then Scorecard / Ball by ball.
+   Shared by the live scorecard sheet, Result's full scorecard and the
+   completed-match sheet (ui.matchDetail). Which tab is showing lives in
+   ui.scorecard ({ inn: index | null = the latest innings, mode: "card" |
+   "balls" }), reset whenever one of those opens -- only one is ever on
+   screen. Every innings' card is rendered (inactive ones `hidden`) so
+   Export PDF can print them all (see the print rules). */
+function renderScorecard(match){
+  const sc = ui.scorecard || {};
+  const last = match.innings.length - 1;
+  const idx = match.innings[sc.inn] ? sc.inn : last;
+  const mode = sc.mode === "balls" ? "balls" : "card";
+  if (last < 0) return `<p class="hint">Nothing scored.</p>`;
+  return `
+    <div class="scorecard-tabs">
+      ${match.innings.length > 1 ? tabsHtml("scorecard-inn", match.innings.map((i, n) =>
+        [n, `${escapeHtml(teamName(match, i.battingTeam))} <span class="n">${i.runs}-${i.wickets}</span>`]), idx, "sc-inn-tabs") : ""}
+      ${tabsHtml("scorecard-mode", [["card", "Scorecard"], ["balls", "Ball by ball"]], mode, "sc-mode-tabs")}
+      ${match.innings.map((inn, n) => `<div class="sc-pane" ${n === idx && mode === "card" ? "" : "hidden"}>${renderInningsSummary(match, inn)}</div>`).join("")}
+      ${mode === "balls" ? renderBallByBall(match, match.innings[idx]) : ""}
+    </div>`;
+}
+
+/* Every over of an innings, newest first: bowler, each ball as a chip
+   (same colors as the live over rail), the over's runs/wickets and the
+   score at its end. The over in progress (currentOverEvents) leads. */
+function renderBallByBall(match, inn){
+  const bpo = inn.ballsPerOver;
+  const overs = inn.overs.map(o => ({ bowler: o.bowler, events: o.events }));
+  if (inn.currentOverEvents.length) overs.push({ bowler: inn.bowler, events: inn.currentOverEvents, live: !inn.complete });
+  if (!overs.length) return `<p class="hint">No balls bowled yet.</p>`;
+  let score = 0, wkts = 0;
+  const rows = overs.map((o, i) => {
+    const runs = o.events.reduce((s, ev) => s + (ev.runs || 0), 0);
+    const w = o.events.filter(ev => ev.isWicket).length;
+    score += runs; wkts += w;
+    const chips = o.events.map(ev => {
+      let cls = "chip";
+      if (ev.isWicket) cls += " wicket";
+      else if (ev.runs === 4 && !/^(Wd|Nb|B|Lb)/.test(ev.display)) cls += " four";
+      else if (ev.runs === 6 && !/^(Wd|Nb|B|Lb)/.test(ev.display)) cls += " six";
+      else if (/^(Wd|Nb)/.test(ev.display)) cls += " extra";
+      return `<span class="${cls}">${escapeHtml(ev.display)}</span>`;
+    }).join("");
+    return `
+      <div class="bbb-over">
+        <div class="bbb-head">
+          <span class="bbb-num">Over ${i + 1}${o.live ? " · now" : ""}</span>
+          <span class="bbb-bowler">${o.bowler ? escapeHtml(liveName(o.bowler)) : "—"}</span>
+          <span class="n bbb-sum">${runs} run${runs === 1 ? "" : "s"}${w ? ` · ${w} wkt${w === 1 ? "" : "s"}` : ""}</span>
+        </div>
+        <div class="chips bbb-chips">${chips}</div>
+        <div class="n bbb-score">${escapeHtml(teamName(match, inn.battingTeam))} ${score}-${wkts}</div>
+      </div>`;
+  });
+  return `
+    <div class="ball-by-ball">
+      <h3>${escapeHtml(teamName(match, inn.battingTeam))} ${inn.runs}/${inn.wickets} <span class="ov">(${oversDisplay(inn.legalBalls, bpo)} ov)</span></h3>
+      ${rows.reverse().join("")}
+      <p class="hint">Newest over first. W wicket · Wd wide · Nb no-ball · B bye · Lb leg bye · Ro run out.</p>
+    </div>`;
+}
+
+/* A completed match's result + scorecard, as a sheet over any screen
+   (tournament fixtures, recent matches). ui.matchDetail = { match, view }:
+   it only belongs to the view it was opened on. */
+function findCompletedMatch(id){
+  const hit = x => x && ((x.data && x.data.id === id) || x.id === id);
+  const fromRows = rows => { const r = (rows || []).find(hit); return r ? (r.data || r) : null; };
+  return state.matchHistory[id]
+    || fromRows(ui.clubTournament && ui.clubTournament.matches)
+    || fromRows(ui.club && ui.club.matches)
+    || fromRows(ui.premier && ui.premier.premierMatches)
+    || fromRows(ui.profile && ui.profile.clubMatches)
+    || null;
+}
+function openMatchDetail(id){
+  const match = findCompletedMatch(id);
+  if (!match || !match.innings) return;
+  ui.matchDetail = { match, view: state.view };
+  ui.scorecard = { inn: 0, mode: "card" };
+  render();
+}
+function renderMatchDetailModal(){
+  const m = ui.matchDetail.match;
+  const detail = renderResultDetail(m);
+  const motm = m.motm || pickMatchMOTM(m);
+  const when = m.completedAt ? new Date(m.completedAt).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" }) : "";
+  return `
+    <div class="modal-backdrop">
+      <div class="modal scorecard-modal" data-keep-scroll="match-detail" role="dialog" aria-label="Match scorecard">
+        <div class="wicket-modal-head">
+          <h2>${escapeHtml(m.teamA)} v ${escapeHtml(m.teamB)}</h2>
+          <button type="button" data-action="close-match-detail" class="sheet-close" aria-label="Close scorecard">✕</button>
+        </div>
+        <div class="result-hero compact">
+          <h3>${escapeHtml(m.result || "")}</h3>
+          ${detail ? `<div class="n detail">${escapeHtml(detail)}</div>` : ""}
+          <div class="muted">${[when, motm ? `Player of the match: ${escapeHtml(motm)}` : ""].filter(Boolean).join(" · ")}</div>
+        </div>
+        ${renderScorecard(m)}
+        <button type="button" data-action="close-match-detail" class="primary" style="width:100%;">Close</button>
+      </div>
+    </div>`;
+}
+
 /* A condensed "highlights" view for the innings break -- top 3 scorers,
    top 2 bowlers, extras inline -- deliberately separate from
    renderInningsSummary()'s full batting/bowling tables, which Live's
@@ -206,10 +312,7 @@ function renderResult(match){
         ` : ""}
       </div>
       <button data-action="toggle-scorecard" class="link-btn">${ui.showFullScorecard ? "Show condensed summary" : "Show full scorecard"}</button>
-      ${ui.showFullScorecard ? `
-        ${renderInningsSummary(match, match.innings[0])}
-        ${match.innings[1] ? renderInningsSummary(match, match.innings[1]) : ""}
-      ` : `
+      ${ui.showFullScorecard ? renderScorecard(match) : `
         ${renderResultInningsCard(match, match.innings[0])}
         ${match.innings[1] ? renderResultInningsCard(match, match.innings[1]) : ""}
       `}

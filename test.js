@@ -112,6 +112,36 @@ async function main(){
     assert(inn.runs === 2, "runs completed before the run-out are credited");
   }
 
+  // --- 5a. run out at either end: the new batter comes in where the
+  // wicket was broken, the survivor stands at the other end ---
+  {
+    const setup = () => {
+      const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+      const inn = currentInnings(m);
+      win.ensureBatsman(inn, "A1"); win.ensureBatsman(inn, "A2"); win.ensureBowler(inn, "B1");
+      inn.striker = "A1"; inn.nonStriker = "A2"; inn.bowler = "B1";
+      return inn;
+    };
+    let inn = setup();
+    // striker runs, out short of the bowler's end with no run completed
+    recordBall(inn, { kind: "wicket", wicketType: "runout", runs: 0, endComingIn: "striker", outEnd: "nonStriker" });
+    assert(inn.batting.stats.A1.out && inn.nonStriker === null && inn.striker === "A2", "striker out at the bowler's end: non-striker moves to the keeper's end, new batter at the bowler's end");
+    inn = setup();
+    // non-striker out at the keeper's end after completing one run
+    recordBall(inn, { kind: "wicket", wicketType: "runout", runs: 1, endComingIn: "nonStriker", outEnd: "striker" });
+    assert(inn.batting.stats.A2.out && inn.striker === null && inn.nonStriker === "A1", "non-striker out at the keeper's end: new batter faces, striker at the bowler's end");
+    assert(inn.batting.stats.A1.runs === 1 && inn.runs === 1, "completed run still credited");
+    inn = setup();
+    // odd runs completed don't flip strike on a run-out -- the ends say where everyone is
+    recordBall(inn, { kind: "wicket", wicketType: "runout", runs: 1, endComingIn: "striker", outEnd: "striker" });
+    assert(inn.striker === null && inn.nonStriker === "A2", "out at the keeper's end: new batter takes strike regardless of runs completed");
+    inn = setup();
+    // last ball of the over: the end-of-over swap still applies after the ends are set
+    for (let i = 0; i < 5; i++) recordBall(inn, { kind: "run", runs: 0 });
+    recordBall(inn, { kind: "wicket", wicketType: "runout", runs: 0, endComingIn: "striker", outEnd: "nonStriker" });
+    assert(inn.striker === null && inn.nonStriker === "A2", "run-out at the bowler's end on the last ball: new batter faces the next over");
+  }
+
   // --- 5b. currentOverEvents/fallOfWickets carry the raw numbers the live
   // scoring screen's over-totals and partnership counter need, not just
   // display strings ---
@@ -913,6 +943,30 @@ async function main(){
 
     win.eval(`state.match.clubId = null; ui.club = null; ui.matchMenu = "menu"; render();`);
     assert(!doc.querySelector('[data-action="toggle-nicknames"]'), "no nickname switch when there are no nicknames (guest match)");
+
+    // Extras ask for their runs in a sheet.
+    win.eval(`ui.matchMenu = null; { const inn = currentInnings(state.match); inn.bowler = "Wanindu"; ensureBowler(inn, "Wanindu"); } render();`);
+    const extraBtn = x => doc.querySelector(`#app [data-action="toggle-extra"][data-extra="${x}"]`);
+    const extraSheet = () => doc.querySelector("#modal-root .extra-runs-modal");
+    const tile = total => [...extraSheet().querySelectorAll('[data-action="ball"]')].find(b => b.querySelector(".total").textContent === String(total));
+    const runsNow = () => win.eval("currentInnings(state.match).runs");
+    let before = runsNow();
+    extraBtn("wide").click();
+    assert(extraSheet() && /Wide/.test(extraSheet().textContent) && tile(1) && tile(1).textContent.includes("Wd"), "tapping Wide opens a 'how many runs?' sheet; its first tile is the plain wide");
+    tile(5).click();
+    assert(!extraSheet() && runsNow() === before + 5 && win.eval("currentInnings(state.match).extras.wides") >= 5, "a tile records the wide with that total (Wd+4 = 5) and closes the sheet");
+    before = runsNow();
+    extraBtn("noball").click();
+    tile(5).click();
+    assert(runsNow() === before + 5 && win.eval("currentInnings(state.match).freeHit") === true, "no-ball tile 5 = Nb + 4 off the bat, and sets the free hit");
+    before = runsNow();
+    extraBtn("bye").click();
+    assert(!tile(0) && tile(1), "byes start at 1");
+    doc.querySelector('#modal-root [data-action="close-extra"]').click();
+    assert(!extraSheet() && runsNow() === before, "Cancel closes it without recording anything");
+    extraBtn("legbye").click();
+    win.eval(`closeTopOverlay();`);
+    assert(!extraSheet() && runsNow() === before, "back (closeTopOverlay) closes it too");
     win.eval(`ui.matchMenu = null; render();`);
     win.eval(`state.match = null; state.useNicknames = false; ui = defaultUi(); state.view = "home"; save(); render();`);
   }

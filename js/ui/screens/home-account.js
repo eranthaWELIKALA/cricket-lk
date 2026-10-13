@@ -17,9 +17,10 @@ function renderRecentMatches(title, matches){
     <div class="home-section">
       <h3>${escapeHtml(title)}</h3>
       ${matches.map(m => `
-        <div class="list-row">
+        <button type="button" data-action="open-match-detail" data-id="${escapeHtml(m.id || "")}" class="list-row">
           <span>${escapeHtml(m.teamA)} v ${escapeHtml(m.teamB)}<br><span class="muted">${escapeHtml(m.result || "")}${m.completedAt ? " · " + new Date(m.completedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : ""}</span></span>
-        </div>
+          <span class="chevron">›</span>
+        </button>
       `).join("")}
     </div>
   `;

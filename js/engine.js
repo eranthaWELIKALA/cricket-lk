@@ -104,7 +104,13 @@ function checkInningsComplete(inn){
 }
 
 /* event: { kind: 'run'|'wide'|'noball'|'bye'|'legbye'|'wicket',
-            runs, wicketType, endComingIn, fielder }
+            runs, wicketType, endComingIn, outEnd, fielder }
+   A run-out names who is out (`endComingIn`: the slot that batter was in
+   when the ball was bowled) and, separately, the end where the wicket was
+   broken (`outEnd`: "striker" = keeper's end, "nonStriker" = bowler's end;
+   defaults to `endComingIn`). The new batter comes in at `outEnd` and the
+   survivor stands at the other end -- the scorer says where everyone is,
+   no crossing math. Runs completed don't rotate strike on a run-out.
    A wicket is always recorded as happening on a legal delivery — run-outs
    off a wide/no-ball are a known simplification, not modelled here.
    `fielder` is optional on wicketType 'caught'/'runout' and credits a
@@ -151,10 +157,13 @@ function recordBall(inn, event){
       bat[inn.striker].runs += ballRuns;
       bat[inn.striker].balls += 1;
       outName = inn[event.endComingIn];
+      const survivor = event.endComingIn === "striker" ? inn.nonStriker : inn.striker;
+      const outEnd = event.outEnd || event.endComingIn;
       bat[outName].out = true;
       bat[outName].howOut = event.fielder ? `run out (${event.fielder})` : "run out";
       inn.wickets += 1;
-      inn[event.endComingIn] = null;
+      inn[outEnd] = null;
+      inn[outEnd === "striker" ? "nonStriker" : "striker"] = survivor;
       if (event.fielder){ ensureFielder(inn, event.fielder); inn.fielding.stats[event.fielder].runouts += 1; }
       display = ballRuns ? `${ballRuns}+Ro` : "Ro";
     } else {

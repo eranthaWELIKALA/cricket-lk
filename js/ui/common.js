@@ -4,6 +4,14 @@ function escapeHtml(s){
   return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+/* One row of chip tabs (.tab-row/.tab-btn). `tabs` is [[id, labelHtml]] --
+   labels are trusted HTML, so callers escape names. Each tap fires
+   `action` with data-tab=<id>; the caller keeps which one is active. */
+function tabsHtml(action, tabs, active, cls){
+  return `<div class="tab-row${cls ? " " + cls : ""}" role="tablist">${tabs.map(([id, label]) =>
+    `<button type="button" data-action="${action}" data-tab="${id}" role="tab" aria-selected="${id === active}" class="tab-btn ${id === active ? "active" : ""}">${label}</button>`).join("")}</div>`;
+}
+
 /* --- THEME: a user's chosen accent/accent-2 hex (state.branding — no
    longer editable in the UI, but still honored for any pre-existing
    saved customization) is the only thing stored — everything else

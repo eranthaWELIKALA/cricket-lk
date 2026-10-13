@@ -47,10 +47,12 @@ document.addEventListener("click", (e) => {
   else if (action === "dismiss-pick") dismissPick();
   else if (action === "reopen-pick") reopenPick();
   else if (action === "end-innings") handleEndInnings();
-  else if (action === "toggle-extra"){ ui.pendingExtra = (ui.pendingExtra === btn.dataset.extra) ? null : btn.dataset.extra; render(); }
+  else if (action === "toggle-extra"){ ui.pendingExtra = btn.dataset.extra; render(); }
+  else if (action === "close-extra"){ ui.pendingExtra = null; render(); }
   else if (action === "open-wicket"){ ui.wicketFlow = "menu"; render(); }
-  else if (action === "close-wicket-modal"){ ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; render(); }
+  else if (action === "close-wicket-modal"){ ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.runoutAt = null; render(); }
   else if (action === "pick-runout-end"){ ui.runoutEnd = btn.dataset.end; render(); }
+  else if (action === "pick-runout-at"){ ui.runoutAt = btn.dataset.end; render(); }
   else if (action === "pick-bowler"){ confirmNewBowler(btn.dataset.name); }
   else if (action === "combo-pick"){
     const combo = btn.closest(".combo"), input = combo && combo.querySelector("input");
@@ -78,8 +80,15 @@ document.addEventListener("click", (e) => {
     render();
   }
   else if (action === "undo") handleUndo();
-  else if (action === "toggle-scorecard"){ ui.showFullScorecard = !ui.showFullScorecard; render(); } // Result's condensed/full cards
-  else if (action === "open-live-scorecard"){ ui.liveScorecard = true; render(); }
+  else if (action === "toggle-scorecard"){ ui.showFullScorecard = !ui.showFullScorecard; ui.scorecard = null; render(); } // Result's condensed/full cards
+  else if (action === "open-live-scorecard"){ ui.liveScorecard = true; ui.scorecard = null; render(); }
+  else if (action === "scorecard-inn"){ ui.scorecard = Object.assign({}, ui.scorecard, { inn: parseInt(btn.dataset.tab, 10) }); render(); }
+  else if (action === "scorecard-mode"){ ui.scorecard = Object.assign({}, ui.scorecard, { mode: btn.dataset.tab }); render(); }
+  else if (action === "profile-tab" && ui.profile){ ui.profile.tab = btn.dataset.tab; render(); }
+  else if (action === "toggle-team-card"){ ui.expandedTeamId = ui.expandedTeamId === btn.dataset.id ? null : btn.dataset.id; render(); }
+  else if (action === "stats-tab"){ ui.statsTab = btn.dataset.tab; render(); }
+  else if (action === "open-match-detail") openMatchDetail(btn.dataset.id);
+  else if (action === "close-match-detail"){ ui.matchDetail = null; render(); }
   else if (action === "close-live-scorecard"){ ui.liveScorecard = false; render(); }
   else if (action === "start-second-innings"){ pushSnapshot(); startSecondInnings(state.match); save(); render(); }
   else if (action === "share-image") shareScorecardImage(state.match);
@@ -163,7 +172,7 @@ document.addEventListener("click", (e) => {
     ui.clubTournamentSetupPresetId = btn.dataset.id; render();
   }
   else if (action === "open-club-tournament"){
-    ui.currentTournamentId = btn.dataset.id; ui.clubTournament = null; ui.tournamentTeamEdit = null; ui.tournamentTeamError = null; state.view = "clubTournamentDashboard"; render(); // render() loads it
+    ui.currentTournamentId = btn.dataset.id; ui.clubTournament = null; ui.tournamentTeamEdit = null; ui.tournamentTeamError = null; ui.tournamentTab = "overview"; ui.expandedTeamId = null; state.view = "clubTournamentDashboard"; render(); // render() loads it
   }
   else if (action === "new-tournament-team" && ui.clubTournament){
     const n = ui.clubTournament.teams.length;
@@ -222,7 +231,7 @@ document.addEventListener("click", (e) => {
   else if (action === "preset-info-close"){ ui.presetInfo = null; render(); }
   else if (action === "pick-match-preset"){ ui.matchSetupPresetId = btn.dataset.id; render(); }
   else if (action === "pick-tournament-preset"){ ui.tournamentSetupPresetId = btn.dataset.id; render(); }
-  else if (action === "open-tournament"){ state.activeTournamentId = btn.dataset.id; state.view = "tournamentDashboard"; ui.tournamentTab = "standings"; render(); }
+  else if (action === "open-tournament"){ state.activeTournamentId = btn.dataset.id; state.view = "tournamentDashboard"; ui.tournamentTab = "overview"; ui.expandedTeamId = null; render(); }
   else if (action === "switch-tournament-tab"){ ui.tournamentTab = btn.dataset.tab; render(); }
   else if (action === "select-team"){ ui.selectedTeamId = btn.dataset.id; render(); }
   else if (action === "delete-team"){
@@ -353,6 +362,7 @@ document.addEventListener("keydown", (e) => {
     if (ui.confirm) cancelConfirm();
     else if (ui.tournamentTeamEdit && document.querySelector(".team-modal")) closeTeamEdit();
     else if (ui.presetInfo){ ui.presetInfo = null; render(); }
+    else if (ui.pendingExtra){ ui.pendingExtra = null; render(); }
   }
 });
 document.addEventListener("pointerdown", (e) => {

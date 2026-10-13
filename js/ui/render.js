@@ -165,6 +165,9 @@ function render(){
     (pm.kind === "add" && state.view === "clubPlayers") ||
     (pm.kind === "edit" && state.view === "playerProfile" && ui.profile && ui.profile.data && ui.profile.data.can_see_contact));
   if (pm && !pmValid) ui.playerModal = null;
+  // A completed match's scorecard sheet belongs to the screen it was opened on.
+  const mdValid = !!(ui.matchDetail && ui.matchDetail.view === state.view && (!inProgress || away));
+  if (ui.matchDetail && !mdValid) ui.matchDetail = null;
   const teamEditOpen = ui.tournamentTeamEdit && state.view === "clubTournamentDashboard" && ui.clubTournament && !ui.clubTournament.teams_unavailable && (!inProgress || away);
   // The shared confirmation sheet has its own layer above everything (see
   // askConfirm), so the sheet under it stays in the DOM -- typed input and
@@ -179,6 +182,8 @@ function render(){
     modalHtml = pm.kind === "add" ? renderClubAddPlayerModal() : renderPlayerEditModal();
   } else if (teamEditOpen){
     modalHtml = renderTournamentTeamModal();
+  } else if (mdValid){
+    modalHtml = renderMatchDetailModal();
   } else if (away){
     modalHtml = "";
   } else if (m && m.status !== "complete" && ui.matchMenu){
@@ -194,6 +199,7 @@ function render(){
     if (slot){ if (!later) modalHtml = renderNewBatsmanModal(inn, slot); }
     else if (!inn.bowler){ if (!later) modalHtml = renderNewBowlerModal(inn); }
     else if (ui.wicketFlow) modalHtml = renderWicketModal(inn);
+    else if (ui.pendingExtra) modalHtml = renderExtraRunsModal(inn);
   }
   if (!(modalKey && modalRoot.dataset.modalKey === modalKey)){
     // Re-rendering the same sheet (a tap inside it) keeps its scroll position

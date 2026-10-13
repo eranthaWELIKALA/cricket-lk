@@ -6,10 +6,10 @@
 var state = defaultState();
 function defaultUi(){
   return {
-    pendingExtra: null, wicketFlow: null, runoutRuns: 0, runoutEnd: "striker", showFullScorecard: false, liveScorecard: false, confirm: null, syncSheet: false, matchMenu: null, squadError: null, pickDismissed: null, awayFromMatch: false, clubRosterLoading: null, clubTournamentLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
+    pendingExtra: null, wicketFlow: null, runoutRuns: 0, runoutEnd: "striker", runoutAt: null, showFullScorecard: false, liveScorecard: false, scorecard: null, matchDetail: null, statsTab: "mvp", confirm: null, syncSheet: false, matchMenu: null, squadError: null, pickDismissed: null, awayFromMatch: false, clubRosterLoading: null, clubTournamentLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
     matchSetupPresetId: null, presetInfo: null,
     tournamentSetupPresetId: null, tournamentSetupTeamIds: [],
-    tournamentTab: "standings",
+    tournamentTab: "overview",
     selectedTeamId: null,
     presetsTab: "match", editingMatchPreset: null, editingTournamentPreset: null,
     // cloud clubs (see CLOUD section) -- caches of fetched data, not persisted;
@@ -154,7 +154,12 @@ function clubPresetList(kind, clubId){
 function clubSetupId(){ return ui.clubMatchSetupType && ui.currentClubId ? ui.currentClubId : null; }
 function matchPresetChoices(){
   const c = clubSetupId();
-  return c ? clubPresetList("match", c) : Object.values(state.matchPresets);
+  if (!c) return Object.values(state.matchPresets);
+  // A club with no presets of its own gets the built-in ones (reference
+  // data, not the guest's presets), so club and guest setup start alike.
+  const loaded = ui.club && ui.club.id === c && ui.club.presets;
+  const own = clubPresetList("match", c);
+  return own.length || !loaded ? own : DEFAULT_MATCH_PRESETS;
 }
 
 function suggestionPlayerNames(){

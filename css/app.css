@@ -203,7 +203,11 @@ button:disabled{opacity:.4;cursor:not-allowed;box-shadow:none;}
   color:var(--text);font-size:.75rem;font-weight:800;letter-spacing:.05em;box-shadow:var(--shadow-card);
 }
 .extra-pad button.active{background:var(--accent);color:var(--accent-ink);border-color:var(--bg);}
-.extra-hint{font-size:.8rem;color:var(--accent);margin-bottom:8px;}
+/* "How many runs?" sheet for an extra: total on top, over-row chip under it. */
+.extra-runs-pad .run-btn{ display:flex; flex-direction:column; align-items:center; gap:2px; padding:12px 0; }
+.extra-runs-pad .run-btn .total{ font-size:1.4rem; font-weight:800; line-height:1; }
+.extra-runs-pad .run-btn .chip-label{ font-size:.7rem; font-weight:700; color:var(--muted); letter-spacing:.04em; }
+.extra-runs-pad .run-btn.boundary{ border-color:var(--accent); }
 
 .action-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;margin-bottom:10px;}
 .wicket-btn{
@@ -287,6 +291,15 @@ td.status{color:var(--muted);font-size:.78rem;}
 button.primary.danger-confirm{background:var(--wicket);color:var(--bg);border-color:var(--bg);}
 
 /* --- new-batsman / new-bowler modals --- */
+.sheet-score{
+  display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;
+  background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-sm);
+  padding:8px 12px; margin:0 0 12px;
+}
+.sheet-score .team{font-size:.78rem;font-weight:700;color:var(--muted);max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sheet-score .score{font-size:1.25rem;font-weight:800;}
+.sheet-score .ov{font-size:.8rem;color:var(--muted);}
+.sheet-score .info{margin-left:auto;font-size:.8rem;font-weight:700;color:var(--accent);}
 .dismissal-banner{
   margin-top:12px;background:rgba(255,77,99,.1);border:2px solid rgba(255,77,99,.45);border-radius:var(--radius-md);
   padding:9px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
@@ -878,6 +891,43 @@ button.player-chip.on{ border-color:var(--team-c, var(--accent-2)); background:v
   padding:11px 13px; margin-bottom:6px; font-size:.9rem;
 }
 .fixture-result{ color:var(--accent-2); font-weight:700; }
+/* A completed match row that opens its scorecard sheet. */
+button.fixture-row{ width:100%; text-align:left; color:var(--text); align-items:center; gap:10px; font-weight:400; text-transform:none; letter-spacing:0; box-shadow:none; }
+.fixture-main{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+.fixture-main .fixture-result{ font-size:.8rem; }
+.fixture-meta{ display:flex; align-items:center; gap:8px; flex-shrink:0; color:var(--muted); font-size:.75rem; }
+.fixture-meta .chevron{ font-size:1.1rem; }
+
+/* Tabs that are a second level (scorecard mode, leaderboard tables) sit
+   tighter under the first. */
+/* A screen's top-level tabs (tournament, profile): one equal-width row. */
+.tab-row.main-tabs{ flex-wrap:nowrap; gap:6px; }
+.tab-row.main-tabs .tab-btn{ flex:1 1 0; min-width:0; padding:8px 4px; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wicket-modal-head .sheet-close{ margin-left:auto; }
+.tab-row.sc-inn-tabs{ flex-wrap:nowrap; margin-bottom:8px; }
+.tab-row.sc-inn-tabs .tab-btn{ flex:1 1 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tab-row.sc-mode-tabs .tab-btn, .tab-row.stats-tabs .tab-btn{ padding:6px 12px; font-size:.78rem; }
+.sc-pane[hidden]{ display:none; }
+
+/* Ball by ball: one card per over, newest first. */
+.ball-by-ball{ margin-bottom:14px; }
+.ball-by-ball h3{ margin:0 0 10px; }
+.ball-by-ball .ov{ color:var(--muted); font-weight:600; font-size:1rem; }
+.bbb-over{ background:var(--panel); border:2px solid var(--line-strong); border-radius:var(--radius-sm); padding:10px 12px; margin-bottom:8px; }
+.bbb-head{ display:flex; align-items:baseline; gap:8px; margin-bottom:8px; }
+.bbb-num{ font-size:.72rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.bbb-bowler{ font-size:.88rem; font-weight:700; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bbb-sum{ margin-left:auto; font-size:.78rem; font-weight:700; flex-shrink:0; }
+.bbb-chips .chip{ animation:none; }
+.bbb-score{ margin-top:8px; font-size:.75rem; color:var(--muted); }
+
+/* Team cards collapse to a header; tapping it shows the players. */
+.team-card-toggle{
+  display:flex; align-items:center; gap:10px; flex:1; min-width:0; padding:0; margin:0; width:auto;
+  background:none; border:0; box-shadow:none; color:inherit; text-align:left; text-transform:none; letter-spacing:0; font-weight:inherit;
+}
+.team-card-toggle .chevron{ margin-left:auto; color:var(--muted); font-size:.9rem; padding-right:4px; }
+.team-card-toggle:active{ transform:none; }
 /* Each leaderboard table now sits in its own bordered card instead of
    floating bare on the page background -- same reasoning as .leaderboard
    tables being the most "boring" looking part of Stats/tournament dashboards. */
@@ -915,6 +965,8 @@ button.player-chip.on{ border-color:var(--team-c, var(--accent-2)); background:v
 .result-hero .eyebrow{ font-size:.65rem; font-weight:800; letter-spacing:.12em; opacity:.65; }
 .result-hero h2{ font-size:1.35rem; font-weight:800; line-height:1.15; margin:4px 0 0; }
 .result-hero .detail{ font-size:.72rem; font-weight:700; opacity:.75; margin-top:6px; }
+.result-hero.compact h3{ font-size:1.05rem; font-weight:800; line-height:1.2; margin:0; }
+.result-hero.compact .muted{ font-size:.72rem; opacity:.75; margin-top:4px; }
 .share-row{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 0; }
 
 .inline-form{ display:flex; gap:8px; margin-bottom:14px; }
@@ -927,7 +979,8 @@ button.primary.small{ width:auto; }
 /* --- print: "Export PDF" is window.print() on the result screen --- */
 @media print{
   body{ background:#fff; color:#000; }
-  #modal-root, #confirm-root, .share-row, .motm-card form, button, .topbar{ display:none !important; }
+  #modal-root, #confirm-root, .share-row, .motm-card form, button, .topbar, .tab-row{ display:none !important; }
+  .sc-pane[hidden]{ display:block !important; }
   .innings-summary, .motm-card, .result-hero{ background:#fff; border:1px solid #ccc; color:#000; box-shadow:none; }
   .motm-name{ color:#000; }
   table, th, td{ border-color:#ccc; color:#000; }

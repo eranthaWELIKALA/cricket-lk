@@ -99,6 +99,10 @@ gh api repos/<owner>/<name>/pages -X POST -f "source[branch]=master" -f "source[
   run-out off a wide or no-ball is a real (if rare) part of cricket that
   isn't captured here — score it as a normal-ball run-out and adjust by
   hand if it matters to you.
+- **Run-outs are scored by asking, not by modelling the running.** The
+  scorer picks who is out and the end where the wicket was broken; the new
+  batter comes in at that end and the other batter stands at the other end.
+  Batsmen crossing isn't worked out from the runs completed.
 - **Runs on a run-out are credited to whoever was on strike**, not
   apportioned between the batsmen actually seen running. Fine for a
   personal scorer, not fine for an official one.

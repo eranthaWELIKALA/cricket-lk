@@ -356,7 +356,7 @@ function handleTournamentSetupSubmit(e){
   ui.tournamentSetupTeamIds = [];
   ui.tournamentSetupPresetId = null;
   state.view = "tournamentDashboard";
-  ui.tournamentTab = "standings";
+  ui.tournamentTab = "overview";
   save(); render();
 }
 
@@ -367,23 +367,26 @@ function renderTournamentDashboard(){
   const matchPreset = state.matchPresets[preset.matchPresetId] || DEFAULT_MATCH_PRESETS[0];
   const matches = t.matchIds.map(id => state.matchHistory[id]).filter(Boolean);
   const standings = computeStandings(matches, preset);
-  const tab = ui.tournamentTab || "standings";
+  const tab = tournamentTab();   // same tabs as a club tournament (club-tournaments.js)
   const teams = t.teamIds.map(id => state.teams[id]).filter(Boolean);
+  const startBtn = !state.match ? `<button data-action="switch-tournament-tab" data-tab="fixtures" class="primary">Start a fixture</button>` : "";
 
   return `
     <div class="screen tournament">
       ${renderBackBar("Home", "home")}
       <h1>🏆 ${escapeHtml(t.name)}</h1>
       <p class="tagline">${escapeHtml(matchPreset.name)} · ${preset.pointsForWin}/${preset.pointsForTie}/${preset.pointsForLoss} pts${preset.useNRR ? " · NRR" : ""}</p>
-      <div class="tab-row">
-        <button data-action="switch-tournament-tab" data-tab="standings" class="tab-btn ${tab === "standings" ? "active" : ""}">Standings</button>
-        <button data-action="switch-tournament-tab" data-tab="fixtures" class="tab-btn ${tab === "fixtures" ? "active" : ""}">Fixtures</button>
-        <button data-action="switch-tournament-tab" data-tab="stats" class="tab-btn ${tab === "stats" ? "active" : ""}">Stats</button>
-      </div>
-      ${tab === "standings" ? renderStandingsTable(standings, preset.useNRR) : ""}
+      ${tabsHtml("switch-tournament-tab", TOURNAMENT_TABS, tab, "main-tabs")}
+      ${tab === "overview" ? `
+        ${renderStandingsTable(standings, preset.useNRR)}
+        ${matches.length ? `<h3 class="section-label">Latest results</h3>${renderFixtureList([...matches].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)).slice(0, 3))}` : ""}
+        ${startBtn}` : ""}
+      ${tab === "teams" ? `
+        <div class="team-grid">${teams.map((tm, i) => teamCardHtml({ id: tm.id, name: tm.name, index: i,
+          players: tm.playerIds.map(pid => state.players[pid]).filter(Boolean).map(pl => ({ name: pl.name })) })).join("")}</div>
+        <p class="hint">Tap a team to see its players. Edit them on the Teams screen.</p>` : ""}
       ${tab === "fixtures" ? renderTournamentFixtures(matches, teams) : ""}
       ${tab === "stats" ? renderTournamentStats(matches) : ""}
-      ${tab !== "fixtures" && !state.match ? `<button data-action="switch-tournament-tab" data-tab="fixtures" class="primary">Start a fixture</button>` : ""}
     </div>
   `;
 }
@@ -403,13 +406,6 @@ function renderStandingsTable(standings, useNRR){
 }
 
 function renderTournamentFixtures(matches, teams){
-  const results = matches.map(m => `
-    <div class="fixture-row">
-      <span>${escapeHtml(teamName(m, "A"))} vs ${escapeHtml(teamName(m, "B"))}</span>
-      <span class="fixture-result">${escapeHtml(m.result || "")}</span>
-    </div>
-  `).join("") || `<p class="hint">No matches played yet.</p>`;
-
   const startForm = state.match ? `<p class="hint">Finish the current match before starting another.</p>` : `
     <form id="tournament-start-match-form">
       <div class="form-error"></div>
@@ -425,7 +421,7 @@ function renderTournamentFixtures(matches, teams){
     </form>
   `;
 
-  return `<div class="fixtures">${results}</div><h3 class="section-label">Start a match</h3>${startForm}`;
+  return `<h3 class="section-label">Start a match</h3>${startForm}<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches)}`;
 }
 
 function renderTournamentStats(matches){

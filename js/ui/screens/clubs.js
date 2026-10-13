@@ -62,7 +62,7 @@ function renderClubHome(){
 
         <h3 class="section-label">Matches</h3>
         ${club.matches.length ? club.matches.map(m => `
-          <div class="list-row"><span>${escapeHtml(m.data.teamA)} v ${escapeHtml(m.data.teamB)}</span><span class="muted">${escapeHtml(m.data.result || "")}</span></div>
+          <button type="button" data-action="open-match-detail" data-id="${escapeHtml((m.data && m.data.id) || m.id)}" class="list-row"><span>${escapeHtml(m.data.teamA)} v ${escapeHtml(m.data.teamB)}<br><span class="muted">${escapeHtml(m.data.result || "")}</span></span><span class="chevron">›</span></button>
         `).join("") : `<p class="hint">No matches yet — play one above.</p>`}
       `}
     </div>
@@ -365,10 +365,10 @@ function renderPlayerProfile(){
           </div>
         </div>
       </div>
-      ${body}
-      ${!pr.loading && !pr.error && d ? renderOwnershipBlock(pr, d, canEdit) : ""}
-
-      ${sections.join("")}
+      ${tabsHtml("profile-tab", [["profile", "Profile"], ["stats", "Stats"]], pr.tab === "stats" ? "stats" : "profile", "main-tabs")}
+      ${pr.tab === "stats" ? sections.join("") : `
+        ${body}
+        ${!pr.loading && !pr.error && d ? renderOwnershipBlock(pr, d, canEdit) : ""}`}
     </div>
   `;
 }

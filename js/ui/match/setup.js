@@ -35,7 +35,8 @@ function renderMatchSetup(){
       ${inTournament ? renderBackBar(tournamentName, "clubTournamentDashboard") : clubMode ? renderBackBar(clubName || "Home", "home") : renderBackBar("Home", "home")}
       <h1>${clubMode ? headings[ui.clubMatchSetupType] : "🏏 New match"}</h1>
       <p class="tagline">${clubMode ? taglines[ui.clubMatchSetupType] : "Pick a preset, tweak anything, start scoring."}</p>
-      ${clubMode && !presets.length ? `<p class="hint">${ui.club && ui.club.id === ui.currentClubId ? "This club has no presets yet — add some on the club page. You can still type the conditions below." : "Loading this club's presets…"}</p>` : ""}
+      ${clubMode && !presets.length ? `<p class="hint">Loading this club's presets…</p>` : ""}
+      ${clubMode && presets === DEFAULT_MATCH_PRESETS ? `<p class="hint">Built-in presets — this club has none of its own yet. Add some under the club's Presets.</p>` : ""}
       ${presets.length ? `
         ${presetPickerHtml({ presets, activeId: ui.matchSetupPresetId, pickAction: "pick-match-preset", kind: "match", slot: "match-setup" })}
       ` : ""}

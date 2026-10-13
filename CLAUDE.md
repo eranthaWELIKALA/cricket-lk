@@ -139,10 +139,16 @@ either swap, keep them as two independent, unconditional operations —
 merging them into one conditional swap will get the vacant-slot case
 wrong.
 
-**Run-outs set the vacated end directly (`event.endComingIn`)** rather
-than computing which end the batsmen ended up at from the parity of
-runs run. The UI asks "who's out — striker or non-striker" and applies
-that literally; it does not model batsmen crossing. This is a
+**Run-outs set both ends directly** rather than computing which end the
+batsmen ended up at from the parity of runs run. The wicket sheet asks
+"who's out — striker or non-striker" (`event.endComingIn`, `ui.runoutEnd`)
+and, separately, "run out at which end — keeper's or bowler's"
+(`event.outEnd`, `ui.runoutAt`; defaults to the out batter's own end).
+`recordBall` nulls the `outEnd` slot (the new batter comes in there) and
+puts the survivor in the other slot; runs completed don't rotate strike on
+a run-out. The end-of-over `swapStrike()` still runs afterwards as usual.
+Reset `ui.runoutAt` wherever `runoutEnd` is reset. It does not model
+batsmen crossing. This is a
 deliberate simplification (see README's "Known simplifications"), not
 a bug — don't "fix" it by adding crossing math unless you're prepared to
 also model run-outs off wides/no-balls, which the engine doesn't
@@ -228,7 +234,11 @@ innings" link (asks first via `askConfirm`, see "Confirmations" below) that call
 gated by `canEndInningsByHand(inn)` — no overs limit *or* no players limit)
 also sits at the bottom of the new-batsman and new-bowler sheets, which
 otherwise block everything until a name is entered; in the 2nd innings it
-reads "finish match" and `afterBall` produces the result as usual. Never compare against these directly — use
+reads "finish match" and `afterBall` produces the result as usual.
+**Any** match (limits or not, guest or club) can also be closed early from
+⋯ Match options → End innings (rain, time, a declaration): `handleEndInnings`
+only refuses a completed innings; `canEndInningsByHand` just decides whether
+the on-screen buttons show. Never compare against these directly — use
 `isAllOut(inn)` / check `oversLimit != null` (`x >= null` is `true` in JS).
 `lastManStands` (preset + match flag, copied onto each innings) makes
 `maxWickets = playersPerSide`; one wicket short of that, `battingAlone(inn)`
@@ -400,8 +410,11 @@ previous-over row and partnership row and shrink paddings so it still
 fits on 640–667px phones. Nothing on the board may outgrow the screen:
 the full scorecard is a sheet over it (`renderLiveScorecardModal`,
 `ui.liveScorecard`, opened by the **Full scorecard** button), not an inline
-expansion. It shows the innings in play, then the earlier one, and closes
-with ✕/Close/Back or when the innings ends. `.screen.live` still scrolls
+expansion. Its body is the shared tabbed scorecard (`renderScorecard`, see
+"Scorecards" below). It closes with ✕/Close/Back or when the
+innings ends. The pick and wicket sheets cover the board, so each repeats
+the score in one line (`renderSheetScore`: team, R-W, overs, "Need X off Y"
+in a chase or the run rate); the opening sheet shows it only in the chase. `.screen.live` still scrolls
 internally as a safety net. **Full scorecard** and **End innings**
 (`renderEndInningsButton(…, inline)`) are equal-width buttons in
 `.live-links` under the Wicket bar. The top bar is `position:relative` in live mode — `sticky`
@@ -420,6 +433,16 @@ all today (no way to record, say, "8 off the bat" from an overthrow);
 don't wire a `data-runs="7"` button to `handleBallClick` as a
 stand-in, that would silently record the wrong number. Build a real
 custom-runs input first if this is ever added.
+
+**Extras ask for their runs in a sheet.** Tapping Wide / No ball / Bye /
+Leg bye opens `renderExtraRunsModal` ("Wide — how many runs?"), so an extra
+can't be recorded without picking its value. `ui.pendingExtra` is both "is
+the sheet open" and which extra (checked in `render()` after `wicketFlow`);
+its tiles are `data-action="ball"` → `handleBallClick`, same as before. Each
+tile shows the **total** the ball adds (the preset's wide/no-ball base run
+included) with the over-row chip under it (`Wd+4`, `Nb+2`, `B3`); byes and
+leg byes start at 1. It's an overlay (back/Esc/Cancel close it, nothing
+recorded).
 
 **Nicknames toggle.** In a club match whose roster has nicknames
 (`matchHasNicknames()`), the ⋯ Match options sheet has a "Show nicknames"
@@ -514,7 +537,7 @@ a separate page).
 
 Re-rendering a sheet that carries `data-keep-scroll="<key>"` (the confirm
 sheet, the team builder, and every in-match sheet: opening, new batsman/
-bowler, wicket, match options) keeps its scroll position and adds `.no-anim`, so a
+bowler, wicket, extra runs, match options) keeps its scroll position and adds `.no-anim`, so a
 tap inside doesn't jump to the top or replay the slide-up animation. **Give
 any new sheet a `data-keep-scroll` key**, or taps inside it will flicker.
 `render()` also skips the backdrop fade when a sheet was already open
@@ -555,11 +578,11 @@ History rules — these are what make it work on phones:
   (`navReplaceNext`). Home is the first entry, so back at Home exits the app.
 - **Sheets get their own entry** (same URL, `overlay: true`) when opened by a
   tap (`overlayOpen()`: confirm, side menu, sync sheet, player modal, team
-  builder, match options, wicket sheet, live scorecard), so back closes them even on the first
+  builder, match options, wicket sheet, extra-runs sheet, live scorecard), so back closes them even on the first
   entry; closing one by tap pops its entry again. The auto-opened pick sheets
   aren't overlays — `interceptNav` handles them.
 - **Intercepted moves** (`interceptNav`, most specific first): close the top
-  sheet (`closeTopOverlay`) → the live match's pending extra / pick sheet
+  sheet (`closeTopOverlay`, which includes the extra-runs sheet) → the live match's pick sheet
   ("Pick later") → **"Leave live scoring?"** → in-screen
   sub-forms (preset editors, claim/merge) → unsaved input ("Discard your
   changes?", `formIsDirty`). The move is undone with `history.go(-delta)`
@@ -580,6 +603,42 @@ History rules — these are what make it work on phones:
   the gesture rule — test with `devices["Pixel 5"]` + `tap()` for the logic,
   and on a real phone for the rule itself.
 
+## Scorecards: tabs and ball by ball
+
+`renderScorecard(match)` (result.js) is the one full scorecard: a tab per
+innings, then **Scorecard / Ball by ball**. Which tab shows is
+`ui.scorecard = { inn, mode }` (`inn: null` = the latest innings), reset
+whenever one opens — the live scorecard sheet, Result's full scorecard, and
+the completed-match sheet. Ball by ball (`renderBallByBall`) lists every
+over newest first from `inn.overs[].events` + `currentOverEvents` (bowler,
+one chip per ball, the over's runs/wickets, the score at its end) — it only
+reads the display strings and `runs`/`isWicket` that `recordBall` already
+stores, so it works on every archived match. Every innings' card is
+rendered (inactive ones `hidden`), and the print rules show them all, so
+Export PDF still prints both innings.
+
+**Completed-match sheet** (`ui.matchDetail = { match, view }`,
+`renderMatchDetailModal`): result, chase line, date, player of the match
+and the tabbed scorecard, over any screen. `open-match-detail` (data-id)
+finds the match with `findCompletedMatch` — local archive, then the loaded
+club tournament / club / Premier / profile match lists. It belongs to the
+view it was opened on, is an overlay (back closes it), and is opened from
+tournament fixtures, Home's Recent matches and club home's match list.
+
+## Tournament dashboards, leaderboards, profiles: tabs
+
+Club and guest tournaments share one tab set (`TOURNAMENT_TABS`,
+`ui.tournamentTab`, reset to `"overview"` on open): **Overview** (points
+table, latest 3 results, start button), **Teams** (`teamCardHtml`: cards
+collapsed to name + count, tap to show players — `ui.expandedTeamId`; club
+edit/delete buttons stay on the card), **Fixtures** (start a match + every
+completed match via `renderFixtureList`, tap → scorecard sheet) and
+**Stats**. `renderLeaderboards` shows one table at a time behind its own
+MVP / Batting / Bowling / Fielding sub-tabs (`ui.statsTab`) — everywhere it's
+used. The player profile has **Profile / Stats** tabs (`ui.profile.tab`, so
+it resets with each profile). All of them use `tabsHtml(action, tabs,
+active, cls)` (common.js); `main-tabs` makes a top-level row equal-width.
+
 ## Innings break screen
 
 `renderInningsHighlights(match, inn)` (next to `renderInningsSummary`)
@@ -597,8 +656,8 @@ layout with nothing live-scoring-specific about them.
 smaller view — `renderResultInningsCard(match, inn)`, one combined card
 per innings (2 top batters + 1 top bowler, no extras line) — reusing
 `ui.showFullScorecard` (Result only now; Live's scorecard is its own sheet,
-`ui.liveScorecard`). Toggling it swaps both innings between this condensed pair and
-`renderInningsSummary`'s full tables, so nothing is ever permanently
+`ui.liveScorecard`). Toggling it swaps the condensed pair for the tabbed
+`renderScorecard` (all innings' full tables are in the DOM, one visible), so nothing is ever permanently
 lost — this matters because "Export PDF" is just `window.print()` on
 whatever's currently in the DOM (see "Share & export" above): printing
 without expanding first prints the condensed cards, which is a real,
@@ -1104,7 +1163,9 @@ only its own:
 The role is `state.activeClubId` (Home's "Acting as"); Premier is its own
 screen. Rules that keep it clean: club setup screens read
 `matchPresetChoices()` / `clubPresetList(kind, clubId)`, **never**
-`state.matchPresets`; Home's tiles, its Tournaments list and the side menu
+`state.matchPresets` (a club with no presets of its own, once loaded, gets
+the built-in `DEFAULT_MATCH_PRESETS` — reference data, not guest data — so
+club and guest setup start alike); Home's tiles, its Tournaments list and the side menu
 swap the guest Teams/Players/Presets/Stats entries for the club's own
 **Players / Presets / Stats** (`clubPlayers` / `clubPresets` / `clubStats`
 views, opened by `go-club-view` from `state.activeClubId`; each renders
