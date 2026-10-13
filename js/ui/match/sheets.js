@@ -404,10 +404,15 @@ function showFormError(form, msg){
   const el = form && form.querySelector(".form-error");
   if (el) el.textContent = friendlyError(msg);
 }
-/* A raw fetch failure reads as gibberish ("TypeError: Failed to fetch"). */
+/* A raw fetch failure reads as gibberish ("TypeError: Failed to fetch").
+   While the device is online that means the server itself couldn't be
+   reached (e.g. a paused Supabase project, a VPN/proxy or firewall
+   blocking it) -- don't tell the user they're offline then. */
 function friendlyError(msg){
-  return msg && /failed to fetch|networkerror|load failed|network request failed/i.test(String(msg))
-    ? "You're offline. This needs an internet connection — try again when you're back online." : msg;
+  if (!msg || !/failed to fetch|networkerror|load failed|network request failed/i.test(String(msg))) return msg;
+  return isOnline()
+    ? "Couldn't reach the cricket.lk server. Your internet looks fine, so the server may be down, or a VPN, proxy or firewall may be blocking it. Try again in a moment."
+    : "You're offline. This needs an internet connection — try again when you're back online.";
 }
 
 /* --- wicket modal (caught / run-out both capture an optional-or-required fielder) --- */

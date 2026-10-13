@@ -764,6 +764,11 @@ async function main(){
     assert(win.isAuthRateLimit({ status: 429, message: "x" }) && win.isAuthRateLimit({ code: "over_email_send_rate_limit" }) && win.isAuthRateLimit({ message: "Email rate limit exceeded" }), "a 429 / email rate limit is recognised");
     assert(!win.isAuthRateLimit({ status: 400, message: "Invalid login credentials" }) && !win.isAuthRateLimit(null), "other auth errors aren't");
     assert(win.isEmailNotConfirmed({ code: "email_not_confirmed" }) && win.isEmailNotConfirmed({ message: "Email not confirmed" }), "an unconfirmed email is recognised");
+    assert(/Couldn't reach the cricket\.lk server/.test(win.friendlyError("TypeError: Failed to fetch")), "a failed fetch while online says the server is unreachable, not 'offline'");
+    Object.defineProperty(win.navigator, "onLine", { value: false, configurable: true });
+    assert(/You're offline/.test(win.friendlyError("TypeError: Failed to fetch")), "...and 'offline' only when the device really is");
+    Object.defineProperty(win.navigator, "onLine", { value: true, configurable: true });
+    assert(win.friendlyError("Invalid login credentials") === "Invalid login credentials", "other errors pass through unchanged");
     assert(win.authMailDelay(1) === 60000 && win.authMailDelay(3) === 300000 && win.authMailDelay(9) === 600000, "retries back off 1m, 2m, 5m, then every 10m");
 
     // win.eval runs in the page's own global scope, so top-level lets (authMail, supabaseClient) are reachable.
