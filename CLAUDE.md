@@ -416,6 +416,14 @@ don't wire a `data-runs="7"` button to `handleBallClick` as a
 stand-in, that would silently record the wrong number. Build a real
 custom-runs input first if this is ever added.
 
+**Nicknames toggle.** In a club match whose roster has nicknames
+(`matchHasNicknames()`), the live screen's links row gets "Show nicknames" /
+"Show names" (`toggle-nicknames`, persisted as `state.useNicknames`).
+`liveName(name)` swaps in the roster nickname for display only — on the live
+card, the full scorecard (`renderInningsSummary`), the innings-break
+highlights and Result's condensed cards. The match, `howOut` text, archive,
+stats and share image keep real names. Guest matches never show the toggle.
+
 `renderOverRow()` (next to `ordinalSuffix()`, just above `renderLive`)
 draws one row of the ball-by-over rail — the *current* over from
 `inn.currentOverEvents`, and the *previous* one (dimmed) from
@@ -831,7 +839,10 @@ delegated `input` listener, closed on `focusout` (delayed; `pointerdown` on
 an option is cancelled so the input keeps focus). A tap (`combo-pick`) only
 fills the input — the form's own button still submits, so every check in
 `handleOpeningSubmit`/`submitNewBatsman`/`submitNewBowler`/
-`handleWicketFielderSubmit` applies. All DOM-only, never `render()`. Options
+`handleWicketFielderSubmit` applies. A name already typed or picked in
+another combo of the same form isn't offered (`updateCombo`), so the opening
+sheet's striker, non-striker and bowler lists never repeat one another.
+All DOM-only, never `render()`. Options
 come from `pickPool(teamKey)` (the side's squad → else the club roster /
 guest list → nothing for a friendly's visitors) filtered by the pure
 `pickCandidates(match, pool, role)` in ENGINE (tested): batters drop anyone
