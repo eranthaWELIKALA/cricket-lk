@@ -8,12 +8,12 @@ function renderInningsSummary(match, inn){
     const s = inn.batting.stats[name];
     const sr = s.balls ? ((s.runs / s.balls) * 100).toFixed(1) : "0.0";
     const status = s.out ? s.howOut : "not out";
-    return `<tr><td>${escapeHtml(name)}</td><td class="status">${escapeHtml(status)}</td><td>${s.runs}</td><td>${s.balls}</td><td>${s.fours}</td><td>${s.sixes}</td><td>${sr}</td></tr>`;
+    return `<tr><td>${escapeHtml(liveName(name))}</td><td class="status">${escapeHtml(status)}</td><td>${s.runs}</td><td>${s.balls}</td><td>${s.fours}</td><td>${s.sixes}</td><td>${sr}</td></tr>`;
   }).join("");
   const bowlingRows = inn.bowling.order.map(name => {
     const b = inn.bowling.stats[name];
     const econ = b.legalBalls ? (b.runs / (b.legalBalls / bpo)).toFixed(2) : "0.00";
-    return `<tr><td>${escapeHtml(name)}</td><td>${oversDisplay(b.legalBalls, bpo)}</td><td>${b.maidens}</td><td>${b.runs}</td><td>${b.wickets}</td><td>${econ}</td></tr>`;
+    return `<tr><td>${escapeHtml(liveName(name))}</td><td>${oversDisplay(b.legalBalls, bpo)}</td><td>${b.maidens}</td><td>${b.runs}</td><td>${b.wickets}</td><td>${econ}</td></tr>`;
   }).join("");
   const extrasTotal = inn.extras.wides + inn.extras.noBalls + inn.extras.byes + inn.extras.legByes;
   return `
@@ -62,7 +62,7 @@ function renderInningsHighlights(match, inn){
       ${topScorers.length ? topScorers.map(name => {
         const s = inn.batting.stats[name];
         const sr = s.balls ? ((s.runs / s.balls) * 100).toFixed(1) : "0.0";
-        return `<div class="matchup-row"><span class="name">${escapeHtml(name)}</span><span class="stat emph" style="width:40px;">${s.runs}</span><span class="stat" style="width:32px;">${s.balls}</span><span class="stat" style="width:46px;">${sr}</span></div>`;
+        return `<div class="matchup-row"><span class="name">${escapeHtml(liveName(name))}</span><span class="stat emph" style="width:40px;">${s.runs}</span><span class="stat" style="width:32px;">${s.balls}</span><span class="stat" style="width:46px;">${sr}</span></div>`;
       }).join("") : `<p class="hint">No batting yet.</p>`}
       <div class="partnership-row"><span>Extras</span><span class="val n" style="flex-grow:1;text-align:right;font-size:.78rem;">${extrasTotal} (w ${inn.extras.wides} · nb ${inn.extras.noBalls} · b ${inn.extras.byes} · lb ${inn.extras.legByes})</span></div>
     </div>
@@ -161,9 +161,9 @@ function renderResultInningsCard(match, inn){
       </div>
       ${topBatters.map(name => {
         const s = inn.batting.stats[name];
-        return `<div style="display:flex;gap:6px;margin-top:8px;"><span style="flex-grow:1;font-size:.78rem;color:var(--muted);">${escapeHtml(name)}</span><span class="n" style="font-size:.78rem;font-weight:700;">${s.runs}${!s.out ? "*" : ""} (${s.balls})</span></div>`;
+        return `<div style="display:flex;gap:6px;margin-top:8px;"><span style="flex-grow:1;font-size:.78rem;color:var(--muted);">${escapeHtml(liveName(name))}</span><span class="n" style="font-size:.78rem;font-weight:700;">${s.runs}${!s.out ? "*" : ""} (${s.balls})</span></div>`;
       }).join("")}
-      ${topBowler ? `<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:2px solid var(--line-strong);"><span style="flex-grow:1;font-size:.78rem;color:var(--muted);">${escapeHtml(topBowler)}</span><span class="n" style="font-size:.78rem;font-weight:700;">${oversDisplay(bowlerStats.legalBalls, bpo)}-${bowlerStats.maidens}-${bowlerStats.runs}-${bowlerStats.wickets}</span></div>` : ""}
+      ${topBowler ? `<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:2px solid var(--line-strong);"><span style="flex-grow:1;font-size:.78rem;color:var(--muted);">${escapeHtml(liveName(topBowler))}</span><span class="n" style="font-size:.78rem;font-weight:700;">${oversDisplay(bowlerStats.legalBalls, bpo)}-${bowlerStats.maidens}-${bowlerStats.runs}-${bowlerStats.wickets}</span></div>` : ""}
     </div>
   `;
 }

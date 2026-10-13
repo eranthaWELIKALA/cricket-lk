@@ -132,7 +132,7 @@ function renderLive(match){
   const econ = (b) => b.legalBalls ? (b.runs / (b.legalBalls / bpo)).toFixed(2) : "0.00";
   const later = pickSheetDismissed(match);
   const pickBtn = label => `<button type="button" data-action="reopen-pick" class="pick-slot">+ ${label}</button>`;
-  const slotName = (name, label) => name ? escapeHtml(name) : later ? pickBtn(label) : "—";
+  const slotName = (name, label) => name ? escapeHtml(liveName(name)) : later ? pickBtn(label) : "—";
 
   const overNumber = Math.floor(inn.legalBalls / bpo) + 1;
   const prevOver = inn.overs.length ? inn.overs[inn.overs.length - 1] : null;
@@ -225,6 +225,7 @@ function renderLive(match){
 
       <div class="live-links">
         <button data-action="toggle-scorecard" class="link-btn">${ui.showFullScorecard ? "Hide" : "Show"} full scorecard</button>
+        ${matchHasNicknames() ? `<button data-action="toggle-nicknames" class="link-btn" aria-pressed="${!!state.useNicknames}">${state.useNicknames ? "Show names" : "Show nicknames"}</button>` : ""}
         ${canEndInningsByHand(inn) ? renderEndInningsButton(match, inn, true) : ""}
       </div>
       ${ui.showFullScorecard ? renderInningsSummary(match, inn) : ""}

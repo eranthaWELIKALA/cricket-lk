@@ -68,6 +68,7 @@ function defaultState(){
     clubResultsReset202610: false, // one-time drop of club matches/tournaments after the 2026-10 reset -- see purgeClubResults()
     guestPlayersCleaned: false, // one-time purge of club-match names that leaked into state.players -- see purgeLeakedClubPlayers()
     soundEnabled: true,
+    useNicknames: false, // live scorecard shows roster nicknames instead of names -- see liveName()
     themeId: "midnight", // see THEME_PRESETS (REFERENCE DATA) and applyTheme()
     branding: { name: "", logo: null, accent: null, accent2: null }
   };

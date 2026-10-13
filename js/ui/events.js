@@ -83,6 +83,7 @@ document.addEventListener("click", (e) => {
   else if (action === "share-image") shareScorecardImage(state.match);
   else if (action === "export-pdf") window.print();
   else if (action === "finish-match") leaveMatch();
+  else if (action === "toggle-nicknames"){ state.useNicknames = !state.useNicknames; save(); render(); }
   else if (action === "toggle-sound"){
     state.soundEnabled = !state.soundEnabled;
     save(); render();

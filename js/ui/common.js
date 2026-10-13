@@ -161,15 +161,37 @@ function rosterEntryFor(name){
   const key = (name || "").trim().toLowerCase();
   return key ? currentRoster().find(p => p.name && p.name.toLowerCase() === key) || null : null;
 }
+/* Live-scorecard display name: the roster nickname when the scorer turned
+   nicknames on (state.useNicknames, the toggle on the live screen) and this
+   player has one, else the name as recorded. Display only -- the match,
+   its howOut text, archive, stats and share image all keep real names. */
+function liveName(name){
+  if (!state.useNicknames || !name) return name;
+  const r = rosterEntryFor(name);
+  const nick = r && r.nickname ? r.nickname.trim() : "";
+  return nick || name;
+}
+/* The toggle only shows when there's something to toggle: a club match
+   whose loaded roster has any nicknames (guest players have none). */
+function matchHasNicknames(){
+  return currentRoster().some(p => p.nickname && p.nickname.trim());
+}
 /* A typed nickname / "#7" -> that roster player's name (see resolvePlayerAlias). */
 function resolveTypedName(value){ return resolvePlayerAlias(value, currentRoster()); }
 function updateCombo(input, open){
   const list = input.closest(".combo") && input.closest(".combo").querySelector(".combo-list");
   if (!list) return;
   const q = input.value.trim().toLowerCase();
+  // A name already in another box of the same sheet isn't offered again --
+  // on the opening sheet the striker, non-striker and bowler are always
+  // three different people (handleOpeningSubmit enforces it too).
+  const form = input.closest("form");
+  const taken = new Set(form ? [...form.querySelectorAll(".combo input")]
+    .filter(other => other !== input && other.value.trim())
+    .map(other => resolveTypedName(other.value).toLowerCase()) : []);
   let shown = 0;
   list.querySelectorAll(".combo-opt").forEach(o => {
-    const hit = !q || (o.dataset.search || o.dataset.name.toLowerCase()).includes(q);
+    const hit = !taken.has(o.dataset.name.toLowerCase()) && (!q || (o.dataset.search || o.dataset.name.toLowerCase()).includes(q));
     o.hidden = !hit;
     if (hit) shown++;
   });

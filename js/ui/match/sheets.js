@@ -309,8 +309,10 @@ function submitNewBatsman(name, form){
   if (other && name.toLowerCase() === other.toLowerCase()){
     showFormError(form, "That player is already at the crease."); return;
   }
-  if (inn.batting.stats[name] && inn.batting.stats[name].out){
-    showFormError(form, `${name} is already out.`); return;
+  // Case-insensitive, like every other name check: "kusal" is the same person as "Kusal".
+  const outName = inn.batting.order.find(n => n.toLowerCase() === name.toLowerCase() && inn.batting.stats[n].out);
+  if (outName){
+    showFormError(form, `${outName} is already out.`); return;
   }
   const sideConflict = playerSideConflict(state.match, name, inn.battingTeam);
   if (sideConflict){ showFormError(form, sideConflict); return; }

@@ -844,6 +844,60 @@ async function main(){
     win.eval(`ui.presetInfo = null; state.view = "home"; render();`);
   }
 
+  // --- batters: never the same at both ends, out/at-crease names not offered, nickname display ---
+  {
+    const doc = win.document;
+    win.eval(`ui = defaultUi(); state.useNicknames = false;
+      state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+      state.match.squads = { A: ["Kusal", "Pathum", "Charith"], B: ["Wanindu", "Dushmantha"] };
+      state.snapshots = []; render();`);
+    const box = n => doc.querySelector(`#opening-form input[name="${n}"]`);
+    const offered = n => [...box(n).closest(".combo").querySelectorAll(".combo-opt")].filter(o => !o.hidden).map(o => o.dataset.name);
+    assert(box("striker") && box("nonStriker"), "opening sheet is on screen");
+    box("striker").value = "kusal";
+    box("nonStriker").dispatchEvent(new win.FocusEvent("focusin", { bubbles: true }));
+    assert(!offered("nonStriker").includes("Kusal") && offered("nonStriker").includes("Pathum"), "a name in the striker box isn't offered for non-striker (any case)");
+    box("nonStriker").value = "Pathum";
+    box("striker").dispatchEvent(new win.FocusEvent("focusin", { bubbles: true }));
+    assert(offered("striker").includes("Kusal") && !offered("striker").includes("Pathum"), "...and the other way round; a box's own value stays offered");
+    box("nonStriker").value = "KUSAL"; box("bowler").value = "Wanindu";
+    doc.getElementById("opening-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(/must be different players/.test(doc.querySelector("#opening-form .form-error").textContent) && win.eval("currentInnings(state.match).striker") === null, "same name at both ends (any case) is refused");
+    box("nonStriker").value = "Pathum";
+    doc.getElementById("opening-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(win.eval("currentInnings(state.match).striker") === "kusal" || win.eval("currentInnings(state.match).striker") === "Kusal", "different openers start the innings");
+
+    // Kusal out -> new batsman sheet: neither the out batter nor the one at the crease is offered.
+    win.eval(`{ const inn = currentInnings(state.match); inn.striker = "Kusal"; inn.batting.order = inn.batting.order.map(n => n.toLowerCase() === "kusal" ? "Kusal" : n);
+      if (!inn.batting.stats.Kusal){ inn.batting.stats.Kusal = inn.batting.stats.kusal; delete inn.batting.stats.kusal; }
+      recordBall(inn, { kind: "wicket", wicketType: "bowled", runs: 0 }); afterBall(state.match); save(); render(); }`);
+    const nb = [...doc.querySelectorAll("#new-batsman-form .combo-opt")].map(o => o.dataset.name);
+    assert(nb.length === 1 && nb[0] === "Charith", "new batsman: out and at-crease players aren't offered");
+    const nbInput = doc.querySelector('#new-batsman-form input[name="name"]');
+    nbInput.value = "kusal";
+    doc.getElementById("new-batsman-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(/Kusal is already out/.test(doc.querySelector("#new-batsman-form .form-error").textContent), "an out batter typed in another case is still refused");
+    nbInput.value = "PATHUM";
+    doc.getElementById("new-batsman-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(/already at the crease/.test(doc.querySelector("#new-batsman-form .form-error").textContent), "the batter at the other end can't come in again");
+
+    // Nicknames: club match with a roster that has them.
+    win.eval(`{ const inn = currentInnings(state.match); inn.striker = "Charith"; ensureBatsman(inn, "Charith");
+      state.match.clubId = "club-n"; ui.club = { id: "club-n", name: "N", roster: [{ id: "1", name: "Charith", nickname: "Chari" }, { id: "2", name: "Pathum" }], members: [], matches: [], tournaments: [], presets: { match: [], tournament: [] } };
+      render(); }`);
+    const toggle = () => doc.querySelector('[data-action="toggle-nicknames"]');
+    const names = () => [...doc.querySelectorAll(".matchup-row .name")].map(e => e.textContent.trim());
+    assert(toggle() && toggle().textContent === "Show nicknames" && names().includes("Charith"), "club match: real names by default, with a nickname toggle");
+    toggle().click();
+    assert(names().includes("Chari") && names().includes("Pathum") && toggle().getAttribute("aria-pressed") === "true", "toggle on: nickname where there is one, name otherwise");
+    assert(win.eval("currentInnings(state.match).striker") === "Charith" && win.eval("state.useNicknames") === true, "display only: the match keeps the real name; the choice is saved");
+    doc.querySelector('[data-action="toggle-scorecard"]').click();
+    assert([...doc.querySelectorAll(".bat-table td:first-child")].some(td => td.textContent === "Chari"), "the full scorecard follows the toggle");
+    win.eval(`state.match.clubId = null; ui.club = null; render();`);
+    assert(!doc.querySelector('[data-action="toggle-nicknames"]'), "no toggle when there are no nicknames (guest match)");
+    win.eval(`state.match = null; state.useNicknames = false; ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }
