@@ -397,9 +397,14 @@ natural height, and the run pad (the only flexible child,
 left. Two `max-height` media queries (760px, 700px, scoped under
 `#app.live-mode` so they beat the later component rules) drop the
 previous-over row and partnership row and shrink paddings so it still
-fits on 640–667px phones; the "Show full scorecard" expansion is the one
-thing allowed to outgrow the screen, so `.screen.live` scrolls
-internally. The top bar is `position:relative` in live mode — `sticky`
+fits on 640–667px phones. Nothing on the board may outgrow the screen:
+the full scorecard is a sheet over it (`renderLiveScorecardModal`,
+`ui.liveScorecard`, opened by the **Full scorecard** button), not an inline
+expansion. It shows the innings in play, then the earlier one, and closes
+with ✕/Close/Back or when the innings ends. `.screen.live` still scrolls
+internally as a safety net. **Full scorecard** and **End innings**
+(`renderEndInningsButton(…, inline)`) are equal-width buttons in
+`.live-links` under the Wicket bar. The top bar is `position:relative` in live mode — `sticky`
 inside an `overflow:hidden` container offsets by the container's padding
 and overlaps the first card. If you add content to this screen, re-check
 it at 360×640 and 375×667, not just a tall phone.
@@ -417,8 +422,9 @@ stand-in, that would silently record the wrong number. Build a real
 custom-runs input first if this is ever added.
 
 **Nicknames toggle.** In a club match whose roster has nicknames
-(`matchHasNicknames()`), the live screen's links row gets "Show nicknames" /
-"Show names" (`toggle-nicknames`, persisted as `state.useNicknames`).
+(`matchHasNicknames()`), the ⋯ Match options sheet has a "Show nicknames"
+switch row (`toggle-nicknames`, `role="switch"`, `.toggle-pill`; persisted as
+`state.useNicknames`; the menu stays open when it's flipped).
 `liveName(name)` swaps in the roster nickname for display only — on the live
 card, the full scorecard (`renderInningsSummary`), the innings-break
 highlights and Result's condensed cards. The match, `howOut` text, archive,
@@ -549,12 +555,12 @@ History rules — these are what make it work on phones:
   (`navReplaceNext`). Home is the first entry, so back at Home exits the app.
 - **Sheets get their own entry** (same URL, `overlay: true`) when opened by a
   tap (`overlayOpen()`: confirm, side menu, sync sheet, player modal, team
-  builder, match options, wicket sheet), so back closes them even on the first
+  builder, match options, wicket sheet, live scorecard), so back closes them even on the first
   entry; closing one by tap pops its entry again. The auto-opened pick sheets
   aren't overlays — `interceptNav` handles them.
 - **Intercepted moves** (`interceptNav`, most specific first): close the top
   sheet (`closeTopOverlay`) → the live match's pending extra / pick sheet
-  ("Pick later") / expanded scorecard → **"Leave live scoring?"** → in-screen
+  ("Pick later") → **"Leave live scoring?"** → in-screen
   sub-forms (preset editors, claim/merge) → unsaved input ("Discard your
   changes?", `formIsDirty`). The move is undone with `history.go(-delta)`
   (`navSettling` swallows the resulting popstate) and, on confirm, redone with
@@ -580,7 +586,7 @@ History rules — these are what make it work on phones:
 is a **separate, condensed** view — top 3 scorers, top 2 bowlers,
 extras inline — just for `renderInningsBreak`. It is not a replacement
 for `renderInningsSummary`'s full batting/bowling tables, which Live's
-"Show full scorecard" toggle still shows exactly as before. It reuses
+Full scorecard sheet still shows. It reuses
 the Live screen's `.matchup-head`/`.matchup-row`/`.partnership-row`
 classes, since those are just a plain eyebrow-header-plus-data-rows
 layout with nothing live-scoring-specific about them.
@@ -590,8 +596,8 @@ layout with nothing live-scoring-specific about them.
 `renderResult()` defaults to condensed too, via a **third**, even
 smaller view — `renderResultInningsCard(match, inn)`, one combined card
 per innings (2 top batters + 1 top bowler, no extras line) — reusing
-the same `ui.showFullScorecard` flag Live's toggle already uses, not a
-new one. Toggling it swaps both innings between this condensed pair and
+`ui.showFullScorecard` (Result only now; Live's scorecard is its own sheet,
+`ui.liveScorecard`). Toggling it swaps both innings between this condensed pair and
 `renderInningsSummary`'s full tables, so nothing is ever permanently
 lost — this matters because "Export PDF" is just `window.print()` on
 whatever's currently in the DOM (see "Share & export" above): printing

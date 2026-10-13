@@ -98,7 +98,7 @@ function overlayOpen(){
   const onMatch = !!(m && m.status !== "complete" && !ui.awayFromMatch);
   return !!(ui.confirm || ui.sideMenuOpen || (ui.syncSheet && session) || ui.playerModal
     || (ui.tournamentTeamEdit && state.view === "clubTournamentDashboard")
-    || (onMatch && (ui.matchMenu || ui.wicketFlow)));
+    || (onMatch && (ui.matchMenu || ui.wicketFlow || ui.liveScorecard)));
 }
 // Called at the end of render(): record a screen change in browser history.
 function syncRoute(){
@@ -325,6 +325,7 @@ function closeTopOverlay(){
   if (ui.tournamentTeamEdit && document.querySelector(".team-modal")){ closeTeamEdit(); return true; }
   if (onMatch && ui.matchMenu){ ui.matchMenu = ui.matchMenu === "menu" ? null : "menu"; ui.squadError = null; render(); return true; }
   if (onMatch && ui.wicketFlow){ ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; render(); return true; }
+  if (onMatch && ui.liveScorecard){ ui.liveScorecard = false; render(); return true; }
   return false;
 }
 
@@ -342,7 +343,6 @@ function interceptNav(redo){
   if (onMatch){
     if (ui.pendingExtra){ ui.pendingExtra = null; render(); return true; }
     if (pendingPickKey(m) && !pickSheetDismissed(m)){ dismissPick(); return true; }
-    if (ui.showFullScorecard){ ui.showFullScorecard = false; render(); return true; }
     askConfirm({
       title: "Leave live scoring?", icon: "🏏", tone: "primary",
       body: `<p>The match keeps going and nothing is lost. Get back to it from the green <b>Live</b> pill at the top, or from Home.</p>`,

@@ -39,8 +39,10 @@ body{
 .screen.live > *{ flex-shrink:0; }
 .screen.live > .run-pad{ flex:1 0 100px; grid-auto-rows:1fr; margin-bottom:8px; }
 .screen.live .run-pad .run-btn{ padding:0; height:100%; min-height:44px; }
-.screen.live > .link-btn, .screen.live > .live-links .link-btn{ padding:4px; font-size:.8rem; }
-.live-links{ display:flex; justify-content:center; gap:16px; }
+.screen.live > .link-btn{ padding:4px; font-size:.8rem; }
+/* Full scorecard / End innings: equal-width buttons under the Wicket bar. */
+.live-links{ display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:8px; margin-top:8px; }
+.live-links button{ width:100%; margin:0; min-height:40px; padding:8px; font-size:.8rem; }
 @media (max-height:760px){
   #app.live-mode .over-row.dimmed{ display:none; }
   #app.live-mode .score-bento{ margin-bottom:6px; }
@@ -67,7 +69,9 @@ body{
   #app.live-mode .run-pad .run-btn:not(.undo){ font-size:1.15rem; min-height:38px; }
   #app.live-mode .extra-pad button{ height:36px; }
   #app.live-mode .wicket-btn{ height:42px; }
-  #app.live-mode .screen.live > .link-btn, #app.live-mode .screen.live > .live-links .link-btn{ padding:2px; }
+  #app.live-mode .screen.live > .link-btn{ padding:2px; }
+  #app.live-mode .live-links{ margin-top:6px; }
+  #app.live-mode .live-links button{ min-height:36px; padding:6px; }
 }
 h1,h2,h3{margin:0 0 8px;letter-spacing:-.02em;}
 h1{font-size:2rem;font-weight:800;}
@@ -239,6 +243,15 @@ td.status{color:var(--muted);font-size:.78rem;}
 .pick-slot{ padding:2px 10px; min-height:0; font-size:.8rem; font-weight:700; border-radius:999px; border:2px dashed var(--accent); background:transparent; color:var(--accent); box-shadow:none; }
 .wicket-modal-head{ display:flex; align-items:baseline; gap:8px; margin-bottom:4px; }
 .wicket-modal-head .batter{ flex-grow:1; text-align:right; font-size:.75rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+/* ✕ in a sheet's head row (live scorecard). */
+.sheet-close{ align-self:center; flex-shrink:0; width:36px; height:36px; padding:0; margin:0; border-radius:50%; border:2px solid var(--line-strong); background:var(--panel-2); color:var(--text); box-shadow:none; font-size:.95rem; }
+.scorecard-modal .wicket-modal-head{ margin-bottom:12px; }
+.scorecard-modal .innings-summary{ margin-bottom:12px; }
+/* On/off switch at the end of a .menu-row (Show nicknames). */
+.toggle-pill{ flex-shrink:0; width:44px; height:26px; border-radius:999px; border:2px solid var(--line-strong); background:var(--panel); position:relative; transition:background .15s ease; }
+.toggle-pill span{ position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:var(--muted); transition:transform .15s ease, background .15s ease; }
+.toggle-pill.on{ background:var(--accent-2); border-color:var(--accent-2-ink); }
+.toggle-pill.on span{ transform:translateX(18px); background:var(--accent-2-ink); }
 .freehit-note{
   display:flex; align-items:center; gap:10px; background:var(--accent); color:var(--accent-ink);
   border:2px solid var(--bg); border-radius:var(--radius-md); box-shadow:var(--shadow-card);

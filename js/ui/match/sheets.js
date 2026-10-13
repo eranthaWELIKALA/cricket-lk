@@ -65,7 +65,9 @@ function forfeitTeamLine(match, teamKey){
 function renderEndInningsButton(match, inn, inline){
   if (!canEndInningsByHand(inn)) return "";
   const last = match.innings.length === 2;
-  return `<button type="button" data-action="end-innings" class="link-btn${inline ? "" : " end-innings-sheet"}">${last ? "End innings · finish match" : "End innings"}</button>`;
+  return inline
+    ? `<button type="button" data-action="end-innings" class="ghost small">${last ? "End · finish match" : "End innings"}</button>`
+    : `<button type="button" data-action="end-innings" class="link-btn end-innings-sheet">${last ? "End innings · finish match" : "End innings"}</button>`;
 }
 
 /* "Match options" (the top bar's ⋯, or the opening sheet's link): change
@@ -132,10 +134,36 @@ function renderMatchMenuModal(match){
         ? `Toss got reversed? Restarts from ball one with ${escapeHtml(teamName(match, otherFirst))} batting`
         : `Nothing bowled yet: ${escapeHtml(teamName(match, otherFirst))} bats first instead`)}
       ${match.squads ? row("match-menu-view", "👥", "Switch players between sides", "Move a player to the other team, or add a late arrival", `data-view="squads"`) : ""}
+      ${matchHasNicknames() ? `
+        <button type="button" data-action="toggle-nicknames" class="menu-row" role="switch" aria-checked="${!!state.useNicknames}">
+          <span class="menu-row-icon">Aa</span>
+          <span class="menu-row-text"><span class="title">Show nicknames</span><span class="sub">Scoreboard and scorecard, where a player has one</span></span>
+          <span class="toggle-pill ${state.useNicknames ? "on" : ""}" aria-hidden="true"><span></span></span>
+        </button>` : ""}
       ${row("open-forfeit", "🚩", "Forfeit", "End now and award the match to the other team")}
       ${row("ask-cancel-match", "✕", "Cancel match", "Started by mistake? Discard it with no result")}
     </div>
     <button type="button" data-action="close-match-menu" class="ghost" style="width:100%;margin-top:4px;">Close</button>`);
+}
+
+/* The live screen's full scorecard, as a sheet over the board
+   (ui.liveScorecard) rather than growing the fixed-height screen. The
+   innings in play first, then the earlier one. Back / ✕ / Close closes it. */
+function renderLiveScorecardModal(match){
+  const cur = currentInnings(match);
+  const innings = [cur, ...match.innings.filter(i => i !== cur).reverse()];
+  return `
+    <div class="modal-backdrop">
+      <div class="modal scorecard-modal" data-keep-scroll="live-scorecard" role="dialog" aria-label="Full scorecard">
+        <div class="wicket-modal-head">
+          <h2>Scorecard</h2>
+          <span class="n batter">${escapeHtml(match.teamA)} v ${escapeHtml(match.teamB)}</span>
+          <button type="button" data-action="close-live-scorecard" class="sheet-close" aria-label="Close scorecard">✕</button>
+        </div>
+        ${innings.map(i => renderInningsSummary(match, i)).join("")}
+        <button type="button" data-action="close-live-scorecard" class="primary" style="width:100%;">Close</button>
+      </div>
+    </div>`;
 }
 
 /* Flip who bats first by restarting the fixture (restartMatch). Snapshotted

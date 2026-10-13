@@ -75,7 +75,7 @@ function renderPickLaterButton(){
 function handleUndo(){
   if (!state.snapshots.length) return;
   state.match = state.snapshots.pop();
-  ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.confirm = null; ui.matchMenu = null;
+  ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.confirm = null; ui.matchMenu = null; ui.liveScorecard = false;
   save(); render();
 }
 
@@ -224,11 +224,9 @@ function renderLive(match){
       </button>
 
       <div class="live-links">
-        <button data-action="toggle-scorecard" class="link-btn">${ui.showFullScorecard ? "Hide" : "Show"} full scorecard</button>
-        ${matchHasNicknames() ? `<button data-action="toggle-nicknames" class="link-btn" aria-pressed="${!!state.useNicknames}">${state.useNicknames ? "Show names" : "Show nicknames"}</button>` : ""}
+        <button type="button" data-action="open-live-scorecard" class="ghost small">Full scorecard</button>
         ${canEndInningsByHand(inn) ? renderEndInningsButton(match, inn, true) : ""}
       </div>
-      ${ui.showFullScorecard ? renderInningsSummary(match, inn) : ""}
     </div>
   `;
 }

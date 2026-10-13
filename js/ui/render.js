@@ -169,6 +169,9 @@ function render(){
   // The shared confirmation sheet has its own layer above everything (see
   // askConfirm), so the sheet under it stays in the DOM -- typed input and
   // all -- while it asks.
+  // The live scorecard sheet belongs to one stretch of live scoring: an
+  // innings ending (or the match leaving the screen) closes it for good.
+  if (ui.liveScorecard && !(m && m.status === "live" && !away)) ui.liveScorecard = false;
   if (ui.syncSheet && session){
     modalHtml = renderSyncSheet();
   } else if (pmValid){
@@ -180,6 +183,8 @@ function render(){
     modalHtml = "";
   } else if (m && m.status !== "complete" && ui.matchMenu){
     modalHtml = renderMatchMenuModal(m);
+  } else if (m && m.status === "live" && ui.liveScorecard){
+    modalHtml = renderLiveScorecardModal(m);
   } else if (m && m.status === "opening"){
     modalHtml = renderOpeningModal(m);
   } else if (m && m.status === "live"){

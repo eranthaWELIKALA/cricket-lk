@@ -78,7 +78,9 @@ document.addEventListener("click", (e) => {
     render();
   }
   else if (action === "undo") handleUndo();
-  else if (action === "toggle-scorecard"){ ui.showFullScorecard = !ui.showFullScorecard; render(); }
+  else if (action === "toggle-scorecard"){ ui.showFullScorecard = !ui.showFullScorecard; render(); } // Result's condensed/full cards
+  else if (action === "open-live-scorecard"){ ui.liveScorecard = true; render(); }
+  else if (action === "close-live-scorecard"){ ui.liveScorecard = false; render(); }
   else if (action === "start-second-innings"){ pushSnapshot(); startSecondInnings(state.match); save(); render(); }
   else if (action === "share-image") shareScorecardImage(state.match);
   else if (action === "export-pdf") window.print();

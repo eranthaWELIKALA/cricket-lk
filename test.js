@@ -887,14 +887,33 @@ async function main(){
       render(); }`);
     const toggle = () => doc.querySelector('[data-action="toggle-nicknames"]');
     const names = () => [...doc.querySelectorAll(".matchup-row .name")].map(e => e.textContent.trim());
-    assert(toggle() && toggle().textContent === "Show nicknames" && names().includes("Charith"), "club match: real names by default, with a nickname toggle");
+    assert(!toggle() && names().includes("Charith"), "real names by default; the nickname toggle isn't on the board itself");
+    win.eval(`ui.matchMenu = "menu"; render();`);
+    assert(toggle() && toggle().getAttribute("role") === "switch" && toggle().getAttribute("aria-checked") === "false", "club match: ⋯ menu has a 'Show nicknames' switch");
     toggle().click();
-    assert(names().includes("Chari") && names().includes("Pathum") && toggle().getAttribute("aria-pressed") === "true", "toggle on: nickname where there is one, name otherwise");
+    assert(toggle() && toggle().getAttribute("aria-checked") === "true" && doc.querySelector(".toggle-pill.on"), "the switch flips on and the menu stays open");
+    win.eval(`ui.matchMenu = null; render();`);
+    assert(names().includes("Chari") && names().includes("Pathum"), "toggle on: nickname where there is one, name otherwise");
     assert(win.eval("currentInnings(state.match).striker") === "Charith" && win.eval("state.useNicknames") === true, "display only: the match keeps the real name; the choice is saved");
-    doc.querySelector('[data-action="toggle-scorecard"]').click();
-    assert([...doc.querySelectorAll(".bat-table td:first-child")].some(td => td.textContent === "Chari"), "the full scorecard follows the toggle");
-    win.eval(`state.match.clubId = null; ui.club = null; render();`);
-    assert(!doc.querySelector('[data-action="toggle-nicknames"]'), "no toggle when there are no nicknames (guest match)");
+
+    // Full scorecard: a sheet over the board, not part of the screen.
+    const sc = doc.querySelector('#app [data-action="open-live-scorecard"]');
+    assert(sc && sc.tagName === "BUTTON" && !sc.classList.contains("link-btn") && !doc.querySelector("#app .innings-summary"), "live screen: 'Full scorecard' is a button and the board has no inline scorecard");
+    sc.click();
+    const sheet = doc.querySelector("#modal-root .scorecard-modal");
+    assert(sheet && sheet.querySelector(".bat-table") && [...sheet.querySelectorAll(".bat-table td:first-child")].some(td => td.textContent === "Chari"), "it opens as a sheet (following the nickname toggle)");
+    assert(doc.querySelector("#app .run-pad"), "the board stays underneath");
+    doc.querySelector('#modal-root .sheet-close').click();
+    assert(!doc.querySelector("#modal-root .scorecard-modal"), "✕ closes it");
+    doc.querySelector('#app [data-action="open-live-scorecard"]').click();
+    win.eval(`closeTopOverlay();`);
+    assert(!doc.querySelector("#modal-root .scorecard-modal"), "back (closeTopOverlay) closes it");
+    win.eval(`ui.liveScorecard = true; state.match.status = "innings_break"; render(); state.match.status = "live"; render();`);
+    assert(!doc.querySelector("#modal-root .scorecard-modal"), "an innings ending closes it for good");
+
+    win.eval(`state.match.clubId = null; ui.club = null; ui.matchMenu = "menu"; render();`);
+    assert(!doc.querySelector('[data-action="toggle-nicknames"]'), "no nickname switch when there are no nicknames (guest match)");
+    win.eval(`ui.matchMenu = null; render();`);
     win.eval(`state.match = null; state.useNicknames = false; ui = defaultUi(); state.view = "home"; save(); render();`);
   }
 
