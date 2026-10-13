@@ -66,6 +66,7 @@ function defaultState(){
     viewClubId: null, viewTournamentId: null,
     clubDataReset202609: false, // one-time drop of local club-match copies after the cloud wipe -- see purgeLocalClubMatches()
     clubResultsReset202610: false, // one-time drop of club matches/tournaments after the 2026-10 reset -- see purgeClubResults()
+    clubResultsReset20261013: false, // the same drop again, for the second run of that reset script (2026-10-13)
     guestPlayersCleaned: false, // one-time purge of club-match names that leaked into state.players -- see purgeLeakedClubPlayers()
     soundEnabled: true,
     useNicknames: false, // live scorecard shows roster nicknames instead of names -- see liveName()

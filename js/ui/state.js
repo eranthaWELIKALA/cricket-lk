@@ -73,8 +73,9 @@ function purgeLocalClubMatches(st){
   return removed;
 }
 
-/* One-time, per device: the cloud's matches and club tournaments were reset
-   (2026-10, scripts/reset_tournaments_matches_stats.sql) -- clubs, rosters,
+/* One-time per reset, per device: the cloud's matches and club tournaments
+   were reset (2026-10-04 and again 2026-10-13,
+   scripts/reset_tournaments_matches_stats.sql) -- clubs, rosters,
    players and presets were kept. Drop this device's archived club matches
    (they'd keep feeding club stats via clubMatchesFor), queued match /
    tournament / team ops (they'd re-upload what was wiped), and the cached
@@ -102,16 +103,18 @@ function load(){
     state = Object.assign(defaultState(), data);
     if (!state.guestPlayersCleaned){ purgeLeakedClubPlayers(state); state.guestPlayersCleaned = true; save(); }
     if (!state.clubDataReset202609){ purgeLocalClubMatches(state); state.clubDataReset202609 = true; save(); }
-    if (!state.clubResultsReset202610){
+    // One flag per run of scripts/reset_tournaments_matches_stats.sql: a
+    // device that already purged for an earlier run must purge again.
+    if (!state.clubResultsReset202610 || !state.clubResultsReset20261013){
       outbox = purgeClubResults(state, outbox, cloudCache).keptOps; saveOutbox();
       if (cloudCache) saveCloudCache();
-      state.clubResultsReset202610 = true; save();
+      state.clubResultsReset202610 = state.clubResultsReset20261013 = true; save();
     }
     applyTheme(); return;
   }
   state = migrateLegacy() || defaultState();
   state.clubDataReset202609 = true;   // nothing from before the wipe to purge on a fresh/legacy install
-  state.clubResultsReset202610 = true;
+  state.clubResultsReset202610 = state.clubResultsReset20261013 = true;
   applyTheme();
   save();
 }
