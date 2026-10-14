@@ -494,6 +494,31 @@ button.primary.danger-confirm.is-loading::after{ border-color:rgba(0,0,0,.2); bo
 .stat-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:8px; }
 .stat-tile{ display:flex; flex-direction:column; gap:2px; padding:10px 10px 9px; background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-md); box-shadow:var(--shadow-card); }
 .stat-num{ font-size:1.25rem; font-weight:800; }
+.stat-grid.four{ grid-template-columns:repeat(4,1fr); }
+.stat-grid.four .stat-tile{ padding:8px 6px; align-items:center; text-align:center; }
+/* --- tournaments: actions, result-only sheet, ended Summary tab --- */
+.tournament-actions{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
+.tournament-actions button{ width:100%; margin:0; }
+.tournament-actions button:only-child{ grid-column:1 / -1; }
+.end-tournament-btn{ width:100%; margin-top:10px; }
+.tab-btn svg{ vertical-align:-3px; margin-right:2px; }
+.result-team{ background:var(--panel); border:2px solid var(--line-strong); border-radius:var(--radius-md); padding:10px 12px 4px; margin-bottom:10px; }
+.result-team-name{ font-weight:800; }
+.field-row.three{ grid-template-columns:1fr 1fr 1.2fr; gap:8px; }
+.field-row.three label{ font-size:.8rem; }
+.result-conditions{ margin:4px 0 12px; }
+.result-conditions summary{ cursor:pointer; font-size:.8rem; font-weight:700; color:var(--muted); padding:6px 0; }
+.summary-hero{ background:var(--accent); color:var(--accent-ink); border:2px solid var(--bg); border-radius:var(--radius-lg); box-shadow:var(--shadow-card); padding:14px 14px 12px; margin-bottom:10px; }
+.summary-hero .eyebrow{ font-size:.65rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; opacity:.7; }
+.summary-hero .summary-champ{ font-size:1.45rem; font-weight:800; line-height:1.15; margin:4px 0 2px; overflow-wrap:anywhere; }
+.summary-hero .muted{ color:inherit; opacity:.75; font-size:.78rem; font-weight:700; }
+.summary-hero .summary-share{ width:100%; margin:12px 0 0; background:var(--accent-ink); color:var(--accent); border-color:var(--accent-ink); display:flex; align-items:center; justify-content:center; gap:8px; }
+.summary-card{ background:var(--panel); border:2px solid var(--line-strong); border-radius:var(--radius-lg); box-shadow:var(--shadow-card); padding:4px 12px; margin:6px 0 12px; }
+.summary-row{ display:flex; align-items:baseline; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); }
+.summary-row:last-child{ border-bottom:none; }
+.summary-label{ width:112px; flex-shrink:0; font-size:.66rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.summary-who{ flex:1; min-width:0; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.summary-val{ font-weight:800; white-space:nowrap; }
 .stat-label{ font-size:.66rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
 .guest-note{ border-left:4px solid var(--info); padding-left:10px; margin:0 0 12px; font-size:.78rem; }
 
@@ -627,11 +652,17 @@ body.has-install-banner:not(.live-scoring) #app{ padding-bottom:calc(96px + env(
 }
 .splash.out{ opacity:0; pointer-events:none; }
 .splash-main{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; }
-.splash-icon{ width:88px; height:88px; border-radius:22px; border:2px solid var(--line-strong); box-shadow:var(--shadow-card); }
+.splash-icon{ width:88px; height:88px; border-radius:22px; border:2px solid var(--line-strong); box-shadow:var(--shadow-card); animation:splashIcon .5s cubic-bezier(.16,1,.3,1) both; }
+/* Indeterminate loading bar. It runs only while the splash is up (the
+   element is removed with it), so it never sits on an idle, clickable control. */
+.splash-loader{ position:relative; width:140px; height:4px; margin-top:18px; border-radius:4px; background:var(--line-strong); overflow:hidden; }
+.splash-loader span{ position:absolute; top:0; bottom:0; width:40%; border-radius:4px; background:var(--accent-2); animation:splashLoad 1.1s ease-in-out infinite; }
+@keyframes splashLoad{ 0%{ left:-40%; } 100%{ left:100%; } }
+@keyframes splashIcon{ from{ opacity:0; transform:scale(.85); } to{ opacity:1; transform:none; } }
 .splash-name{ font-size:1.9rem; font-weight:800; margin-top:6px; }
 .splash-tag{ font-size:.75rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); }
 .splash-footer{ font-size:.8rem; font-weight:600; color:var(--muted); letter-spacing:.02em; }
-@media (prefers-reduced-motion: reduce){ .splash{ transition:none; } }
+@media (prefers-reduced-motion: reduce){ .splash, .splash-icon{ transition:none; animation:none; } .splash-loader span{ animation-duration:2.4s; } }
 @media print{ .splash{ display:none !important; } }
 .back-bar{
   display:inline-flex; align-items:center; gap:6px; height:38px; padding:0 12px 0 10px;
@@ -936,6 +967,10 @@ button.fixture-row{ width:100%; text-align:left; color:var(--text); align-items:
 /* A screen's top-level tabs (tournament, profile): one equal-width row. */
 .tab-row.main-tabs{ flex-wrap:nowrap; gap:6px; }
 .tab-row.main-tabs .tab-btn{ flex:1 1 0; min-width:0; padding:8px 4px; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* An ended tournament's five tabs (Summary first) scroll sideways instead of truncating. */
+.tab-row.main-tabs.many{ overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+.tab-row.main-tabs.many::-webkit-scrollbar{ display:none; }
+.tab-row.main-tabs.many .tab-btn{ flex:0 0 auto; padding:8px 12px; overflow:visible; }
 .wicket-modal-head .sheet-close{ margin-left:auto; }
 .tab-row.sc-inn-tabs{ flex-wrap:nowrap; margin-bottom:8px; }
 .tab-row.sc-inn-tabs .tab-btn{ flex:1 1 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

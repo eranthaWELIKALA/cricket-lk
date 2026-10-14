@@ -91,6 +91,9 @@ function renderMatchSetup(){
           <label><input type="radio" name="battingFirst" value="B"> <span data-bat-label="B">${pickTeams ? escapeHtml(savedTeams[1].name) : "Team B"}</span></label>
         </fieldset>
         <p class="hint">Openers and the first bowler are asked for on the next screen. Got the toss wrong? You can flip it there.</p>
+        <h3 class="section-label">Scoring</h3>
+        <label class="check-row"><input type="checkbox" name="anonymous"> Score without player names</label>
+        <p class="hint">Just runs, wickets and overs — no names asked. Batters show as Batter 1, 2…, bowlers by over, and the match stays out of player stats.</p>
         <button type="submit" class="primary">Start match</button>
       </form>
     </div>
@@ -150,6 +153,9 @@ function handleMatchSetupSubmit(e){
     if (squads) state.match.squads = squads;
     if (guestNames.length) state.match.guestNames = guestNames;
   } else if (squads) state.match.squads = squads;
+  // "No names": render() fills every slot (fillAnonymousSlots), so there are
+  // no squads or guests to keep apart.
+  if (f.get("anonymous") === "on"){ state.match.anonymous = true; delete state.match.squads; delete state.match.guestNames; }
   state.snapshots = [];
   save(); render();
 }

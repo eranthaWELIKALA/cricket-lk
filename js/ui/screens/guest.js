@@ -356,7 +356,7 @@ function handleTournamentSetupSubmit(e){
   ui.tournamentSetupTeamIds = [];
   ui.tournamentSetupPresetId = null;
   state.view = "tournamentDashboard";
-  ui.tournamentTab = "overview";
+  ui.tournamentTab = null;
   save(); render();
 }
 
@@ -367,7 +367,8 @@ function renderTournamentDashboard(){
   const matchPreset = state.matchPresets[preset.matchPresetId] || DEFAULT_MATCH_PRESETS[0];
   const matches = t.matchIds.map(id => state.matchHistory[id]).filter(Boolean);
   const standings = computeStandings(matches, preset);
-  const tab = tournamentTab();   // same tabs as a club tournament (club-tournaments.js)
+  const ended = !!t.endedAt;
+  const tab = tournamentTab(ended);   // same tabs as a club tournament (club-tournaments.js)
   const teams = t.teamIds.map(id => state.teams[id]).filter(Boolean);
   const startBtn = !state.match ? `<button data-action="switch-tournament-tab" data-tab="fixtures" class="primary">Start a fixture</button>` : "";
 
@@ -376,16 +377,17 @@ function renderTournamentDashboard(){
       ${renderBackBar("Home", "home")}
       <h1>🏆 ${escapeHtml(t.name)}</h1>
       <p class="tagline">${escapeHtml(matchPreset.name)} · ${preset.pointsForWin}/${preset.pointsForTie}/${preset.pointsForLoss} pts${preset.useNRR ? " · NRR" : ""}</p>
-      ${tabsHtml("switch-tournament-tab", TOURNAMENT_TABS, tab, "main-tabs")}
+      ${tabsHtml("switch-tournament-tab", tournamentTabs(ended), tab, ended ? "main-tabs many" : "main-tabs")}
+      ${tab === "summary" ? renderTournamentSummary(tournamentContext()) : ""}
       ${tab === "overview" ? `
         ${renderStandingsTable(standings, preset.useNRR)}
         ${matches.length ? `<h3 class="section-label">Latest results</h3>${renderFixtureList([...matches].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)).slice(0, 3))}` : ""}
-        ${startBtn}` : ""}
+        ${ended ? ENDED_NOTE : tournamentActionsHtml(startBtn, matches.length, true)}` : ""}
       ${tab === "teams" ? `
         <div class="team-grid">${teams.map((tm, i) => teamCardHtml({ id: tm.id, name: tm.name, index: i,
           players: tm.playerIds.map(pid => state.players[pid]).filter(Boolean).map(pl => ({ name: pl.name })) })).join("")}</div>
         <p class="hint">Tap a team to see its players. Edit them on the Teams screen.</p>` : ""}
-      ${tab === "fixtures" ? renderTournamentFixtures(matches, teams) : ""}
+      ${tab === "fixtures" ? (ended ? `${ENDED_NOTE}<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches)}` : renderTournamentFixtures(matches, teams)) : ""}
       ${tab === "stats" ? renderTournamentStats(matches) : ""}
     </div>
   `;
@@ -417,11 +419,15 @@ function renderTournamentFixtures(matches, teams){
         <label><input type="radio" name="battingFirst" value="A" checked> Team A</label>
         <label><input type="radio" name="battingFirst" value="B"> Team B</label>
       </fieldset>
+      <label class="check-row"><input type="checkbox" name="anonymous"> Score without player names</label>
+      <p class="hint">Just runs, wickets and overs — no names asked. Batters show as Batter 1, 2…, bowlers by over, and the match stays out of player stats.</p>
       <button type="submit" class="primary" ${teams.length < 2 ? "disabled" : ""}>Start match</button>
     </form>
   `;
 
-  return `<h3 class="section-label">Start a match</h3>${startForm}<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches)}`;
+  return `<h3 class="section-label">Start a match</h3>${startForm}
+    <button type="button" data-action="open-result-entry" class="ghost" style="width:100%;" ${teams.length < 2 ? "disabled" : ""}>Enter result only</button>
+    <h3 class="section-label">Completed matches</h3>${renderFixtureList(matches)}`;
 }
 
 function renderTournamentStats(matches){
@@ -462,7 +468,8 @@ function handleTournamentStartMatchSubmit(e){
     presetId: matchPreset.id, presetName: matchPreset.name,
     tournamentId: t.id
   });
-  state.match.squads = { A: guestTeamSquad(state.teams[teamAId], state.players), B: guestTeamSquad(state.teams[teamBId], state.players) };
+  if (f.get("anonymous") === "on") state.match.anonymous = true;
+  else state.match.squads = { A: guestTeamSquad(state.teams[teamAId], state.players), B: guestTeamSquad(state.teams[teamBId], state.players) };
   state.snapshots = [];
   save(); render();
 }

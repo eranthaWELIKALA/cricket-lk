@@ -971,6 +971,104 @@ async function main(){
     win.eval(`state.match = null; state.useNicknames = false; ui = defaultUi(); state.view = "home"; save(); render();`);
   }
 
+  const doc = win.document;
+  // --- result-only fixtures: totals only, overs optional, feed the points table ---
+  {
+    const cfg = { teamA: "Lions", teamB: "Tigers", battingFirst: "A", oversLimit: 20, playersPerSide: 11, tournamentId: "T" };
+    assert(win.parseOversInput("", 6) === null && win.parseOversInput("18.3", 6) === 111 && win.parseOversInput("20", 6) === 120, "overs input: blank, 18.3 and 20");
+    assert(Number.isNaN(win.parseOversInput("18.6", 6)) && Number.isNaN(win.parseOversInput("abc", 6)), "overs input: a 6th ball after the dot (6-ball overs) or junk is rejected");
+    assert(win.resultOnlyError(cfg, [{ runs: 150, wickets: 11, balls: null }, { runs: 120, wickets: 5, balls: null }]), "more wickets than a side has is refused");
+    assert(win.resultOnlyError(cfg, [{ runs: 150, wickets: 5, balls: 126 }, { runs: 120, wickets: 5, balls: null }]), "more overs than the limit is refused");
+    assert(win.resultOnlyError(cfg, [{ runs: 150, wickets: 5, balls: null }, { runs: 160, wickets: 5, balls: null }]), "a chase can't go past target + 5");
+    assert(win.resultOnlyError(cfg, [{ runs: 150, wickets: 5, balls: null }, { runs: 151, wickets: 3, balls: 100 }]) === null, "a normal result is fine");
+    const won = win.createResultOnlyMatch(cfg, [{ runs: 150, wickets: 5, balls: null }, { runs: 151, wickets: 3, balls: 100 }]);
+    assert(won.resultOnly && won.status === "complete" && won.result === "Tigers won by 7 wickets (3.2 overs left)", "chasing side wins by wickets, overs left from the overs given: " + won.result);
+    const noOvers = win.createResultOnlyMatch(cfg, [{ runs: 150, wickets: 5, balls: null }, { runs: 151, wickets: 3, balls: null }]);
+    assert(noOvers.result === "Tigers won by 7 wickets", "no overs given -> no 'overs left': " + noOvers.result);
+    const defended = win.createResultOnlyMatch(Object.assign({}, cfg, { battingFirst: "B" }), [{ runs: 140, wickets: 9, balls: null }, { runs: 120, wickets: 10, balls: 110 }]);
+    assert(defended.result === "Tigers won by 20 runs" && defended.innings[1].completeReason === "allout", "batting first, defended: " + defended.result);
+    const table = win.computeStandings([won, defended], { pointsForWin: 2, pointsForTie: 1, pointsForLoss: 0, useNRR: true });
+    const tigers = table.find(t => t.name === "Tigers");
+    assert(tigers.played === 2 && tigers.won === 2 && tigers.points === 4 && Number.isFinite(tigers.nrr), "result-only matches count for points, and NRR stays a number with blank overs");
+    const noLimit = win.createResultOnlyMatch(Object.assign({}, cfg, { oversLimit: null }), [{ runs: 100, wickets: 2, balls: null }, { runs: 90, wickets: 4, balls: null }]);
+    const t2 = win.computeStandings([noLimit], { pointsForWin: 2, pointsForTie: 1, pointsForLoss: 0, useNRR: true });
+    assert(t2.every(t => t.played === 1 && t.nrr === 0), "no overs limit + blank overs: points count, NRR left out");
+    assert(win.aggregatePlayerStats([won]).length === 0 && win.pickMatchMOTM(won) === null, "no player stats from a result-only match");
+  }
+
+  // --- "no names" scoring: slots fill themselves, and the match stays out of player stats ---
+  {
+    const m = win.createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 2, playersPerSide: 3, battingFirst: "A", ballsPerOver: 6 });
+    m.anonymous = true;
+    assert(win.fillAnonymousSlots(m) && m.status === "live", "the opening pause is filled straight away");
+    let inn = win.currentInnings(m);
+    assert(inn.striker === "Batter 1" && inn.nonStriker === "Batter 2" && inn.bowler === "Over 1", "openers Batter 1/2, first bowler Over 1");
+    win.recordBall(inn, { kind: "wicket", wicketType: "bowled" }); win.afterBall(m); win.fillAnonymousSlots(m);
+    assert(inn.striker === "Batter 3", "the next batter comes in as Batter 3");
+    for (let i = 0; i < 5; i++){ win.recordBall(inn, { kind: "run", runs: 1 }); win.afterBall(m); win.fillAnonymousSlots(m); }
+    assert(inn.bowler === "Over 2" && inn.lastOverBowler === "Over 1", "each over gets its own bowler, so the consecutive-overs rule never trips");
+    assert(win.fillAnonymousSlots(m) === false, "nothing to fill -> false (render doesn't re-save)");
+    const fresh = win.restartMatch(m, "B");
+    assert(fresh.anonymous === true, "a toss restart keeps the match nameless");
+    m.status = "complete";
+    assert(win.aggregatePlayerStats([m]).length === 0 && win.pickMatchMOTM(m) === null && win.playerCareer("Batter 1", [m]) === null, "placeholders never reach stats, MVP or profiles");
+    // In the page: the setup checkbox starts it, and no name sheet ever opens.
+    win.eval(`state.match = null; ui = defaultUi(); state.view = "matchSetup"; render();`);
+    const form = doc.getElementById("match-setup-form");
+    assert(form.querySelector('[name="anonymous"]') && !form.querySelector('[name="anonymous"]').checked, "match setup offers 'Score without player names', unticked");
+    form.querySelector('[name="teamA"]').value = "Lions"; form.querySelector('[name="teamB"]').value = "Tigers";
+    form.querySelector('[name="anonymous"]').checked = true;
+    form.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(win.eval("state.match.anonymous && state.match.status") === "live" && !doc.querySelector("#modal-root .modal"), "a nameless match goes straight to live scoring");
+    win.eval(`state.match = null; ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
+  // --- ended tournaments: summary, Summary tab, guest end/reopen ---
+  {
+    const cfg = { teamA: "Lions", teamB: "Tigers", battingFirst: "A", oversLimit: 20, playersPerSide: 11 };
+    const m1 = win.createResultOnlyMatch(cfg, [{ runs: 150, wickets: 5, balls: null }, { runs: 151, wickets: 3, balls: 100 }]);
+    const m2 = win.createResultOnlyMatch(Object.assign({}, cfg, { teamB: "Eagles" }), [{ runs: 180, wickets: 4, balls: 120 }, { runs: 100, wickets: 10, balls: 90 }]);
+    const s = win.tournamentSummary([m1, m2], { pointsForWin: 2, pointsForTie: 1, pointsForLoss: 0, useNRR: true });
+    assert(s.matches === 2 && s.runs === 581 && s.highestTotal.runs === 180 && s.highestTotal.team === "Lions", "summary totals and highest team total");
+    assert(s.champion.name === "Tigers" && s.runnerUp.name === "Lions" && !s.shared, "level on points, NRR decides the champion: " + JSON.stringify(s.standings.map(t => [t.name, t.points, +t.nrr.toFixed(2)])));
+    const s2 = win.tournamentSummary([m1, m2], { pointsForWin: 2, pointsForTie: 1, pointsForLoss: 0, useNRR: false });
+    assert(s2.shared, "without NRR, two teams level on points share the top");
+    assert(s.mvp === null && s.topBat === null && s.bestInnings === null, "no player highlights from result-only matches");
+    win.eval(`state.match = null; ui = defaultUi();
+      const a = createTeam("Lions"), b = createTeam("Tigers");
+      const t = createTournament({ name: "Summer Cup", tournamentPresetId: Object.keys(state.tournamentPresets)[0], teamIds: [a.id, b.id] });
+      state.activeTournamentId = t.id; state.view = "tournamentDashboard"; render();`);
+    const tabIds = () => [...doc.querySelectorAll('#app [data-action="switch-tournament-tab"][role="tab"]')].map(b => b.dataset.tab);
+    assert(!tabIds().includes("summary"), "no Summary tab while the tournament is running");
+    doc.querySelector('#app [data-action="open-result-entry"]').click();
+    const rf = doc.getElementById("result-entry-form");
+    assert(rf, "Enter result only opens the result sheet");
+    rf.querySelector('[name="runsA"]').value = "120"; rf.querySelector('[name="wktsA"]').value = "6";
+    rf.querySelector('[name="runsB"]').value = "121"; rf.querySelector('[name="wktsB"]').value = "2"; rf.querySelector('[name="oversB"]').value = "15.4";
+    rf.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(!doc.getElementById("result-entry-form") && win.eval("activeTournament().matchIds.length") === 1, "saving archives the result into the tournament and closes the sheet");
+    assert(/Tigers won by 8 wickets/.test(doc.getElementById("app").textContent), "the result shows on the dashboard");
+    doc.querySelector('#app [data-action="end-tournament"]').click();
+    doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    assert(win.eval("!!activeTournament().endedAt") && tabIds()[0] === "summary" && doc.querySelector('#app [data-action="share-tournament"]'), "ending it adds a Summary tab (first, selected) with a share button");
+    assert(/Tigers/.test(doc.querySelector("#app .summary-champ").textContent) && !doc.querySelector('#app [data-action="open-result-entry"]'), "Tigers are champions, and no more results can be entered");
+    doc.querySelector('#app [data-action="reopen-tournament"]').click();
+    doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    assert(win.eval("!activeTournament().endedAt") && !tabIds().includes("summary"), "reopening removes the Summary tab");
+    win.eval(`state.view = "home"; ui = defaultUi(); save(); render();`);
+  }
+
+  // --- club tournaments: ending one is a queued "tournament.update" ---
+  {
+    const op = (kind, args) => ({ id: Math.random().toString(36), kind, args, userId: "u1", createdAt: 1, failed: false });
+    let q = win.coalesceOp([], op("tournament.update", { id: "T", preset: { pointsForWin: 2, endedAt: 5 } }));
+    q = win.coalesceOp(q, op("tournament.update", { id: "T", preset: { pointsForWin: 2 } }));
+    assert(q.length === 1 && !q[0].args.preset.endedAt, "only the latest pending tournament update is kept");
+    const shown = win.overlayTournamentData({ id: "T", name: "Cup", tournament_preset: { pointsForWin: 2 }, matches: [], teams: [] },
+      [op("tournament.update", { id: "T", preset: { pointsForWin: 2, endedAt: 9 } })], [], "T");
+    assert(shown.tournament_preset.endedAt === 9, "a pending end shows as ended before it syncs");
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }

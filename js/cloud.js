@@ -115,6 +115,8 @@ function coalesceOp(queue, op){
     if (queue.some(o => same(o) && o.args.clubId === a.clubId && (o.args.name || "").trim().toLowerCase() === key)) return queue;
   }
   if (op.kind === "match" && queue.some(o => same(o) && o.args.id === a.id)) return queue;
+  // A tournament's settings: the latest pending update is the one that counts.
+  if (op.kind === "tournament.update") queue = queue.filter(o => !(same(o) && o.args.id === a.id));
   return [...queue, op];
 }
 /* A club's server snapshot + this user's pending ops -> what the UI shows. */
@@ -157,6 +159,7 @@ function overlayTournamentData(t, ops, localMatches, tournamentId){
     out = { id: a.id, name: a.name, organizer_club_id: a.clubId, tournament_preset: a.preset, matches: [], teams: [], teams_unavailable: false, pending: true };
   }
   out.teams = out.teams || []; out.matches = out.matches || [];
+  live.filter(o => o.kind === "tournament.update" && o.args.id === out.id).forEach(o => { out.tournament_preset = o.args.preset; });
   live.filter(o => o.args.tournamentId === out.id).forEach(o => {
     const a = o.args;
     if (o.kind === "team.save"){
@@ -181,6 +184,7 @@ function describeOp(op){
     case "match": return `Match: ${a.data ? `${a.data.teamA} v ${a.data.teamB}` : "result"}`;
     case "club.create": return `New club “${a.name}”`;
     case "tournament.create": return `New tournament “${a.name}”`;
+    case "tournament.update": return `${a.preset && a.preset.endedAt ? "End" : "Update"} tournament “${a.name || "tournament"}”`;
     case "team.save": return `Team “${a.name}”`;
     case "team.delete": return `Delete team “${a.name || "team"}”`;
     case "preset.save": return `Preset “${(a.preset && a.preset.name) || "preset"}”`;
@@ -313,6 +317,10 @@ const OP_HANDLERS = {
   "tournament.create": async (a, op) => {
     const { error } = await supabaseClient.from("tournaments").insert({ id: a.id, name: a.name, organizer_club_id: a.clubId, tournament_preset: a.preset, created_by: op.userId });
     return { error: error && !dupId(error) ? error : null };
+  },
+  "tournament.update": async a => {
+    const { error } = await supabaseClient.from("tournaments").update({ tournament_preset: a.preset }).eq("id", a.id);
+    return { error };
   },
   "team.save": async (a, op) => {
     const waiting = (a.players || []).find(p => String(p.id).startsWith(TEMP_ID_PREFIX));
@@ -635,6 +643,13 @@ async function createClubTournament(clubId, name, tournamentPreset){
   const res = await submitCloudOp("tournament.create", { id, clubId, name, preset: tournamentPreset });
   if (res.error) return { error: res.error };
   return { tournament: { id, name, organizer_club_id: clubId, tournament_preset: tournamentPreset }, queued: !!res.queued };
+}
+
+/* Saves a club tournament's settings -- today just tournament_preset, which
+   also carries endedAt (an ended tournament, see the Summary tab). */
+async function updateClubTournament(t, { preset }){
+  const res = await submitCloudOp("tournament.update", { id: t.id, clubId: t.organizer_club_id, name: t.name, preset });
+  return res.error ? { error: res.error } : { ok: true, queued: !!res.queued };
 }
 
 async function fetchClubTournamentDetail(tournamentId){

@@ -4,6 +4,8 @@
 function render(){
   const root = document.getElementById("app");
   const m = state.match;
+  // A "no names" match never pauses for a name: fill the empty slots first.
+  if (m && fillAnonymousSlots(m)) save();
   // Home's club switcher needs ui.myClubs; fetch it once, lazily, rather
   // than on every screen -- guarded so a pending fetch never re-fires.
   if (!m && (state.view === "home" || state.view === "myClubs") && session && ui.myClubs === null && !ui.myClubsLoading){
@@ -168,6 +170,10 @@ function render(){
   // A completed match's scorecard sheet belongs to the screen it was opened on.
   const mdValid = !!(ui.matchDetail && ui.matchDetail.view === state.view && (!inProgress || away));
   if (ui.matchDetail && !mdValid) ui.matchDetail = null;
+  // "Enter result only" (tournament dashboards) belongs to the view it was opened on.
+  const resultEntryOpen = !!(ui.resultEntry && ui.resultEntry.view === state.view && (!inProgress || away)
+    && (state.view === "tournamentDashboard" || (state.view === "clubTournamentDashboard" && ui.clubTournament)));
+  if (ui.resultEntry && ui.resultEntry.view !== state.view) ui.resultEntry = null;
   const teamEditOpen = ui.tournamentTeamEdit && state.view === "clubTournamentDashboard" && ui.clubTournament && !ui.clubTournament.teams_unavailable && (!inProgress || away);
   // The shared confirmation sheet has its own layer above everything (see
   // askConfirm), so the sheet under it stays in the DOM -- typed input and
@@ -184,6 +190,9 @@ function render(){
     modalHtml = renderTournamentTeamModal();
   } else if (mdValid){
     modalHtml = renderMatchDetailModal();
+  } else if (resultEntryOpen){
+    modalKey = "result-entry";   // keep typed scores across background re-renders
+    modalHtml = renderResultEntryModal();
   } else if (away){
     modalHtml = "";
   } else if (m && m.status !== "complete" && ui.matchMenu){

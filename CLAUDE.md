@@ -478,7 +478,7 @@ close the menu and open the shared confirmation sheet.
 - **Change who bats first** → `swapToss()` → `restartMatch(match, other)`
   (ENGINE): the same fixture from ball one, every playing condition kept, and
   the UI-only extras in `MATCH_CARRY_FIELDS` (`clubId`, `matchType`,
-  `squads`, `guestNames`, `opponentName`) copied over — add a field there if you add
+  `squads`, `guestNames`, `opponentName`, `anonymous`) copied over — add a field there if you add
   another UI-only match field that must survive a restart. Before anything
   is recorded (`matchHasStarted` false) it flips at once (the opening sheet's
   "Wrong toss?" link); after, the sheet asks first. Either way it
@@ -533,6 +533,7 @@ either — the sheet shows `busyLabel` meanwhile) and `onCancel`. Esc cancels.
 It currently covers: end innings, toss restart, forfeit, cancel match,
 remove club player, delete tournament team, discard unsaved team edits,
 move a player between tournament teams, new club player vs guest in the team builder,
+end/reopen a tournament,
 delete guest team/player, delete match/tournament/club presets. **Don't add
 `window.confirm()` or "tap again to confirm" buttons** — use `askConfirm`.
 The wicket sheet's Confirm button is data entry, not a confirmation, and
@@ -640,6 +641,46 @@ finds the match with `findCompletedMatch` — local archive, then the loaded
 club tournament / club / Premier / profile match lists. It belongs to the
 view it was opened on, is an overlay (back closes it), and is opened from
 tournament fixtures, Home's Recent matches and club home's match list.
+
+## Result-only fixtures, ended tournaments, "no names" scoring
+
+**Result only.** A tournament's Overview/Fixtures offer "Enter result only"
+(`open-result-entry` → `ui.resultEntry = { view }`, `renderResultEntryModal`,
+an overlay like the others): each side's runs and wickets, overs optional,
+who batted first, and the conditions (prefilled from the guest tournament's
+match preset, or a club tournament's latest match / first club preset).
+`createResultOnlyMatch` (ENGINE, checked by `resultOnlyError`, overs parsed by
+`parseOversInput`) builds an ordinary complete match with `resultOnly: true`
+and empty innings, archived through `archiveMatch` (+ `syncMatchToCloud` for a
+club), so fixtures and standings need nothing new. Blank overs are
+`legalBalls: null`: `matchResult` drops "overs left", and `computeStandings`
+counts that innings' full quota for NRR (or, with no overs limit, leaves the
+match out of NRR). Its scorecard sheet shows the totals only
+(`renderResultOnlyCard`).
+
+**Ending a tournament.** "End tournament" (Overview, once a match exists,
+`askEndTournament`) sets guest `t.endedAt` or club
+`tournament_preset.endedAt` — saved with the `tournament.update` outbox op
+(`updateClubTournament`; the jsonb is members-updatable, so no migration).
+An ended tournament gets a **Summary** tab first (`tournamentTabs(ended)`;
+`ui.tournamentTab = null` falls back to the first tab, and the five tabs
+scroll sideways, `.main-tabs.many`) and hides the start/result buttons.
+Summary = `tournamentSummary` (ENGINE, tested: final table, champion or joint
+top, totals, MVP, most runs/wickets/dismissals, best innings/bowling, highest
+total) plus "Share results" — `renderTournamentCanvas` through
+`shareCanvasImage` (shared with the scorecard image; share sheet or PNG
+download, still dependency-free). "Reopen tournament" clears it.
+`tournamentContext()` gives both kinds (guest/club) one shape for these.
+
+**"No names" scoring.** Match setup (and the guest tournament start form)
+has an unticked "Score without player names" box → `match.anonymous`.
+`render()` calls `fillAnonymousSlots` (ENGINE) first: every empty slot gets
+a placeholder — "Batter N" in order, and each over's bowler "Over N" (one per
+over, so no figures are invented and the consecutive-overs rule can't trip) —
+so no name sheet ever opens. No squads, no fielder box, nothing registered to
+guest players or a club roster, and these matches are skipped by
+`aggregatePlayerStats`, `pickMatchMOTM` and `playerCareer` (placeholders
+aren't people); team totals and standings count as usual.
 
 ## Tournament dashboards, leaderboards, profiles: tabs
 
@@ -1105,7 +1146,7 @@ is next online. Three pieces, all in the CLOUD section:
   the `online` event, returning to the tab, a 60s heartbeat while anything
   is pending, and right after queueing. Kinds and their handlers live in
   `OP_HANDLERS`: `match`, `club.create`, `tournament.create`, `team.save`,
-  `team.delete`, `preset.save`, `preset.delete`, `roster.add`,
+  `team.delete`, `preset.save`, `preset.delete`, `tournament.update`, `roster.add`,
   `roster.addExisting`, `roster.remove`, `global.add`. **To add a new club
   write, add a kind there and call `submitCloudOp` — never call
   `supabaseClient` directly for a write.**
@@ -1493,10 +1534,13 @@ this way.
 
 ## Launch splash
 
-`#splash` is static HTML in `index.html` (icon, wordmark, "by Erantha
-Welikala" footer), so it paints before any script runs. `boot.js` fades it
-out once the first render is done and the splash has been up ~0.9s; a tap
-skips it, and it never appears in print. The OS splash of an installed app
+`#splash` is static HTML in `index.html` (icon, wordmark, an indeterminate
+loading bar, "by Erantha Welikala" footer), so it paints before any script
+runs. `boot.js` fades it out once the app is ready — first render done and
+`initAuth()` settled (the sign-in restored) — after at least ~0.9s and at most
+3s, so a slow network never holds the scorer back. A tap skips it; it never
+appears in print. The loading bar's `infinite` animation is fine: the element
+is removed with the splash, it's never an idle control. The OS splash of an installed app
 comes from the manifest (icon, name, background) and can't carry text, so it
 shows first and this one follows.
 

@@ -402,6 +402,7 @@ function playerLabel(p){
    behind by approved merges (supabase/009), so stats recorded under an old
    spelling still count. */
 function playerCareer(nameOrNames, matches){
+  matches = matches.filter(m => !m.anonymous);
   const names = (Array.isArray(nameOrNames) ? nameOrNames : [nameOrNames]);
   const seen = new Set();
   const careers = [];
@@ -523,7 +524,7 @@ function matchResult(match){
   if (i2.runs >= i2.target){
     // No players limit -> no wickets margin; no overs limit -> no "overs left".
     const wl = i2.maxWickets != null ? i2.maxWickets - i2.wickets : null;
-    const left = i2.oversLimit != null ? ` (${oversDisplay(i2.oversLimit * bpo - i2.legalBalls, bpo)} overs left)` : "";
+    const left = i2.oversLimit != null && i2.legalBalls != null ? ` (${oversDisplay(i2.oversLimit * bpo - i2.legalBalls, bpo)} overs left)` : "";
     const margin = wl != null ? ` by ${wl} wicket${wl === 1 ? "" : "s"}` : "";
     return `${teamName(match, i2.battingTeam)} won${margin}${left}`;
   }
@@ -566,7 +567,7 @@ function matchHasStarted(match){
    was scored (the UI warns and snapshots first, so Undo can bring it back).
    UI-only extras that recordBall never reads (club, match type, squads,
    visitor name) are carried over so the restart is the same fixture. */
-const MATCH_CARRY_FIELDS = ["clubId", "matchType", "squads", "guestNames", "opponentName"];
+const MATCH_CARRY_FIELDS = ["clubId", "matchType", "squads", "guestNames", "opponentName", "anonymous"];
 function restartMatch(match, battingFirst){
   const i1 = match.innings[0];
   const fresh = createMatch({
@@ -737,7 +738,8 @@ function matchPlayerNames(match){
 
 function aggregatePlayerStats(matches){
   const totals = {};
-  matches.forEach(match => {
+  // A "no names" match's Batter 1 / Over 3 aren't people (see fillAnonymousSlots).
+  matches.filter(match => !match.anonymous).forEach(match => {
     match.innings.forEach(inn => foldInningsIntoTotals(totals, inn));
     matchPlayerNames(match).forEach(name => { if (totals[name]) totals[name].matches += 1; });
   });
@@ -745,6 +747,7 @@ function aggregatePlayerStats(matches){
 }
 
 function pickMatchMOTM(match){
+  if (match.anonymous) return null;
   const totals = {};
   match.innings.forEach(inn => foldInningsIntoTotals(totals, inn));
   const ranked = Object.values(totals).sort((a, b) => {
@@ -782,12 +785,17 @@ function computeStandings(matches, tournamentPreset){
     if (!i2 || !i2.complete) return; // only fully-played two-innings matches count
     ensureTeam(nameA); ensureTeam(nameB);
     const bpo = match.ballsPerOver || 6;
-    match.innings.forEach(inn => {
+    // A result-only match may leave overs blank (legalBalls null): that
+    // innings counts its full quota, like all out -- or, with no overs limit,
+    // the match stays out of NRR altogether.
+    const faced = match.innings.map(inn =>
+      inn.oversLimit != null && (inn.completeReason === "allout" || inn.legalBalls == null) ? inn.oversLimit
+        : inn.legalBalls == null ? null : inn.legalBalls / bpo);
+    if (!faced.includes(null)) match.innings.forEach((inn, n) => {
       const bt = ensureTeam(teamName(match, inn.battingTeam));
       const bwt = ensureTeam(teamName(match, inn.bowlingTeam));
-      const oversFaced = inn.completeReason === "allout" && inn.oversLimit != null ? inn.oversLimit : inn.legalBalls / bpo;
-      bt.runsFor += inn.runs; bt.oversFor += oversFaced;
-      bwt.runsAgainst += inn.runs; bwt.oversAgainst += oversFaced;
+      bt.runsFor += inn.runs; bt.oversFor += faced[n];
+      bwt.runsAgainst += inn.runs; bwt.oversAgainst += faced[n];
     });
     ensureTeam(nameA).played += 1; ensureTeam(nameB).played += 1;
     if (i2.runs === i1.runs){
@@ -811,4 +819,117 @@ function computeStandings(matches, tournamentPreset){
     return 0;
   });
   return standings;
+}
+
+/* --- result-only matches (tournaments) ---
+   A tournament fixture can be recorded without ball-by-ball scoring: each
+   side's runs and wickets, overs optional. The match is an ordinary match
+   object (so standings, fixtures and the archive need nothing new) with
+   `resultOnly: true`, both innings complete and no players in them; a blank
+   overs field is stored as legalBalls null (see computeStandings). */
+// "12.3" -> legal balls; "" -> null; anything else (or a ball part >= the
+// over's length) -> NaN.
+function parseOversInput(v, ballsPerOver){
+  const t = String(v == null ? "" : v).trim();
+  if (!t) return null;
+  const m = /^(\d{1,3})(?:\.(\d))?$/.exec(t);
+  const bpo = ballsPerOver || 6;
+  if (!m || (m[2] != null && +m[2] >= bpo)) return NaN;
+  return +m[1] * bpo + (m[2] != null ? +m[2] : 0);
+}
+// scores: [{ runs, wickets, balls }] in batting order. Returns a message or null.
+function resultOnlyError(config, scores){
+  const probe = createMatch(config);
+  const inn = probe.innings[0], bpo = inn.ballsPerOver;
+  const quota = inn.oversLimit != null ? inn.oversLimit * bpo : null;
+  const team = n => teamName(probe, n === 0 ? probe.battingFirst : (probe.battingFirst === "A" ? "B" : "A"));
+  for (let n = 0; n < 2; n++){
+    const sc = scores[n] || {};
+    if (!Number.isInteger(sc.runs) || sc.runs < 0 || sc.runs > 999) return `Enter ${team(n)}'s runs (0–999).`;
+    const maxW = inn.maxWickets != null ? inn.maxWickets : 99;
+    if (!Number.isInteger(sc.wickets) || sc.wickets < 0 || sc.wickets > maxW) return `${team(n)}'s wickets must be 0–${maxW}.`;
+    if (Number.isNaN(sc.balls)) return `${team(n)}'s overs should look like 18 or 18.3 (up to ${bpo - 1} balls after the dot).`;
+    if (sc.balls != null && quota != null && sc.balls > quota) return `${team(n)} can't have faced more than ${inn.oversLimit} overs.`;
+  }
+  if (scores[1].runs > scores[0].runs + 6) return `${team(1)} needed ${scores[0].runs + 1} — a chase ends once the target is reached, so they can't have more than ${scores[0].runs + 6}.`;
+  return null;
+}
+function createResultOnlyMatch(config, scores){
+  const m = createMatch(config);
+  const fill = (inn, sc) => {
+    inn.runs = sc.runs; inn.wickets = sc.wickets; inn.legalBalls = sc.balls == null ? null : sc.balls;
+    const quota = inn.oversLimit != null ? inn.oversLimit * inn.ballsPerOver : null;
+    inn.complete = true;
+    inn.completeReason = inn.target != null && inn.runs >= inn.target ? "target"
+      : isAllOut(inn) ? "allout"
+      : quota != null && inn.legalBalls === quota ? "overs" : "closed";
+  };
+  fill(m.innings[0], scores[0]);
+  startSecondInnings(m);
+  fill(m.innings[1], scores[1]);
+  m.resultOnly = true;
+  m.status = "complete";
+  m.result = matchResult(m);
+  m.motm = null;
+  return m;
+}
+
+/* --- "no names" scoring ---
+   A match started with `anonymous: true` never asks for a name: every empty
+   slot is filled with a placeholder -- batters "Batter 1", "Batter 2"... in
+   the order they come in, and each over's bowler "Over N" (one per over, so
+   the no-consecutive-overs rule can't trip and no figures are made up).
+   Called from render() after every change; returns true if it filled
+   anything. Placeholders aren't people: these matches are left out of
+   player stats, MVP and profiles (aggregatePlayerStats/pickMatchMOTM/
+   playerCareer). */
+function fillAnonymousSlots(match){
+  if (!match || !match.anonymous || (match.status !== "opening" && match.status !== "live")) return false;
+  const inn = currentInnings(match);
+  if (inn.complete) return false;
+  let changed = false;
+  const bat = slot => { const n = `Batter ${inn.batting.order.length + 1}`; ensureBatsman(inn, n); inn[slot] = n; changed = true; };
+  if (match.status === "opening"){ match.status = "live"; changed = true; }
+  let slot;
+  while ((slot = pendingBatsmanSlot(inn))) bat(slot);
+  if (!inn.bowler){
+    const n = `Over ${Math.floor(inn.legalBalls / inn.ballsPerOver) + 1}`;
+    ensureBowler(inn, n); inn.bowler = n; changed = true;
+  }
+  return changed;
+}
+
+/* --- tournament summary (ended tournaments) ---
+   Everything the Summary tab and its share image show, from the completed
+   matches: final table, champion/runner-up, totals and the top performers. */
+function tournamentSummary(matches, preset){
+  const standings = computeStandings(matches, preset);
+  const totals = aggregatePlayerStats(matches);
+  const top = (key, min) => { const t = [...totals].sort((a, b) => b[key] - a[key])[0]; return t && t[key] >= (min || 1) ? t : null; };
+  let highestTotal = null, bestInnings = null, bestBowling = null, runs = 0, wickets = 0, sixes = 0;
+  matches.forEach(m => m.innings.forEach(inn => {
+    runs += inn.runs; wickets += inn.wickets;
+    const team = teamName(m, inn.battingTeam);
+    if (!highestTotal || inn.runs > highestTotal.runs) highestTotal = { team, runs: inn.runs, wickets: inn.wickets, against: teamName(m, inn.bowlingTeam) };
+    if (m.anonymous) return;
+    inn.batting.order.forEach(n => {
+      const b = inn.batting.stats[n];
+      sixes += b.sixes;
+      if (!bestInnings || b.runs > bestInnings.runs || (b.runs === bestInnings.runs && b.balls < bestInnings.balls)) bestInnings = { name: n, team, runs: b.runs, balls: b.balls, notOut: !b.out };
+    });
+    inn.bowling.order.forEach(n => {
+      const b = inn.bowling.stats[n];
+      if (b.wickets && (!bestBowling || b.wickets > bestBowling.wickets || (b.wickets === bestBowling.wickets && b.runs < bestBowling.runs))) bestBowling = { name: n, team: teamName(m, inn.bowlingTeam), wickets: b.wickets, runs: b.runs };
+    });
+  }));
+  return {
+    standings, matches: matches.length, runs, wickets, sixes,
+    champion: standings[0] || null,
+    runnerUp: standings[1] || null,
+    // Level on points (and NRR when it's used) at the top -> no outright winner.
+    shared: !!(standings[1] && standings[0].points === standings[1].points && (!preset.useNRR || standings[0].nrr === standings[1].nrr)),
+    highestTotal, bestInnings: bestInnings && bestInnings.runs > 0 ? bestInnings : null, bestBowling,
+    mvp: totals[0] && totals[0].points > 0 ? totals[0] : null,
+    topBat: top("runs"), topBowl: top("wickets"), topField: [...totals].sort((a, b) => (b.catches + b.runouts) - (a.catches + a.runouts)).find(t => t.catches + t.runouts > 0) || null
+  };
 }

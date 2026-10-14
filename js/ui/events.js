@@ -172,7 +172,7 @@ document.addEventListener("click", (e) => {
     ui.clubTournamentSetupPresetId = btn.dataset.id; render();
   }
   else if (action === "open-club-tournament"){
-    ui.currentTournamentId = btn.dataset.id; ui.clubTournament = null; ui.tournamentTeamEdit = null; ui.tournamentTeamError = null; ui.tournamentTab = "overview"; ui.expandedTeamId = null; state.view = "clubTournamentDashboard"; render(); // render() loads it
+    ui.currentTournamentId = btn.dataset.id; ui.clubTournament = null; ui.tournamentTeamEdit = null; ui.tournamentTeamError = null; ui.tournamentTab = null; ui.expandedTeamId = null; state.view = "clubTournamentDashboard"; render(); // render() loads it
   }
   else if (action === "new-tournament-team" && ui.clubTournament){
     const n = ui.clubTournament.teams.length;
@@ -231,8 +231,13 @@ document.addEventListener("click", (e) => {
   else if (action === "preset-info-close"){ ui.presetInfo = null; render(); }
   else if (action === "pick-match-preset"){ ui.matchSetupPresetId = btn.dataset.id; render(); }
   else if (action === "pick-tournament-preset"){ ui.tournamentSetupPresetId = btn.dataset.id; render(); }
-  else if (action === "open-tournament"){ state.activeTournamentId = btn.dataset.id; state.view = "tournamentDashboard"; ui.tournamentTab = "overview"; ui.expandedTeamId = null; render(); }
+  else if (action === "open-tournament"){ state.activeTournamentId = btn.dataset.id; state.view = "tournamentDashboard"; ui.tournamentTab = null; ui.expandedTeamId = null; render(); }
   else if (action === "switch-tournament-tab"){ ui.tournamentTab = btn.dataset.tab; render(); }
+  else if (action === "open-result-entry"){ ui.resultEntry = { view: state.view }; render(); }
+  else if (action === "close-result-entry") closeTopOverlay();   // asks first if scores were typed
+  else if (action === "end-tournament") askEndTournament();
+  else if (action === "reopen-tournament") askReopenTournament();
+  else if (action === "share-tournament") shareTournamentResults();
   else if (action === "select-team"){ ui.selectedTeamId = btn.dataset.id; render(); }
   else if (action === "delete-team"){
     const id = btn.dataset.id, team = state.teams[id];
@@ -318,6 +323,7 @@ document.addEventListener("submit", (e) => {
   else if (id === "motm-form") handleMotmSubmit(e);
   else if (id === "tournament-setup-form") handleTournamentSetupSubmit(e);
   else if (id === "tournament-start-match-form") handleTournamentStartMatchSubmit(e);
+  else if (id === "result-entry-form") handleResultEntrySubmit(e);
   else if (id === "new-team-form") handleNewTeamSubmit(e);
   else if (id === "add-player-form") handleAddPlayerSubmit(e);
   else if (id === "add-global-player-form") handleAddGlobalPlayerSubmit(e);
@@ -361,6 +367,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape"){
     if (ui.confirm) cancelConfirm();
     else if (ui.tournamentTeamEdit && document.querySelector(".team-modal")) closeTeamEdit();
+    else if (ui.resultEntry && document.querySelector("#result-entry-form")) closeTopOverlay();
     else if (ui.presetInfo){ ui.presetInfo = null; render(); }
     else if (ui.pendingExtra){ ui.pendingExtra = null; render(); }
   }

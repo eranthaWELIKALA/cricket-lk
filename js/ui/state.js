@@ -9,7 +9,7 @@ function defaultUi(){
     pendingExtra: null, wicketFlow: null, runoutRuns: 0, runoutEnd: "striker", runoutAt: null, showFullScorecard: false, liveScorecard: false, scorecard: null, matchDetail: null, statsTab: "mvp", confirm: null, syncSheet: false, matchMenu: null, squadError: null, pickDismissed: null, awayFromMatch: false, clubRosterLoading: null, clubTournamentLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
     matchSetupPresetId: null, presetInfo: null,
     tournamentSetupPresetId: null, tournamentSetupTeamIds: [],
-    tournamentTab: "overview",
+    tournamentTab: null, resultEntry: null,
     selectedTeamId: null,
     presetsTab: "match", editingMatchPreset: null, editingTournamentPreset: null,
     // cloud clubs (see CLOUD section) -- caches of fetched data, not persisted;

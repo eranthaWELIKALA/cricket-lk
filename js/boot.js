@@ -9,15 +9,20 @@ if (currentRoute() !== "/") applyRoute(currentRoute());
 // ...except mid-match: a reload always lands back on the match (see "Navigation").
 ui.awayFromMatch = false;
 navApplying = true; render(); navApplying = false;
-initAuth();
-// Launch splash (static in index.html): keep it up long enough to read, then
-// fade it out behind the first render. A tap skips it.
+const authReady = initAuth();
+// Launch splash (static in index.html, with its loading bar): stays up until
+// the app is ready -- first render done and the sign-in restored -- and at
+// least ~0.9s so it doesn't flash, at most 3s so a slow network never holds
+// the scorer back. A tap skips it.
 (function(){
   const splash = document.getElementById("splash");
   if (!splash) return;
-  const hide = () => { splash.classList.add("out"); setTimeout(() => splash.remove(), 350); };
+  let gone = false;
+  const hide = () => { if (gone) return; gone = true; splash.classList.add("out"); setTimeout(() => splash.remove(), 350); };
   splash.addEventListener("click", hide);
-  setTimeout(hide, Math.max(0, 900 - performance.now()));
+  const minWait = new Promise(r => setTimeout(r, Math.max(0, 900 - performance.now())));
+  Promise.all([minWait, Promise.resolve(authReady).catch(() => {})]).then(hide);
+  setTimeout(hide, 3000);
 })();
 // First tap: give a page opened straight onto a screen a Home entry to go back to.
 document.addEventListener("click", ensureNavBase, true);

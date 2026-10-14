@@ -529,14 +529,14 @@ function renderWicketModal(inn){
             <p class="hint">These runs count against the bowler, unlike byes and leg byes.</p>
           ` : ""}
           ${(isRunout || isCaught) ? `
-            <div class="fielder-box">
+            ${match.anonymous ? "" : `            <div class="fielder-box">
               <div class="fielder-box-head">
                 <label for="wicket-fielder">FIELDER</label>
                 ${required ? `<span class="required-badge">REQUIRED</span>` : ""}
               </div>
               ${renderNameCombo("", `id="wicket-fielder" name="fielder" maxlength="24" placeholder="Search players" ${required ? "required" : ""}`, pickCandidates(match, pickPool(inn.bowlingTeam), "fielder"))}
               ${isCaught ? `<div class="hint">Credits a catch in the fielding stats.</div>` : ""}
-            </div>
+            </div>`}
             <div style="display:flex;gap:10px;margin-top:14px;">
               <button type="button" data-action="close-wicket-modal" class="ghost" style="width:112px;flex-shrink:0;">Cancel</button>
               <button type="submit" class="primary danger-confirm" style="flex-grow:1;">Confirm ${isRunout ? "run out" : "wicket"}</button>

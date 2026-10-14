@@ -61,7 +61,21 @@ function handleClubTournamentSetupSubmit(e){
    (leaderboards, with their own sub-tabs). ui.tournamentTab picks the tab;
    opening a tournament resets it to "overview". */
 const TOURNAMENT_TABS = [["overview", "Overview"], ["teams", "Teams"], ["fixtures", "Fixtures"], ["stats", "Stats"]];
-function tournamentTab(){ return TOURNAMENT_TABS.some(([id]) => id === ui.tournamentTab) ? ui.tournamentTab : "overview"; }
+function tournamentTab(ended){
+  const tabs = tournamentTabs(ended);
+  return tabs.some(([id]) => id === ui.tournamentTab) ? ui.tournamentTab : tabs[0][0];
+}
+/* The Overview/Fixtures actions: start a scored match, record a result only,
+   and (Overview, once something's been played) end the tournament. */
+function tournamentActionsHtml(startBtn, played, withEnd){
+  return `
+    <div class="tournament-actions">
+      ${startBtn}
+      <button type="button" data-action="open-result-entry" class="ghost">Enter result only</button>
+    </div>
+    ${withEnd && played ? `<button type="button" data-action="end-tournament" class="ghost end-tournament-btn">🏁 End tournament</button>` : ""}`;
+}
+const ENDED_NOTE = `<p class="hint">This tournament has ended. Reopen it from the Summary tab to add matches.</p>`;
 
 /* Completed matches, newest first; each row opens the match's scorecard
    sheet (open-match-detail). */
@@ -102,22 +116,24 @@ function renderClubTournamentDashboard(){
   const t = ui.clubTournament;
   const clubName = currentClubName();
   if (!t) return `<div class="screen tournament">${renderBackBar(clubName || "Club", "clubHome")}${loadingHtml()}</div>`;
-  const tab = tournamentTab();
+  const p = t.tournament_preset || {};
+  const ended = !!p.endedAt;
+  const tab = tournamentTab(ended);
   const matches = t.matches.map(m => m.data ? Object.assign({ id: m.id }, m.data) : null).filter(Boolean);
   const startBtn = `<button data-action="go-club-tournament-match-setup" class="primary">Start match</button>`;
-  const p = t.tournament_preset || {};
   return `
     <div class="screen tournament">
       ${renderBackBar(clubName || "Club", "clubHome")}
       <h1>🏆 ${escapeHtml(t.name)}</h1>
       <p class="tagline">${p.pointsForWin ?? 2}/${p.pointsForTie ?? 1}/${p.pointsForLoss ?? 0} pts${p.useNRR ? " · NRR" : ""} · ${matches.length} match${matches.length === 1 ? "" : "es"} played</p>
-      ${tabsHtml("switch-tournament-tab", TOURNAMENT_TABS, tab, "main-tabs")}
+      ${tabsHtml("switch-tournament-tab", tournamentTabs(ended), tab, ended ? "main-tabs many" : "main-tabs")}
+      ${tab === "summary" ? renderTournamentSummary(tournamentContext()) : ""}
       ${tab === "overview" ? `
         ${matches.length ? renderStandingsTable(computeStandings(matches, p), p.useNRR) : `<p class="hint">No matches yet — start one to fill the points table.</p>`}
-        ${matches.length ? `<h3 class="section-label">Latest results</h3>${renderFixtureList(matches.sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)).slice(0, 3))}` : ""}
-        ${startBtn}` : ""}
+        ${matches.length ? `<h3 class="section-label">Latest results</h3>${renderFixtureList([...matches].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)).slice(0, 3))}` : ""}
+        ${ended ? ENDED_NOTE : tournamentActionsHtml(startBtn, matches.length, true)}` : ""}
       ${tab === "teams" ? renderTournamentTeams(t) : ""}
-      ${tab === "fixtures" ? `${startBtn}<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches, "No matches yet — start one above.")}` : ""}
+      ${tab === "fixtures" ? `${ended ? ENDED_NOTE : tournamentActionsHtml(startBtn, 0, false)}<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches, "No matches yet — start one above.")}` : ""}
       ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches)) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
     </div>
   `;
@@ -427,4 +443,258 @@ async function quickSplitTeams(){
   ui.tournamentTeamBusy = false;
   ui.tournamentTeamError = result.error || null;
   fetchClubTournamentDetail(t.id).then(render);
+}
+
+/* --- ended tournaments: Summary tab + share ---
+   Ending a tournament (guest: t.endedAt; club: tournament_preset.endedAt,
+   saved with the "tournament.update" outbox op -- no migration needed, the
+   preset jsonb is members-updatable) stops new fixtures and puts a Summary
+   tab first: champion, final table and the top performers
+   (tournamentSummary, ENGINE), shareable as an image. Reopening clears it. */
+const ICON_SHARE = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>`;
+function tournamentTabs(ended){ return ended ? [["summary", `${ICON_SHARE} Summary`], ...TOURNAMENT_TABS] : TOURNAMENT_TABS; }
+
+/* Who's viewing: guest tournaments live in state.tournaments, club ones in
+   ui.clubTournament. Returns what the summary/result sheet need. */
+function tournamentContext(){
+  if (state.view === "clubTournamentDashboard" && ui.clubTournament){
+    const t = ui.clubTournament, p = t.tournament_preset || {};
+    return {
+      kind: "club", id: t.id, name: t.name, endedAt: p.endedAt || null,
+      preset: { pointsForWin: p.pointsForWin ?? 2, pointsForTie: p.pointsForTie ?? 1, pointsForLoss: p.pointsForLoss ?? 0, useNRR: !!p.useNRR },
+      matches: t.matches.map(m => m.data ? Object.assign({ id: m.id }, m.data) : null).filter(Boolean),
+      teamNames: (t.teams || []).map(x => x.name)
+    };
+  }
+  const t = activeTournament();
+  if (!t) return null;
+  const preset = state.tournamentPresets[t.tournamentPresetId] || DEFAULT_TOURNAMENT_PRESETS[0];
+  return {
+    kind: "guest", id: t.id, name: t.name, endedAt: t.endedAt || null, preset,
+    matches: t.matchIds.map(id => state.matchHistory[id]).filter(Boolean),
+    teamNames: t.teamIds.map(id => state.teams[id]).filter(Boolean).map(x => x.name)
+  };
+}
+
+function askEndTournament(){
+  const c = tournamentContext();
+  if (!c) return;
+  askConfirm({
+    title: `End ${c.name}?`, icon: "🏆", tone: "primary",
+    body: `<p>The final table and tournament stats move to a new <b>Summary</b> tab you can share. No more matches can be added — you can reopen it from the Summary tab.</p>`,
+    confirmLabel: "End tournament", busyLabel: "Saving…",
+    onConfirm: () => setTournamentEnded(c, Date.now())
+  });
+}
+function askReopenTournament(){
+  const c = tournamentContext();
+  if (!c) return;
+  askConfirm({
+    title: `Reopen ${c.name}?`, icon: "↺", tone: "primary",
+    body: `<p>Matches can be added again and the Summary tab goes away until you end it again.</p>`,
+    confirmLabel: "Reopen", busyLabel: "Saving…",
+    onConfirm: () => setTournamentEnded(c, null)
+  });
+}
+async function setTournamentEnded(c, endedAt){
+  ui.tournamentTab = endedAt ? "summary" : null;
+  if (c.kind === "guest"){
+    const t = state.tournaments[c.id];
+    if (endedAt) t.endedAt = endedAt; else delete t.endedAt;
+    save(); return;
+  }
+  const t = ui.clubTournament;
+  const preset = Object.assign({}, t.tournament_preset || {});
+  if (endedAt) preset.endedAt = endedAt; else delete preset.endedAt;
+  const res = await updateClubTournament(t, { preset });
+  if (res.error) return res;
+  return fetchClubTournamentDetail(t.id);
+}
+
+function renderTournamentSummary(c){
+  const s = tournamentSummary(c.matches, c.preset);
+  const when = c.endedAt ? new Date(c.endedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
+  const tile = (label, value) => `<div class="stat-tile"><span class="stat-num">${value}</span><span class="stat-label">${label}</span></div>`;
+  const row = (label, who, val) => who ? `<div class="summary-row"><span class="summary-label">${label}</span><span class="summary-who">${who}</span><span class="summary-val n">${val}</span></div>` : "";
+  return `
+    <div class="summary-hero">
+      <div class="eyebrow">${s.shared ? "Joint top" : "Champions"}${when ? ` · ended ${escapeHtml(when)}` : ""}</div>
+      ${s.champion ? `<div class="summary-champ">🏆 ${escapeHtml(s.champion.name)}${s.shared && s.runnerUp ? ` &amp; ${escapeHtml(s.runnerUp.name)}` : ""}</div>
+        <div class="muted">${s.champion.points} pts · ${s.champion.won} won of ${s.champion.played}${!s.shared && s.runnerUp ? ` · runner-up ${escapeHtml(s.runnerUp.name)}` : ""}</div>`
+        : `<div class="summary-champ">No completed matches</div>`}
+      <button type="button" data-action="share-tournament" class="primary summary-share">${ICON_SHARE} Share results</button>
+    </div>
+    <div class="stat-grid four">${tile("Matches", s.matches)}${tile("Runs", s.runs)}${tile("Wickets", s.wickets)}${tile("Sixes", s.sixes)}</div>
+    <div class="summary-card">
+      ${row("MVP", s.mvp && escapeHtml(s.mvp.name), s.mvp && `${s.mvp.points} pts`)}
+      ${row("Most runs", s.topBat && escapeHtml(s.topBat.name), s.topBat && `${s.topBat.runs}`)}
+      ${row("Most wickets", s.topBowl && escapeHtml(s.topBowl.name), s.topBowl && `${s.topBowl.wickets}`)}
+      ${row("Best innings", s.bestInnings && escapeHtml(s.bestInnings.name), s.bestInnings && `${s.bestInnings.runs}${s.bestInnings.notOut ? "*" : ""} (${s.bestInnings.balls})`)}
+      ${row("Best bowling", s.bestBowling && escapeHtml(s.bestBowling.name), s.bestBowling && `${s.bestBowling.wickets}/${s.bestBowling.runs}`)}
+      ${row("Most dismissals", s.topField && escapeHtml(s.topField.name), s.topField && `${s.topField.catches + s.topField.runouts}`)}
+      ${row("Highest total", s.highestTotal && escapeHtml(s.highestTotal.team), s.highestTotal && `${s.highestTotal.runs}-${s.highestTotal.wickets} v ${escapeHtml(s.highestTotal.against)}`)}
+    </div>
+    ${renderStandingsTable(s.standings, c.preset.useNRR)}
+    <button type="button" data-action="reopen-tournament" class="ghost" style="width:100%;">Reopen tournament</button>`;
+}
+
+/* The share image: same dependency-free canvas approach as the scorecard. */
+function renderTournamentCanvas(c){
+  const s = tournamentSummary(c.matches, c.preset);
+  const W = 1080, pad = 64;
+  const lines = [];
+  lines.push({ text: "TOURNAMENT RESULTS", size: 24, weight: "800", color: "#9FC2AF" });
+  lines.push({ text: c.name, size: 54, weight: "800" });
+  lines.push({ size: 6 });
+  if (s.champion){
+    lines.push({ text: `🏆 ${s.shared && s.runnerUp ? `${s.champion.name} & ${s.runnerUp.name} (joint)` : s.champion.name}`, size: 46, weight: "800", color: "#F2C744" });
+    if (!s.shared && s.runnerUp) lines.push({ text: `Runner-up: ${s.runnerUp.name}`, size: 28, weight: "600", color: "#9FC2AF" });
+  }
+  lines.push({ size: 18 });
+  lines.push({ text: "POINTS TABLE", size: 22, weight: "800", color: "#9FC2AF" });
+  s.standings.forEach((t, i) => lines.push({ cols: [`${i + 1}. ${t.name}`, `P${t.played}  W${t.won}  L${t.lost}`, `${t.points} pts${c.preset.useNRR ? `  ${t.nrr >= 0 ? "+" : ""}${t.nrr.toFixed(2)}` : ""}`], size: 28, weight: i === 0 ? "800" : "500" }));
+  lines.push({ size: 18 });
+  lines.push({ text: "HIGHLIGHTS", size: 22, weight: "800", color: "#9FC2AF" });
+  const hl = (label, v) => v && lines.push({ cols: [label, v], size: 28 });
+  hl("MVP", s.mvp && `${s.mvp.name} · ${s.mvp.points} pts`);
+  hl("Most runs", s.topBat && `${s.topBat.name} · ${s.topBat.runs}`);
+  hl("Most wickets", s.topBowl && `${s.topBowl.name} · ${s.topBowl.wickets}`);
+  hl("Best innings", s.bestInnings && `${s.bestInnings.name} · ${s.bestInnings.runs}${s.bestInnings.notOut ? "*" : ""} (${s.bestInnings.balls})`);
+  hl("Best bowling", s.bestBowling && `${s.bestBowling.name} · ${s.bestBowling.wickets}/${s.bestBowling.runs}`);
+  hl("Highest total", s.highestTotal && `${s.highestTotal.team} · ${s.highestTotal.runs}-${s.highestTotal.wickets}`);
+  lines.push({ size: 14 });
+  lines.push({ text: `${s.matches} matches · ${s.runs} runs · ${s.wickets} wickets · ${s.sixes} sixes`, size: 24, color: "#9FC2AF" });
+  lines.push({ size: 10 });
+  lines.push({ text: "Scored with Cricket.lk", size: 22, weight: "700", color: "#5FB98C" });
+
+  const H = pad * 2 + lines.reduce((sum, l) => sum + l.size + 16, 0);
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#0B2E22"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#F2C744"; ctx.fillRect(0, 0, W, 10);
+  let y = pad;
+  lines.forEach(l => {
+    ctx.fillStyle = l.color || "#F1F6F2";
+    ctx.font = `${l.weight || "400"} ${l.size}px -apple-system, sans-serif`;
+    if (l.text) ctx.fillText(l.text, pad, y + l.size, W - pad * 2);
+    if (l.cols){
+      // label | value (| value): first left, the rest right-aligned columns.
+      ctx.fillText(l.cols[0], pad, y + l.size, l.cols.length > 2 ? 420 : 300);
+      ctx.textAlign = "right";
+      if (l.cols.length > 2){ ctx.fillText(l.cols[1], 760, y + l.size); ctx.fillText(l.cols[2], W - pad, y + l.size); }
+      else ctx.fillText(l.cols[1], W - pad, y + l.size, W - pad * 2 - 320);
+      ctx.textAlign = "left";
+    }
+    y += l.size + 16;
+  });
+  return canvas;
+}
+function shareTournamentResults(){
+  const c = tournamentContext();
+  if (!c) return;
+  const s = tournamentSummary(c.matches, c.preset);
+  const text = s.champion ? `${c.name}: ${s.shared ? "joint winners" : "won by"} ${s.champion.name}${s.shared && s.runnerUp ? ` & ${s.runnerUp.name}` : ""}` : c.name;
+  shareCanvasImage(renderTournamentCanvas(c), "cricket-lk-tournament.png", `${c.name} — results`, text);
+}
+
+/* --- result-only fixtures ---
+   "Enter result" on a tournament's Overview/Fixtures opens a sheet that
+   records a fixture with just each side's runs, wickets and (optionally)
+   overs -- createResultOnlyMatch (ENGINE). Archived like a scored match (and
+   synced for a club), so the points table and fixtures pick it up; it has
+   no scorecard and no player stats. ui.resultEntry = { view } while open. */
+function resultEntryDefaults(c){
+  if (c.kind === "guest"){
+    const mp = state.matchPresets[c.preset.matchPresetId] || DEFAULT_MATCH_PRESETS[0];
+    return { oversLimit: mp.oversLimit, playersPerSide: mp.playersPerSide, ballsPerOver: mp.ballsPerOver || 6, lastManStands: !!mp.lastManStands, presetId: mp.id, presetName: mp.name };
+  }
+  // Club: the conditions of this tournament's latest match, else the club's first preset.
+  const last = [...c.matches].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))[0];
+  if (last) return { oversLimit: last.oversLimit, playersPerSide: last.playersPerSide, ballsPerOver: last.ballsPerOver || 6, lastManStands: !!last.lastManStands, presetId: last.presetId, presetName: last.presetName };
+  const mp = matchPresetChoices()[0] || DEFAULT_MATCH_PRESETS[0];
+  return { oversLimit: mp.oversLimit, playersPerSide: mp.playersPerSide, ballsPerOver: mp.ballsPerOver || 6, lastManStands: !!mp.lastManStands, presetId: mp.id, presetName: mp.name };
+}
+function renderResultEntryModal(){
+  const c = tournamentContext();
+  if (!c) return "";
+  const d = resultEntryDefaults(c);
+  const names = c.teamNames;
+  const teamField = (side, i) => names.length >= 2
+    ? `<select name="team${side}" required>${names.map((n, k) => `<option value="${escapeHtml(n)}" ${k === i ? "selected" : ""}>${escapeHtml(n)}</option>`).join("")}</select>`
+    : `<input name="team${side}" required maxlength="24" placeholder="${side === "A" ? "e.g. Lions" : "e.g. Tigers"}" list="teams-datalist" autocomplete="off">`;
+  const scoreRow = side => `
+    <div class="result-team">
+      <label class="result-team-name">${side === "A" ? "Team A" : "Team B"}${teamField(side, side === "A" ? 0 : 1)}</label>
+      <div class="field-row three">
+        <label>Runs<input name="runs${side}" type="number" inputmode="numeric" min="0" max="999" required></label>
+        <label>Wickets<input name="wkts${side}" type="number" inputmode="numeric" min="0" max="${d.playersPerSide != null ? d.playersPerSide : 99}" required></label>
+        <label>Overs <span class="muted">(optional)</span><input name="overs${side}" inputmode="decimal" maxlength="5" placeholder="${d.oversLimit != null ? `e.g. ${d.oversLimit}` : "e.g. 18.3"}" autocomplete="off"></label>
+      </div>
+    </div>`;
+  return `
+    <div class="modal-backdrop">
+      <div class="modal" data-keep-scroll="result-entry" role="dialog" aria-modal="true" aria-label="Enter a result">
+        <div class="wicket-modal-head">
+          <h2>Enter a result</h2>
+          <button type="button" data-action="close-result-entry" class="sheet-close" aria-label="Close">✕</button>
+        </div>
+        <p class="hint">No ball-by-ball scoring: just the totals. It counts in the points table, with no scorecard or player stats.</p>
+        <form id="result-entry-form">
+          <div class="form-error"></div>
+          ${scoreRow("A")}
+          ${scoreRow("B")}
+          <fieldset class="tile-fieldset">
+            <legend>Who batted first?</legend>
+            <label><input type="radio" name="battingFirst" value="A" checked> Team A</label>
+            <label><input type="radio" name="battingFirst" value="B"> Team B</label>
+          </fieldset>
+          <details class="result-conditions">
+            <summary>Conditions: ${d.oversLimit != null ? `${d.oversLimit} overs` : "no overs limit"} · ${d.playersPerSide != null ? `${d.playersPerSide} a side` : "no players limit"}</summary>
+            <div class="field-row">
+              <label>Overs per innings<input name="oversLimit" type="number" min="1" max="50" value="${limitInputValue(d.oversLimit, 20)}" placeholder="No limit"></label>
+              <label>Players per side<input name="players" type="number" min="2" max="11" value="${limitInputValue(d.playersPerSide, 11)}" placeholder="No limit"></label>
+            </div>
+            <p class="hint">Used for the wickets/overs checks and net run rate. Blank overs count as the full quota in NRR.</p>
+          </details>
+          <input type="hidden" name="ballsPerOver" value="${d.ballsPerOver}">
+          <button type="submit" class="primary" style="width:100%;">Save result</button>
+        </form>
+      </div>
+    </div>`;
+}
+async function handleResultEntrySubmit(e){
+  e.preventDefault();
+  const form = e.target, c = tournamentContext();
+  if (!c || c.endedAt) return;
+  const f = new FormData(form);
+  const d = resultEntryDefaults(c);
+  const teamA = (f.get("teamA") || "").trim(), teamB = (f.get("teamB") || "").trim();
+  if (!teamA || !teamB || teamA.toLowerCase() === teamB.toLowerCase()){ showFormError(form, "Pick two different teams."); return; }
+  const battingFirst = f.get("battingFirst") === "B" ? "B" : "A";
+  const ballsPerOver = Math.max(1, parseInt(f.get("ballsPerOver"), 10) || 6);
+  const config = {
+    teamA, teamB, battingFirst, ballsPerOver,
+    oversLimit: parseOptionalLimit(f.get("oversLimit"), 1),
+    playersPerSide: parseOptionalLimit(f.get("players"), 2),
+    lastManStands: d.lastManStands, presetId: d.presetId, presetName: d.presetName, tournamentId: c.id
+  };
+  const num = v => (v === null || String(v).trim() === "") ? NaN : Number(v);
+  const side = k => ({ runs: num(f.get("runs" + k)), wickets: num(f.get("wkts" + k)), balls: parseOversInput(f.get("overs" + k), ballsPerOver) });
+  const scores = battingFirst === "A" ? [side("A"), side("B")] : [side("B"), side("A")];
+  const err = resultOnlyError(config, scores);
+  if (err){ showFormError(form, err); return; }
+  const match = createResultOnlyMatch(config, scores);
+  if (c.kind === "club"){
+    match.clubId = ui.currentClubId || ui.clubTournament.organizer_club_id;
+    match.matchType = "tournament";
+  }
+  const archived = archiveMatch(match);
+  ui.resultEntry = null;
+  save();
+  if (c.kind === "club"){
+    await syncMatchToCloud(match, archived);
+    await fetchClubTournamentDetail(c.id);
+  }
+  render();
 }

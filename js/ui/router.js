@@ -99,6 +99,7 @@ function overlayOpen(){
   return !!(ui.confirm || ui.sideMenuOpen || (ui.syncSheet && session) || ui.playerModal
     || (ui.tournamentTeamEdit && state.view === "clubTournamentDashboard")
     || (ui.matchDetail && ui.matchDetail.view === state.view)
+    || (ui.resultEntry && ui.resultEntry.view === state.view)
     || (onMatch && (ui.matchMenu || ui.wicketFlow || ui.pendingExtra || ui.liveScorecard)));
 }
 // Called at the end of render(): record a screen change in browser history.
@@ -325,6 +326,11 @@ function closeTopOverlay(){
   }
   if (ui.tournamentTeamEdit && document.querySelector(".team-modal")){ closeTeamEdit(); return true; }
   if (ui.matchDetail){ ui.matchDetail = null; render(); return true; }
+  if (ui.resultEntry && document.querySelector("#result-entry-form")){
+    const close = () => { ui.resultEntry = null; render(); };
+    if (hasDirtyForm("#modal-root")) confirmDiscard(close); else close();
+    return true;
+  }
   if (onMatch && ui.matchMenu){ ui.matchMenu = ui.matchMenu === "menu" ? null : "menu"; ui.squadError = null; render(); return true; }
   if (onMatch && ui.wicketFlow){ ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.runoutAt = null; render(); return true; }
   if (onMatch && ui.pendingExtra){ ui.pendingExtra = null; render(); return true; }

@@ -133,9 +133,18 @@ function renderMatchDetailModal(){
           ${detail ? `<div class="n detail">${escapeHtml(detail)}</div>` : ""}
           <div class="muted">${[when, motm ? `Player of the match: ${escapeHtml(motm)}` : ""].filter(Boolean).join(" · ")}</div>
         </div>
-        ${renderScorecard(m)}
+        ${m.resultOnly ? renderResultOnlyCard(m) : renderScorecard(m)}
         <button type="button" data-action="close-match-detail" class="primary" style="width:100%;">Close</button>
       </div>
+    </div>`;
+}
+
+/* A result-only fixture (createResultOnlyMatch) has totals and nothing else. */
+function renderResultOnlyCard(m){
+  return `
+    <div class="innings-summary">
+      ${m.innings.map(inn => `<h3>${escapeHtml(teamName(m, inn.battingTeam))} ${inn.runs}/${inn.wickets}${inn.legalBalls != null ? ` <span class="ov">(${oversDisplay(inn.legalBalls, inn.ballsPerOver)} ov)</span>` : ""}</h3>`).join("")}
+      <p class="hint" style="margin:6px 0 0;">Result entered by hand — no ball-by-ball scorecard.</p>
     </div>`;
 }
 
@@ -226,7 +235,7 @@ function renderInningsBreak(match){
    section already needs). */
 function renderResultDetail(match){
   const [i1, i2] = match.innings;
-  if (match.forfeited || !i2) return "";
+  if (match.forfeited || !i2 || match.resultOnly) return "";
   const bpo = match.ballsPerOver;
   const i2ov = oversDisplay(i2.legalBalls, bpo);
   const i2Score = isAllOut(i2) ? `${i2.runs} all out` : `${i2.runs}-${i2.wickets}`;
@@ -383,17 +392,21 @@ function renderScorecardCanvas(match){
 }
 
 async function shareScorecardImage(match){
-  const canvas = renderScorecardCanvas(match);
+  shareCanvasImage(renderScorecardCanvas(match), "cricket-lk-scorecard.png", "Cricket.lk scorecard", match.result || "");
+}
+/* Share a canvas as a PNG (the share sheet where files can be shared, else a
+   plain download). Shared by the scorecard and tournament-summary images. */
+function shareCanvasImage(canvas, fileName, title, text){
   canvas.toBlob(async (blob) => {
     if (!blob) return;
-    const file = new File([blob], "cricket-lk-scorecard.png", { type: "image/png" });
+    const file = new File([blob], fileName, { type: "image/png" });
     if (navigator.canShare && navigator.canShare({ files: [file] })){
-      try { await navigator.share({ files: [file], title: "Cricket.lk scorecard", text: match.result || "" }); return; }
-      catch (_){ /* user cancelled, or share failed — fall through to a plain download */ }
+      try { await navigator.share({ files: [file], title, text }); return; }
+      catch (err){ if (err && err.name === "AbortError") return; /* else fall through to a plain download */ }
     }
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "cricket-lk-scorecard.png";
+    a.href = url; a.download = fileName;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   }, "image/png");
