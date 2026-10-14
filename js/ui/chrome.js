@@ -175,3 +175,86 @@ function cancelConfirm(){
   if (c.onCancel) c.onCancel();
   render();
 }
+
+/* --- drag a sheet down to close it ---
+   Any bottom sheet that can be closed (#modal-root or #confirm-root) follows
+   a finger dragged down from its top edge -- or from anywhere while it's
+   scrolled to the top -- and closes past a threshold or on a quick flick,
+   exactly as its own Close/Cancel/Pick later would (dragCloseSheet). A sheet
+   that can't be closed (the opening sheet, a busy confirmation) doesn't move.
+   Touch events, not pointer events: with pointer events the browser claims a
+   vertical drag for scrolling and cancels it. All DOM-only, never render(). */
+function sheetCanDragClose(modal){
+  if (modal.closest("#confirm-root")) return !!(ui.confirm && !ui.confirm.busy);
+  if (!modal.closest("#modal-root") || ui.confirm) return false;
+  const m = state.match;
+  return overlayOpen() || !!(m && !ui.awayFromMatch && pendingPickKey(m) && !pickSheetDismissed(m));
+}
+function dragCloseSheet(modal){
+  if (modal.closest("#confirm-root")){ cancelConfirm(); return; }
+  // Match options: a drag closes the whole sheet, not just its Switch players page.
+  if (ui.matchMenu === "squads") ui.matchMenu = "menu";
+  if (closeTopOverlay()) return;
+  const m = state.match;
+  if (m && pendingPickKey(m) && !pickSheetDismissed(m)) dismissPick();
+}
+let sheetDrag = null, sheetDragEndedAt = 0;
+function sheetDragStart(target, x, y){
+  const modal = target.closest && target.closest("#modal-root .modal, #confirm-root .modal");
+  if (!modal || target.closest("input, textarea, select, .combo-list") || !sheetCanDragClose(modal)) return;
+  const fromTop = y - modal.getBoundingClientRect().top < 48;
+  sheetDrag = { modal, x, y, t: Date.now(), fromTop, active: false, dy: 0 };
+}
+function sheetDragMove(x, y){
+  const d = sheetDrag;
+  if (!d) return false;
+  const dy = y - d.y, dx = x - d.x;
+  if (!d.active){
+    if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)){ sheetDrag = null; return false; }
+    if (dy < -6 || (dy > 0 && !d.fromTop && d.modal.scrollTop > 0)){ sheetDrag = null; return false; }
+    if (dy < 8) return false;
+    d.active = true; d.y = y; d.t = Date.now();
+    d.modal.classList.add("dragging");
+  }
+  d.dy = Math.max(0, y - d.y);
+  d.modal.style.transform = `translateY(${d.dy}px)`;
+  const backdrop = d.modal.closest(".modal-backdrop");
+  if (backdrop) backdrop.style.setProperty("--drag", Math.min(d.dy / d.modal.offsetHeight, 1).toFixed(3));
+  return true;
+}
+function sheetDragEnd(){
+  const d = sheetDrag;
+  sheetDrag = null;
+  if (!d || !d.active) return;
+  sheetDragEndedAt = Date.now();
+  const { modal } = d, backdrop = modal.closest(".modal-backdrop");
+  const fast = d.dy > 40 && d.dy / Math.max(Date.now() - d.t, 1) > 0.5;
+  modal.classList.remove("dragging");
+  const reset = () => {
+    modal.style.transform = "";
+    if (backdrop) backdrop.style.removeProperty("--drag");
+  };
+  if (!(fast || d.dy > Math.min(120, modal.offsetHeight * 0.3))){ reset(); return; }
+  modal.classList.add("drag-out");
+  modal.style.transform = "translateY(100%)";
+  setTimeout(() => {
+    dragCloseSheet(modal);
+    // Still on screen (unsaved changes asked first, or a kept-alive player
+    // modal): slide it back.
+    if (modal.isConnected){ modal.classList.remove("drag-out"); reset(); }
+  }, 160);
+}
+document.addEventListener("touchstart", e => { if (e.touches.length === 1) sheetDragStart(e.target, e.touches[0].clientX, e.touches[0].clientY); else sheetDrag = null; }, { passive: true });
+document.addEventListener("touchmove", e => { if (sheetDrag && sheetDragMove(e.touches[0].clientX, e.touches[0].clientY) && e.cancelable) e.preventDefault(); }, { passive: false });
+document.addEventListener("touchend", sheetDragEnd);
+document.addEventListener("touchcancel", sheetDragEnd);
+// Mouse: from the top edge only (no scroll to compete with).
+document.addEventListener("mousedown", e => {
+  if (e.button !== 0) return;
+  sheetDragStart(e.target, e.clientX, e.clientY);
+  if (sheetDrag && !sheetDrag.fromTop) sheetDrag = null;
+});
+document.addEventListener("mousemove", e => { if (sheetDrag) sheetDragMove(e.clientX, e.clientY); });
+document.addEventListener("mouseup", sheetDragEnd);
+// The tap that ends a drag isn't a click on whatever is under the finger.
+window.addEventListener("click", e => { if (Date.now() - sheetDragEndedAt < 350){ e.stopPropagation(); e.preventDefault(); } }, true);

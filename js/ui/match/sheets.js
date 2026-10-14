@@ -1,29 +1,19 @@
 /* Cricket.lk — match: opening/new batsman/new bowler/match options/wicket sheets.
    Classic script, loaded in order by index.html; all files share one global scope (see CLAUDE.md "Code layout"). */
 /* --- opening / new-batsman / new-bowler modals --- */
-/* The pick and wicket sheets cover the scoreboard, so they repeat the
-   essentials in one line: score, overs, and the chase (or run rate). */
+/* The pick and wicket sheets cover the scoreboard, so the live card's score
+   tiles (renderScoreBento, plus the batting team) sit in a banner at the top
+   of the scrim, above the sheet: a .modal-backdrop.with-score. */
 function renderSheetScore(match, inn){
-  const bpo = inn.ballsPerOver;
-  const need = inn.target != null ? Math.max(inn.target - inn.runs, 0) : null;
-  const ballsLeft = inn.oversLimit != null ? Math.max(inn.oversLimit * bpo - inn.legalBalls, 0) : null;
-  return `
-    <div class="sheet-score" aria-label="Current score">
-      <span class="team">${escapeHtml(teamName(match, inn.battingTeam))}</span>
-      <span class="n score">${inn.runs}-${inn.wickets}</span>
-      <span class="n ov">${oversDisplay(inn.legalBalls, bpo)}${inn.oversLimit != null ? `/${inn.oversLimit}` : ""} ov</span>
-      <span class="n info">${need != null
-        ? `Need ${need}${ballsLeft != null ? ` off ${ballsLeft}` : ""}`
-        : `CRR ${runRate(inn.runs, inn.legalBalls, bpo).toFixed(2)}`}</span>
-    </div>`;
+  return `<div class="sheet-score-banner" aria-label="Current score">${renderScoreBento(match, inn, teamName(match, inn.battingTeam))}</div>`;
 }
 function renderOpeningModal(match){
   const inn = currentInnings(match);
   return `
-    <div class="modal-backdrop">
+    <div class="modal-backdrop${inn.target != null ? " with-score" : ""}">
+      ${inn.target != null ? renderSheetScore(match, inn) : ""}
       <div class="modal" data-keep-scroll="opening">
         <h2>${escapeHtml(teamName(match, inn.battingTeam))} — opening players</h2>
-        ${inn.target != null ? renderSheetScore(match, inn) : ""}
         <form id="opening-form">
           <div class="form-error"></div>
           ${renderNameCombo("Striker", `name="striker" required maxlength="24" placeholder="Search players"`, pickCandidates(match, pickPool(inn.battingTeam), "batter"))}
@@ -313,13 +303,13 @@ function renderNewBatsmanModal(inn, slot){
   const lastFow = inn.fallOfWickets.length ? inn.fallOfWickets[inn.fallOfWickets.length - 1] : null;
   const dismissed = lastFow && lastFow.batsman ? inn.batting.stats[lastFow.batsman] : null;
   return `
-    <div class="modal-backdrop">
+    <div class="modal-backdrop with-score">
+      ${renderSheetScore(state.match, inn)}
       <div class="modal" data-keep-scroll="new-batsman">
         <div class="wicket-modal-head">
           <h2>New batsman</h2>
           <span class="end-badge">${endBadge}</span>
         </div>
-        ${renderSheetScore(state.match, inn)}
         ${lastFow && dismissed ? `
           <div class="dismissal-banner">
             <span class="name">${escapeHtml(lastFow.batsman)}</span>
@@ -383,13 +373,13 @@ function renderNewBowlerModal(inn){
   const overNumber = Math.floor(inn.legalBalls / bpo) + 1;
   const pickable = inn.bowling.order.filter(name => name !== inn.lastOverBowler);
   return `
-    <div class="modal-backdrop">
+    <div class="modal-backdrop with-score">
+      ${renderSheetScore(state.match, inn)}
       <div class="modal" data-keep-scroll="new-bowler">
         <div class="wicket-modal-head">
           <h2>New bowler</h2>
           <span class="n batter">${overNumber}${ordinalSuffix(overNumber)} over · ${bpo} balls</span>
         </div>
-        ${renderSheetScore(state.match, inn)}
         <form id="new-bowler-form">
           <div class="form-error"></div>
           ${renderNameCombo("Name", `name="name" required maxlength="24" placeholder="Search or type a bowler"`, pickCandidates(state.match, pickPool(inn.bowlingTeam), "bowler"))}
@@ -499,13 +489,13 @@ function renderWicketModal(inn){
   const required = isRunout ? match.requireFielderOnRunout : match.requireFielderOnCatch;
 
   return `
-    <div class="modal-backdrop">
+    <div class="modal-backdrop with-score">
+      ${renderSheetScore(match, inn)}
       <div class="modal" data-keep-scroll="wicket">
         <div class="wicket-modal-head">
           <h2>How out?</h2>
           ${strikerStats ? `<span class="batter">${escapeHtml(inn.striker)} ${strikerStats.runs} (${strikerStats.balls})</span>` : ""}
         </div>
-        ${renderSheetScore(match, inn)}
         ${inn.freeHit ? `
           <div class="freehit-note"><span class="tag">FREE HIT</span><span class="desc">A run out is the only dismissal available</span></div>
         ` : ""}

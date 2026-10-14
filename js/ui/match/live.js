@@ -160,12 +160,35 @@ function renderOverRow(label, events, bpo, dimmed){
   `;
 }
 
-function renderLive(match){
-  const inn = currentInnings(match);
+/* The score + target tiles at the top of the live card. The pick/wicket/
+   extra sheets reuse it as a banner above the sheet (renderSheetScore), with
+   the batting team's name, since the sheet's scrim hides the top bar. */
+function renderScoreBento(match, inn, teamLabel){
   const bpo = inn.ballsPerOver;
   const crr = runRate(inn.runs, inn.legalBalls, bpo).toFixed(2);
   const rrr = requiredRunRate(inn);
   const ballsLeft = inn.oversLimit != null ? Math.max(inn.oversLimit * bpo - inn.legalBalls, 0) : null;
+  return `
+      <div class="score-bento">
+        <div class="score-tile">
+          ${teamLabel ? `<div class="score-team">${escapeHtml(teamLabel)}</div>` : ""}
+          <div class="score-n">${inn.runs}-${inn.wickets}</div>
+          <div class="score-sub"><span>${oversDisplay(inn.legalBalls, bpo)}${teamLabel && inn.oversLimit != null ? `/${inn.oversLimit}` : ""} ov</span><span class="crr">CRR ${crr}</span></div>
+        </div>
+        ${inn.target != null ? `
+          <div class="target-tile">
+            <div class="eyebrow">TARGET ${inn.target}</div>
+            <div class="need-n">${Math.max(inn.target - inn.runs, 0)}</div>
+            <div class="need-sub">${ballsLeft != null ? `off ${ballsLeft} ball${ballsLeft === 1 ? "" : "s"}` : "no over limit"}</div>
+            ${rrr != null ? `<div class="rrr">RRR ${rrr.toFixed(2)}</div>` : ""}
+          </div>
+        ` : ""}
+      </div>`;
+}
+
+function renderLive(match){
+  const inn = currentInnings(match);
+  const bpo = inn.ballsPerOver;
   const alone = battingAlone(inn);
   const strikerStats = inn.striker ? inn.batting.stats[inn.striker] : null;
   const nonStrikerStats = inn.nonStriker ? inn.batting.stats[inn.nonStriker] : null;
@@ -193,20 +216,7 @@ function renderLive(match){
 
   return `
     <div class="screen live">
-      <div class="score-bento">
-        <div class="score-tile">
-          <div class="score-n">${inn.runs}-${inn.wickets}</div>
-          <div class="score-sub"><span>${oversDisplay(inn.legalBalls, bpo)} ov</span><span class="crr">CRR ${crr}</span></div>
-        </div>
-        ${inn.target != null ? `
-          <div class="target-tile">
-            <div class="eyebrow">TARGET ${inn.target}</div>
-            <div class="need-n">${Math.max(inn.target - inn.runs, 0)}</div>
-            <div class="need-sub">${ballsLeft != null ? `off ${ballsLeft} ball${ballsLeft === 1 ? "" : "s"}` : "no over limit"}</div>
-            ${rrr != null ? `<div class="rrr">RRR ${rrr.toFixed(2)}</div>` : ""}
-          </div>
-        ` : ""}
-      </div>
+      ${renderScoreBento(match, inn)}
 
       <div class="matchup-card">
         <div class="matchup-head"><span>BATTER</span><span style="width:34px;">R</span><span style="width:30px;">B</span><span style="width:24px;">4s</span><span style="width:24px;">6s</span><span style="width:46px;">SR</span></div>

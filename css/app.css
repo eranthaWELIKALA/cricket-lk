@@ -240,6 +240,12 @@ td.status{color:var(--muted);font-size:.78rem;}
   padding:22px 18px calc(20px + env(safe-area-inset-bottom));max-height:88vh;overflow-y:auto;
   box-shadow:0 -20px 60px -20px rgba(0,0,0,.65);
 }
+/* Drag-to-close (sheetDrag* in chrome.js): follows the finger, then slides
+   out or springs back; the scrim fades with it (--drag, 0..1). */
+.modal{ overscroll-behavior:contain; transition:transform .22s cubic-bezier(.16,1,.3,1); }
+.modal.dragging{ transition:none; user-select:none; }
+.modal.drag-out{ transition:transform .16s ease-in; }
+.modal-backdrop[style*="--drag"]{ background:rgba(2,6,5,calc(.65 * (1 - var(--drag)))); }
 .modal::before{
   content:"";position:absolute;top:10px;left:50%;transform:translateX(-50%);
   width:40px;height:4px;border-radius:4px;background:var(--line-strong);
@@ -291,15 +297,21 @@ td.status{color:var(--muted);font-size:.78rem;}
 button.primary.danger-confirm{background:var(--wicket);color:var(--bg);border-color:var(--bg);}
 
 /* --- new-batsman / new-bowler modals --- */
-.sheet-score{
-  display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;
-  background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-sm);
-  padding:8px 12px; margin:0 0 12px;
+/* Score banner above the pick/wicket sheets (renderSheetScore): the backdrop
+   becomes a column -- banner at the top, sheet at the bottom, and the sheet
+   shrinks (and scrolls) when both don't fit. */
+.modal-backdrop.with-score{ flex-direction:column; align-items:center; justify-content:space-between; }
+.modal-backdrop.with-score > .modal{ flex-shrink:1; min-height:0; }
+.sheet-score-banner{ width:100%; max-width:520px; flex-shrink:0; padding:calc(10px + env(safe-area-inset-top)) 12px 10px; }
+.sheet-score-banner .score-bento{ margin:0; }
+.sheet-score-banner .score-tile{ animation:none; background:var(--panel-solid); }
+.score-tile .score-team{ font-size:.7rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+@media (max-height:700px){
+  .sheet-score-banner{ padding-top:calc(6px + env(safe-area-inset-top)); padding-bottom:6px; }
+  .sheet-score-banner .score-tile, .sheet-score-banner .target-tile{ padding:6px 10px; }
+  .sheet-score-banner .score-tile .score-n{ font-size:1.5rem; }
+  .sheet-score-banner .target-tile .need-n{ font-size:1.3rem; }
 }
-.sheet-score .team{font-size:.78rem;font-weight:700;color:var(--muted);max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.sheet-score .score{font-size:1.25rem;font-weight:800;}
-.sheet-score .ov{font-size:.8rem;color:var(--muted);}
-.sheet-score .info{margin-left:auto;font-size:.8rem;font-weight:700;color:var(--accent);}
 .dismissal-banner{
   margin-top:12px;background:rgba(255,77,99,.1);border:2px solid rgba(255,77,99,.45);border-radius:var(--radius-md);
   padding:9px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;

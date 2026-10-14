@@ -412,9 +412,12 @@ the full scorecard is a sheet over it (`renderLiveScorecardModal`,
 `ui.liveScorecard`, opened by the **Full scorecard** button), not an inline
 expansion. Its body is the shared tabbed scorecard (`renderScorecard`, see
 "Scorecards" below). It closes with ✕/Close/Back or when the
-innings ends. The pick and wicket sheets cover the board, so each repeats
-the score in one line (`renderSheetScore`: team, R-W, overs, "Need X off Y"
-in a chase or the run rate); the opening sheet shows it only in the chase. `.screen.live` still scrolls
+innings ends. The pick and wicket sheets cover the board, so each shows the
+live card's score tiles in a banner at the top of the scrim, above the sheet
+(`renderSheetScore` → `renderScoreBento(match, inn, teamLabel)`, the same
+function the live card uses, plus the batting team; `.modal-backdrop.with-score`
+stacks banner and sheet and lets the sheet shrink and scroll); the opening
+sheet shows it only in the chase. `.screen.live` still scrolls
 internally as a safety net. **Full scorecard** and **End innings**
 (`renderEndInningsButton(…, inline)`) are equal-width buttons in
 `.live-links` under the Wicket bar. The top bar is `position:relative` in live mode — `sticky`
@@ -535,6 +538,18 @@ delete guest team/player, delete match/tournament/club presets. **Don't add
 The wicket sheet's Confirm button is data entry, not a confirmation, and
 stays as it is. `admin.html` keeps its own typed-confirmation prompts (it's
 a separate page).
+
+**Drag down to close.** Every closable bottom sheet (`#modal-root` /
+`#confirm-root` `.modal`) follows a finger dragged down from its top edge, or
+from anywhere while scrolled to the top, and closes past ~120px or on a flick
+(`sheetDrag*`, end of chrome.js; touch events, since pointer events lose a
+vertical drag to scrolling). It closes the way back does — `cancelConfirm`,
+else `closeTopOverlay()`, else Pick later for a pick sheet (`dragCloseSheet`;
+Match options closes fully, not back to its menu page) — so unsaved-changes
+checks still ask, and a sheet that stays open slides back. Sheets that can't
+be closed (the opening sheet, a busy confirmation) don't move
+(`sheetCanDragClose`). A new closable sheet needs nothing extra as long as
+`closeTopOverlay` knows how to close it.
 
 Re-rendering a sheet that carries `data-keep-scroll="<key>"` (the confirm
 sheet, the team builder, and every in-match sheet: opening, new batsman/
