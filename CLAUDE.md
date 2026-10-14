@@ -1491,6 +1491,15 @@ actor, claimed-club lockout, one-claim-per-user, direct-write blocks, merge
 alias/roster/blank-fill/deletion, alias resolution, no contact leak) all passed
 this way.
 
+## Launch splash
+
+`#splash` is static HTML in `index.html` (icon, wordmark, "by Erantha
+Welikala" footer), so it paints before any script runs. `boot.js` fades it
+out once the first render is done and the splash has been up ~0.9s; a tap
+skips it, and it never appears in print. The OS splash of an installed app
+comes from the manifest (icon, name, background) and can't carry text, so it
+shows first and this one follows.
+
 ## Install prompt (phones only)
 
 A static `#install-banner` (outside `#app`, DOM-only, never through

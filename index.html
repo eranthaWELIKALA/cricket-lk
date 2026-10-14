@@ -17,6 +17,15 @@
 <body>
 <div id="top-progress" class="top-progress" aria-hidden="true"></div>
 <div id="busy-status" class="sr-only" role="status" aria-live="polite"></div>
+<!-- Launch splash: plain HTML so it paints before any script runs; boot.js fades it out. -->
+<div id="splash" class="splash" aria-hidden="true">
+  <div class="splash-main">
+    <img src="icon-192.png" alt="" class="splash-icon">
+    <div class="splash-name"><span class="brand-highlight">Cricket.lk</span></div>
+    <div class="splash-tag">Ball-by-ball scorer</div>
+  </div>
+  <div class="splash-footer">by Erantha Welikala</div>
+</div>
 <div id="app"></div>
 <div id="modal-root"></div>
 <div id="confirm-root"></div>

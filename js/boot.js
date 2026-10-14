@@ -10,6 +10,15 @@ if (currentRoute() !== "/") applyRoute(currentRoute());
 ui.awayFromMatch = false;
 navApplying = true; render(); navApplying = false;
 initAuth();
+// Launch splash (static in index.html): keep it up long enough to read, then
+// fade it out behind the first render. A tap skips it.
+(function(){
+  const splash = document.getElementById("splash");
+  if (!splash) return;
+  const hide = () => { splash.classList.add("out"); setTimeout(() => splash.remove(), 350); };
+  splash.addEventListener("click", hide);
+  setTimeout(hide, Math.max(0, 900 - performance.now()));
+})();
 // First tap: give a page opened straight onto a screen a Home entry to go back to.
 document.addEventListener("click", ensureNavBase, true);
 // Offline-first sync triggers: coming back online, returning to the app, and
