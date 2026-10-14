@@ -429,12 +429,15 @@ the full scorecard is a sheet over it (`renderLiveScorecardModal`,
 `ui.liveScorecard`, opened by the **Full scorecard** button), not an inline
 expansion. Its body is the shared tabbed scorecard (`renderScorecard`, see
 "Scorecards" below). It closes with ✕/Close/Back or when the
-innings ends. The pick and wicket sheets cover the board, so each shows the
-live card's score tiles in a banner at the top of the scrim, above the sheet
-(`renderSheetScore` → `renderScoreBento(match, inn, teamLabel)`, the same
-function the live card uses, plus the batting team; `.modal-backdrop.with-score`
-stacks banner and sheet and lets the sheet shrink and scroll); the opening
-sheet shows it only in the chase. `.screen.live` still scrolls
+innings ends. The pick and wicket sheets (`.modal-backdrop.with-score`) keep
+the **live board's own score tiles visible** above the sheet:
+`showBoardAboveSheet()` (render.js, after every render and on resize)
+measures `#app .score-bento`, sets `--board-h`, and `.board-through` makes
+the scrim start below it (no blur, sheet capped to the space left, scrolls
+inside). The scrim still takes every tap, so nothing under a sheet can be
+hit. Only when there's no board to show does the fallback banner
+(`renderSheetScore` → `renderScoreBento(match, inn, teamLabel)`) appear; the
+opening sheet has it only in the chase. `.screen.live` still scrolls
 internally as a safety net. **Full scorecard** and **End innings**
 (`renderEndInningsButton(…, inline)`) are equal-width buttons in
 `.live-links` under the Wicket bar. The top bar is `position:relative` in live mode — `sticky`

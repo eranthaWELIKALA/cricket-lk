@@ -239,6 +239,27 @@ function render(){
     againConfirm.classList.add("no-anim"); againConfirm.scrollTop = confirmTop;
     againConfirm.closest(".modal-backdrop").classList.add("no-anim");
   }
+  showBoardAboveSheet();
   // The DOM was just replaced: put the tapped button's spinner back.
   if (activity.shown || document.querySelector(".is-loading")) applyActivity();
 }
+
+/* The pick/wicket sheets (.modal-backdrop.with-score) leave the live board's
+   own score tiles uncovered instead of repeating them in a banner: the scrim
+   starts just below #app's .score-bento (--board-h, measured -- the live
+   screen is one fixed viewport, so it doesn't move), there's no blur, the
+   sheet is capped to the space below it. The scrim still takes every tap
+   (a tap must never reach the run pad under a sheet). With no board behind
+   the sheet the banner (renderSheetScore) stays as the fallback. */
+function showBoardAboveSheet(){
+  const backdrop = document.querySelector("#modal-root .modal-backdrop.with-score");
+  if (!backdrop) return;
+  const board = document.querySelector("#app .score-bento");
+  const bottom = board ? board.getBoundingClientRect().bottom : 0;
+  if (!board || bottom <= 0 || bottom > window.innerHeight * 0.45){
+    backdrop.classList.remove("board-through"); backdrop.style.removeProperty("--board-h"); return;
+  }
+  backdrop.style.setProperty("--board-h", Math.ceil(bottom + 8) + "px");
+  backdrop.classList.add("board-through");
+}
+window.addEventListener("resize", () => showBoardAboveSheet());
