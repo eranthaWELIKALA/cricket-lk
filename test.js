@@ -948,17 +948,19 @@ async function main(){
     win.eval(`ui.matchMenu = null; { const inn = currentInnings(state.match); inn.bowler = "Wanindu"; ensureBowler(inn, "Wanindu"); } render();`);
     const extraBtn = x => doc.querySelector(`#app [data-action="toggle-extra"][data-extra="${x}"]`);
     const extraSheet = () => doc.querySelector("#modal-root .extra-runs-modal");
-    const tile = total => [...extraSheet().querySelectorAll('[data-action="ball"]')].find(b => b.querySelector(".total").textContent === String(total));
+    // Tiles ask for the runs on top of the extra; the big number is that, the small line the total.
+    const tile = runs => extraSheet().querySelector(`[data-action="ball"][data-runs="${runs}"]`);
     const runsNow = () => win.eval("currentInnings(state.match).runs");
     let before = runsNow();
     extraBtn("wide").click();
-    assert(extraSheet() && /Wide/.test(extraSheet().textContent) && tile(1) && tile(1).textContent.includes("Wd"), "tapping Wide opens a 'how many runs?' sheet; its first tile is the plain wide");
-    tile(5).click();
+    assert(extraSheet() && /Wide/.test(extraSheet().textContent) && tile(0) && /just the wide/.test(tile(0).textContent) && /Wd · 1 total/.test(tile(0).textContent), "tapping Wide asks for the runs on top; the 0 tile is just the wide (1 total)");
+    assert(tile(4).querySelector(".total").textContent === "4" && /Wd\+4 · 5 total/.test(tile(4).textContent), "the 4 tile shows 4 (a boundary) and that the ball is worth 5");
+    tile(4).click();
     assert(!extraSheet() && runsNow() === before + 5 && win.eval("currentInnings(state.match).extras.wides") >= 5, "a tile records the wide with that total (Wd+4 = 5) and closes the sheet");
     before = runsNow();
     extraBtn("noball").click();
-    tile(5).click();
-    assert(runsNow() === before + 5 && win.eval("currentInnings(state.match).freeHit") === true, "no-ball tile 5 = Nb + 4 off the bat, and sets the free hit");
+    tile(4).click();
+    assert(runsNow() === before + 5 && win.eval("currentInnings(state.match).freeHit") === true, "no-ball tile 4 = Nb + 4 off the bat (5), and sets the free hit");
     before = runsNow();
     extraBtn("bye").click();
     assert(!tile(0) && tile(1), "byes start at 1");

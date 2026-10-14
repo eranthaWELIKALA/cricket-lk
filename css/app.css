@@ -204,9 +204,13 @@ button:disabled{opacity:.4;cursor:not-allowed;box-shadow:none;}
 }
 .extra-pad button.active{background:var(--accent);color:var(--accent-ink);border-color:var(--bg);}
 /* "How many runs?" sheet for an extra: total on top, over-row chip under it. */
-.extra-runs-pad .run-btn{ display:flex; flex-direction:column; align-items:center; gap:2px; padding:12px 0; }
-.extra-runs-pad .run-btn .total{ font-size:1.4rem; font-weight:800; line-height:1; }
-.extra-runs-pad .run-btn .chip-label{ font-size:.7rem; font-weight:700; color:var(--muted); letter-spacing:.04em; }
+.extra-runs-pad{ grid-template-columns:repeat(4, minmax(0, 1fr)); }
+.extra-runs-pad .run-btn{ display:flex; flex-direction:column; align-items:center; gap:3px; padding:10px 2px; min-height:86px; min-width:0; }
+.extra-runs-pad .run-btn .total{ font-size:1.7rem; font-weight:800; line-height:1; }
+.extra-runs-pad .run-btn .what{ font-size:.7rem; font-weight:800; line-height:1.15; text-align:center; }
+.extra-runs-pad .run-btn .chip-label{ font-size:.6rem; font-weight:700; color:var(--muted); line-height:1.2; text-align:center; }
+.extra-base{ font-size:.75rem; font-weight:800; vertical-align:middle; padding:2px 8px; border-radius:999px; background:rgba(var(--accent-rgb),.16); border:2px solid var(--accent); color:var(--accent); }
+.modal .extra-ask{ font-size:1.05rem; font-weight:800; margin:2px 0 4px; color:var(--text); }
 .extra-runs-pad .run-btn.boundary{ border-color:var(--accent); }
 
 .action-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;margin-bottom:10px;}

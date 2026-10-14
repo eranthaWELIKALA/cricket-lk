@@ -19,34 +19,47 @@ function handleBallClick(runs){
 /* An extra (wide / no-ball / bye / leg bye) always asks how many runs it was
    worth in its own sheet, so the scorer can't record it without choosing.
    ui.pendingExtra is both "is the sheet open" and which extra; a tap on a
-   tile goes through handleBallClick like the run pad used to. Each tile shows
-   the total the ball adds to the score (base run included) and the chip it
-   leaves in the over row. */
+   tile goes through handleBallClick like the run pad used to. For a wide or
+   no-ball the question is the runs run or hit *on top of* the extra itself
+   (that's what data-runs / event.runs is); each tile spells out the ball's
+   total and the chip it leaves in the over row. Byes/leg byes start at 1. */
 function renderExtraRunsModal(inn){
   const kind = ui.pendingExtra;
+  const plural = n => `${n} run${n === 1 ? "" : "s"}`;
   const cfg = {
     wide:   { title: "Wide", base: inn.wideBaseRuns, from: 0, chip: n => n ? `Wd+${n}` : "Wd",
-              hint: `Pick the total for the ball: the wide itself (${inn.wideBaseRuns}) plus any runs taken or a boundary.` },
+              ask: "Did they run, or did it go for four?",
+              note: `The wide itself is ${plural(inn.wideBaseRuns)} and the ball is bowled again. Pick the runs they ran, or 4 for a boundary.`,
+              label: n => n === 0 ? "just the wide" : n === 4 ? "four" : `ran ${n}` },
     noball: { title: "No ball", base: inn.noBallBaseRuns, from: 0, chip: n => n ? `Nb+${n}` : "Nb",
-              hint: `Pick the total for the ball: the no-ball itself (${inn.noBallBaseRuns}) plus any runs off the bat.${inn.freeHitOnNoBall ? " The next ball is a free hit." : ""}` },
-    bye:    { title: "Bye", base: 0, from: 1, chip: n => `B${n}`,
-              hint: "Byes go on the team total, not against the bowler." },
-    legbye: { title: "Leg bye", base: 0, from: 1, chip: n => `Lb${n}`,
-              hint: "Leg byes go on the team total, not against the bowler." }
+              ask: "How many off the bat (or run)?",
+              note: `The no-ball itself is ${plural(inn.noBallBaseRuns)} and the ball is bowled again${inn.freeHitOnNoBall ? "; the next ball is a free hit" : ""}. Pick the runs hit or run — they go to the batter.`,
+              label: n => n === 0 ? "just the no-ball" : n === 4 ? "four" : n === 6 ? "six" : plural(n) },
+    bye:    { title: "Byes", base: 0, from: 1, chip: n => `B${n}`,
+              ask: "How many byes?",
+              note: "Runs the batters ran (or a boundary) without the bat touching it. They count as a ball and go on the team total, not against the bowler.",
+              label: n => n === 4 ? "four" : plural(n) },
+    legbye: { title: "Leg byes", base: 0, from: 1, chip: n => `Lb${n}`,
+              ask: "How many leg byes?",
+              note: "Runs off the batter's body (not the bat). They count as a ball and go on the team total, not against the bowler.",
+              label: n => n === 4 ? "four" : plural(n) }
   }[kind];
   if (!cfg) return "";
   const options = [];
   for (let n = cfg.from; n <= 6; n++) options.push(n);
   return `
     <div class="modal-backdrop">
-      <div class="modal extra-runs-modal" data-keep-scroll="extra-runs">
+      <div class="modal extra-runs-modal" data-keep-scroll="extra-runs" role="dialog" aria-modal="true" aria-label="${cfg.title}">
         <div class="wicket-modal-head">
-          <h2>${cfg.title} — how many runs?</h2>
+          <h2>${cfg.title}${cfg.base ? ` <span class="extra-base">+${plural(cfg.base)}</span>` : ""}</h2>
         </div>
-        <p class="hint">${escapeHtml(cfg.hint)}</p>
+        <p class="extra-ask">${cfg.ask}</p>
+        <p class="hint">${escapeHtml(cfg.note)}</p>
         <div class="run-pad small extra-runs-pad">
-          ${options.map(n => `<button type="button" data-action="ball" data-runs="${n}" class="run-btn${n === 4 || (n === 6 && kind === "noball") ? " boundary" : ""}">
-            <span class="total">${cfg.base + n}</span><span class="chip-label">${cfg.chip(n)}</span>
+          ${options.map(n => `<button type="button" data-action="ball" data-runs="${n}" class="run-btn${n === 4 || (n === 6 && kind === "noball") ? " boundary" : ""}" aria-label="${cfg.label(n)}, ${plural(cfg.base + n)} in total">
+            <span class="total">${n}</span>
+            <span class="what">${cfg.label(n)}</span>
+            <span class="chip-label">${cfg.chip(n)} · ${cfg.base + n} total</span>
           </button>`).join("")}
         </div>
         <button type="button" data-action="close-extra" class="ghost" style="width:100%;margin-top:6px;">Cancel</button>

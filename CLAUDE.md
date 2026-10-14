@@ -455,12 +455,15 @@ stand-in, that would silently record the wrong number. Build a real
 custom-runs input first if this is ever added.
 
 **Extras ask for their runs in a sheet.** Tapping Wide / No ball / Bye /
-Leg bye opens `renderExtraRunsModal` ("Wide — how many runs?"), so an extra
-can't be recorded without picking its value. `ui.pendingExtra` is both "is
-the sheet open" and which extra (checked in `render()` after `wicketFlow`);
-its tiles are `data-action="ball"` → `handleBallClick`, same as before. Each
-tile shows the **total** the ball adds (the preset's wide/no-ball base run
-included) with the over-row chip under it (`Wd+4`, `Nb+2`, `B3`); byes and
+Leg bye opens `renderExtraRunsModal`, so an extra can't be recorded without
+picking its value. `ui.pendingExtra` is both "is the sheet open" and which
+extra (checked in `render()` after `wicketFlow`); its tiles are
+`data-action="ball"` → `handleBallClick`, same as before. For a wide or
+no-ball it asks for the **runs run or hit on top of the extra** ("Did they
+run, or did it go for four?" / "How many off the bat (or run)?" — the base
+run is a `+1 run` badge in the title): the big number on each tile is that
+(= `event.runs`), with a word ("just the wide", "four", "six") and the
+over-row chip plus the ball's total underneath (`Wd+4 · 5 total`). Byes and
 leg byes start at 1. It's an overlay (back/Esc/Cancel close it, nothing
 recorded).
 
