@@ -387,13 +387,24 @@ If you add another path that calls `createMatch`, guard it the same way.
 ## Share & export
 
 Both are dependency-free by design (see README) — no CDN libraries.
-"Share image" (`shareScorecardImage`) draws the scorecard onto an
-offscreen `<canvas>` (`renderScorecardCanvas`) and uses
-`navigator.share`/`canShare` with files when available, falling back to
-a plain `<a download>` of the PNG blob. "Export PDF" is just
-`window.print()` against the `@media print` rules in the stylesheet
-(hides modals/buttons/nav, forces light colors) — the browser's own
-"Save as PDF" in the print dialog does the rest. If you touch either,
+**Share images** (the Result scorecard, `renderScorecardCanvas`, and an ended
+tournament's summary, `renderTournamentCanvas`) are drawn on a `<canvas>`
+with a small kit in result.js: `SHARE_THEMES` (Night/Day), `shareHeader`
+(app logo `icon-192.png` via `loadShareLogo`, "Cricket.lk"), `shareFooter`
+("Scored with Cricket.lk · by Erantha Welikala"), `shareCard`/`shareText`/
+`shareTable`, and `composeShareImage` (content on a tall transparent canvas,
+then onto a striped gradient cut to the real height). Tapping Share opens a
+**preview sheet** (`openSharePreview(kind)` → `ui.sharePreview`, an overlay;
+the PNG blob is `sharePreviewBlob`, outside `ui`): pick the theme, then Share
+(`navigator.share` with the file — this tap is the user gesture it needs) or
+Save image (`<a download>`; the only button where files can't be shared).
+**Export PDF** (`exportPdf`) is `window.print()` against the `@media print`
+rules: a print-only branded header (`#print-brand`: logo, app name, what's
+printed) and footer (`#print-foot`: "by Erantha Welikala", date) in
+`index.html`, light cards with rules. On Result it expands the full
+scorecard just for the print (restored on `afterprint`), and
+`document.title` is set meanwhile so the PDF is named after the match. The
+tournament Summary tab has Export PDF too. If you touch either,
 keep them dependency-free; that was a deliberate choice, not an
 oversight.
 
@@ -716,9 +727,9 @@ per innings (2 top batters + 1 top bowler, no extras line) — reusing
 `ui.liveScorecard`). Toggling it swaps the condensed pair for the tabbed
 `renderScorecard` (all innings' full tables are in the DOM, one visible), so nothing is ever permanently
 lost — this matters because "Export PDF" is just `window.print()` on
-whatever's currently in the DOM (see "Share & export" above): printing
-without expanding first prints the condensed cards, which is a real,
-visible consequence of this default, not a hidden one. `renderResultInningsCard`
+whatever's currently in the DOM (see "Share & export" above) —
+`exportPdf` expands the full scorecard for the print and puts the condensed
+view back afterwards. `renderResultInningsCard`
 is its own function rather than a parameterized `renderInningsHighlights`
 call — its shape (one combined card, 2 batters/1 bowler, no extras) differs
 enough from the innings-break version (two cards, 3/2, extras line) that
@@ -1567,6 +1578,19 @@ PWA**, so this is as far as it goes:
   can't be read there — and a match scored in Safari won't be in the app.
 Hidden when standalone, on desktop, on the live scoring screen
 (`body.live-scoring`) and in print; ✕ or declining snoozes it for 7 days.
+
+## Tutorial page (`tutorial.html`)
+
+A standalone, dependency-free guide (its own inline styles, light/dark),
+ordered easy → advanced in nine chapters, with phone screenshots in
+`tutorial/img/`. Reached from the side menu's "How to use"
+(`open-tutorial`, a plain navigation — it's a page, not a screen; "Open the
+app" goes back). Not in `sw.js`' cache list, like `admin.html`. The
+screenshots come from `scripts/tutorial/cap1–3.js` (Playwright against a
+local server, Supabase blocked, club/Premier screens drawn from sample data
+injected into the page — see the header of `cap-lib.js`). **When a screen it
+shows changes, re-run the matching script and update the page text**; delete
+any image the page no longer references.
 
 ## Deployment
 

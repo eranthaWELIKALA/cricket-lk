@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0D3D2E">
+<title>How to use Cricket.lk</title>
+<meta name="description" content="A step-by-step guide to Cricket.lk, the ball-by-ball cricket scorer: from your first match to tournaments, clubs and Premier.">
+<link rel="icon" href="favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+  :root{
+    --bg:#07120E; --bg-2:#0B1C16; --panel:#102620; --panel-2:#15302A; --line:rgba(255,255,255,.1); --line-strong:rgba(255,255,255,.2);
+    --text:#EEF5F1; --muted:#9DB8AB; --accent:#FFC145; --accent-ink:#1E1500; --green:#34D399; --green-ink:#04130D;
+    --red:#FF5C72; --blue:#6CB6FF; --radius:18px; --shadow:4px 4px 0 rgba(0,0,0,.45);
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#F4F8F5; --bg-2:#E8F1EC; --panel:#FFFFFF; --panel-2:#F1F6F3; --line:rgba(12,34,25,.1); --line-strong:rgba(12,34,25,.2);
+      --text:#0C2219; --muted:#557566; --accent:#E5A800; --accent-ink:#241900; --green:#0E9F6E; --green-ink:#FFFFFF; --shadow:4px 4px 0 rgba(12,34,25,.12);
+    }
+  }
+  *{ box-sizing:border-box; }
+  html{ scroll-behavior:smooth; scroll-padding-top:72px; }
+  body{ margin:0; background:var(--bg); color:var(--text); font:16px/1.6 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing:antialiased; }
+  a{ color:var(--green); }
+  img{ max-width:100%; }
+  .wrap{ max-width:1080px; margin:0 auto; padding:0 16px; }
+
+  /* top bar */
+  .bar{ position:sticky; top:0; z-index:20; background:color-mix(in srgb, var(--bg) 88%, transparent); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
+  .bar .wrap{ display:flex; align-items:center; gap:10px; height:60px; }
+  .bar img{ width:34px; height:34px; border-radius:9px; }
+  .bar b{ font-size:1.05rem; }
+  .bar .open{ margin-left:auto; background:var(--accent); color:var(--accent-ink); font-weight:800; text-decoration:none; padding:8px 14px; border-radius:12px; border:2px solid var(--bg); box-shadow:var(--shadow); font-size:.9rem; white-space:nowrap; }
+
+  /* hero */
+  .hero{ padding:44px 0 28px; }
+  .hero .eyebrow{ font-size:.75rem; font-weight:800; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); }
+  .hero h1{ font-size:clamp(2rem, 6vw, 3.2rem); line-height:1.05; margin:8px 0 12px; letter-spacing:-.02em; }
+  .hero h1 span{ display:inline-block; background:var(--green); color:var(--green-ink); padding:0 10px; border-radius:10px; transform:rotate(-1.5deg); }
+  .hero p{ color:var(--muted); max-width:640px; font-size:1.05rem; margin:0; }
+  .levels{ display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; }
+  .lvl{ font-size:.72rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; padding:4px 10px; border-radius:999px; border:2px solid; }
+  .lvl.easy{ color:var(--green); border-color:var(--green); }
+  .lvl.mid{ color:var(--accent); border-color:var(--accent); }
+  .lvl.adv{ color:var(--blue); border-color:var(--blue); }
+
+  /* contents */
+  .toc{ display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:10px; margin:26px 0 8px; padding:0; list-style:none; counter-reset:toc; }
+  .toc a{ display:flex; gap:12px; align-items:center; text-decoration:none; color:var(--text); background:var(--panel); border:2px solid var(--line-strong); border-radius:14px; padding:12px 14px; box-shadow:var(--shadow); font-weight:700; }
+  .toc a:hover{ border-color:var(--green); }
+  .toc .n{ flex-shrink:0; width:30px; height:30px; display:grid; place-items:center; border-radius:9px; background:var(--panel-2); font-weight:800; color:var(--green); }
+  .toc small{ display:block; font-weight:600; color:var(--muted); font-size:.75rem; }
+
+  /* chapters */
+  .chapter{ padding:40px 0 8px; border-top:1px solid var(--line); margin-top:36px; }
+  .chapter-head{ display:flex; align-items:flex-start; gap:14px; margin-bottom:6px; }
+  .chapter-num{ flex-shrink:0; width:48px; height:48px; display:grid; place-items:center; border-radius:14px; background:var(--green); color:var(--green-ink); font-weight:900; font-size:1.3rem; box-shadow:var(--shadow); }
+  .chapter h2{ margin:0; font-size:clamp(1.5rem, 4vw, 2rem); line-height:1.15; }
+  .chapter-intro{ color:var(--muted); margin:10px 0 0; max-width:720px; }
+
+  .step{ display:grid; grid-template-columns:1fr; gap:18px; align-items:center; background:var(--panel); border:2px solid var(--line-strong); border-radius:var(--radius); padding:20px; margin:22px 0; box-shadow:var(--shadow); }
+  @media (min-width:760px){
+    .step{ grid-template-columns:1fr 290px; gap:32px; padding:28px; }
+    .step.two{ grid-template-columns:1fr 290px 290px; }
+  }
+  .step h3{ margin:0 0 8px; font-size:1.2rem; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .step p{ margin:0 0 10px; }
+  .step ol, .step ul{ margin:0 0 10px; padding-left:22px; }
+  .step li{ margin:4px 0; }
+  .step .lvl{ font-size:.62rem; padding:2px 8px; }
+  kbd, .ui{ font:inherit; font-weight:800; font-size:.9em; background:var(--panel-2); border:1px solid var(--line-strong); border-radius:7px; padding:1px 7px; white-space:nowrap; }
+  .tip{ background:color-mix(in srgb, var(--green) 12%, transparent); border-left:4px solid var(--green); border-radius:10px; padding:10px 12px; margin:10px 0 0; font-size:.94rem; }
+  .tip.warn{ background:color-mix(in srgb, var(--accent) 14%, transparent); border-left-color:var(--accent); }
+  .tip b:first-child{ display:block; font-size:.72rem; letter-spacing:.12em; text-transform:uppercase; margin-bottom:2px; }
+
+  /* phone frame */
+  .shots{ display:flex; gap:16px; justify-content:center; flex-wrap:wrap; }
+  .step.two .shots{ display:contents; }
+  figure{ margin:0; text-align:center; }
+  .phone{ display:block; width:min(270px, 78vw); margin:0 auto; padding:9px; border-radius:38px; background:#0A0F0D; border:2px solid #2A3A33; box-shadow:0 18px 40px -18px rgba(0,0,0,.6), var(--shadow); cursor:zoom-in; position:relative; }
+  .phone::before{ content:""; position:absolute; top:13px; left:50%; transform:translateX(-50%); width:56px; height:12px; border-radius:8px; background:#0A0F0D; z-index:1; }
+  .phone img{ display:block; width:100%; height:auto; border-radius:30px; aspect-ratio:390 / 844; object-fit:cover; object-position:top; background:var(--bg-2); }
+  .phone.short img{ aspect-ratio:390 / 420; }
+  figcaption{ font-size:.8rem; color:var(--muted); margin-top:8px; font-weight:600; }
+
+  /* lightbox */
+  dialog{ border:0; padding:0; background:transparent; max-width:96vw; max-height:96vh; }
+  dialog::backdrop{ background:rgba(0,0,0,.82); }
+  dialog img{ display:block; max-width:96vw; max-height:92vh; border-radius:22px; }
+  dialog button{ position:fixed; top:14px; right:14px; width:44px; height:44px; border-radius:50%; border:2px solid #fff3; background:#000a; color:#fff; font-size:1.2rem; cursor:pointer; }
+
+  footer{ margin-top:56px; padding:32px 0 calc(32px + env(safe-area-inset-bottom)); border-top:1px solid var(--line); text-align:center; color:var(--muted); }
+  footer img{ width:44px; height:44px; border-radius:12px; display:block; margin:0 auto 10px; }
+  footer b{ color:var(--text); }
+  .faq details{ background:var(--panel); border:2px solid var(--line-strong); border-radius:14px; padding:12px 16px; margin:10px 0; }
+  .faq summary{ font-weight:800; cursor:pointer; }
+  .faq details p{ margin:8px 0 2px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="wrap">
+    <img src="icon-192.png" alt="">
+    <b>Cricket.lk</b><span style="color:var(--muted);font-size:.9rem;">· How to use</span>
+    <a class="open" href="./">Open the app</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <div class="eyebrow">Tutorial</div>
+    <h1>How to use <span>Cricket.lk</span></h1>
+    <p>Everything the scorer can do, one step at a time — from your very first match to tournaments, clubs and the Premier list. Start at the top; each chapter builds on the last. Tap any screenshot to enlarge it.</p>
+    <div class="levels"><span class="lvl easy">Beginner · 1–3</span><span class="lvl mid">Intermediate · 4–5</span><span class="lvl adv">Advanced · 6–9</span></div>
+
+    <ol class="toc">
+      <li><a href="#start"><span class="n">1</span><span>Getting started<small>Install, Home, menu</small></span></a></li>
+      <li><a href="#match"><span class="n">2</span><span>Score your first match<small>Runs, extras, wickets, result</small></span></a></li>
+      <li><a href="#share"><span class="n">3</span><span>Share &amp; export<small>Images and PDF</small></span></a></li>
+      <li><a href="#guest"><span class="n">4</span><span>Teams, players &amp; presets<small>Your own lists and stats</small></span></a></li>
+      <li><a href="#tournaments"><span class="n">5</span><span>Tournaments<small>Fixtures, points table, summary</small></span></a></li>
+      <li><a href="#clubs"><span class="n">6</span><span>Accounts &amp; clubs<small>Roster, profiles, admins</small></span></a></li>
+      <li><a href="#club-tournaments"><span class="n">7</span><span>Club tournaments &amp; teams<small>Team builder, guests</small></span></a></li>
+      <li><a href="#offline"><span class="n">8</span><span>Offline &amp; sync<small>Score anywhere</small></span></a></li>
+      <li><a href="#premier"><span class="n">9</span><span>Premier, settings &amp; tips<small>Claiming, themes, FAQ</small></span></a></li>
+    </ol>
+  </section>
+
+  <!-- 1 -->
+  <section class="chapter" id="start">
+    <div class="chapter-head"><div class="chapter-num">1</div><div><h2>Getting started</h2><p class="chapter-intro">Cricket.lk is a web app you install on your phone. It works without an account and without internet — everything you score is saved on your device.</p></div></div>
+
+    <div class="step">
+      <div>
+        <h3>Install it on your phone <span class="lvl easy">Beginner</span></h3>
+        <p>Open the app's address in your phone's browser. A banner at the bottom shows how to install it for your browser.</p>
+        <ul>
+          <li><b>Android (Chrome):</b> tap <span class="ui">Install</span> on the banner, or ⋮ → <span class="ui">Install app</span>.</li>
+          <li><b>iPhone (Safari):</b> tap <span class="ui">Share</span> → <span class="ui">Add to Home Screen</span>.</li>
+          <li>In WhatsApp / Instagram's built-in browser, open the link in Chrome or Safari first.</li>
+        </ul>
+        <p>After that, launch Cricket.lk from your home screen like any other app. It opens with a short splash screen while it loads.</p>
+        <div class="tip"><b>Good to know</b>Installed, it works fully offline — handy at grounds with no signal.</div>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/02-install.jpg"><img src="tutorial/img/02-install.jpg" alt="Install banner at the bottom of Home" width="390" height="844" loading="lazy"></a><figcaption>The install banner</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="step two">
+      <div>
+        <h3>Find your way around <span class="lvl easy">Beginner</span></h3>
+        <p><b>Home</b> is your starting point: <span class="ui">New match</span> (the big green tile), <span class="ui">New tournament</span>, <span class="ui">Teams</span>, <span class="ui">Players</span>, <span class="ui">Presets</span> and <span class="ui">Stats</span>.</p>
+        <p>The <span class="ui">☰</span> menu (top left) reaches every screen, including Premier, Settings and Sign in. The top-right buttons are sign-in/your account and sound on/off.</p>
+        <p><b>Acting as</b> on Home switches between scoring as a <i>Guest</i> (on this device) and as one of your clubs — see chapter 6.</p>
+        <div class="tip"><b>Tip</b>Your phone's back button works everywhere: it closes sheets first, then goes back a screen.</div>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/03-home.jpg"><img src="tutorial/img/03-home.jpg" alt="Home screen" width="390" height="844" loading="lazy"></a><figcaption>Home</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/04-menu.jpg"><img src="tutorial/img/04-menu.jpg" alt="Side menu" width="390" height="844" loading="lazy"></a><figcaption>The ☰ menu</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section class="chapter" id="match">
+    <div class="chapter-head"><div class="chapter-num">2</div><div><h2>Score your first match</h2><p class="chapter-intro">A full match, ball by ball: set it up, pick the openers, score runs, extras and wickets, and finish with a result.</p></div></div>
+
+    <div class="step two">
+      <div>
+        <h3>1 · Set up the match <span class="lvl easy">Beginner</span></h3>
+        <ol>
+          <li>On Home, tap <span class="ui">New match</span>.</li>
+          <li>Pick a <b>preset</b> — <i>T20</i>, <i>T10</i> or <i>Tape-ball</i>. It fills in the playing conditions. Tap the <span class="ui">i</span> next to a preset to read exactly what it means.</li>
+          <li>Type the two <b>team names</b>.</li>
+          <li>Change anything you like: balls per over, overs, players per side, last man stands, what a wide or no-ball is worth, free hits, and whether a catch/run-out needs the fielder's name. Leave overs or players <b>blank for no limit</b>.</li>
+          <li>Choose who bats first and tap <span class="ui">Start match</span>.</li>
+        </ol>
+        <div class="tip"><b>Tip</b>Type the name of a saved team (chapter 4) and only its players are suggested for that side.</div>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/05-new-match.jpg"><img src="tutorial/img/05-new-match.jpg" alt="New match setup" width="390" height="844" loading="lazy"></a><figcaption>Presets and team names</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/06-preset-info.jpg"><img src="tutorial/img/06-preset-info.jpg" alt="Preset explained" width="390" height="844" loading="lazy"></a><figcaption>The ⓘ explains a preset</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="step">
+      <div>
+        <h3>2 · Name the openers and the first bowler <span class="lvl easy">Beginner</span></h3>
+        <p>Type (or pick from the list) the <b>striker</b>, <b>non-striker</b> and the <b>bowler</b>, then tap <span class="ui">Start innings</span>. Names you've used before are suggested as you type.</p>
+        <p>Got the toss wrong? Tap <span class="ui">Wrong toss?</span> to swap who bats first.</p>
+        <div class="tip"><b>Rule built in</b>A player can't play for both teams in one match — the app stops you if you type a name that's already on the other side.</div>
+      </div>
+      <div class="shots"><figure><a class="phone" href="tutorial/img/07-opening.jpg"><img src="tutorial/img/07-opening.jpg" alt="Opening players sheet" width="390" height="844" loading="lazy"></a><figcaption>Opening players</figcaption></figure></div>
+    </div>
+
+    <div class="step">
+      <div>
+        <h3>3 · The live scoring screen <span class="lvl easy">Beginner</span></h3>
+        <p>Everything fits on one screen:</p>
+        <ul>
+          <li><b>Score</b>, overs and run rate at the top (and the target, runs needed and required rate in a chase).</li>
+          <li>The <b>batters</b> (▶ marks the striker), the <b>bowler</b>, the partnership and last wicket.</li>
+          <li>The <b>over rail</b> — every ball of this over, and the last one.</li>
+          <li>The <b>run pad</b>: tap <span class="ui">0</span>–<span class="ui">6</span> after each ball. Strike changes and overs end automatically.</li>
+          <li><span class="ui">UNDO</span> takes back the last ball — use it freely.</li>
+        </ul>
+        <div class="tip"><b>Tip</b>The ⋯ button at the top opens Match options (step 7).</div>
+      </div>
+      <div class="shots"><figure><a class="phone" href="tutorial/img/08-live.jpg"><img src="tutorial/img/08-live.jpg" alt="Live scoring screen" width="390" height="844" loading="lazy"></a><figcaption>Live scoring</figcaption></figure></div>
+    </div>
+
+    <div class="step">
+      <div>
+        <h3>4 · Extras: wides, no-balls, byes, leg byes <span class="lvl easy">Beginner</span></h3>
+        <p>Tap <span class="ui">Wide</span>, <span class="ui">No ball</span>, <span class="ui">Bye</span> or <span class="ui">Leg bye</span>. A sheet asks <b>how many runs</b> the ball was worth in total — e.g. a wide that went for four is <span class="ui">5 · Wd+4</span>.</p>
+        <ul>
+          <li>Wides and no-balls don't count as a ball of the over; byes and leg byes do.</li>
+          <li>Byes and leg byes go to the team, not against the bowler.</li>
+          <li>A no-ball gives a <b>free hit</b> (if your preset says so) — only a run out is possible on it.</li>
+        </ul>
+      </div>
+      <div class="shots"><figure><a class="phone" href="tutorial/img/09-extras.jpg"><img src="tutorial/img/09-extras.jpg" alt="Extras sheet" width="390" height="844" loading="lazy"></a><figcaption>"Wide — how many runs?"</figcaption></figure></div>
+    </div>
+
+    <div class="step two">
+      <div>
+        <h3>5 · Wickets <span class="lvl easy">Beginner</span></h3>
+        <p>Tap <span class="ui">WICKET</span> and choose how they got out.</p>
+        <ul>
+          <li><b>Bowled, LBW, Stumped, Hit wicket</b> — one tap and it's done.</li>
+          <li><b>Caught</b> — add the fielder's name (credits the catch), then <span class="ui">Confirm wicket</span>.</li>
+          <li><b>Run out</b> — pick <i>who's out</i> (striker or non-striker), <i>at which end</i>, and the <i>runs completed</i> before it, then confirm.</li>
+        </ul>
+        <div class="tip"><b>Tip</b>The sheets show the current score in a banner at the top, so you never lose track.</div>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/10-wicket-caught.jpg"><img src="tutorial/img/10-wicket-caught.jpg" alt="Caught with fielder" width="390" height="844" loading="lazy"></a><figcaption>Caught — with the fielder</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/11-wicket-runout.jpg"><img src="tutorial/img/11-wicket-runout.jpg" alt="Run out options" width="390" height="844" loading="lazy"></a><figcaption>Run out — who, which end, runs</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="step two">
+      <div>
+        <h3>6 · New batter, new bowler <span class="lvl easy">Beginner</span></h3>
+        <p>After a wicket the app asks for the <b>new batter</b> (it shows how the last one got out). At the end of each over it asks for the <b>next bowler</b>:</p>
+        <ul>
+          <li>Anyone who has already bowled is one tap away, with their figures.</li>
+          <li>Last over's bowler is crossed out — no one bowls two overs in a row.</li>
+        </ul>
+        <p>Need a moment? Tap <span class="ui">Pick later</span> — or <b>drag the sheet down</b> — to look at the scorecard or menu first. A <span class="ui">+ Pick batsman</span> chip waits in the empty slot, and tapping any run button brings the sheet back.</p>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/12-new-batsman.jpg"><img src="tutorial/img/12-new-batsman.jpg" alt="New batsman sheet" width="390" height="844" loading="lazy"></a><figcaption>New batter, with the score banner</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/14-new-bowler.jpg"><img src="tutorial/img/14-new-bowler.jpg" alt="New bowler sheet" width="390" height="844" loading="lazy"></a><figcaption>Next bowler</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="step two">
+      <div>
+        <h3>7 · Match options &amp; the full scorecard <span class="lvl mid">Intermediate</span></h3>
+        <p>The ⋯ button opens <b>Match options</b>:</p>
+        <ul>
+          <li><b>Change who bats first</b> — restarts the same match from ball one (Undo brings it back).</li>
+          <li><b>End innings</b> — rain, time, a declaration.</li>
+          <li><b>Forfeit</b> — one team concedes; pick the team, then confirm.</li>
+          <li><b>Cancel match</b> — discard it with no result.</li>
+          <li><b>Switch players</b> (when the sides come from saved teams) and <b>Show nicknames</b> (club matches).</li>
+        </ul>
+        <p><span class="ui">Full scorecard</span> under the Wicket button opens every innings, with a <b>Ball by ball</b> tab listing each over.</p>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/15-match-options.jpg"><img src="tutorial/img/15-match-options.jpg" alt="Match options" width="390" height="844" loading="lazy"></a><figcaption>Match options (⋯)</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/17-ball-by-ball.jpg"><img src="tutorial/img/17-ball-by-ball.jpg" alt="Ball by ball" width="390" height="844" loading="lazy"></a><figcaption>Scorecard → Ball by ball</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="step two">
+      <div>
+        <h3>8 · Innings break and the result <span class="lvl easy">Beginner</span></h3>
+        <p>When the first innings ends you get the <b>innings break</b>: top scorers, best bowlers and the target. Tap <span class="ui">Start 2nd innings</span> and name the new openers.</p>
+        <p>When the chase ends, the <b>Result</b> screen shows who won and by how much, and the <b>Player of the match</b> — picked automatically from runs, wickets and catches. You can change it.</p>
+        <p>The match is saved to your history: it feeds Stats, MVP and any points table.</p>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/18-innings-break.jpg"><img src="tutorial/img/18-innings-break.jpg" alt="Innings break" width="390" height="844" loading="lazy"></a><figcaption>Innings break</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/19-result.jpg"><img src="tutorial/img/19-result.jpg" alt="Result screen" width="390" height="844" loading="lazy"></a><figcaption>Result</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="step two">
+      <div>
+        <h3>9 · Quick scoring without names <span class="lvl easy">Beginner</span></h3>
+        <p>No time for names? Tick <span class="ui">Score without player names</span> at the bottom of match setup. You go straight to the run pad and never get asked for a name.</p>
+        <ul>
+          <li>Batters appear as <i>Batter 1, Batter 2…</i>, and each over's bowler as <i>Over 1, Over 2…</i></li>
+          <li>Team scores, results and points tables work as normal; these matches just stay out of player stats.</li>
+        </ul>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/23-no-names-option.jpg"><img src="tutorial/img/23-no-names-option.jpg" alt="Score without player names option" width="390" height="844" loading="lazy"></a><figcaption>The option at match setup</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/24-no-names-live.jpg"><img src="tutorial/img/24-no-names-live.jpg" alt="Scoring without names" width="390" height="844" loading="lazy"></a><figcaption>Batter 2, Batter 3, Over 2</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section class="chapter" id="share">
+    <div class="chapter-head"><div class="chapter-num">3</div><div><h2>Share &amp; export</h2><p class="chapter-intro">Send a scorecard to the team group, or keep a PDF.</p></div></div>
+
+    <div class="step two">
+      <div>
+        <h3>Share a scorecard image <span class="lvl easy">Beginner</span></h3>
+        <ol>
+          <li>On the Result screen tap <span class="ui">Share image</span>.</li>
+          <li>Pick the look: <b>Night</b> or <b>Day</b>.</li>
+          <li>Tap <span class="ui">Share</span> to send it to WhatsApp, Instagram and so on, or <span class="ui">Save image</span>.</li>
+        </ol>
+        <p>The image has both innings, every batter and bowler, the player of the match, and the Cricket.lk logo.</p>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/20-share.jpg"><img src="tutorial/img/20-share.jpg" alt="Share preview, night theme" width="390" height="844" loading="lazy"></a><figcaption>Night</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/21-share-day.jpg"><img src="tutorial/img/21-share-day.jpg" alt="Share preview, day theme" width="390" height="844" loading="lazy"></a><figcaption>Day</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="step">
+      <div>
+        <h3>Export a PDF <span class="lvl easy">Beginner</span></h3>
+        <p>Tap <span class="ui">Export PDF</span>, then choose <b>Save as PDF</b> in your phone's print screen. You get a clean, printable scorecard — the full version of every innings — with the Cricket.lk header, named after the match.</p>
+        <div class="tip"><b>Also for tournaments</b>An ended tournament's Summary has its own Share and Export PDF (chapter 5).</div>
+      </div>
+      <div class="shots"><figure><a class="phone" href="tutorial/img/22-pdf.jpg"><img src="tutorial/img/22-pdf.jpg" alt="PDF scorecard" width="390" height="844" loading="lazy"></a><figcaption>The PDF</figcaption></figure></div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section class="chapter" id="guest">
+    <div class="chapter-head"><div class="chapter-num">4</div><div><h2>Teams, players &amp; presets</h2><p class="chapter-intro">Save your regular sides and playing conditions so setting up a match takes seconds. All of this stays on your device.</p></div></div>
+
+    <div class="step two">
+      <div>
+        <h3>Teams and players <span class="lvl mid">Intermediate</span></h3>
+        <p><b>Teams</b>: add a team, then add its players. <b>Players</b>: everyone you've ever named, with their team.</p>
+        <p>When you type a saved team's name at match setup, its players become that side's squad: only they're suggested while scoring, and you can move players between sides for one match from ⋯ → <i>Switch players</i>.</p>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/26-teams.jpg"><img src="tutorial/img/26-teams.jpg" alt="Teams" width="390" height="844" loading="lazy"></a><figcaption>Teams</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/27-players.jpg"><img src="tutorial/img/27-players.jpg" alt="Players" width="390" height="844" loading="lazy"></a><figcaption>Players</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="step two">
+      <div>
+        <h3>Presets <span class="lvl mid">Intermediate</span></h3>
+        <p>A <b>match preset</b> is a set of playing conditions (overs, balls per over, players, wides, no-balls, free hit, fielder rules). A <b>tournament preset</b> adds points for a win/tie/loss and whether net run rate is used.</p>
+        <p>The built-in T20, T10 and Tape-ball presets can be edited or deleted like your own. Tap <span class="ui">+ New match preset</span> for your Sunday rules.</p>
+        <h3 style="margin-top:18px;">Stats and MVP <span class="lvl mid">Intermediate</span></h3>
+        <p><b>Stats</b> leads with the <b>MVP</b> table (points for runs, boundaries, wickets, maidens, catches and run-outs), then Batting, Bowling and Fielding tabs. It reads every completed match on your device.</p>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/28-presets.jpg"><img src="tutorial/img/28-presets.jpg" alt="Presets" width="390" height="844" loading="lazy"></a><figcaption>Presets</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/29-stats.jpg"><img src="tutorial/img/29-stats.jpg" alt="Stats with MVP" width="390" height="844" loading="lazy"></a><figcaption>Stats → MVP</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section class="chapter" id="tournaments">
+    <div class="chapter-head"><div class="chapter-num">5</div><div><h2>Tournaments</h2><p class="chapter-intro">Run a league: teams play fixtures, the points table and net run rate update themselves, and at the end you get a shareable summary.</p></div></div>
+
+    <div class="step two">
+      <div>
+        <h3>Create a tournament <span class="lvl mid">Intermediate</span></h3>
+        <ol>
+          <li>Home → <span class="ui">New tournament</span>.</li>
+          <li>Name it, pick a tournament preset (points and NRR) and tick the teams taking part.</li>
+          <li>Tap <span class="ui">Create tournament</span>.</li>
+        </ol>
+        <p>The dashboard has four tabs: <b>Overview</b> (points table and latest results), <b>Teams</b> (tap a team to see its players), <b>Fixtures</b> and <b>Stats</b>.</p>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/30-tournament-setup.jpg"><img src="tutorial/img/30-tournament-setup.jpg" alt="New tournament" width="390" height="844" loading="lazy"></a><figcaption>New tournament</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/31-tournament-overview.jpg"><img src="tutorial/img/31-tournament-overview.jpg" alt="Tournament overview" width="390" height="844" loading="lazy"></a><figcaption>Overview: points table</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="step two">
+      <div>
+        <h3>Play fixtures — or just enter the result <span class="lvl mid">Intermediate</span></h3>
+        <p>On <b>Fixtures</b>, pick two teams and who bats first, then <span class="ui">Start match</span> to score it ball by ball.</p>
+        <p>Scored somewhere else, or only know the totals? Tap <span class="ui">Enter result only</span> and fill in each team's <b>runs</b> and <b>wickets</b> (overs are optional). It counts in the points table straight away; it just has no scorecard or player stats.</p>
+        <div class="tip"><b>Net run rate</b>If you leave overs blank, that innings counts as the full overs quota — the same rule as an all-out innings.</div>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/33-tournament-fixtures.jpg"><img src="tutorial/img/33-tournament-fixtures.jpg" alt="Fixtures tab" width="390" height="844" loading="lazy"></a><figcaption>Fixtures</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/34-result-only.jpg"><img src="tutorial/img/34-result-only.jpg" alt="Enter a result" width="390" height="844" loading="lazy"></a><figcaption>Enter result only</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="step two">
+      <div>
+        <h3>End the tournament and share the results <span class="lvl mid">Intermediate</span></h3>
+        <ol>
+          <li>On Overview tap <span class="ui">🏁 End tournament</span> and confirm.</li>
+          <li>A new <b>Summary</b> tab appears: the champions, runner-up, totals, MVP, most runs and wickets, best innings and bowling, the highest total and the final table.</li>
+          <li>Tap <span class="ui">Share results</span> for a poster-style image (Night or Day), or <span class="ui">Export PDF</span>.</li>
+        </ol>
+        <p>Changed your mind? <span class="ui">Reopen tournament</span> at the bottom of Summary.</p>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/37-summary.jpg"><img src="tutorial/img/37-summary.jpg" alt="Tournament summary" width="390" height="844" loading="lazy"></a><figcaption>Summary</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/38-summary-share.jpg"><img src="tutorial/img/38-summary-share.jpg" alt="Share tournament results" width="390" height="844" loading="lazy"></a><figcaption>Share results</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section class="chapter" id="clubs">
+    <div class="chapter-head"><div class="chapter-num">6</div><div><h2>Accounts &amp; clubs</h2><p class="chapter-intro">Sign in to run a club in the cloud: a shared roster, presets and matches that every club admin sees on their own phone.</p></div></div>
+
+    <div class="step two">
+      <div>
+        <h3>Sign up, then create or join a club <span class="lvl adv">Advanced</span></h3>
+        <ol>
+          <li>Tap <span class="ui">Sign in</span> (top right) → <span class="ui">Sign up</span>, and confirm your email.</li>
+          <li>Open your account (👤) → <span class="ui">My clubs</span> → create a club.</li>
+          <li>On Home, set <b>Acting as</b> to your club. The tiles change to the club's own <i>Practice match</i> (club vs itself), <i>Friendly match</i> (vs visitors), <i>New tournament</i>, <i>Players</i>, <i>Presets</i> and <i>Stats</i>.</li>
+        </ol>
+        <div class="tip"><b>Kept apart</b>Guest data (on your device) and club data (in the cloud) never mix. Switch back to <i>Guest</i> any time.</div>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/41-account.jpg"><img src="tutorial/img/41-account.jpg" alt="Account" width="390" height="844" loading="lazy"></a><figcaption>Account</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/42-home-club.jpg"><img src="tutorial/img/42-home-club.jpg" alt="Home acting as a club" width="390" height="844" loading="lazy"></a><figcaption>Home, acting as a club</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="step two">
+      <div>
+        <h3>Club roster and player profiles <span class="lvl adv">Advanced</span></h3>
+        <p>Club <b>Players</b> is the roster. Tap <span class="ui">+</span> to add someone: name, plus optional contact number, NIC, nickname, jersey number, city, batting/bowling style, keeper and a photo. If they're already on the platform, the sheet suggests them so you don't create a duplicate.</p>
+        <p>Tap a player for their <b>profile</b>: details, and a <b>Stats</b> tab with separate Club and Premier batting, bowling and fielding records.</p>
+        <div class="tip"><b>Privacy</b>Contact number and NIC are only visible to people who may manage that profile.</div>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/44-club-players.jpg"><img src="tutorial/img/44-club-players.jpg" alt="Club players" width="390" height="844" loading="lazy"></a><figcaption>Roster with #jersey and nicknames</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/47-profile-stats.jpg"><img src="tutorial/img/47-profile-stats.jpg" alt="Player profile stats" width="390" height="844" loading="lazy"></a><figcaption>Profile → Stats</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="step two">
+      <div>
+        <h3>Club home, admins and presets <span class="lvl adv">Advanced</span></h3>
+        <p>Account → My clubs → your club shows its tournaments, admins and matches. <b>Invite an admin</b> by email — if they already have an account they're added at once; otherwise they become an admin as soon as they sign up and confirm that email.</p>
+        <p>Club <b>Presets</b> work like your own, but are shared by everyone in the club.</p>
+        <div class="tip"><b>Nicknames</b>In a club match, typing a nickname or <i>#7</i> finds the right player, and ⋯ → <i>Show nicknames</i> shows them on the scoreboard.</div>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/43-club-home.jpg"><img src="tutorial/img/43-club-home.jpg" alt="Club home" width="390" height="844" loading="lazy"></a><figcaption>Club home</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/45-add-player.jpg"><img src="tutorial/img/45-add-player.jpg" alt="Add player sheet" width="390" height="844" loading="lazy"></a><figcaption>Add a player</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section class="chapter" id="club-tournaments">
+    <div class="chapter-head"><div class="chapter-num">7</div><div><h2>Club tournaments &amp; teams</h2><p class="chapter-intro">The classic club day: split the club into teams, play each other, crown a winner.</p></div></div>
+
+    <div class="step two">
+      <div>
+        <h3>Build the teams <span class="lvl adv">Advanced</span></h3>
+        <ol>
+          <li>Home (acting as your club) → <span class="ui">New tournament</span>.</li>
+          <li>On its <b>Teams</b> tab, tap <span class="ui">Split the roster into 2 random teams</span>, or <span class="ui">+ Add team</span> and pick players yourself.</li>
+          <li>In the team sheet, tap a player to add them, tap × to take them off, or <span class="ui">+ All free</span> for everyone not on a team.</li>
+        </ol>
+        <p>Each player can be on one team per tournament.</p>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/50-club-teams.jpg"><img src="tutorial/img/50-club-teams.jpg" alt="Club tournament teams" width="390" height="844" loading="lazy"></a><figcaption>Teams tab</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/51-team-builder.jpg"><img src="tutorial/img/51-team-builder.jpg" alt="Team builder" width="390" height="844" loading="lazy"></a><figcaption>Team builder</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="step two">
+      <div>
+        <h3>New members, guests and moving players <span class="lvl adv">Advanced</span></h3>
+        <p>Type a new name in the search box and tap <span class="ui">+ Add to this team…</span>. You're asked who they are:</p>
+        <ul>
+          <li><b>New club player</b> — joins the club roster for good.</li>
+          <li><b>Guest player</b> — plays for this team only; nothing about them is stored in the club.</li>
+        </ul>
+        <p>Tapping someone who is already on another team asks <b>"Move …?"</b> first, so a stray tap can't reshuffle the teams.</p>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/53-new-member-choice.jpg"><img src="tutorial/img/53-new-member-choice.jpg" alt="New club player or guest" width="390" height="844" loading="lazy"></a><figcaption>Club player or guest?</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/54-move-player.jpg"><img src="tutorial/img/54-move-player.jpg" alt="Move player confirmation" width="390" height="844" loading="lazy"></a><figcaption>Move confirmation</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="step two">
+      <div>
+        <h3>Play the matches <span class="lvl adv">Advanced</span></h3>
+        <p>On the tournament's Overview or Fixtures tap <span class="ui">Start match</span>: pick the two teams from tiles instead of typing names. Only their players are suggested while scoring. <span class="ui">Enter result only</span> and <span class="ui">End tournament</span> work exactly as in chapter 5.</p>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/49-club-tournament.jpg"><img src="tutorial/img/49-club-tournament.jpg" alt="Club tournament overview" width="390" height="844" loading="lazy"></a><figcaption>Club tournament</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/55-club-match-setup.jpg"><img src="tutorial/img/55-club-match-setup.jpg" alt="Pick teams at match setup" width="390" height="844" loading="lazy"></a><figcaption>Pick the teams</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section class="chapter" id="offline">
+    <div class="chapter-head"><div class="chapter-num">8</div><div><h2>Offline &amp; sync</h2><p class="chapter-intro">No signal at the ground? Keep going. Club matches, players, teams and presets are saved on your phone and sent to the cloud when you're back online.</p></div></div>
+
+    <div class="step two">
+      <div>
+        <h3>The sync pill <span class="lvl adv">Advanced</span></h3>
+        <p>When something is waiting, a small pill appears in the top bar: <i>Offline</i>, <i>3 to sync</i>, <i>Syncing…</i> or <i>1 not synced</i>. Tap it to see every change in the queue.</p>
+        <ul>
+          <li>Everything syncs by itself when the connection returns.</li>
+          <li>If the server refuses a change (say, a team name that's taken), it waits for you with <span class="ui">Retry</span> and <span class="ui">Discard</span>.</li>
+          <li>Items not yet synced show a <i>not synced</i> tag.</li>
+        </ul>
+        <div class="tip warn"><b>Needs internet</b>Signing in, inviting admins, contact/NIC details, claims and Premier need a connection.</div>
+      </div>
+      <div class="shots">
+        <figure><a class="phone short" href="tutorial/img/56-sync-pill.jpg"><img src="tutorial/img/56-sync-pill.jpg" alt="Sync pill in the top bar" width="390" height="420" loading="lazy"></a><figcaption>The pill (top right)</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/57-sync-sheet.jpg"><img src="tutorial/img/57-sync-sheet.jpg" alt="Sync sheet" width="390" height="844" loading="lazy"></a><figcaption>The sync sheet</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9 -->
+  <section class="chapter" id="premier">
+    <div class="chapter-head"><div class="chapter-num">9</div><div><h2>Premier, settings &amp; tips</h2><p class="chapter-intro">The cross-club player list, making a profile yours, and making the app look the way you like.</p></div></div>
+
+    <div class="step two">
+      <div>
+        <h3>Premier and claiming your profile <span class="lvl adv">Advanced</span></h3>
+        <p><b>Premier</b> (☰ menu) lists every player on the platform, from every club, with teams and stats across clubs.</p>
+        <p>Found yourself? Open the profile and tap <span class="ui">This is me — claim profile</span>. A platform admin approves it; then you manage your own details. If there are two profiles of you, ask to <b>merge</b> them — your stats from both are kept.</p>
+      </div>
+      <div class="shots">
+        <figure><a class="phone" href="tutorial/img/58-premier.jpg"><img src="tutorial/img/58-premier.jpg" alt="Premier" width="390" height="844" loading="lazy"></a><figcaption>Premier</figcaption></figure>
+        <figure><a class="phone" href="tutorial/img/46-profile.jpg"><img src="tutorial/img/46-profile.jpg" alt="Profile with claim button" width="390" height="844" loading="lazy"></a><figcaption>Profile → claim</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="step">
+      <div>
+        <h3>Settings <span class="lvl easy">Beginner</span></h3>
+        <p>☰ → <span class="ui">Settings</span>: turn the scoring <b>sounds</b> on or off, and pick a <b>theme</b> — Midnight, Slate, Daylight or Sunset.</p>
+      </div>
+      <div class="shots"><figure><a class="phone" href="tutorial/img/39-settings.jpg"><img src="tutorial/img/39-settings.jpg" alt="Settings" width="390" height="844" loading="lazy"></a><figcaption>Settings</figcaption></figure></div>
+    </div>
+
+    <div class="faq">
+      <h3 style="margin:28px 0 6px;font-size:1.3rem;">Tips &amp; questions</h3>
+      <details><summary>I tapped the wrong button while scoring.</summary><p>Tap UNDO — as many times as you need. It also undoes wickets, extras and the end of an over.</p></details>
+      <details><summary>Can I leave the scoring screen during a match?</summary><p>Yes. Use the ☰ menu; the match keeps running. Get back with the green "Live" pill at the top, or "Resume live match" on Home. Closing or reloading the app always brings you back to the match.</p></details>
+      <details><summary>How do I close a sheet?</summary><p>Drag it down from the top, tap ✕ / Cancel, or press your phone's back button.</p></details>
+      <details><summary>A batter or bowler has to leave for a moment.</summary><p>Tap "Pick later" on the sheet (or drag it down). The empty slot shows "+ Pick…", and scoring waits until you fill it.</p></details>
+      <details><summary>There's no overs limit — how does the innings end?</summary><p>All out, the target reached, or "End innings" under the Wicket button. Any match can also be ended early from ⋯ → End innings.</p></details>
+      <details><summary>Where is my data?</summary><p>Guest matches, teams and players are stored on this phone only. Club data is in the cloud, visible to that club's admins. Clearing your browser data removes guest data.</p></details>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <img src="icon-192.png" alt="">
+    <b>Cricket.lk</b> — ball-by-ball cricket scoring<br>
+    by Erantha Welikala · <a href="./">Open the app</a>
+  </div>
+</footer>
+
+<dialog id="zoom"><button type="button" aria-label="Close">✕</button><img alt=""></dialog>
+<script>
+  // Tap a screenshot to see it full size; tap anywhere (or ✕ / Esc) to close.
+  (function(){
+    var d = document.getElementById("zoom"), img = d.querySelector("img");
+    if (!d.showModal) return;   // old browsers just follow the link to the image
+    document.addEventListener("click", function(e){
+      var a = e.target.closest && e.target.closest("a.phone");
+      if (!a) return;
+      e.preventDefault();
+      img.src = a.getAttribute("href"); img.alt = (a.querySelector("img") || {}).alt || "";
+      d.showModal();
+    });
+    d.addEventListener("click", function(){ d.close(); });
+  })();
+</script>
+</body>
+</html>

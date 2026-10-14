@@ -66,6 +66,8 @@ function renderSideMenu(){
         { view: "stats", icon: "📊", label: "Stats" }
       ]),
     { view: "settings", icon: "🎨", label: "Settings" },
+    // The tutorial is its own page (tutorial.html), not a screen of the app.
+    { action: "open-tutorial", icon: "📘", label: "How to use" },
     { action: "go-account", icon: "👤", label: session ? "Account" : "Sign in" }
   ];
   return `
