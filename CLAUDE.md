@@ -404,7 +404,13 @@ printed) and footer (`#print-foot`: "by Erantha Welikala", date) in
 `index.html`, light cards with rules. On Result it expands the full
 scorecard just for the print (restored on `afterprint`), and
 `document.title` is set meanwhile so the PDF is named after the match. The
-tournament Summary tab has Export PDF too. If you touch either,
+tournament Summary tab has Export PDF too. **Any completed match** can be
+shared or printed later from its scorecard sheet (`renderMatchDetailModal`:
+`share-match-detail` → `openSharePreview("scorecard", match)`, whose
+`ui.sharePreview.match` overrides `state.match`; `export-pdf-detail` →
+`exportPdf(match)`, which renders `renderPrintableMatch` into the
+print-only `#print-root` and sets `body.print-detail`, since `#modal-root`
+never prints). If you touch either,
 keep them dependency-free; that was a deliberate choice, not an
 oversight.
 

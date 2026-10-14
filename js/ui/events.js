@@ -92,6 +92,8 @@ document.addEventListener("click", (e) => {
   else if (action === "close-live-scorecard"){ ui.liveScorecard = false; render(); }
   else if (action === "start-second-innings"){ pushSnapshot(); startSecondInnings(state.match); save(); render(); }
   else if (action === "share-image") openSharePreview("scorecard");
+  else if (action === "share-match-detail" && ui.matchDetail) openSharePreview("scorecard", ui.matchDetail.match);
+  else if (action === "export-pdf-detail" && ui.matchDetail) exportPdf(ui.matchDetail.match);
   else if (action === "open-tutorial"){ save(); location.href = "tutorial.html"; }
   else if (action === "share-theme" && ui.sharePreview){ ui.sharePreview.theme = btn.dataset.tab; ui.sharePreview.url = null; render(); buildSharePreview(); }
   else if (action === "share-send") shareFromPreview();

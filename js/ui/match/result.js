@@ -134,6 +134,10 @@ function renderMatchDetailModal(){
           <div class="muted">${[when, motm ? `Player of the match: ${escapeHtml(motm)}` : ""].filter(Boolean).join(" · ")}</div>
         </div>
         ${m.resultOnly ? renderResultOnlyCard(m) : renderScorecard(m)}
+        <div class="share-row">
+          <button type="button" data-action="share-match-detail" class="ghost" style="font-weight:800;letter-spacing:.04em;">Share image</button>
+          <button type="button" data-action="export-pdf-detail" class="ghost" style="font-weight:800;letter-spacing:.04em;">Export PDF</button>
+        </div>
         <button type="button" data-action="close-match-detail" class="primary" style="width:100%;">Close</button>
       </div>
     </div>`;
@@ -524,10 +528,17 @@ function renderScorecardCanvas(match, themeKey, logo){
    Erantha Welikala", date) that only exist in print. On Result it prints the
    full scorecard (expanded just for the print, then put back), and the PDF's
    file name follows document.title, set for the duration. */
-function exportPdf(){
-  const m = state.match;
-  const onResult = navKey() === "result" && m;
+function exportPdf(detailMatch){
+  const m = detailMatch || state.match;
+  const onResult = !!detailMatch || (navKey() === "result" && m);
   const c = !onResult && /ournamentDashboard$/.test(state.view) ? tournamentContext() : null;
+  // A match from the completed-match sheet: the sheet itself never prints
+  // (#modal-root is hidden in print), so its scorecard goes into #print-root.
+  const printRoot = document.getElementById("print-root");
+  if (detailMatch && printRoot){
+    printRoot.innerHTML = renderPrintableMatch(detailMatch);
+    document.body.classList.add("print-detail");
+  }
   const title = onResult ? `${m.teamA} v ${m.teamB}` : c ? `${c.name} — results` : "Cricket.lk";
   const brandTitle = document.querySelector("#print-brand .print-brand-title");
   if (brandTitle) brandTitle.textContent = onResult ? `${title} · ${m.result || ""}` : title;
@@ -535,20 +546,33 @@ function exportPdf(){
   if (footDate) footDate.textContent = new Date().toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
   const prevTitle = document.title, prevFull = ui.showFullScorecard;
   document.title = `${title} — Cricket.lk`;
-  if (onResult && !prevFull){ ui.showFullScorecard = true; render(); }
+  if (onResult && !detailMatch && !prevFull){ ui.showFullScorecard = true; render(); }
   window.addEventListener("afterprint", () => {
     document.title = prevTitle;
-    if (onResult && !prevFull){ ui.showFullScorecard = false; render(); }
+    if (detailMatch){ document.body.classList.remove("print-detail"); if (printRoot) printRoot.innerHTML = ""; }
+    else if (onResult && !prevFull){ ui.showFullScorecard = false; render(); }
   }, { once: true });
   window.print();
+}
+
+/* What a completed match prints as from the match sheet: result, player of
+   the match and every innings in full. */
+function renderPrintableMatch(m){
+  const detail = renderResultDetail(m);
+  const motm = m.motm || pickMatchMOTM(m);
+  return `
+    <div class="result-hero"><div class="eyebrow">RESULT</div><h2>${escapeHtml(m.result || "")}</h2>${detail ? `<div class="n detail">${escapeHtml(detail)}</div>` : ""}</div>
+    ${motm ? `<div class="motm-card"><span class="motm-label">Player of the match</span><span class="motm-name">${escapeHtml(motm)}</span></div>` : ""}
+    ${m.resultOnly ? renderResultOnlyCard(m) : m.innings.map(inn => renderInningsSummary(m, inn)).join("")}`;
 }
 
 /* The preview sheet. ui.sharePreview = { kind: "scorecard" | "tournament",
    view, theme, url, busy }; the PNG blob lives outside ui (sharePreviewBlob)
    because it isn't data. */
 let sharePreviewBlob = null;
-function openSharePreview(kind){
-  ui.sharePreview = { kind, view: navKey(), theme: ui.sharePreview ? ui.sharePreview.theme : "night", url: null };
+function openSharePreview(kind, match){
+  // `match`: a completed match from the match sheet; else the one on Result.
+  ui.sharePreview = { kind, match: match || null, view: navKey(), theme: ui.sharePreview ? ui.sharePreview.theme : "night", url: null };
   render();
   buildSharePreview();
 }
@@ -557,7 +581,8 @@ async function buildSharePreview(){
   if (!sp) return;
   const logo = await loadShareLogo();
   let canvas = null;
-  if (sp.kind === "scorecard" && state.match) canvas = renderScorecardCanvas(state.match, sp.theme, logo);
+  const match = sp.match || state.match;
+  if (sp.kind === "scorecard" && match) canvas = renderScorecardCanvas(match, sp.theme, logo);
   else if (sp.kind === "tournament"){ const c = tournamentContext(); if (c) canvas = renderTournamentCanvas(c, sp.theme, logo); }
   if (!canvas || ui.sharePreview !== sp) return;
   canvas.toBlob(blob => {
@@ -579,7 +604,7 @@ function sharePreviewFile(){
 }
 function sharePreviewText(){
   const sp = ui.sharePreview;
-  if (sp.kind === "scorecard") return `${state.match.teamA} v ${state.match.teamB}: ${state.match.result || ""}`;
+  if (sp.kind === "scorecard"){ const m = sp.match || state.match; return `${m.teamA} v ${m.teamB}: ${m.result || ""}`; }
   const c = tournamentContext(), s = c && tournamentSummary(c.matches, c.preset);
   return c ? `${c.name}${s && s.champion ? ` — champions: ${s.champion.name}` : ""}` : "";
 }

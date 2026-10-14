@@ -666,6 +666,13 @@ body.has-install-banner:not(.live-scoring) #app{ padding-bottom:calc(96px + env(
 @media (prefers-reduced-motion: reduce){ .splash, .splash-icon{ transition:none; animation:none; } .splash-loader span{ animation-duration:2.4s; } }
 @media print{ .splash{ display:none !important; } }
 .print-only{ display:none; }
+/* A completed match printed from its sheet (exportPdf(match)): #print-root
+   replaces #app in print only. */
+#print-root{ display:none; }
+@media print{
+  body.print-detail #app{ display:none !important; }
+  body.print-detail #print-root{ display:block !important; }
+}
 /* Share preview sheet (renderSharePreviewModal). */
 .share-preview{ display:flex; justify-content:center; background:var(--panel); border:2px solid var(--line-strong); border-radius:var(--radius-md); padding:10px; margin:4px 0 12px; min-height:200px; align-items:center; }
 .share-preview img{ display:block; max-width:100%; max-height:52vh; border-radius:10px; box-shadow:var(--shadow-card); }
