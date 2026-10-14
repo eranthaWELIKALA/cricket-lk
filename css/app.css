@@ -447,7 +447,7 @@ button.primary.danger-confirm.is-loading::after{ border-color:rgba(0,0,0,.2); bo
 .builder-add-title{font-weight:800;font-size:.88rem;margin-bottom:8px;overflow-wrap:anywhere;}
 .builder-add-title .q{color:var(--accent-2);}
 .builder-add-title .muted{color:var(--muted);font-weight:600;}
-.builder-add-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.builder-add-actions{display:grid;grid-template-columns:1fr;gap:8px;}
 .builder-add .hint{margin:8px 0 0;}
 .builder-notice{color:var(--accent-2);margin:4px 0 8px;}
 .builder-notice.error{color:var(--wicket);}
@@ -494,6 +494,12 @@ button.primary.danger-confirm.is-loading::after{ border-color:rgba(0,0,0,.2); bo
   padding:18px; box-shadow:var(--shadow-card); margin-top:14px;
 }
 .auth-card form{ margin:0; }
+.auth-card form button[type=submit]{ margin-top:16px; }
+.auth-switch{ margin:20px 0 0; text-align:center; }
+.auth-switch .link-btn{ margin-top:6px; }
+.auth-actions{ display:flex; flex-direction:column; gap:12px; margin-top:18px; }
+.auth-actions button{ margin:0; }
+.profile-actions{ display:flex; gap:12px; flex-wrap:wrap; margin:16px 0 12px; }
 .auth-mail-card{ border-color:var(--accent-2); }
 .auth-mail-card .mvp-name{ margin:0 0 4px; }
 .auth-mail-card .hint{ margin:0 0 10px; }

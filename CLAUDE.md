@@ -529,6 +529,7 @@ nothing to close, `{ error }` to stay open with a message, or a Promise of
 either — the sheet shows `busyLabel` meanwhile) and `onCancel`. Esc cancels.
 It currently covers: end innings, toss restart, forfeit, cancel match,
 remove club player, delete tournament team, discard unsaved team edits,
+move a player between tournament teams, new club player vs guest in the team builder,
 delete guest team/player, delete match/tournament/club presets. **Don't add
 `window.confirm()` or "tap again to confirm" buttons** — use `askConfirm`.
 The wicket sheet's Confirm button is data entry, not a confirmation, and
@@ -1367,8 +1368,9 @@ which isn't). Managed from the tournament dashboard as colored team cards
 (`team-c0..3`, position-based like Home's badges) plus a tap-to-pick team
 builder (`renderTournamentTeamForm`: picks, name and search live in
 `ui.tournamentTeamEdit`; search filters in the DOM only; picking someone on
-another team shows "move" and `handleTournamentTeamSubmit` saves the donor
-team first). With no teams yet, "Split the roster into 2 random teams"
+another team shows "move", asks first (`askMoveBuilderPlayer` → shared
+confirmation sheet) and `handleTournamentTeamSubmit` saves the donor team
+first). With no teams yet, "Split the roster into 2 random teams"
 (`quickSplitTeams`) creates two. Match setup picks teams from two tile columns
 (picking the other side's team swaps the sides). (`renderTournamentTeams`,
 `ui.tournamentTeamEdit`; the builder is a bottom sheet,
@@ -1391,7 +1393,9 @@ whose squad is empty falls back to the normal suggestion list in `pickPool`.
 Squads also scope the in-match search-select options to each side (see "In-match
 name boxes are a search-select" above).
 **Adding people who aren't on the roster.** The builder's search box doubles
-as an "add" box (`renderBuilderAddCard`): **New club player** goes through
+as an "add" box (`renderBuilderAddCard`): its one button
+(`askAddBuilderPlayer`) asks in the shared confirmation sheet, with a required
+choice, whether the name is a new club player or a guest. **New club player** goes through
 `addPlayerToClub` (roster + platform, same RPC as the Players screen) and is
 picked by its real id; **Guest** is stored only inside that team's
 `players` jsonb as `{ id: guestPlayerKey(name), name, guest: true }` — a

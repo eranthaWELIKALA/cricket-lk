@@ -345,7 +345,7 @@ function renderPlayerProfile(){
         `}
         ${pr.message ? `<p class="hint">${escapeHtml(pr.message)}</p>` : ""}
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 4px;">
+      <div class="profile-actions">
         ${canEdit ? `<button data-action="edit-player-profile" class="ghost small">Edit profile</button>` : ""}
         ${isClub && onClubRoster(pr.id) ? `<button data-action="ask-remove-club-player" data-id="${escapeHtml(pr.id)}" data-name="${escapeHtml(pr.name)}" class="ghost small danger-text">Remove from club</button>` : ""}
       </div>`;

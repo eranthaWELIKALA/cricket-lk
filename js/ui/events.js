@@ -186,6 +186,7 @@ document.addEventListener("click", (e) => {
   else if (action === "cancel-tournament-team") closeTeamEdit();
   else if (action === "team-builder-toggle" && ui.tournamentTeamEdit){
     const edit = ui.tournamentTeamEdit, id = btn.dataset.id;
+    if (!edit.playerIds.includes(id) && btn.dataset.free === "0"){ askMoveBuilderPlayer(id); return; }
     edit.playerIds = edit.playerIds.includes(id) ? edit.playerIds.filter(x => x !== id) : [...edit.playerIds, id];
     edit.notice = null;
     render();
@@ -199,8 +200,7 @@ document.addEventListener("click", (e) => {
     render();
   }
   else if (action === "quick-split-teams") quickSplitTeams();
-  else if (action === "team-builder-guest" && ui.tournamentTeamEdit) addBuilderGuest();
-  else if (action === "team-builder-new-player" && ui.tournamentTeamEdit) addBuilderClubPlayer();
+  else if (action === "team-builder-add-new" && ui.tournamentTeamEdit) askAddBuilderPlayer();
   else if (action === "delete-tournament-team" && ui.clubTournament) askDeleteTournamentTeam(btn.dataset.id);
   else if (action === "go-club-tournament-match-setup"){
     ui.matchSetupPresetId = null; ui.clubMatchSetupType = "tournament"; state.view = "matchSetup"; render();

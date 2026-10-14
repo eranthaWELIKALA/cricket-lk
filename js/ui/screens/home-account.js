@@ -165,7 +165,7 @@ function renderSignIn(){
             <button type="submit" class="primary">Sign in</button>
           </form>
         </div>
-        <p class="hint">No account yet? <button type="button" data-action="go-view" data-view="signUp" class="link-btn">Sign up</button></p>
+        <p class="hint auth-switch">No account yet? <button type="button" data-action="go-view" data-view="signUp" class="link-btn">Sign up</button></p>
       `}
     </div>
   `;
@@ -187,7 +187,7 @@ function renderSignUp(){
             <button type="submit" class="primary">Sign up</button>
           </form>
         </div>
-        <p class="hint">Already have an account? <button type="button" data-action="go-view" data-view="signIn" class="link-btn">Sign in</button></p>
+        <p class="hint auth-switch">Already have an account? <button type="button" data-action="go-view" data-view="signIn" class="link-btn">Sign in</button></p>
       `}
     </div>
   `;
@@ -244,8 +244,10 @@ function renderAccount(){
         <p class="mvp-name">${escapeHtml(profile?.display_name || "—")}</p>
         <p class="muted">${escapeHtml(session.user.email || "")}</p>
         ${isAdmin ? `<p class="hint">Signed in as platform admin.</p><button data-action="go-admin-portal" class="ghost">Open admin portal</button>` : ""}
-        <button data-action="go-my-clubs" class="primary">My clubs</button>
-        <button data-action="sign-out" class="ghost">Sign out</button>
+        <div class="auth-actions">
+          <button data-action="go-my-clubs" class="primary">My clubs</button>
+          <button data-action="sign-out" class="ghost">Sign out</button>
+        </div>
       </div>
     </div>
   `;

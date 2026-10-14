@@ -249,18 +249,17 @@ function renderTournamentTeamForm(t, edit){
 
 /* "Someone new?" under the builder's roster list, driven by the search box
    (the input listener keeps its text/disabled state in step without a
-   re-render). New club player = add_player_to_club (roster + platform, same
-   as the Players screen); guest = a name on this team only. */
+   re-render). Its one button asks, in the shared confirmation sheet, whether
+   the name is a new club player (add_player_to_club: roster + platform, same
+   as the Players screen) or a guest (a name on this team only). */
 function renderBuilderAddCard(edit){
   const q = (edit.search || "").trim();
   return `
     <div class="builder-add">
       <div class="builder-add-title">${q ? `Add “<span class="q">${escapeHtml(q)}</span>”` : `Someone new? <span class="muted">Type their name in the search box.</span>`}</div>
       <div class="builder-add-actions">
-        <button type="button" data-action="team-builder-new-player" class="ghost small" ${q && !edit.adding ? "" : "disabled"}>${edit.adding ? "Adding…" : "＋ New club player"}</button>
-        <button type="button" data-action="team-builder-guest" class="ghost small" ${q && !edit.adding ? "" : "disabled"}>＋ Guest player</button>
+        <button type="button" data-action="team-builder-add-new" class="ghost small" ${q && !edit.adding ? "" : "disabled"}>${edit.adding ? "Adding…" : "＋ Add to this team…"}</button>
       </div>
-      <p class="hint">A <b>new club player</b> joins the club roster. A <b>guest</b> plays for this team only: nothing about them is stored in the club, and their runs and wickets stay on the scorecard only.</p>
     </div>`;
 }
 
@@ -270,27 +269,10 @@ function builderRosterMatch(name){
 }
 function builderSelect(edit, id){ if (!edit.playerIds.includes(id)) edit.playerIds = [...edit.playerIds, id]; }
 
-function addBuilderGuest(){
+/* The add button: a typed name that's already on the roster is just picked;
+   anything else asks "new club player or guest?" before adding. */
+function askAddBuilderPlayer(){
   const edit = ui.tournamentTeamEdit;
-  const name = (edit && edit.search || "").trim();
-  if (!name) return;
-  const onRoster = builderRosterMatch(name);
-  if (onRoster){
-    builderSelect(edit, onRoster.id);
-    edit.notice = { text: `${onRoster.name} is already on the club roster, so they were picked from there.` };
-  } else {
-    const id = guestPlayerKey(name);
-    const known = (ui.clubTournament.teams.flatMap(team => team.players).find(pl => pl.id === id));
-    if (!known && !(edit.guests || []).some(g => g.id === id)) edit.guests = [...(edit.guests || []), { id, name, guest: true }];
-    builderSelect(edit, id);
-    edit.notice = { text: `${name} added as a guest.` };
-  }
-  edit.search = "";
-  render();
-}
-
-async function addBuilderClubPlayer(){
-  const edit = ui.tournamentTeamEdit, t = ui.clubTournament;
   const name = (edit && edit.search || "").trim();
   if (!name || edit.adding) return;
   const onRoster = builderRosterMatch(name);
@@ -299,20 +281,55 @@ async function addBuilderClubPlayer(){
     edit.notice = { text: `${onRoster.name} is already on the club roster, so they were picked from there.` };
     edit.search = ""; render(); return;
   }
-  if (!supabaseClient || !session){ edit.notice = { text: "Sign in to add players to the club.", error: true }; render(); return; }
+  askConfirm({
+    title: `Add ${name}`, icon: "＋", tone: "primary",
+    body: `<p>Who is <b>${escapeHtml(name)}</b>?</p>`,
+    choices: [
+      { value: "club", label: "New club player", sub: "Joins the club roster" },
+      { value: "guest", label: "Guest player", sub: "This team only, not stored in the club" }
+    ],
+    confirmLabel: "Add to team", busyLabel: "Adding…",
+    onConfirm: choice => choice === "guest" ? addBuilderGuest(edit, name) : addBuilderClubPlayer(edit, name)
+  });
+}
+
+function addBuilderGuest(edit, name){
+  const id = guestPlayerKey(name);
+  const known = (ui.clubTournament.teams.flatMap(team => team.players).find(pl => pl.id === id));
+  if (!known && !(edit.guests || []).some(g => g.id === id)) edit.guests = [...(edit.guests || []), { id, name, guest: true }];
+  builderSelect(edit, id);
+  edit.notice = { text: `${name} added as a guest.` };
+  edit.search = "";
+}
+
+/* Returns { error } to keep the sheet open with the message. */
+async function addBuilderClubPlayer(edit, name){
+  const t = ui.clubTournament;
+  if (!supabaseClient || !session) return { error: "Sign in to add players to the club." };
   // (Works offline too -- the add is queued and the player gets a temp id until it syncs.)
-  edit.adding = true; edit.notice = null; render();
+  edit.adding = true; edit.notice = null;
   const result = await addPlayerToClub(t.organizer_club_id, name);
   edit.adding = false;
-  if (!result || result.error){
-    edit.notice = { text: (result && result.error) || "Couldn't add that player.", error: true };
-  } else {
-    if (ui.club && ui.club.id === t.organizer_club_id && !ui.club.roster.some(p => p.id === result.id)) ui.club.roster.push({ id: result.id, name });
-    builderSelect(edit, result.id);
-    edit.notice = { text: result.queued ? `${name} added on this device. They'll join the club roster when you're online.` : result.created ? `${name} added to the club roster.` : `${name} was already on the platform, so they joined the club roster.` };
-    edit.search = "";
-  }
-  if (ui.tournamentTeamEdit === edit) render();
+  if (!result || result.error) return { error: (result && result.error) || "Couldn't add that player." };
+  if (ui.club && ui.club.id === t.organizer_club_id && !ui.club.roster.some(p => p.id === result.id)) ui.club.roster.push({ id: result.id, name });
+  builderSelect(edit, result.id);
+  edit.notice = { text: result.queued ? `${name} added on this device. They'll join the club roster when you're online.` : result.created ? `${name} added to the club roster.` : `${name} was already on the platform, so they joined the club roster.` };
+  edit.search = "";
+}
+
+/* Picking someone who's on another team asks first, so a stray tap can't
+   move a player between teams. */
+function askMoveBuilderPlayer(id){
+  const t = ui.clubTournament, edit = ui.tournamentTeamEdit;
+  const from = t.teams.find(team => team.id !== edit.id && team.players.some(pl => pl.id === id));
+  if (!from){ builderSelect(edit, id); edit.notice = null; render(); return; }
+  const name = from.players.find(pl => pl.id === id).name;
+  askConfirm({
+    title: `Move ${name}?`, icon: "⇄", tone: "primary",
+    body: `<p><b>${escapeHtml(name)}</b> is on <b>${escapeHtml(from.name)}</b>. They'll leave it and join <b>${escapeHtml(edit.name || "this team")}</b> when you save.</p>`,
+    confirmLabel: "Move here",
+    onConfirm: () => { builderSelect(edit, id); edit.notice = null; }
+  });
 }
 
 /* The team builder opens as a bottom sheet over the dashboard. Each tap
