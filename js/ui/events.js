@@ -60,6 +60,8 @@ document.addEventListener("click", (e) => {
       input.value = btn.dataset.name;
       combo.querySelector(".combo-list").hidden = true;
       const form = btn.closest("form"); if (form) showFormError(form, "");
+      // A name was picked, so typing is done: drop focus to close the phone keyboard.
+      input.blur();
     }
   }  else if (action === "pick-wicket"){
     if (btn.dataset.type === "runout" || btn.dataset.type === "caught"){ ui.wicketFlow = btn.dataset.type; render(); }
