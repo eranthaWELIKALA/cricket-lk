@@ -512,12 +512,13 @@ button.primary.danger-confirm.is-loading::after{ border-color:rgba(0,0,0,.2); bo
 .summary-hero .eyebrow{ font-size:.65rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; opacity:.7; }
 .summary-hero .summary-champ{ font-size:1.45rem; font-weight:800; line-height:1.15; margin:4px 0 2px; overflow-wrap:anywhere; }
 .summary-hero .muted{ color:inherit; opacity:.75; font-size:.78rem; font-weight:700; }
-.summary-hero .summary-share{ width:100%; margin:12px 0 0; background:var(--accent-ink); color:var(--accent); border-color:var(--accent-ink); display:flex; align-items:center; justify-content:center; gap:8px; }
+.summary-hero .summary-share{ width:100%; background:var(--accent-ink); color:var(--accent); border-color:var(--accent-ink); display:flex; align-items:center; justify-content:center; gap:8px; }
 .summary-card{ background:var(--panel); border:2px solid var(--line-strong); border-radius:var(--radius-lg); box-shadow:var(--shadow-card); padding:4px 12px; margin:6px 0 12px; }
 .summary-row{ display:flex; align-items:baseline; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); }
 .summary-row:last-child{ border-bottom:none; }
 .summary-label{ width:112px; flex-shrink:0; font-size:.66rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
-.summary-who{ flex:1; min-width:0; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.summary-who{ flex:1; min-width:0; font-weight:700; overflow-wrap:anywhere; }
+.summary-who .muted{ font-weight:600; color:var(--muted); }
 .summary-val{ font-weight:800; white-space:nowrap; }
 .stat-label{ font-size:.66rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
 .guest-note{ border-left:4px solid var(--info); padding-left:10px; margin:0 0 12px; font-size:.78rem; }
@@ -664,6 +665,17 @@ body.has-install-banner:not(.live-scoring) #app{ padding-bottom:calc(96px + env(
 .splash-footer{ font-size:.8rem; font-weight:600; color:var(--muted); letter-spacing:.02em; }
 @media (prefers-reduced-motion: reduce){ .splash, .splash-icon{ transition:none; animation:none; } .splash-loader span{ animation-duration:2.4s; } }
 @media print{ .splash{ display:none !important; } }
+.print-only{ display:none; }
+/* Share preview sheet (renderSharePreviewModal). */
+.share-preview{ display:flex; justify-content:center; background:var(--panel); border:2px solid var(--line-strong); border-radius:var(--radius-md); padding:10px; margin:4px 0 12px; min-height:200px; align-items:center; }
+.share-preview img{ display:block; max-width:100%; max-height:52vh; border-radius:10px; box-shadow:var(--shadow-card); }
+.share-actions{ display:grid; grid-template-columns:1fr 1.4fr; gap:10px; }
+.share-actions button{ margin:0; }
+.share-actions.single{ grid-template-columns:1fr; }
+.share-theme-tabs{ margin-bottom:10px; }
+.summary-actions{ display:grid; grid-template-columns:1.6fr 1fr; gap:8px; margin-top:12px; }
+.summary-actions .summary-share{ margin:0; }
+.summary-actions .summary-pdf{ margin:0; background:transparent; color:var(--accent-ink); border-color:var(--accent-ink); }
 .back-bar{
   display:inline-flex; align-items:center; gap:6px; height:38px; padding:0 12px 0 10px;
   background:var(--panel); border:2px solid var(--line-strong); border-radius:var(--radius-sm); box-shadow:var(--shadow-card);
@@ -1046,11 +1058,35 @@ button.primary.small{ width:auto; }
 
 /* --- print: "Export PDF" is window.print() on the result screen --- */
 @media print{
-  body{ background:#fff; color:#000; }
-  #modal-root, #confirm-root, .share-row, .motm-card form, button, .topbar, .tab-row{ display:none !important; }
+  @page{ margin:14mm 12mm; }
+  body{ background:#fff !important; color:#111; }
+  #app{ padding:0 !important; max-width:none; }
+  #modal-root, #confirm-root, .share-row, .summary-actions, .motm-card form, button, .topbar, .tab-row, .back-bar, .result .hint, .standings-table + .hint{ display:none !important; }
   .sc-pane[hidden]{ display:block !important; }
-  .innings-summary, .motm-card, .result-hero{ background:#fff; border:1px solid #ccc; color:#000; box-shadow:none; }
-  .motm-name{ color:#000; }
-  table, th, td{ border-color:#ccc; color:#000; }
-  th{ color:#555; }
+  .screen{ animation:none !important; }
+  /* Branded header/footer (index.html). */
+  .print-only{ display:flex !important; }
+  #print-brand{ align-items:center; gap:12px; padding:0 0 10px; margin-bottom:14px; border-bottom:3px solid #0E9F6E; }
+  #print-brand img, #print-foot img{ width:40px; height:40px; border-radius:10px; }
+  #print-foot img{ width:22px; height:22px; border-radius:6px; }
+  .print-brand-name{ display:flex; flex-direction:column; line-height:1.1; }
+  .print-brand-name b{ font-size:18pt; color:#0C2219; }
+  .print-brand-name span{ font-size:8pt; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:#557566; }
+  .print-brand-title{ margin-left:auto; text-align:right; font-size:10pt; font-weight:700; color:#333; max-width:60%; }
+  #print-foot{ align-items:center; gap:8px; margin-top:18px; padding-top:8px; border-top:1px solid #ccc; font-size:9pt; color:#555; }
+  #print-foot b{ color:#0C2219; }
+  .print-foot-date{ margin-left:auto; }
+  /* Cards: white with a thin rule, no shadows; one innings/card per block. */
+  .innings-summary, .motm-card, .result-hero, .leaderboard, .summary-card, .stat-tile, .summary-hero{ background:#fff !important; border:1px solid #ccc !important; color:#111 !important; box-shadow:none !important; break-inside:avoid; }
+  .result-hero, .summary-hero{ border-left:6px solid #0E9F6E !important; }
+  .result-hero h2, .summary-champ{ color:#0C2219 !important; }
+  .motm-card{ border-left:6px solid #E5A800 !important; }
+  .motm-name{ color:#111; }
+  .innings-summary h3{ color:#0C2219; border-bottom:2px solid #0E9F6E; padding-bottom:4px; }
+  .innings-summary .ov, .status, .extras-line, .fow{ color:#555 !important; }
+  table, th, td{ border-color:#ddd; color:#111; }
+  th{ color:#557566; }
+  tbody tr:nth-child(even){ background:#f3f7f5 !important; }
+  .stat-num{ color:#0E9F6E !important; }
+  .summary-label, .stat-label, .eyebrow{ color:#557566 !important; }
 }

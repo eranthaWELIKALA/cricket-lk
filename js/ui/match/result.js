@@ -346,68 +346,277 @@ function handleMotmSubmit(e){
   save(); render();
 }
 
-/* --- share / export (dependency-free: canvas PNG, print-to-PDF) --- */
-function renderScorecardCanvas(match){
-  const W = 1080, pad = 48;
-  function battingLines(inn){
-    return inn.batting.order.map(name => {
-      const s = inn.batting.stats[name];
-      return `${name}  ${s.runs} (${s.balls})`;
-    });
-  }
-  function bowlingLines(inn){
-    return inn.bowling.order.map(name => {
-      const b = inn.bowling.stats[name];
-      return `${name}  ${oversDisplay(b.legalBalls, inn.ballsPerOver)}-${b.maidens}-${b.runs}-${b.wickets}`;
-    });
-  }
-  const lines = [];
-  lines.push({ text: `${match.teamA} vs ${match.teamB}`, size: 44, weight: "800" });
-  lines.push({ text: match.result || "", size: 26, weight: "600", color: "#5FB98C" });
-  lines.push({ size: 10 });
-  match.innings.forEach(inn => {
-    lines.push({ text: `${teamName(match, inn.battingTeam)}  ${inn.runs}/${inn.wickets}  (${oversDisplay(inn.legalBalls, inn.ballsPerOver)} ov)`, size: 30, weight: "700" });
-    battingLines(inn).forEach(t => lines.push({ text: t, size: 22 }));
-    lines.push({ size: 8 });
-    bowlingLines(inn).forEach(t => lines.push({ text: t, size: 20, color: "#9FC2AF" }));
-    lines.push({ size: 16 });
+/* --- share / export (dependency-free: canvas PNG, print-to-PDF) ---
+   Share images are drawn on a <canvas> with a small kit (SHARE_THEMES,
+   shareCard/shareText/...): the app logo + name at the top, "by Erantha
+   Welikala" at the foot, content as rounded cards. Tapping Share opens a
+   preview sheet (ui.sharePreview) where the viewer picks the Night/Day theme
+   and then shares (share sheet with the PNG) or saves it -- the Share button
+   there is the tap navigator.share needs. Content is drawn onto a tall
+   transparent canvas, then copied onto a background cut to its real height. */
+const SHARE_THEMES = {
+  night: { label: "Night", bg1: "#0F3D2D", bg2: "#06150F", text: "#F3F8F5", muted: "#9DBFAE", faint: "rgba(255,255,255,.06)", panel: "rgba(255,255,255,.06)", line: "rgba(255,255,255,.13)", accent: "#34D399", accentInk: "#06150F", gold: "#F5C542", goldInk: "#1F1600", stripe: "rgba(255,255,255,.025)" },
+  day:   { label: "Day",   bg1: "#FBFDFB", bg2: "#E2EFE7", text: "#0C2219", muted: "#557566", faint: "rgba(12,34,25,.05)", panel: "#FFFFFF", line: "rgba(12,34,25,.12)", accent: "#0E9F6E", accentInk: "#FFFFFF", gold: "#E5A800", goldInk: "#241900", stripe: "rgba(12,34,25,.03)" }
+};
+const SHARE_W = 1080, SHARE_PAD = 56, SHARE_FONT = `-apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+let shareLogo = null;
+function loadShareLogo(){
+  if (!shareLogo) shareLogo = new Promise(res => {
+    const img = new Image();
+    img.onload = () => res(img); img.onerror = () => res(null);
+    img.src = "icon-192.png";
   });
-  if (match.motm) lines.push({ text: `Man of the Match: ${match.motm}`, size: 24, weight: "700", color: "#F2C744" });
-
-  const H = pad * 2 + lines.reduce((sum, l) => sum + (l.size + 14), 0);
-  const canvas = document.createElement("canvas");
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#0B2E22"; ctx.fillRect(0, 0, W, H);
-  let y = pad;
-  lines.forEach(l => {
-    if (l.text){
-      ctx.fillStyle = l.color || "#F1F6F2";
-      ctx.font = `${l.weight || "400"} ${l.size}px -apple-system, sans-serif`;
-      ctx.fillText(l.text, pad, y + l.size);
+  return shareLogo;
+}
+function shareFont(ctx, size, weight){ ctx.font = `${weight || 400} ${size}px ${SHARE_FONT}`; }
+function shareRound(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
+  else { ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+}
+function shareCard(ctx, x, y, w, h, fill, stroke, r){
+  shareRound(ctx, x, y, w, h, r == null ? 28 : r);
+  ctx.fillStyle = fill; ctx.fill();
+  if (stroke){ ctx.lineWidth = 2; ctx.strokeStyle = stroke; ctx.stroke(); }
+}
+// Text clipped to maxW with an ellipsis; align "left" | "right" | "center".
+function shareText(ctx, text, x, y, { size = 26, weight = 400, color, align = "left", maxW, spacing } = {}){
+  shareFont(ctx, size, weight);
+  ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = "alphabetic";
+  if ("letterSpacing" in ctx) ctx.letterSpacing = spacing ? spacing + "px" : "0px";
+  let t = String(text == null ? "" : text);
+  if (maxW && ctx.measureText(t).width > maxW){
+    while (t.length > 1 && ctx.measureText(t + "…").width > maxW) t = t.slice(0, -1);
+    t += "…";
+  }
+  ctx.fillText(t, x, y);
+  if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
+  ctx.textAlign = "left";
+  return ctx.measureText(t).width;
+}
+function shareLogoImg(ctx, logo, x, y, size){
+  if (!logo) return;
+  ctx.save(); shareRound(ctx, x, y, size, size, size * 0.24); ctx.clip();
+  ctx.drawImage(logo, x, y, size, size); ctx.restore();
+}
+// Header: logo + app name (left), an optional eyebrow (right). Returns the next y.
+function shareHeader(ctx, th, logo, right){
+  shareLogoImg(ctx, logo, SHARE_PAD, SHARE_PAD, 76);
+  shareText(ctx, "Cricket.lk", SHARE_PAD + 96, SHARE_PAD + 38, { size: 36, weight: 800, color: th.text });
+  shareText(ctx, "BALL-BY-BALL SCORER", SHARE_PAD + 97, SHARE_PAD + 68, { size: 17, weight: 800, color: th.muted, spacing: 3 });
+  if (right) shareText(ctx, right, SHARE_W - SHARE_PAD, SHARE_PAD + 48, { size: 22, weight: 700, color: th.muted, align: "right", maxW: 420 });
+  return SHARE_PAD + 76 + 44;
+}
+function shareFooter(ctx, th, logo, y){
+  ctx.fillStyle = th.line; ctx.fillRect(SHARE_PAD, y, SHARE_W - SHARE_PAD * 2, 2);
+  y += 36;
+  shareLogoImg(ctx, logo, SHARE_PAD, y, 44);
+  shareText(ctx, "Scored with Cricket.lk", SHARE_PAD + 60, y + 30, { size: 24, weight: 800, color: th.text });
+  shareText(ctx, "by Erantha Welikala", SHARE_W - SHARE_PAD, y + 30, { size: 24, weight: 600, color: th.muted, align: "right" });
+  return y + 44 + SHARE_PAD;
+}
+// Draws `content(ctx, y) -> endY` on a tall transparent canvas, then onto a
+// themed background cut to the real height.
+function composeShareImage(th, content){
+  const tall = document.createElement("canvas");
+  tall.width = SHARE_W; tall.height = 7000;
+  const h = Math.min(tall.height, Math.ceil(content(tall.getContext("2d"))));
+  const out = document.createElement("canvas");
+  out.width = SHARE_W; out.height = h;
+  const ctx = out.getContext("2d");
+  const g = ctx.createLinearGradient(0, 0, SHARE_W * 0.4, h);
+  g.addColorStop(0, th.bg1); g.addColorStop(1, th.bg2);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, SHARE_W, h);
+  // Mown-pitch stripes + a gold edge, then the content.
+  ctx.fillStyle = th.stripe;
+  for (let x = -h; x < SHARE_W; x += 120){ ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 60, 0); ctx.lineTo(x + 60 + h, h); ctx.lineTo(x + h, h); ctx.closePath(); ctx.fill(); }
+  ctx.fillStyle = th.gold; ctx.fillRect(0, 0, SHARE_W, 10);
+  ctx.drawImage(tall, 0, 0);
+  return out;
+}
+// A table: header labels + rows of cells; cols = [{ w, align }], first col
+// takes the rest. Row: { cells, sub?, strong?, color? }. Returns the next y.
+function shareTable(ctx, th, x, y, w, cols, head, rows){
+  const fixed = cols.slice(1).reduce((s, c) => s + c.w, 0);
+  const firstW = w - fixed;
+  const colX = []; let cx = x + firstW;
+  cols.slice(1).forEach(c => { cx += c.w; colX.push(cx); });
+  head.forEach((label, i) => shareText(ctx, label, i === 0 ? x : colX[i - 1], y, { size: 17, weight: 800, color: th.muted, align: i === 0 ? "left" : "right", spacing: 2 }));
+  y += 18;
+  rows.forEach(r => {
+    const rh = r.sub ? 66 : 48;
+    ctx.fillStyle = th.line; ctx.fillRect(x, y, w, 1);
+    const base = y + 34;
+    shareText(ctx, r.cells[0], x, base, { size: 26, weight: r.strong ? 800 : 600, color: r.color || th.text, maxW: firstW - 16 });
+    if (r.sub) shareText(ctx, r.sub, x, base + 26, { size: 18, color: th.muted, maxW: firstW - 16 });
+    r.cells.slice(1).forEach((c, i) => shareText(ctx, c, colX[i], base, { size: 26, weight: i === 0 ? 800 : 500, color: i === 0 ? (r.color || th.text) : th.muted, align: "right" }));
+    y += rh;
+  });
+  return y + 6;
+}
+function renderScorecardCanvas(match, themeKey, logo){
+  const th = SHARE_THEMES[themeKey] || SHARE_THEMES.night;
+  const when = match.completedAt ? new Date(match.completedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
+  const motm = match.motm || pickMatchMOTM(match);
+  const motmTotal = motm ? aggregatePlayerStats([match]).find(t => t.name === motm) : null;
+  return composeShareImage(th, ctx => {
+    const X = SHARE_PAD, W = SHARE_W - SHARE_PAD * 2;
+    let y = shareHeader(ctx, th, logo, when);
+    shareText(ctx, `${match.teamA} v ${match.teamB}`, X, y + 54, { size: 60, weight: 800, color: th.text, maxW: W });
+    y += 84;
+    // Result pill.
+    shareFont(ctx, 28, 800);
+    const rw = Math.min(W, ctx.measureText(match.result || "").width + 56);
+    shareCard(ctx, X, y, rw, 60, th.accent, null, 30);
+    shareText(ctx, match.result || "", X + 28, y + 40, { size: 28, weight: 800, color: th.accentInk, maxW: rw - 56 });
+    y += 92;
+    match.innings.forEach(inn => {
+      const bpo = inn.ballsPerOver;
+      const bat = inn.batting.order.map(n => ({ n, s: inn.batting.stats[n] }));
+      const bowl = inn.bowling.order.map(n => ({ n, b: inn.bowling.stats[n] })).filter(r => r.b.legalBalls || r.b.runs || r.b.wickets);
+      const topRuns = Math.max(0, ...bat.map(r => r.s.runs));
+      const ext = inn.extras, extras = ext.wides + ext.noBalls + ext.byes + ext.legByes;
+      const cardTop = y, inner = X + 32, iw = W - 64;
+      // Measure: header 104 + batting (18 + rows) + extras 44 + bowling (18 + rows) + padding.
+      const h = 112 + (bat.length ? 24 + bat.reduce((s, r) => s + (r.s.out || r.s.balls ? 66 : 48), 0) : 0)
+        + 46 + (bowl.length ? 46 + bowl.length * 48 : 0) + 24;
+      shareCard(ctx, X, cardTop, W, h, th.panel, th.line);
+      shareText(ctx, teamName(match, inn.battingTeam), inner, cardTop + 62, { size: 34, weight: 800, color: th.text, maxW: iw - 360 });
+      shareText(ctx, inn.legalBalls != null ? `(${oversDisplay(inn.legalBalls, bpo)} ov)` : "", X + W - 32, cardTop + 62, { size: 24, weight: 600, color: th.muted, align: "right" });
+      shareFont(ctx, 24, 600);
+      const ovW = inn.legalBalls != null ? ctx.measureText(`(${oversDisplay(inn.legalBalls, bpo)} ov)`).width + 14 : 0;
+      shareText(ctx, `${inn.runs}/${inn.wickets}`, X + W - 32 - ovW, cardTop + 66, { size: 52, weight: 800, color: th.accent, align: "right" });
+      let yy = cardTop + 112;
+      if (bat.length){
+        yy = shareTable(ctx, th, inner, yy, iw, [{}, { w: 80 }, { w: 70 }, { w: 60 }, { w: 60 }, { w: 100 }], ["BATTER", "R", "B", "4S", "6S", "SR"],
+          bat.map(({ n, s }) => ({
+            cells: [n, `${s.runs}${s.out ? "" : "*"}`, s.balls, s.fours, s.sixes, s.balls ? ((s.runs / s.balls) * 100).toFixed(1) : "–"],
+            sub: s.out ? s.howOut : (s.balls ? "not out" : null),
+            strong: s.runs === topRuns && topRuns > 0, color: s.runs === topRuns && topRuns > 0 ? th.gold : null
+          })));
+      }
+      shareText(ctx, `Extras ${extras}  (w ${ext.wides}, nb ${ext.noBalls}, b ${ext.byes}, lb ${ext.legByes})`, inner, yy + 30, { size: 20, color: th.muted });
+      yy += 46;
+      if (bowl.length){
+        yy = shareTable(ctx, th, inner, yy + 22, iw, [{}, { w: 80 }, { w: 60 }, { w: 70 }, { w: 60 }, { w: 100 }], ["BOWLER", "O", "M", "R", "W", "ECON"],
+          bowl.map(({ n, b }) => ({ cells: [n, oversDisplay(b.legalBalls, bpo), b.maidens, b.runs, b.wickets, b.legalBalls ? (b.runs / (b.legalBalls / bpo)).toFixed(2) : "–"], strong: b.wickets >= 3 })));
+      }
+      y = cardTop + h + 24;
+    });
+    if (match.resultOnly){
+      shareText(ctx, "Result entered by hand — no ball-by-ball scorecard.", X, y + 10, { size: 22, color: th.muted });
+      y += 40;
     }
-    y += l.size + 14;
+    if (motm){
+      shareCard(ctx, X, y, W, 128, th.gold, null);
+      shareText(ctx, "🏆", X + 32, y + 84, { size: 56 });
+      shareText(ctx, "PLAYER OF THE MATCH", X + 116, y + 46, { size: 18, weight: 800, color: th.goldInk, spacing: 3 });
+      shareText(ctx, motm, X + 116, y + 94, { size: 40, weight: 800, color: th.goldInk, maxW: W - 360 });
+      if (motmTotal) shareText(ctx, `${motmTotal.points} pts`, X + W - 32, y + 82, { size: 30, weight: 800, color: th.goldInk, align: "right" });
+      y += 128 + 28;
+    }
+    return shareFooter(ctx, th, logo, y + 8);
   });
-  return canvas;
 }
 
-async function shareScorecardImage(match){
-  shareCanvasImage(renderScorecardCanvas(match), "cricket-lk-scorecard.png", "Cricket.lk scorecard", match.result || "");
+/* Export PDF = the browser's print dialog ("Save as PDF") against the print
+   rules: a branded header (logo, app name, what's printed) and footer ("by
+   Erantha Welikala", date) that only exist in print. On Result it prints the
+   full scorecard (expanded just for the print, then put back), and the PDF's
+   file name follows document.title, set for the duration. */
+function exportPdf(){
+  const m = state.match;
+  const onResult = navKey() === "result" && m;
+  const c = !onResult && /ournamentDashboard$/.test(state.view) ? tournamentContext() : null;
+  const title = onResult ? `${m.teamA} v ${m.teamB}` : c ? `${c.name} — results` : "Cricket.lk";
+  const brandTitle = document.querySelector("#print-brand .print-brand-title");
+  if (brandTitle) brandTitle.textContent = onResult ? `${title} · ${m.result || ""}` : title;
+  const footDate = document.querySelector("#print-foot .print-foot-date");
+  if (footDate) footDate.textContent = new Date().toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  const prevTitle = document.title, prevFull = ui.showFullScorecard;
+  document.title = `${title} — Cricket.lk`;
+  if (onResult && !prevFull){ ui.showFullScorecard = true; render(); }
+  window.addEventListener("afterprint", () => {
+    document.title = prevTitle;
+    if (onResult && !prevFull){ ui.showFullScorecard = false; render(); }
+  }, { once: true });
+  window.print();
 }
-/* Share a canvas as a PNG (the share sheet where files can be shared, else a
-   plain download). Shared by the scorecard and tournament-summary images. */
-function shareCanvasImage(canvas, fileName, title, text){
-  canvas.toBlob(async (blob) => {
-    if (!blob) return;
-    const file = new File([blob], fileName, { type: "image/png" });
-    if (navigator.canShare && navigator.canShare({ files: [file] })){
-      try { await navigator.share({ files: [file], title, text }); return; }
-      catch (err){ if (err && err.name === "AbortError") return; /* else fall through to a plain download */ }
-    }
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = fileName;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
+
+/* The preview sheet. ui.sharePreview = { kind: "scorecard" | "tournament",
+   view, theme, url, busy }; the PNG blob lives outside ui (sharePreviewBlob)
+   because it isn't data. */
+let sharePreviewBlob = null;
+function openSharePreview(kind){
+  ui.sharePreview = { kind, view: navKey(), theme: ui.sharePreview ? ui.sharePreview.theme : "night", url: null };
+  render();
+  buildSharePreview();
+}
+async function buildSharePreview(){
+  const sp = ui.sharePreview;
+  if (!sp) return;
+  const logo = await loadShareLogo();
+  let canvas = null;
+  if (sp.kind === "scorecard" && state.match) canvas = renderScorecardCanvas(state.match, sp.theme, logo);
+  else if (sp.kind === "tournament"){ const c = tournamentContext(); if (c) canvas = renderTournamentCanvas(c, sp.theme, logo); }
+  if (!canvas || ui.sharePreview !== sp) return;
+  canvas.toBlob(blob => {
+    if (ui.sharePreview !== sp || !blob) return;
+    if (sp.url) URL.revokeObjectURL(sp.url);
+    sharePreviewBlob = blob;
+    sp.url = URL.createObjectURL(blob);
+    render();
   }, "image/png");
+}
+function closeSharePreview(){
+  if (ui.sharePreview && ui.sharePreview.url) URL.revokeObjectURL(ui.sharePreview.url);
+  ui.sharePreview = null; sharePreviewBlob = null;
+  render();
+}
+function sharePreviewFile(){
+  const sp = ui.sharePreview;
+  return new File([sharePreviewBlob], sp.kind === "tournament" ? "cricket-lk-tournament.png" : "cricket-lk-scorecard.png", { type: "image/png" });
+}
+function sharePreviewText(){
+  const sp = ui.sharePreview;
+  if (sp.kind === "scorecard") return `${state.match.teamA} v ${state.match.teamB}: ${state.match.result || ""}`;
+  const c = tournamentContext(), s = c && tournamentSummary(c.matches, c.preset);
+  return c ? `${c.name}${s && s.champion ? ` — champions: ${s.champion.name}` : ""}` : "";
+}
+async function shareFromPreview(){
+  if (!sharePreviewBlob) return;
+  const file = sharePreviewFile();
+  if (navigator.canShare && navigator.canShare({ files: [file] })){
+    try { await navigator.share({ files: [file], title: "Cricket.lk", text: sharePreviewText() + "\n— scored with Cricket.lk" }); return; }
+    catch (err){ if (err && err.name === "AbortError") return; }
+  }
+  saveFromPreview();
+}
+function saveFromPreview(){
+  if (!sharePreviewBlob) return;
+  const file = sharePreviewFile();
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url; a.download = file.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+function renderSharePreviewModal(){
+  const sp = ui.sharePreview;
+  const canFiles = !!(navigator.canShare && sharePreviewBlob && navigator.canShare({ files: [sharePreviewFile()] }));
+  return `
+    <div class="modal-backdrop">
+      <div class="modal share-modal" data-keep-scroll="share-preview" role="dialog" aria-modal="true" aria-label="Share image">
+        <div class="wicket-modal-head">
+          <h2>${sp.kind === "tournament" ? "Share results" : "Share scorecard"}</h2>
+          <button type="button" data-action="close-share-preview" class="sheet-close" aria-label="Close">✕</button>
+        </div>
+        ${tabsHtml("share-theme", Object.entries(SHARE_THEMES).map(([k, t]) => [k, t.label]), sp.theme, "share-theme-tabs")}
+        <div class="share-preview">${sp.url ? `<img src="${sp.url}" alt="Share image preview">` : loadingHtml("Drawing the image…")}</div>
+        <div class="share-actions${canFiles ? "" : " single"}">
+          ${canFiles ? `<button type="button" data-action="share-save" class="ghost" ${sp.url ? "" : "disabled"}>Save image</button>` : ""}
+          <button type="button" data-action="${canFiles ? "share-send" : "share-save"}" class="primary" ${sp.url ? "" : "disabled"}>${canFiles ? "Share" : "Save image"}</button>
+        </div>
+      </div>
+    </div>`;
 }

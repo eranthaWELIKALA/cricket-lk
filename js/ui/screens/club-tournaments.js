@@ -522,7 +522,10 @@ function renderTournamentSummary(c){
       ${s.champion ? `<div class="summary-champ">🏆 ${escapeHtml(s.champion.name)}${s.shared && s.runnerUp ? ` &amp; ${escapeHtml(s.runnerUp.name)}` : ""}</div>
         <div class="muted">${s.champion.points} pts · ${s.champion.won} won of ${s.champion.played}${!s.shared && s.runnerUp ? ` · runner-up ${escapeHtml(s.runnerUp.name)}` : ""}</div>`
         : `<div class="summary-champ">No completed matches</div>`}
-      <button type="button" data-action="share-tournament" class="primary summary-share">${ICON_SHARE} Share results</button>
+      <div class="summary-actions">
+        <button type="button" data-action="share-tournament" class="primary summary-share">${ICON_SHARE} Share results</button>
+        <button type="button" data-action="export-pdf" class="ghost summary-pdf">Export PDF</button>
+      </div>
     </div>
     <div class="stat-grid four">${tile("Matches", s.matches)}${tile("Runs", s.runs)}${tile("Wickets", s.wickets)}${tile("Sixes", s.sixes)}</div>
     <div class="summary-card">
@@ -532,71 +535,83 @@ function renderTournamentSummary(c){
       ${row("Best innings", s.bestInnings && escapeHtml(s.bestInnings.name), s.bestInnings && `${s.bestInnings.runs}${s.bestInnings.notOut ? "*" : ""} (${s.bestInnings.balls})`)}
       ${row("Best bowling", s.bestBowling && escapeHtml(s.bestBowling.name), s.bestBowling && `${s.bestBowling.wickets}/${s.bestBowling.runs}`)}
       ${row("Most dismissals", s.topField && escapeHtml(s.topField.name), s.topField && `${s.topField.catches + s.topField.runouts}`)}
-      ${row("Highest total", s.highestTotal && escapeHtml(s.highestTotal.team), s.highestTotal && `${s.highestTotal.runs}-${s.highestTotal.wickets} v ${escapeHtml(s.highestTotal.against)}`)}
+      ${row("Highest total", s.highestTotal && `${escapeHtml(s.highestTotal.team)} <span class="muted">v ${escapeHtml(s.highestTotal.against)}</span>`, s.highestTotal && `${s.highestTotal.runs}-${s.highestTotal.wickets}`)}
     </div>
     ${renderStandingsTable(s.standings, c.preset.useNRR)}
     <button type="button" data-action="reopen-tournament" class="ghost" style="width:100%;">Reopen tournament</button>`;
 }
 
-/* The share image: same dependency-free canvas approach as the scorecard. */
-function renderTournamentCanvas(c){
+/* The share image: drawn with the share kit in result.js (logo, theme,
+   "by Erantha Welikala" footer), previewed in the share sheet first. */
+function renderTournamentCanvas(c, themeKey, logo){
+  const th = SHARE_THEMES[themeKey] || SHARE_THEMES.night;
   const s = tournamentSummary(c.matches, c.preset);
-  const W = 1080, pad = 64;
-  const lines = [];
-  lines.push({ text: "TOURNAMENT RESULTS", size: 24, weight: "800", color: "#9FC2AF" });
-  lines.push({ text: c.name, size: 54, weight: "800" });
-  lines.push({ size: 6 });
-  if (s.champion){
-    lines.push({ text: `🏆 ${s.shared && s.runnerUp ? `${s.champion.name} & ${s.runnerUp.name} (joint)` : s.champion.name}`, size: 46, weight: "800", color: "#F2C744" });
-    if (!s.shared && s.runnerUp) lines.push({ text: `Runner-up: ${s.runnerUp.name}`, size: 28, weight: "600", color: "#9FC2AF" });
-  }
-  lines.push({ size: 18 });
-  lines.push({ text: "POINTS TABLE", size: 22, weight: "800", color: "#9FC2AF" });
-  s.standings.forEach((t, i) => lines.push({ cols: [`${i + 1}. ${t.name}`, `P${t.played}  W${t.won}  L${t.lost}`, `${t.points} pts${c.preset.useNRR ? `  ${t.nrr >= 0 ? "+" : ""}${t.nrr.toFixed(2)}` : ""}`], size: 28, weight: i === 0 ? "800" : "500" }));
-  lines.push({ size: 18 });
-  lines.push({ text: "HIGHLIGHTS", size: 22, weight: "800", color: "#9FC2AF" });
-  const hl = (label, v) => v && lines.push({ cols: [label, v], size: 28 });
-  hl("MVP", s.mvp && `${s.mvp.name} · ${s.mvp.points} pts`);
-  hl("Most runs", s.topBat && `${s.topBat.name} · ${s.topBat.runs}`);
-  hl("Most wickets", s.topBowl && `${s.topBowl.name} · ${s.topBowl.wickets}`);
-  hl("Best innings", s.bestInnings && `${s.bestInnings.name} · ${s.bestInnings.runs}${s.bestInnings.notOut ? "*" : ""} (${s.bestInnings.balls})`);
-  hl("Best bowling", s.bestBowling && `${s.bestBowling.name} · ${s.bestBowling.wickets}/${s.bestBowling.runs}`);
-  hl("Highest total", s.highestTotal && `${s.highestTotal.team} · ${s.highestTotal.runs}-${s.highestTotal.wickets}`);
-  lines.push({ size: 14 });
-  lines.push({ text: `${s.matches} matches · ${s.runs} runs · ${s.wickets} wickets · ${s.sixes} sixes`, size: 24, color: "#9FC2AF" });
-  lines.push({ size: 10 });
-  lines.push({ text: "Scored with Cricket.lk", size: 22, weight: "700", color: "#5FB98C" });
-
-  const H = pad * 2 + lines.reduce((sum, l) => sum + l.size + 16, 0);
-  const canvas = document.createElement("canvas");
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#0B2E22"; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = "#F2C744"; ctx.fillRect(0, 0, W, 10);
-  let y = pad;
-  lines.forEach(l => {
-    ctx.fillStyle = l.color || "#F1F6F2";
-    ctx.font = `${l.weight || "400"} ${l.size}px -apple-system, sans-serif`;
-    if (l.text) ctx.fillText(l.text, pad, y + l.size, W - pad * 2);
-    if (l.cols){
-      // label | value (| value): first left, the rest right-aligned columns.
-      ctx.fillText(l.cols[0], pad, y + l.size, l.cols.length > 2 ? 420 : 300);
-      ctx.textAlign = "right";
-      if (l.cols.length > 2){ ctx.fillText(l.cols[1], 760, y + l.size); ctx.fillText(l.cols[2], W - pad, y + l.size); }
-      else ctx.fillText(l.cols[1], W - pad, y + l.size, W - pad * 2 - 320);
-      ctx.textAlign = "left";
-    }
-    y += l.size + 16;
+  const when = c.endedAt ? new Date(c.endedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
+  return composeShareImage(th, ctx => {
+    const X = SHARE_PAD, W = SHARE_W - SHARE_PAD * 2;
+    let y = shareHeader(ctx, th, logo, when);
+    shareText(ctx, "TOURNAMENT RESULTS", X, y + 22, { size: 20, weight: 800, color: th.muted, spacing: 4 });
+    shareText(ctx, c.name, X, y + 86, { size: 62, weight: 800, color: th.text, maxW: W });
+    y += 120;
+    // Champion card.
+    shareCard(ctx, X, y, W, 220, th.gold, null, 32);
+    shareText(ctx, "🏆", X + W - 40, y + 150, { size: 120, align: "right" });
+    shareText(ctx, s.shared ? "JOINT TOP" : "CHAMPIONS", X + 36, y + 56, { size: 20, weight: 800, color: th.goldInk, spacing: 4 });
+    const champ = s.champion ? (s.shared && s.runnerUp ? `${s.champion.name} & ${s.runnerUp.name}` : s.champion.name) : "No completed matches";
+    shareText(ctx, champ, X + 36, y + 126, { size: 64, weight: 800, color: th.goldInk, maxW: W - 220 });
+    if (s.champion) shareText(ctx, `${s.champion.points} pts · won ${s.champion.won} of ${s.champion.played}${!s.shared && s.runnerUp ? ` · runner-up ${s.runnerUp.name}` : ""}`, X + 36, y + 178, { size: 26, weight: 700, color: th.goldInk, maxW: W - 220 });
+    y += 220 + 28;
+    // Stat tiles.
+    const tiles = [["Matches", s.matches], ["Runs", s.runs], ["Wickets", s.wickets], ["Sixes", s.sixes]];
+    const tw = (W - 3 * 20) / 4;
+    tiles.forEach(([label, v], i) => {
+      const tx = X + i * (tw + 20);
+      shareCard(ctx, tx, y, tw, 132, th.panel, th.line, 24);
+      shareText(ctx, v, tx + tw / 2, y + 74, { size: 50, weight: 800, color: th.accent, align: "center" });
+      shareText(ctx, label.toUpperCase(), tx + tw / 2, y + 110, { size: 17, weight: 800, color: th.muted, align: "center", spacing: 2 });
+    });
+    y += 132 + 28;
+    // Points table.
+    const rows = s.standings;
+    const th0 = 90 + rows.length * 62;
+    shareCard(ctx, X, y, W, th0, th.panel, th.line);
+    shareText(ctx, "POINTS TABLE", X + 32, y + 50, { size: 20, weight: 800, color: th.muted, spacing: 3 });
+    const cols = [[W - 32 - (c.preset.useNRR ? 330 : 230), "P"], [W - 32 - (c.preset.useNRR ? 270 : 170), "W"], [W - 32 - (c.preset.useNRR ? 210 : 110), "L"], [W - 32 - (c.preset.useNRR ? 120 : 0), "PTS"]];
+    if (c.preset.useNRR) cols.push([W - 32, "NRR"]);
+    cols.forEach(([cx, l]) => shareText(ctx, l, X + cx, y + 50, { size: 18, weight: 800, color: th.muted, align: "right", spacing: 2 }));
+    rows.forEach((t, i) => {
+      const ry = y + 70 + i * 62;
+      if (i === 0) shareCard(ctx, X + 16, ry + 4, W - 32, 56, th.faint, null, 16);
+      shareCard(ctx, X + 30, ry + 13, 38, 38, i === 0 ? th.gold : th.line, null, 19);
+      shareText(ctx, i + 1, X + 49, ry + 41, { size: 20, weight: 800, color: i === 0 ? th.goldInk : th.text, align: "center" });
+      shareText(ctx, t.name, X + 88, ry + 43, { size: 28, weight: i === 0 ? 800 : 600, color: th.text, maxW: cols[0][0] - 130 });
+      const vals = [t.played, t.won, t.lost, t.points];
+      if (c.preset.useNRR) vals.push(`${t.nrr >= 0 ? "+" : ""}${t.nrr.toFixed(2)}`);
+      vals.forEach((v, k) => shareText(ctx, v, X + cols[k][0], ry + 43, { size: 28, weight: k === 3 ? 800 : 500, color: k === 3 ? th.accent : th.muted, align: "right" }));
+    });
+    y += th0 + 28;
+    // Highlights: two columns of small cards.
+    const hl = [
+      ["MVP", s.mvp && s.mvp.name, s.mvp && `${s.mvp.points} pts`],
+      ["Most runs", s.topBat && s.topBat.name, s.topBat && `${s.topBat.runs} runs`],
+      ["Most wickets", s.topBowl && s.topBowl.name, s.topBowl && `${s.topBowl.wickets} wkts`],
+      ["Best innings", s.bestInnings && s.bestInnings.name, s.bestInnings && `${s.bestInnings.runs}${s.bestInnings.notOut ? "*" : ""} (${s.bestInnings.balls})`],
+      ["Best bowling", s.bestBowling && s.bestBowling.name, s.bestBowling && `${s.bestBowling.wickets}/${s.bestBowling.runs}`],
+      ["Highest total", s.highestTotal && s.highestTotal.team, s.highestTotal && `${s.highestTotal.runs}-${s.highestTotal.wickets}`]
+    ].filter(h => h[1]);
+    const hw = (W - 20) / 2;
+    hl.forEach(([label, who, val], i) => {
+      const hx = X + (i % 2) * (hw + 20), hy = y + Math.floor(i / 2) * 150;
+      shareCard(ctx, hx, hy, hw, 130, th.panel, th.line, 24);
+      shareText(ctx, label.toUpperCase(), hx + 28, hy + 40, { size: 17, weight: 800, color: th.muted, spacing: 2 });
+      shareText(ctx, who, hx + 28, hy + 84, { size: 32, weight: 800, color: th.text, maxW: hw - 56 });
+      shareText(ctx, val, hx + 28, hy + 114, { size: 22, weight: 700, color: th.accent, maxW: hw - 56 });
+    });
+    y += Math.ceil(hl.length / 2) * 150 + 10;
+    return shareFooter(ctx, th, logo, y);
   });
-  return canvas;
 }
-function shareTournamentResults(){
-  const c = tournamentContext();
-  if (!c) return;
-  const s = tournamentSummary(c.matches, c.preset);
-  const text = s.champion ? `${c.name}: ${s.shared ? "joint winners" : "won by"} ${s.champion.name}${s.shared && s.runnerUp ? ` & ${s.runnerUp.name}` : ""}` : c.name;
-  shareCanvasImage(renderTournamentCanvas(c), "cricket-lk-tournament.png", `${c.name} — results`, text);
-}
+function shareTournamentResults(){ openSharePreview("tournament"); }
 
 /* --- result-only fixtures ---
    "Enter result" on a tournament's Overview/Fixtures opens a sheet that

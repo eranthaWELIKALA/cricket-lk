@@ -91,8 +91,13 @@ document.addEventListener("click", (e) => {
   else if (action === "close-match-detail"){ ui.matchDetail = null; render(); }
   else if (action === "close-live-scorecard"){ ui.liveScorecard = false; render(); }
   else if (action === "start-second-innings"){ pushSnapshot(); startSecondInnings(state.match); save(); render(); }
-  else if (action === "share-image") shareScorecardImage(state.match);
-  else if (action === "export-pdf") window.print();
+  else if (action === "share-image") openSharePreview("scorecard");
+  else if (action === "open-tutorial"){ save(); location.href = "tutorial.html"; }
+  else if (action === "share-theme" && ui.sharePreview){ ui.sharePreview.theme = btn.dataset.tab; ui.sharePreview.url = null; render(); buildSharePreview(); }
+  else if (action === "share-send") shareFromPreview();
+  else if (action === "share-save") saveFromPreview();
+  else if (action === "close-share-preview") closeSharePreview();
+  else if (action === "export-pdf") exportPdf();
   else if (action === "finish-match") leaveMatch();
   else if (action === "toggle-nicknames"){ state.useNicknames = !state.useNicknames; save(); render(); }
   else if (action === "toggle-sound"){
@@ -368,6 +373,7 @@ document.addEventListener("keydown", (e) => {
     if (ui.confirm) cancelConfirm();
     else if (ui.tournamentTeamEdit && document.querySelector(".team-modal")) closeTeamEdit();
     else if (ui.resultEntry && document.querySelector("#result-entry-form")) closeTopOverlay();
+    else if (ui.sharePreview) closeSharePreview();
     else if (ui.presetInfo){ ui.presetInfo = null; render(); }
     else if (ui.pendingExtra){ ui.pendingExtra = null; render(); }
   }

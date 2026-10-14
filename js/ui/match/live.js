@@ -2,6 +2,8 @@
    Classic script, loaded in order by index.html; all files share one global scope (see CLAUDE.md "Code layout"). */
 /* --- live screen --- */
 function handleBallClick(runs){
+  // Never record with an empty slot (a batter/bowler still to be picked).
+  if (pendingPickKey(state.match)) return;
   const inn = currentInnings(state.match);
   const kindMap = { wide: "wide", noball: "noball", bye: "bye", legbye: "legbye" };
   const kind = ui.pendingExtra ? kindMap[ui.pendingExtra] : "run";

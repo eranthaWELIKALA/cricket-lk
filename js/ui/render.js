@@ -181,7 +181,10 @@ function render(){
   // The live scorecard sheet belongs to one stretch of live scoring: an
   // innings ending (or the match leaving the screen) closes it for good.
   if (ui.liveScorecard && !(m && m.status === "live" && !away)) ui.liveScorecard = false;
-  if (ui.syncSheet && session){
+  if (ui.sharePreview && ui.sharePreview.view !== navKey()) ui.sharePreview = null;
+  if (ui.sharePreview){
+    modalHtml = renderSharePreviewModal();
+  } else if (ui.syncSheet && session){
     modalHtml = renderSyncSheet();
   } else if (pmValid){
     modalKey = pm.kind;
