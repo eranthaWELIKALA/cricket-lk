@@ -653,7 +653,14 @@ the completed-match sheet. Ball by ball (`renderBallByBall`) lists every
 over newest first from `inn.overs[].events` + `currentOverEvents` (bowler,
 one chip per ball, the over's runs/wickets, the score at its end) — it only
 reads the display strings and `runs`/`isWicket` that `recordBall` already
-stores, so it works on every archived match. Every innings' card is
+stores, so it works on every archived match. **Commentary** (third mode,
+`"comms"`, `renderCommentary`) is one line per ball, newest first, with an
+"end of over" row (runs, score, bowler figures): `inningsCommentary(inn,
+{ name, anonymous })` (ENGINE, tested) builds it from extra fields
+`recordBall` now puts on each over event (`kind`, `batter`, `freeHit`, and
+for wickets `wicketType`/`outName`/`howOut`/`outRuns`/`outBalls`/`fielder`);
+events without them (older matches) are read back from `display`. It states
+outcomes only, never invented shots. Every innings' card is
 rendered (inactive ones `hidden`), and the print rules show them all, so
 Export PDF still prints both innings.
 

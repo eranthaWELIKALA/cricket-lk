@@ -1020,6 +1020,25 @@ button.fixture-row{ width:100%; text-align:left; color:var(--text); align-items:
 .bbb-chips .chip{ animation:none; }
 .bbb-score{ margin-top:8px; font-size:.75rem; color:var(--muted); }
 
+/* Commentary: one row per ball, newest first, an end-of-over band above each over's balls. */
+.commentary{ margin-bottom:14px; }
+.commentary h3{ margin:0 0 10px; }
+.commentary .ov{ color:var(--muted); font-weight:600; font-size:1rem; }
+.comm-over{ background:var(--panel); border:2px solid var(--line-strong); border-radius:var(--radius-sm); padding:8px 12px; margin:12px 0 4px; }
+.comm-over-top{ display:flex; justify-content:space-between; gap:8px; font-size:.78rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+.comm-over-sub{ margin-top:2px; font-size:.78rem; color:var(--muted); }
+.comm-ball{ display:flex; gap:10px; align-items:flex-start; padding:8px 4px; border-bottom:1px solid var(--line); }
+.comm-ball:last-child{ border-bottom:none; }
+.comm-left{ display:flex; flex-direction:column; align-items:center; gap:4px; flex:0 0 44px; }
+.comm-label{ font-size:.75rem; font-weight:800; color:var(--muted); }
+.comm-left .chip{ animation:none; }
+.comm-text{ flex:1; min-width:0; font-size:.88rem; line-height:1.35; overflow-wrap:anywhere; }
+.comm-who{ color:var(--muted); }
+.comm-ball.wicket .comm-text strong{ color:var(--wicket); }
+.comm-ball.four .comm-text strong, .comm-ball.six .comm-text strong{ color:var(--accent); }
+.comm-detail{ margin-top:2px; font-size:.8rem; font-weight:700; }
+.comm-milestone{ margin-top:2px; font-size:.8rem; font-weight:800; color:var(--accent); }
+
 /* Team cards collapse to a header; tapping it shows the players. */
 .team-card-toggle{
   display:flex; align-items:center; gap:10px; flex:1; min-width:0; padding:0; margin:0; width:auto;

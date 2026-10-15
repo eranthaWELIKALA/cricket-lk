@@ -44,15 +44,45 @@ function renderScorecard(match){
   const sc = ui.scorecard || {};
   const last = match.innings.length - 1;
   const idx = match.innings[sc.inn] ? sc.inn : last;
-  const mode = sc.mode === "balls" ? "balls" : "card";
+  const mode = sc.mode === "balls" || sc.mode === "comms" ? sc.mode : "card";
   if (last < 0) return `<p class="hint">Nothing scored.</p>`;
   return `
     <div class="scorecard-tabs">
       ${match.innings.length > 1 ? tabsHtml("scorecard-inn", match.innings.map((i, n) =>
         [n, `${escapeHtml(teamName(match, i.battingTeam))} <span class="n">${i.runs}-${i.wickets}</span>`]), idx, "sc-inn-tabs") : ""}
-      ${tabsHtml("scorecard-mode", [["card", "Scorecard"], ["balls", "Ball by ball"]], mode, "sc-mode-tabs")}
+      ${tabsHtml("scorecard-mode", [["card", "Scorecard"], ["balls", "Ball by ball"], ["comms", "Commentary"]], mode, "sc-mode-tabs")}
       ${match.innings.map((inn, n) => `<div class="sc-pane" ${n === idx && mode === "card" ? "" : "hidden"}>${renderInningsSummary(match, inn)}</div>`).join("")}
       ${mode === "balls" ? renderBallByBall(match, match.innings[idx]) : ""}
+      ${mode === "comms" ? renderCommentary(match, match.innings[idx]) : ""}
+    </div>`;
+}
+
+/* Commentary: inningsCommentary (ENGINE) newest first -- each over's
+   "end of over" row sits above its balls, like a commentary feed. */
+function renderCommentary(match, inn){
+  const lines = inningsCommentary(inn, { name: liveName, anonymous: !!match.anonymous });
+  if (!lines.length) return `<p class="hint">No balls bowled yet.</p>`;
+  const team = escapeHtml(teamName(match, inn.battingTeam));
+  const rows = lines.slice().reverse().map(l => {
+    if (l.type === "over") return `
+      <div class="comm-over">
+        <div class="comm-over-top"><span>End of over ${l.over}</span><span class="n">${team} ${l.score}-${l.wkts}</span></div>
+        <div class="comm-over-sub n">${l.maiden ? "Maiden" : `${l.runs} run${l.runs === 1 ? "" : "s"}`}${l.wickets ? ` · ${l.wickets} wkt${l.wickets === 1 ? "" : "s"}` : ""}${l.bowler ? ` · ${escapeHtml(l.bowler)} ${l.figures}` : ""}</div>
+      </div>`;
+    return `
+      <div class="comm-ball${l.tone ? " " + l.tone : ""}">
+        <div class="comm-left"><span class="n comm-label">${l.label}</span><span class="chip ${l.tone}">${escapeHtml(l.display)}</span></div>
+        <div class="comm-text">
+          ${l.who ? `<span class="comm-who">${escapeHtml(l.who)},</span> ` : ""}<strong>${escapeHtml(l.text)}</strong>
+          ${l.detail ? `<div class="comm-detail">${escapeHtml(l.detail)}</div>` : ""}
+          ${l.milestone ? `<div class="comm-milestone">${escapeHtml(l.milestone)}</div>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+  return `
+    <div class="commentary">
+      <h3>${team} ${inn.runs}/${inn.wickets} <span class="ov">(${oversDisplay(inn.legalBalls, inn.ballsPerOver)} ov)</span></h3>
+      ${rows}
     </div>`;
 }
 

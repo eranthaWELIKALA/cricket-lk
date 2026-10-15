@@ -159,6 +159,35 @@ async function main(){
     assert(inn.fallOfWickets[0].batsman === "A1", "a normal dismissal's fall-of-wickets entry names the striker who was out, for the new-batsman modal's dismissal banner");
   }
 
+  // --- 5b2. ball-by-ball commentary (inningsCommentary) ---
+  {
+    const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    const inn = currentInnings(m);
+    win.ensureBatsman(inn, "A1"); win.ensureBatsman(inn, "A2"); win.ensureBowler(inn, "B1");
+    inn.striker = "A1"; inn.nonStriker = "A2"; inn.bowler = "B1";
+    recordBall(inn, { kind: "run", runs: 4 });
+    recordBall(inn, { kind: "wide", runs: 0 });
+    recordBall(inn, { kind: "noball", runs: 6 });
+    recordBall(inn, { kind: "run", runs: 0 });
+    recordBall(inn, { kind: "wicket", wicketType: "caught", fielder: "B2" });
+    win.ensureBatsman(inn, "A3"); inn.striker = "A3";
+    recordBall(inn, { kind: "legbye", runs: 1 });
+    recordBall(inn, { kind: "run", runs: 0 });
+    recordBall(inn, { kind: "run", runs: 0 });
+    const c = win.inningsCommentary(inn);
+    const balls = c.filter(l => l.type === "ball");
+    assert(balls.map(l => l.label).join(" ") === "0.1 0.2 0.2 0.2 0.3 0.4 0.5 0.6", "commentary labels: extras carry the next ball's number");
+    assert(balls[0].who === "B1 to A1" && balls[0].text === "FOUR" && balls[0].tone === "four", "a boundary reads 'B1 to A1, FOUR'");
+    assert(balls[2].text === "no ball, SIX off the bat" && balls[3].text === "Free hit: no run", "no ball off the bat, then the free hit is called out");
+    assert(balls[4].text === "OUT! Caught by B2" && balls[4].detail === "A1 c B2 b B1 10 (4)", "a catch names the fielder and the batter's line");
+    const end = c[c.length - 1];
+    assert(end.type === "over" && end.score === 13 && end.wkts === 1 && end.figures === "1-0-12-1", "end of over row: score and bowler figures (leg byes not against the bowler)");
+    // events from before commentary existed only have display strings
+    const old = { ballsPerOver: 6, overs: [{ bowler: "X", events: [{ display: "Wd+4", runs: 5 }, { display: "W", isWicket: true, runs: 0 }] }], currentOverEvents: [] };
+    const oc = win.inningsCommentary(old);
+    assert(oc[0].text === "wide, and it runs away for FOUR" && oc[1].text === "OUT! Wicket" && oc[0].who === "X", "older matches still get commentary from the display strings");
+  }
+
   // --- 5c. same, for a run-out (the other branch that sets `outName`) ---
   {
     const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });

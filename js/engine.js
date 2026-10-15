@@ -120,6 +120,9 @@ function recordBall(inn, event){
   const bwl = inn.bowling.stats[inn.bowler];
   const legal = event.kind !== "wide" && event.kind !== "noball";
   let ballRuns = 0, display = "", rotate = false, outName;
+  // Who faced and whether it was a free hit, read before anything moves --
+  // the commentary (inningsCommentary) needs them, the scoring doesn't.
+  const batter = inn.striker, freeHit = !!inn.freeHit;
 
   if (event.kind === "run"){
     ballRuns = event.runs;
@@ -193,7 +196,15 @@ function recordBall(inn, event){
 
   // `runs` here is per-ball runs (bat + extras, whatever this event was
   // worth) -- the live-scoring screen's over-total sums this per row.
-  inn.currentOverEvents.push({ display, isWicket: event.kind === "wicket", runs: ballRuns });
+  // kind/batter/wicket fields only feed the commentary.
+  const ev = { display, isWicket: event.kind === "wicket", runs: ballRuns, kind: event.kind, batter };
+  if (freeHit) ev.freeHit = true;
+  if (event.kind === "wicket"){
+    const o = bat[outName];
+    Object.assign(ev, { wicketType: event.wicketType, outName, howOut: o.howOut, outRuns: o.runs, outBalls: o.balls });
+    if (event.fielder) ev.fielder = event.fielder;
+  }
+  inn.currentOverEvents.push(ev);
 
   if (legal) inn.freeHit = false;
   if (event.kind === "noball" && inn.freeHitOnNoBall) inn.freeHit = true;
@@ -897,6 +908,95 @@ function fillAnonymousSlots(match){
     ensureBowler(inn, n); inn.bowler = n; changed = true;
   }
   return changed;
+}
+
+/* --- ball-by-ball commentary ---
+   One line per delivery, oldest first, plus an "end of over" row after each
+   completed over (its runs, the score, the bowler's figures). Built from the
+   over events recordBall stores; events from before commentary existed have
+   no kind/batter, so they're read back from the display string. Factual
+   only -- we know the outcome, not the shot, so nothing is invented.
+   opts.name maps a stored name for display (nicknames); opts.anonymous
+   leaves out the "Over N" placeholder bowlers. */
+function commentaryEvent(ev){
+  const d = ev.display || "";
+  const off = Number((d.match(/^(?:Wd|Nb)\+(\d+)/) || [])[1] || 0);
+  if (ev.kind) return { kind: ev.kind, off, wicketType: ev.wicketType };
+  if (/Ro$/.test(d)) return { kind: "wicket", wicketType: "runout", off: 0 };
+  if (d === "W") return { kind: "wicket", wicketType: null, off: 0 };
+  if (/^Wd/.test(d)) return { kind: "wide", off };
+  if (/^Nb/.test(d)) return { kind: "noball", off };
+  if (/^Lb/.test(d)) return { kind: "legbye", off: 0 };
+  if (/^B/.test(d)) return { kind: "bye", off: 0 };
+  return { kind: "run", off: 0 };
+}
+function runsWord(n, unit){
+  if (unit) return `${n === 4 ? "FOUR" : n} ${unit}${n === 1 ? "" : "s"}`;
+  return n === 0 ? "no run" : n === 4 ? "FOUR" : n === 6 ? "SIX" : `${n} run${n === 1 ? "" : "s"}`;
+}
+const DISMISSAL_WORDS = { bowled: "Bowled", caught: "Caught", lbw: "LBW", stumped: "Stumped", hitwicket: "Hit wicket", runout: "Run out" };
+function inningsCommentary(inn, opts){
+  const o = opts || {};
+  const nm = n => (o.name ? o.name(n) : n);
+  const bpo = inn.ballsPerOver || 6;
+  const overs = inn.overs.map(x => ({ bowler: x.bowler, events: x.events, done: true }));
+  if (inn.currentOverEvents.length) overs.push({ bowler: inn.bowler, events: inn.currentOverEvents, done: false });
+  const out = [], batRuns = {}, figs = {};
+  let score = 0, wkts = 0;
+  overs.forEach((ov, i) => {
+    let legal = 0, overRuns = 0, overWkts = 0, bowlerRuns = 0;
+    const f = ov.bowler ? (figs[ov.bowler] = figs[ov.bowler] || { balls: 0, maidens: 0, runs: 0, wickets: 0 }) : null;
+    ov.events.forEach(ev => {
+      const c = commentaryEvent(ev);
+      const isLegal = c.kind !== "wide" && c.kind !== "noball";
+      if (isLegal) legal += 1;
+      const label = `${i}.${isLegal ? legal : legal + 1}`;
+      const runs = ev.runs || 0;
+      let text, tone = "";
+      if (c.kind === "run"){ text = runsWord(runs); if (runs === 4) tone = "four"; if (runs === 6) tone = "six"; }
+      else if (c.kind === "wide"){ text = c.off === 4 ? "wide, and it runs away for FOUR" : c.off ? `wide, ${c.off} more taken` : "wide"; tone = "extra"; }
+      else if (c.kind === "noball"){ text = c.off ? `no ball, ${c.off === 4 ? "FOUR" : c.off === 6 ? "SIX" : runsWord(c.off)} off the bat` : "no ball"; tone = "extra"; }
+      else if (c.kind === "bye") text = runsWord(runs, "bye");
+      else if (c.kind === "legbye") text = runsWord(runs, "leg bye");
+      else {
+        const how = DISMISSAL_WORDS[c.wicketType] || "Wicket";
+        const by = ev.fielder ? (c.wicketType === "caught" ? ` by ${nm(ev.fielder)}` : ` (${nm(ev.fielder)})`) : "";
+        text = `OUT! ${how}${by}${c.wicketType === "runout" && runs ? `, ${runsWord(runs)} completed` : ""}`;
+        tone = "wicket";
+      }
+      if (ev.freeHit) text = `Free hit: ${text}`;
+      // milestones, from the bat runs this batter has made so far
+      let milestone = "";
+      if (ev.batter){
+        const before = batRuns[ev.batter] || 0;
+        const add = c.kind === "run" || (c.kind === "wicket" && c.wicketType === "runout") ? runs : c.kind === "noball" ? c.off : 0;
+        batRuns[ev.batter] = before + add;
+        const m = [100, 50].find(x => before < x && before + add >= x);
+        if (m) milestone = `${m === 100 ? "HUNDRED" : "FIFTY"} for ${nm(ev.batter)}!`;
+      }
+      const who = [o.anonymous ? null : (ov.bowler ? nm(ov.bowler) : null), ev.batter ? nm(ev.batter) : null].filter(Boolean).join(" to ");
+      const detail = ev.isWicket && ev.outName
+        ? `${nm(ev.outName)} ${ev.howOut || ""} ${ev.outRuns != null ? `${ev.outRuns} (${ev.outBalls})` : ""}`.replace(/\s+/g, " ").trim()
+        : "";
+      score += runs; overRuns += runs;
+      if (ev.isWicket){ wkts += 1; overWkts += 1; }
+      if (c.kind !== "bye" && c.kind !== "legbye") bowlerRuns += runs;
+      if (f){
+        if (isLegal) f.balls += 1;
+        if (c.kind !== "bye" && c.kind !== "legbye") f.runs += runs;
+        if (ev.isWicket && c.wicketType !== "runout") f.wickets += 1;
+      }
+      out.push({ type: "ball", over: i, label, who, text, detail, milestone, tone, display: ev.display, runs });
+    });
+    if (ov.done){
+      const maiden = legal === bpo && bowlerRuns === 0;
+      if (f && maiden) f.maidens += 1;
+      out.push({ type: "over", over: i + 1, runs: overRuns, wickets: overWkts, score, wkts, maiden,
+        bowler: !o.anonymous && ov.bowler ? nm(ov.bowler) : null,
+        figures: f ? `${oversDisplay(f.balls, bpo).replace(/\.0$/, "")}-${f.maidens}-${f.runs}-${f.wickets}` : "" });
+    }
+  });
+  return out;
 }
 
 /* --- tournament summary (ended tournaments) ---
