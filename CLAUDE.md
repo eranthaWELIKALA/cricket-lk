@@ -659,8 +659,14 @@ stores, so it works on every archived match. **Commentary** (third mode,
 { name, anonymous })` (ENGINE, tested) builds it from extra fields
 `recordBall` now puts on each over event (`kind`, `batter`, `freeHit`, and
 for wickets `wicketType`/`outName`/`howOut`/`outRuns`/`outBalls`/`fielder`);
-events without them (older matches) are read back from `display`. It states
-outcomes only, never invented shots. Every innings' card is
+events without them (older matches) are read back from `display`. Each ball
+also shows the striker's score after it. `commentaryBookends(match, idx)`
+(ENGINE, tested) adds the opening note (toss + who bats, or the target) and
+the closing one (why the innings ended, the target set, and after the last
+innings `match.result`). The toss is the optional "Who won the toss?" tiles on
+match setup / the guest tournament start form → `match.tossWinner` ("A"/"B"/
+null; kept by `restartMatch`, so flipping who bats flips "chose to bat/field").
+It states outcomes only, never invented shots. Every innings' card is
 rendered (inactive ones `hidden`), and the print rules show them all, so
 Export PDF still prints both innings.
 

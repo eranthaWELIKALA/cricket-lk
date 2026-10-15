@@ -244,7 +244,7 @@ function endInnings(match){
   afterBall(match);
 }
 
-function createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst, ballsPerOver, wideRuns, noBallRuns, wideEnabled, noBallEnabled, freeHitOnNoBall, lastManStands, requireFielderOnCatch, requireFielderOnRunout, presetId, presetName, tournamentId }){
+function createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst, ballsPerOver, wideRuns, noBallRuns, wideEnabled, noBallEnabled, freeHitOnNoBall, lastManStands, requireFielderOnCatch, requireFielderOnRunout, presetId, presetName, tournamentId, tossWinner }){
   // null/undefined overs or players = no limit (see createInnings).
   oversLimit = oversLimit || null;
   playersPerSide = playersPerSide || null;
@@ -267,6 +267,9 @@ function createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst, b
     presetId: presetId || null,
     presetName: presetName || null,
     tournamentId: tournamentId || null,
+    // Optional "A"/"B": only the commentary reads it (with battingFirst it
+    // tells whether the winner chose to bat or to field).
+    tossWinner: tossWinner === "A" || tossWinner === "B" ? tossWinner : null,
     innings: [createInnings(battingFirst, battingFirst === "A" ? "B" : "A", null, playersPerSide, oversLimit, cfg)],
     status: "opening",
     result: null,
@@ -589,7 +592,8 @@ function restartMatch(match, battingFirst){
     wideEnabled: match.wideEnabled, noBallEnabled: match.noBallEnabled,
     freeHitOnNoBall: match.freeHitOnNoBall, lastManStands: match.lastManStands,
     requireFielderOnCatch: match.requireFielderOnCatch, requireFielderOnRunout: match.requireFielderOnRunout,
-    presetId: match.presetId, presetName: match.presetName, tournamentId: match.tournamentId
+    presetId: match.presetId, presetName: match.presetName, tournamentId: match.tournamentId,
+    tossWinner: match.tossWinner
   });
   MATCH_CARRY_FIELDS.forEach(k => { if (match[k] !== undefined) fresh[k] = JSON.parse(JSON.stringify(match[k])); });
   return fresh;
@@ -941,7 +945,7 @@ function inningsCommentary(inn, opts){
   const bpo = inn.ballsPerOver || 6;
   const overs = inn.overs.map(x => ({ bowler: x.bowler, events: x.events, done: true }));
   if (inn.currentOverEvents.length) overs.push({ bowler: inn.bowler, events: inn.currentOverEvents, done: false });
-  const out = [], batRuns = {}, figs = {};
+  const out = [], batRuns = {}, batBalls = {}, figs = {};
   let score = 0, wkts = 0;
   overs.forEach((ov, i) => {
     let legal = 0, overRuns = 0, overWkts = 0, bowlerRuns = 0;
@@ -971,6 +975,7 @@ function inningsCommentary(inn, opts){
         const before = batRuns[ev.batter] || 0;
         const add = c.kind === "run" || (c.kind === "wicket" && c.wicketType === "runout") ? runs : c.kind === "noball" ? c.off : 0;
         batRuns[ev.batter] = before + add;
+        if (c.kind !== "wide") batBalls[ev.batter] = (batBalls[ev.batter] || 0) + 1;
         const m = [100, 50].find(x => before < x && before + add >= x);
         if (m) milestone = `${m === 100 ? "HUNDRED" : "FIFTY"} for ${nm(ev.batter)}!`;
       }
@@ -986,7 +991,10 @@ function inningsCommentary(inn, opts){
         if (c.kind !== "bye" && c.kind !== "legbye") f.runs += runs;
         if (ev.isWicket && c.wicketType !== "runout") f.wickets += 1;
       }
-      out.push({ type: "ball", over: i, label, who, text, detail, milestone, tone, display: ev.display, runs });
+      // the striker's score after this ball (a dismissed striker's is in `detail`)
+      const batter = ev.batter && !(ev.isWicket && ev.outName === ev.batter)
+        ? `${nm(ev.batter)} ${batRuns[ev.batter]} (${batBalls[ev.batter] || 0})` : "";
+      out.push({ type: "ball", over: i, label, who, text, detail, batter, milestone, tone, display: ev.display, runs });
     });
     if (ov.done){
       const maiden = legal === bpo && bowlerRuns === 0;
@@ -997,6 +1005,34 @@ function inningsCommentary(inn, opts){
     }
   });
   return out;
+}
+
+/* The rows around an innings' commentary: how it started (the toss before
+   the first innings, the target before a chase) and how it finished (why
+   the innings ended and, after the last one, the result). Plain text. */
+function commentaryBookends(match, idx){
+  const inn = match.innings[idx];
+  const bat = teamName(match, inn.battingTeam), bowl = teamName(match, inn.bowlingTeam);
+  const bpo = inn.ballsPerOver || 6;
+  const start = [];
+  if (idx === 0){
+    if (match.tossWinner){
+      const won = teamName(match, match.tossWinner);
+      start.push(`${won} won the toss and chose to ${match.tossWinner === inn.battingTeam ? "bat" : "field"}.`);
+    }
+    start.push(`${bat} to bat, ${bowl} to bowl.`);
+  } else if (inn.target != null){
+    const overs = inn.oversLimit != null ? ` from ${inn.oversLimit} over${inn.oversLimit === 1 ? "" : "s"}` : "";
+    start.push(`${bat} need ${inn.target} to win${overs}.`);
+  }
+  const end = [];
+  if (inn.complete){
+    const why = { allout: "all out", overs: "overs complete", target: "target reached", closed: "innings closed" }[inn.completeReason];
+    end.push(`Innings over: ${bat} ${inn.runs}/${inn.wickets} (${oversDisplay(inn.legalBalls, bpo)} ov)${why ? ` — ${why}` : ""}.`);
+    if (idx === 0 && !match.forfeited) end.push(`${bowl} need ${inn.runs + 1} to win.`);
+  }
+  if (match.status === "complete" && idx === match.innings.length - 1 && match.result) end.push(match.result);
+  return { start, end };
 }
 
 /* --- tournament summary (ended tournaments) ---

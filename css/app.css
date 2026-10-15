@@ -1037,6 +1037,11 @@ button.fixture-row{ width:100%; text-align:left; color:var(--text); align-items:
 .comm-ball.wicket .comm-text strong{ color:var(--wicket); }
 .comm-ball.four .comm-text strong, .comm-ball.six .comm-text strong{ color:var(--accent); }
 .comm-detail{ margin-top:2px; font-size:.8rem; font-weight:700; }
+.comm-batter{ margin-top:2px; font-size:.78rem; color:var(--muted); }
+.comm-note{ border-left:4px solid var(--info); background:var(--panel); border-radius:var(--radius-sm); padding:8px 12px; margin:8px 0; font-size:.88rem; font-weight:700; color:var(--text); }
+.comm-note.end{ border-left-color:var(--accent); }
+.comm-note p{ margin:0; }
+.comm-note p + p{ margin-top:4px; }
 .comm-milestone{ margin-top:2px; font-size:.8rem; font-weight:800; color:var(--accent); }
 
 /* Team cards collapse to a header; tapping it shows the players. */

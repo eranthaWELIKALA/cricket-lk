@@ -61,8 +61,9 @@ function renderScorecard(match){
    "end of over" row sits above its balls, like a commentary feed. */
 function renderCommentary(match, inn){
   const lines = inningsCommentary(inn, { name: liveName, anonymous: !!match.anonymous });
-  if (!lines.length) return `<p class="hint">No balls bowled yet.</p>`;
+  const ends = commentaryBookends(match, match.innings.indexOf(inn));
   const team = escapeHtml(teamName(match, inn.battingTeam));
+  const note = (texts, cls) => texts.length ? `<div class="comm-note ${cls}">${texts.map(t => `<p>${escapeHtml(t)}</p>`).join("")}</div>` : "";
   const rows = lines.slice().reverse().map(l => {
     if (l.type === "over") return `
       <div class="comm-over">
@@ -74,6 +75,7 @@ function renderCommentary(match, inn){
         <div class="comm-left"><span class="n comm-label">${l.label}</span><span class="chip ${l.tone}">${escapeHtml(l.display)}</span></div>
         <div class="comm-text">
           ${l.who ? `<span class="comm-who">${escapeHtml(l.who)},</span> ` : ""}<strong>${escapeHtml(l.text)}</strong>
+          ${l.batter ? `<div class="comm-batter n">${escapeHtml(l.batter)}</div>` : ""}
           ${l.detail ? `<div class="comm-detail">${escapeHtml(l.detail)}</div>` : ""}
           ${l.milestone ? `<div class="comm-milestone">${escapeHtml(l.milestone)}</div>` : ""}
         </div>
@@ -82,7 +84,9 @@ function renderCommentary(match, inn){
   return `
     <div class="commentary">
       <h3>${team} ${inn.runs}/${inn.wickets} <span class="ov">(${oversDisplay(inn.legalBalls, inn.ballsPerOver)} ov)</span></h3>
-      ${rows}
+      ${note(ends.end, "end")}
+      ${rows || `<p class="hint">No balls bowled yet.</p>`}
+      ${note(ends.start, "start")}
     </div>`;
 }
 

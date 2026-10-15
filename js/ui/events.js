@@ -417,8 +417,7 @@ document.addEventListener("input", (e) => {
   // Match setup: "Who bats first?" tiles follow the typed team names.
   if (e.target.closest && e.target.closest("#match-setup-form") && (e.target.name === "teamA" || e.target.name === "teamB")){
     const key = e.target.name === "teamA" ? "A" : "B";
-    const lbl = document.querySelector(`#match-setup-form [data-bat-label="${key}"]`);
-    if (lbl) lbl.textContent = e.target.value.trim() || `Team ${key}`;
+    document.querySelectorAll(`#match-setup-form [data-bat-label="${key}"]`).forEach(lbl => { lbl.textContent = e.target.value.trim() || `Team ${key}`; });
     return;
   }
   const form = e.target.closest && e.target.closest("#club-add-player-form");
@@ -465,8 +464,7 @@ document.addEventListener("change", (e) => {
     col.dataset.current = e.target.value;
     ["A", "B"].forEach(k => {
       const r = form.querySelector(`input[name="team${k}Id"]:checked`);
-      const lbl = form.querySelector(`[data-bat-label="${k}"]`);
-      if (r && lbl) lbl.textContent = r.closest("label").querySelector("b").textContent;
+      if (r) form.querySelectorAll(`[data-bat-label="${k}"]`).forEach(lbl => { lbl.textContent = r.closest("label").querySelector("b").textContent; });
     });
     return;
   }

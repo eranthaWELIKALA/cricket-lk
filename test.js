@@ -182,6 +182,28 @@ async function main(){
     assert(balls[4].text === "OUT! Caught by B2" && balls[4].detail === "A1 c B2 b B1 10 (4)", "a catch names the fielder and the batter's line");
     const end = c[c.length - 1];
     assert(end.type === "over" && end.score === 13 && end.wkts === 1 && end.figures === "1-0-12-1", "end of over row: score and bowler figures (leg byes not against the bowler)");
+    assert(balls[0].batter === "A1 4 (1)" && balls[1].batter === "A1 4 (1)" && balls[2].batter === "A1 10 (2)", "each ball shows the striker's score after it (a wide isn't a ball faced)");
+    assert(balls[4].batter === "" && balls[5].batter === "A3 0 (1)", "a dismissed striker's score is in the detail line, not repeated");
+    // toss + how it ended
+    const t = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 1, playersPerSide: 11, battingFirst: "B", ballsPerOver: 1, tossWinner: "A" });
+    let ends = win.commentaryBookends(t, 0);
+    assert(ends.start[0] === "Lions won the toss and chose to field." && ends.start[1] === "Tigers to bat, Lions to bowl." && !ends.end.length, "the first innings opens with the toss and who bats");
+    assert(win.restartMatch(t, "A").tossWinner === "A" && win.commentaryBookends(win.restartMatch(t, "A"), 0).start[0] === "Lions won the toss and chose to bat.", "flipping who bats first keeps the toss winner, so the choice flips");
+    const ti = currentInnings(t);
+    win.ensureBatsman(ti, "B1"); win.ensureBatsman(ti, "B2"); win.ensureBowler(ti, "A1");
+    ti.striker = "B1"; ti.nonStriker = "B2"; ti.bowler = "A1"; t.status = "live";
+    recordBall(ti, { kind: "run", runs: 6 }); afterBall(t);
+    ends = win.commentaryBookends(t, 0);
+    assert(ends.end[0] === "Innings over: Tigers 6/0 (1.0 ov) — overs complete." && ends.end[1] === "Lions need 7 to win.", "a finished innings says why it ended and sets the target");
+    win.startSecondInnings(t);
+    assert(win.commentaryBookends(t, 1).start[0] === "Lions need 7 to win from 1 over.", "the chase opens with the target");
+    const ci = currentInnings(t);
+    win.ensureBatsman(ci, "A1"); win.ensureBatsman(ci, "A2"); win.ensureBowler(ci, "B1");
+    ci.striker = "A1"; ci.nonStriker = "A2"; ci.bowler = "B1";
+    recordBall(ci, { kind: "run", runs: 1 }); afterBall(t);
+    ends = win.commentaryBookends(t, 1);
+    assert(t.status === "complete" && ends.end[ends.end.length - 1] === t.result, "the last innings ends with the match result");
+    assert(!createMatch({ teamA: "a", teamB: "b", battingFirst: "A" }).tossWinner, "no toss recorded unless picked");
     // events from before commentary existed only have display strings
     const old = { ballsPerOver: 6, overs: [{ bowler: "X", events: [{ display: "Wd+4", runs: 5 }, { display: "W", isWicket: true, runs: 0 }] }], currentOverEvents: [] };
     const oc = win.inningsCommentary(old);

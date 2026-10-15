@@ -413,6 +413,12 @@ function renderTournamentFixtures(matches, teams){
       <div class="form-error"></div>
       <label>Team A<select name="teamAId" required>${teams.map(tm => `<option value="${tm.id}">${escapeHtml(tm.name)}</option>`).join("")}</select></label>
       <label>Team B<select name="teamBId" required>${teams.map((tm, i) => `<option value="${tm.id}" ${i === 1 ? "selected" : ""}>${escapeHtml(tm.name)}</option>`).join("")}</select></label>
+      <h3 class="section-label">Who won the toss? <span class="muted">(optional)</span></h3>
+      <fieldset class="tile-fieldset">
+        <legend>Who won the toss?</legend>
+        <label><input type="radio" name="tossWinner" value="A"> Team A</label>
+        <label><input type="radio" name="tossWinner" value="B"> Team B</label>
+      </fieldset>
       <h3 class="section-label">Who bats first?</h3>
       <fieldset class="tile-fieldset">
         <legend>Who bats first?</legend>
@@ -464,7 +470,7 @@ function handleTournamentStartMatchSubmit(e){
     lastManStands: matchPreset.lastManStands,
     requireFielderOnCatch: matchPreset.requireFielderOnCatch,
     requireFielderOnRunout: matchPreset.requireFielderOnRunout,
-    battingFirst,
+    battingFirst, tossWinner: f.get("tossWinner"),
     presetId: matchPreset.id, presetName: matchPreset.name,
     tournamentId: t.id
   });

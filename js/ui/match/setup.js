@@ -84,6 +84,12 @@ function renderMatchSetup(){
           <label class="check-row"><input type="checkbox" name="requireFielderOnCatch" ${preset.requireFielderOnCatch ? "checked" : ""}> Require a catch taker</label>
           <label class="check-row"><input type="checkbox" name="requireFielderOnRunout" ${preset.requireFielderOnRunout ? "checked" : ""}> Require a run-out taker</label>
         </fieldset>
+        <h3 class="section-label">Who won the toss? <span class="muted">(optional)</span></h3>
+        <fieldset class="tile-fieldset">
+          <legend>Who won the toss?</legend>
+          <label><input type="radio" name="tossWinner" value="A"> <span data-bat-label="A">${pickTeams ? escapeHtml(savedTeams[0].name) : clubMode && ui.clubMatchSetupType === "friendly" && clubName ? escapeHtml(clubName) : "Team A"}</span></label>
+          <label><input type="radio" name="tossWinner" value="B"> <span data-bat-label="B">${pickTeams ? escapeHtml(savedTeams[1].name) : "Team B"}</span></label>
+        </fieldset>
         <h3 class="section-label">Batting first</h3>
         <fieldset class="tile-fieldset">
           <legend>Who bats first?</legend>
@@ -142,7 +148,8 @@ function handleMatchSetupSubmit(e){
     wideEnabled, noBallEnabled, wideRuns, noBallRuns, freeHitOnNoBall, lastManStands,
     requireFielderOnCatch, requireFielderOnRunout,
     presetId: preset ? preset.id : null, presetName: preset ? preset.name : null,
-    tournamentId: inTournament ? ui.currentTournamentId : null
+    tournamentId: inTournament ? ui.currentTournamentId : null,
+    tossWinner: f.get("tossWinner")
   });
   if (ui.currentClubId && ui.clubMatchSetupType){
     // Extra, UI-only fields on top of the engine's match object (like
