@@ -566,27 +566,32 @@ function exportPdf(detailMatch){
   const m = detailMatch || state.match;
   const onResult = !!detailMatch || (navKey() === "result" && m);
   const c = !onResult && /ournamentDashboard$/.test(state.view) ? tournamentContext() : null;
-  // A match from the completed-match sheet: the sheet itself never prints
-  // (#modal-root is hidden in print), so its scorecard goes into #print-root.
+  // A match (Result, or the completed-match sheet) always prints from
+  // #print-root, which replaces #app in print -- so nothing on screen has to
+  // change for the print and nothing has to be put back afterwards. That
+  // matters on Android: window.print() doesn't block there and "afterprint"
+  // fires before the print preview has captured the page, so anything undone
+  // on afterprint was missing from the PDF.
   const printRoot = document.getElementById("print-root");
-  if (detailMatch && printRoot){
-    printRoot.innerHTML = renderPrintableMatch(detailMatch);
-    document.body.classList.add("print-detail");
-  }
+  if (printRoot) printRoot.innerHTML = onResult ? renderPrintableMatch(m) : "";
+  document.body.classList.toggle("print-detail", !!(onResult && printRoot));
   const title = onResult ? `${m.teamA} v ${m.teamB}` : c ? `${c.name} — results` : "Cricket.lk";
   const brandTitle = document.querySelector("#print-brand .print-brand-title");
   if (brandTitle) brandTitle.textContent = onResult ? `${title} · ${m.result || ""}` : title;
   const footDate = document.querySelector("#print-foot .print-foot-date");
   if (footDate) footDate.textContent = new Date().toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-  const prevTitle = document.title, prevFull = ui.showFullScorecard;
-  document.title = `${title} — Cricket.lk`;
-  if (onResult && !detailMatch && !prevFull){ ui.showFullScorecard = true; render(); }
-  window.addEventListener("afterprint", () => {
-    document.title = prevTitle;
-    if (detailMatch){ document.body.classList.remove("print-detail"); if (printRoot) printRoot.innerHTML = ""; }
-    else if (onResult && !prevFull){ ui.showFullScorecard = false; render(); }
-  }, { once: true });
+  if (!exportPdf.prevTitle) exportPdf.prevTitle = document.title;
+  document.title = `${title} — Cricket.lk`;   // names the PDF
+  // Tidy up on the scorer's next tap (they're back from the print dialog by
+  // then), never on afterprint. Touches only the title and print-only parts.
+  setTimeout(() => document.addEventListener("pointerdown", exportPdfCleanup, { once: true, capture: true }), 0);
   window.print();
+}
+function exportPdfCleanup(){
+  if (exportPdf.prevTitle){ document.title = exportPdf.prevTitle; exportPdf.prevTitle = null; }
+  document.body.classList.remove("print-detail");
+  const printRoot = document.getElementById("print-root");
+  if (printRoot) printRoot.innerHTML = "";
 }
 
 /* What a completed match prints as from the match sheet: result, player of

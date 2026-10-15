@@ -401,16 +401,20 @@ Save image (`<a download>`; the only button where files can't be shared).
 **Export PDF** (`exportPdf`) is `window.print()` against the `@media print`
 rules: a print-only branded header (`#print-brand`: logo, app name, what's
 printed) and footer (`#print-foot`: "by Erantha Welikala", date) in
-`index.html`, light cards with rules. On Result it expands the full
-scorecard just for the print (restored on `afterprint`), and
-`document.title` is set meanwhile so the PDF is named after the match. The
+`index.html`, light cards with rules. A match (Result or the
+completed-match sheet) always prints from the print-only `#print-root`
+(`renderPrintableMatch`, `body.print-detail`), so nothing on screen changes
+for a print and `document.title` (the PDF's name) is set to the match.
+**Nothing is undone on `afterprint`**: on Android `window.print()` doesn't
+block and `afterprint` fires before the preview captures the page, so the
+old "expand, print, restore on afterprint" printed the wrong thing there.
+`exportPdfCleanup` runs on the next `pointerdown` instead. The
 tournament Summary tab has Export PDF too. **Any completed match** can be
 shared or printed later from its scorecard sheet (`renderMatchDetailModal`:
 `share-match-detail` → `openSharePreview("scorecard", match)`, whose
 `ui.sharePreview.match` overrides `state.match`; `export-pdf-detail` →
-`exportPdf(match)`, which renders `renderPrintableMatch` into the
-print-only `#print-root` and sets `body.print-detail`, since `#modal-root`
-never prints). If you touch either,
+`exportPdf(match)`, same `#print-root` path, since `#modal-root` never
+prints). If you touch either,
 keep them dependency-free; that was a deliberate choice, not an
 oversight.
 
@@ -752,9 +756,8 @@ per innings (2 top batters + 1 top bowler, no extras line) — reusing
 `ui.liveScorecard`). Toggling it swaps the condensed pair for the tabbed
 `renderScorecard` (all innings' full tables are in the DOM, one visible), so nothing is ever permanently
 lost — this matters because "Export PDF" is just `window.print()` on
-whatever's currently in the DOM (see "Share & export" above) —
-`exportPdf` expands the full scorecard for the print and puts the condensed
-view back afterwards. `renderResultInningsCard`
+the DOM (see "Share & export" above) — for a match that's `#print-root`'s
+full `renderPrintableMatch`, whichever view is on screen. `renderResultInningsCard`
 is its own function rather than a parameterized `renderInningsHighlights`
 call — its shape (one combined card, 2 batters/1 bowler, no extras) differs
 enough from the innings-break version (two cards, 3/2, extras line) that
