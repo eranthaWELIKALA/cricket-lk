@@ -1076,6 +1076,135 @@ async function main(){
     win.eval(`state.match = null; ui = defaultUi(); state.view = "home"; save(); render();`);
   }
 
+  // --- catch up the score: jump to where the game is now ---
+  {
+    // 2.3 overs in, 1 run: A1/A2 batting, B1 then B2 then B1 bowling.
+    const build = () => {
+      const m = win.createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 10, playersPerSide: 11, battingFirst: "A" });
+      const inn = win.currentInnings(m);
+      win.ensureBatsman(inn, "A1"); win.ensureBatsman(inn, "A2"); win.ensureBowler(inn, "B1");
+      inn.striker = "A1"; inn.nonStriker = "A2"; inn.bowler = "B1"; m.status = "live";
+      const bowlers = ["B1", "B2", "B1"];
+      for (let b = 0; b < 15; b++){
+        if (!inn.bowler){ win.ensureBowler(inn, bowlers[Math.floor(b / 6)]); inn.bowler = bowlers[Math.floor(b / 6)]; }
+        win.recordBall(inn, { kind: "run", runs: b === 0 ? 1 : 0 });
+      }
+      return m;
+    };
+    const m = build(), inn = win.currentInnings(m);
+    assert(inn.legalBalls === 15 && inn.runs === 1 && inn.bowler === "B1", "setup: 1-0 after 2.3 overs");
+    const out = inn.striker, stays = inn.nonStriker;
+    const valid = () => ({
+      runs: 40, wickets: 1, balls: 37, extras: { wides: 2, noBalls: 0, byes: 1, legByes: 0 }, finished: false,
+      batters: [
+        { name: out, status: "out", runs: 10, balls: 12, wicketType: "caught", bowler: "B3", fielder: "B4" },
+        { name: stays, status: "striker", runs: 20, balls: 18 },
+        { name: "A3", status: "nonStriker", runs: 3, balls: 5 }
+      ],
+      bowlers: [{ name: "B1", balls: 18, runs: 15 }], bowlerNow: "B3", lastOver: ""
+    });
+    const err = patch => { const d = Object.assign(valid(), patch); return win.catchUpError(m, d) || ""; };
+    assert(err({}) === "", "a consistent catch-up passes the checks");
+    assert(/can't go down/.test(err({ runs: 0 })), "runs can't go below what's recorded");
+    assert(/Wickets say 2/.test(err({ wickets: 2 })), "the wickets total must match the batters marked out");
+    assert(/can't be more than 10/.test(err({ balls: 61 })), "overs can't pass the overs limit");
+    assert(/overs bowled/.test(err({ balls: NaN })), "badly typed overs are refused");
+    assert(/came off the bat/.test(err({ batters: [valid().batters[0], valid().batters[1], { name: "A3", status: "nonStriker", runs: 30 }] })), "batters' runs can't exceed the runs off the bat");
+    assert(/Tigers/.test(err({ batters: [valid().batters[0], valid().batters[1], { name: "B1", status: "nonStriker" }] })), "a bowler can't come in to bat for the other side");
+    assert(/Who was bowling/.test(err({ batters: [Object.assign(valid().batters[0], { bowler: "" }), valid().batters[1], valid().batters[2]] })), "a caught batter needs the bowler");
+    assert(/over in progress/.test(err({ bowlerNow: "" })), "mid-over, who's bowling it is required");
+    assert(/bowled the last over/.test(err({ balls: 36 })), "at the end of an over, the last over's bowler is required");
+    assert(/next one too/.test(err({ balls: 36, lastOver: "B3", bowlerNow: "B3" })), "the last over's bowler can't bowl the next one");
+    assert(/should end in \.1/.test(err({ bowlers: [{ name: "B3", balls: 6, runs: 0 }] })), "entered overs must fit the over in progress");
+    assert(/should be whole/.test(err({ balls: 36, lastOver: "B1", bowlers: [{ name: "B1", balls: 16, runs: 15 }] })), "the last over's bowler has whole overs");
+    assert(/more than the/.test(err({ bowlers: [{ name: "B1", balls: 36, runs: 15 }] })), "bowlers' overs (B3's ball included) can't exceed the overs bowled");
+    assert(/on strike/.test(err({ batters: [valid().batters[0], valid().batters[1]] })), "two batters must be at the crease");
+    assert(/Nothing has changed/.test(win.catchUpError(m, { runs: 1, wickets: 0, balls: 15, extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0 },
+      batters: [{ name: "A1", status: inn.striker === "A1" ? "striker" : "nonStriker" }, { name: "A2", status: inn.striker === "A2" ? "striker" : "nonStriker" }],
+      bowlers: [], bowlerNow: "B1", lastOver: "" }) || ""), "an unchanged form is refused");
+
+    win.applyCatchUp(m, valid());
+    assert(inn.runs === 40 && inn.legalBalls === 37 && inn.wickets === 1 && inn.extras.wides === 2, "the totals are now the ones entered");
+    assert(inn.batting.stats[out].howOut === "c B4 b B3" && inn.fielding.stats.B4.catches === 1 && inn.bowling.stats.B3.wickets === 1, "the dismissal credits the bowler and the catcher");
+    assert(inn.striker === stays && inn.nonStriker === "A3" && inn.bowler === "B3", "the new batting pair and bowler are in place");
+    const fow = inn.fallOfWickets.at(-1);
+    assert(fow.catchUp && fow.batsman === out && fow.score === 40 && fow.balls === 37, "a gap wicket falls at the catch-up point (partnership restarts there)");
+    assert(inn.overs.length === 4 && inn.overs[2].partial && inn.overs[3].gap && inn.overs[3].gap.fromBalls === 15 && inn.currentOverEvents.length === 0, "the part over is kept, then one gap entry");
+    const un = win.catchUpUnattributed(inn);
+    assert(inn.bowling.stats.B3.legalBalls === 1, "the bowler of the over in progress is credited with its ball so far (B3 0.1)");
+    assert(un.batRuns === 4 && un.bowlBalls === 12 && un.bowlRuns === 24, "runs/balls nobody was credited with are reported");
+    assert(m.caughtUp && win.aggregatePlayerStats([m]).length === 0 && win.pickMatchMOTM(m) === null, "a caught-up match stays out of player stats and MVP");
+    for (let b = 0; b < 5; b++) win.recordBall(inn, { kind: "run", runs: 0 });
+    assert(inn.legalBalls === 42 && inn.bowler === null && inn.lastOverBowler === "B3" && inn.bowling.stats.B3.maidens === 0 && !inn.partOverUnknown,
+      "scoring carries on: the over ends after the 5 remaining balls, and a part-unknown over is never a maiden");
+    const comm = win.inningsCommentary(inn, {});
+    const after = comm.slice(comm.findIndex(l => l.type === "gap") + 1);
+    assert(comm.some(l => l.type === "gap" && l.to === "40-1 (6.1)") && after[0].label === "6.2" && after.find(l => l.type === "over").over === 7 && !after.find(l => l.type === "over").maiden,
+      "commentary marks the gap and numbers the next balls from 6.2");
+
+    // A finished first innings, then a chase caught up past the target.
+    const m2 = win.createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    const z = { wides: 0, noBalls: 0, byes: 0, legByes: 0 };
+    const first = { runs: 50, wickets: 2, balls: 26, extras: z, finished: true, bowlers: [], bowlerNow: "", lastOver: "",
+      batters: [{ name: "X1", status: "out", wicketType: "bowled", bowler: "Y1" }, { name: "X2", status: "out", wicketType: "runout", fielder: "Y2" },
+        { name: "X3", status: "striker" }, { name: "X4", status: "nonStriker" }] };
+    assert(win.catchUpError(m2, first) === null, "a whole first innings can be caught up from the opening sheet");
+    win.applyCatchUp(m2, first);
+    assert(m2.status === "innings_break" && m2.innings[0].completeReason === "closed" && m2.innings[0].batting.stats.X2.howOut === "run out (Y2)", "'innings is over' closes it at that score");
+    win.startSecondInnings(m2);
+    const chase = { runs: 52, wickets: 1, balls: 20, extras: z, finished: false, bowlers: [], bowlerNow: "", lastOver: "",
+      batters: [{ name: "Y1", status: "out", wicketType: "lbw", bowler: "X1" }, { name: "Y2", status: "striker" }, { name: "Y3", status: "nonStriker" }] };
+    assert(/more than 56/.test(win.catchUpError(m2, Object.assign({}, chase, { runs: 57 })) || ""), "a chase can't pass the target by more than a six");
+    assert(win.catchUpError(m2, chase) === null, "reaching the target needs no next bowler");
+    win.applyCatchUp(m2, chase);
+    assert(m2.status === "complete" && m2.result === "Tigers won by 9 wickets (1.4 overs left)", "reaching the target finishes the match");
+
+    // No names: totals only; the batters at the crease go first.
+    const m3 = win.createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    m3.anonymous = true; win.fillAnonymousSlots(m3);
+    const anon = { runs: 20, wickets: 2, balls: 9, extras: z, finished: false };
+    assert(win.catchUpError(m3, anon) === null, "a nameless match only needs the totals");
+    win.applyCatchUp(m3, anon); win.fillAnonymousSlots(m3);
+    const i3 = win.currentInnings(m3);
+    assert(i3.batting.stats["Batter 1"].out && i3.batting.stats["Batter 2"].out && i3.striker === "Batter 3" && i3.nonStriker === "Batter 4" && i3.bowler === "Over 2",
+      "placeholders fill the new pair and the over's bowler");
+
+    // Last man stands: one batter left bats alone, on strike.
+    const m4 = win.createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 3, battingFirst: "A", lastManStands: true });
+    const lms = { runs: 12, wickets: 2, balls: 9, extras: z, finished: false, bowlers: [], bowlerNow: "B2", lastOver: "",
+      batters: [{ name: "A1", status: "out", wicketType: "bowled", bowler: "B1" }, { name: "A2", status: "out", wicketType: "bowled", bowler: "B1" }, { name: "A3", status: "nonStriker" }] };
+    assert(win.catchUpError(m4, lms) === null, "last man stands: one batter left is enough");
+    win.applyCatchUp(m4, lms);
+    assert(win.currentInnings(m4).striker === "A3" && win.currentInnings(m4).nonStriker === null, "the lone batter is put on strike");
+
+    // In the page: opening sheet link -> form -> review -> confirm -> Undo.
+    win.eval(`state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 10, playersPerSide: 11, battingFirst: "A" }); state.snapshots = []; ui = defaultUi(); render();`);
+    const link = doc.querySelector('#modal-root [data-action="open-catch-up"]');
+    assert(link, "the opening sheet offers 'Already under way?'");
+    link.click();
+    let f = doc.getElementById("catch-up-form");
+    assert(f && f.querySelectorAll(".cu-bat").length === 2, "the catch-up sheet opens with two batters to fill in");
+    f.querySelector('[name="bat_name_0"]').value = "A1"; f.querySelector('[name="bat_name_1"]').value = "A2";
+    doc.querySelector('#modal-root [data-action="catch-up-add"][data-kind="bat"]').click();
+    f = doc.getElementById("catch-up-form");
+    assert(f.querySelectorAll(".cu-bat").length === 3 && f.querySelector('[name="bat_name_0"]').value === "A1" && f.querySelector('[name="bat_status_2"]').value === "out",
+      "adding a row keeps what was typed; with both ends taken it's a batter who got out");
+    f.querySelector('[name="runs"]').value = "30"; f.querySelector('[name="wickets"]').value = "1"; f.querySelector('[name="overs"]').value = "4.2";
+    f.querySelector('[name="bat_name_2"]').value = "A3"; f.querySelector('[name="bat_how_2"]').value = "bowled"; f.querySelector('[name="bat_bowler_2"]').value = "B1";
+    f.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(/over in progress/.test(f.querySelector(".form-error").textContent) && !doc.querySelector("#confirm-root .modal"), "a missing bowler is caught before anything is asked");
+    f.querySelector('[name="bowlerNow"]').value = "B2";
+    f.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(/Update the score\?/.test(doc.getElementById("confirm-root").textContent) && /30-1 \(4\.2\)/.test(doc.getElementById("confirm-root").textContent), "review asks first and shows the new score");
+    doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    assert(win.eval("state.match.status === 'live' && currentInnings(state.match).runs === 30 && currentInnings(state.match).batting.stats.A3.howOut === 'bowled b B1' && !ui.catchUp"),
+      "confirming applies it and goes to live scoring");
+    assert(doc.querySelectorAll("#app .over-row .chip.unknown").length === 2, "the over in progress shows its 2 unscored balls as ?");
+    doc.querySelector('#app [data-action="undo"]').click();
+    assert(win.eval("state.match.status === 'opening' && currentInnings(state.match).runs === 0"), "Undo puts the score back");
+    win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
   // --- ended tournaments: summary, Summary tab, guest end/reopen ---
   {
     const cfg = { teamA: "Lions", teamB: "Tigers", battingFirst: "A", oversLimit: 20, playersPerSide: 11 };

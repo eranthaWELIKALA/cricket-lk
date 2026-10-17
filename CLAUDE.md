@@ -31,7 +31,7 @@ of `index.html`:
 | `js/ui/router.js` | page navigation (routes, history, back interception, unsaved-input checks) |
 | `js/ui/menus.js` | sync pill/sheet, side menu |
 | `js/ui/screens/*.js` | `home-account`, `clubs` (+ profiles, player modals), `club-tournaments` (+ team builder), `premier`, `guest` (teams/players/presets/tournaments), `stats` |
-| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `live`, `result` (+ scorecards, share/export) |
+| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `catch-up` (catch up the score), `live`, `result` (+ scorecards, share/export) |
 | `js/ui/render.js` | `render()` |
 | `js/ui/events.js` | the delegated listeners |
 | `js/boot.js` | boot: `load()`, first route + render, `initAuth()`, sync triggers, service worker |
@@ -622,7 +622,7 @@ History rules — these are what make it work on phones:
   (`navReplaceNext`). Home is the first entry, so back at Home exits the app.
 - **Sheets get their own entry** (same URL, `overlay: true`) when opened by a
   tap (`overlayOpen()`: confirm, side menu, sync sheet, player modal, team
-  builder, match options, wicket sheet, extra-runs sheet, live scorecard), so back closes them even on the first
+  builder, match options, catch-up sheet, wicket sheet, extra-runs sheet, live scorecard), so back closes them even on the first
   entry; closing one by tap pops its entry again. The auto-opened pick sheets
   aren't overlays — `interceptNav` handles them.
 - **Intercepted moves** (`interceptNav`, most specific first): close the top
@@ -682,6 +682,50 @@ club tournament / club / Premier / profile match lists. It belongs to the
 view it was opened on, is an overlay (back closes it), and is opened from
 tournament fixtures, Home's Recent matches and club home's match list.
 
+## Catch up the score (`js/ui/match/catch-up.js`)
+
+For a scorer who stopped updating the board: ⋯ Match options → **Catch up the
+score**, or the opening sheet's "Already under way?" link. The sheet (one
+form, `ui.catchUp = { rev, draft }`, `modalKey = "catch-up:" + rev` so
+background re-renders leave typed input alone; add/remove row reads the DOM
+into `draft` first, `catchUpEdit`) takes the innings as it stands **now**:
+runs, wickets, overs (`parseOversInput`), the four extras totals, every
+batter not already out plus new ones (status on strike / other end / out;
+out → how, bowler, fielder), "bowling now" (required mid-over) / "bowled the
+last over" (required at x.0), optional per-player runs/balls/overs, and
+"This innings is already over". Review runs `catchUpError` (ENGINE, tested:
+nothing goes backwards, overs ≤ limit, chase ≤ target + 5, wickets = batters
+out, two at the crease (one with last man stands), side checks via
+`playerSideConflict`, batters' runs ≤ runs off the bat, bowlers' overs/runs
+≤ the totals, "nothing changed" refused), then the shared confirmation sheet
+summarises it on a copy, and `applyCatchUp` (ENGINE) applies it after
+`pushSnapshot()` (Undo walks it back). Names go through `registerMatchPlayer`.
+What it leaves behind, if you touch the scorecard or commentary:
+- **A gap entry in `inn.overs`**: `{ bowler: null, events: [], gap: { from/to
+  balls, runs, wickets, batters, bowlers } }`, after the over in progress
+  (pushed as `{ partial: true }`). `inn.overs` is no longer "completed overs
+  only": ball by ball and `inningsCommentary` number overs from the running
+  legal-ball count (an over after a gap can start part way, "Over 7 (part)"),
+  and a gap resets the running score and figures. The live board hides the
+  previous-over row after a gap and shows the over's unscored balls as `?`
+  chips (`inn.partOverUnknown`, which also stops `recordBall` awarding a
+  maiden for that over).
+- **Gap wickets** go into `fallOfWickets` with `catchUp: true` and the catch-up
+  score/balls (the real moment isn't known), so the partnership restarts
+  there; the scorecard prints them as `3 Name (by 6.1)`.
+- **The bowler pinned to an over** (`catchUpPins`): mid-over the current
+  bowler, at x.0 the last over's (and next over's) bowler get the smallest
+  ball count ≥ recorded that fits their spot in the over, unless figures were
+  entered, which must fit.
+- Anything not credited to a player shows as "not attributed"
+  (`catchUpUnattributed`, `renderCatchUpNote`), and `match.caughtUp` puts the
+  match in `playerStatsExcluded` (with `anonymous`): out of leaderboards, MVP,
+  MOTM, profiles and tournament bests; team totals and standings still count.
+- A "no names" match takes the totals only: the batters at the crease go out
+  first, then placeholders, and `fillAnonymousSlots` refills the slots.
+- A missed whole first innings: catch it up with "innings is over", start the
+  2nd innings, then catch up again from its opening sheet.
+
 ## Result-only fixtures, ended tournaments, "no names" scoring
 
 **Result only.** A tournament's Overview/Fixtures offer "Enter result only"
@@ -720,7 +764,8 @@ over, so no figures are invented and the consecutive-overs rule can't trip) —
 so no name sheet ever opens. No squads, no fielder box, nothing registered to
 guest players or a club roster, and these matches are skipped by
 `aggregatePlayerStats`, `pickMatchMOTM` and `playerCareer` (placeholders
-aren't people); team totals and standings count as usual.
+aren't people — `playerStatsExcluded`, shared with caught-up matches); team
+totals and standings count as usual.
 
 ## Tournament dashboards, leaderboards, profiles: tabs
 
@@ -1211,7 +1256,7 @@ is next online. Three pieces, all in the CLOUD section:
   and the tournament overlay also folds this device's archived matches for
   it, so standings count a match scored offline. Pending items render with
   a "not synced" tag.
-- **Offline sign-in.** `sw.js` (cache `cricket-lk-v10`; the page and the app's
+- **Offline sign-in.** `sw.js` (cache `cricket-lk-v11`; the page and the app's
   own `css/`/`js/` files are network-first, refreshing the cache, so a deploy
   never mixes versions) precaches the
   supabase-js CDN script and serves it stale-while-revalidate — keep its URL

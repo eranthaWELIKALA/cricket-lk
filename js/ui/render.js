@@ -181,6 +181,7 @@ function render(){
   // The live scorecard sheet belongs to one stretch of live scoring: an
   // innings ending (or the match leaving the screen) closes it for good.
   if (ui.liveScorecard && !(m && m.status === "live" && !away)) ui.liveScorecard = false;
+  if (ui.catchUp && !(m && (m.status === "opening" || m.status === "live"))) ui.catchUp = null;
   if (ui.sharePreview && ui.sharePreview.view !== navKey()) ui.sharePreview = null;
   if (ui.sharePreview){
     modalHtml = renderSharePreviewModal();
@@ -198,6 +199,9 @@ function render(){
     modalHtml = renderResultEntryModal();
   } else if (away){
     modalHtml = "";
+  } else if (m && (m.status === "opening" || m.status === "live") && ui.catchUp){
+    modalKey = "catch-up:" + ui.catchUp.rev;   // only our own edits rebuild it (catchUpEdit)
+    modalHtml = renderCatchUpModal(m);
   } else if (m && m.status !== "complete" && ui.matchMenu){
     modalHtml = renderMatchMenuModal(m);
   } else if (m && m.status === "live" && ui.liveScorecard){

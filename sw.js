@@ -1,5 +1,5 @@
 /* Cricket.lk service worker: offline cache only, no notifications (yet). */
-const CACHE = "cricket-lk-v10";
+const CACHE = "cricket-lk-v11";
 // The app's own code: index.html's stylesheet and <script src> files, in the
 // same order. test.js checks this list against index.html, so a file added
 // there and not here fails the tests instead of breaking offline use.
@@ -20,6 +20,7 @@ const APP_CODE = [
   "./js/ui/screens/premier.js",
   "./js/ui/match/setup.js",
   "./js/ui/match/sheets.js",
+  "./js/ui/match/catch-up.js",
   "./js/ui/match/live.js",
   "./js/ui/match/result.js",
   "./js/ui/screens/guest.js",

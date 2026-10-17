@@ -193,9 +193,13 @@ function updateCombo(input, open){
   // A name already in another box of the same sheet isn't offered again --
   // on the opening sheet the striker, non-striker and bowler are always
   // three different people (handleOpeningSubmit enforces it too).
+  // data-combo-group narrows that to boxes of the same group ("none": no
+  // exclusion), for a form where one name may rightly fill several boxes
+  // (catch-up: a bowler is also a dismissal's bowler and "bowling now").
   const form = input.closest("form");
-  const taken = new Set(form ? [...form.querySelectorAll(".combo input")]
-    .filter(other => other !== input && other.value.trim())
+  const group = input.dataset.comboGroup || "";
+  const taken = new Set(form && group !== "none" ? [...form.querySelectorAll(".combo input")]
+    .filter(other => other !== input && other.value.trim() && (other.dataset.comboGroup || "") === group)
     .map(other => resolveTypedName(other.value).toLowerCase()) : []);
   let shown = 0;
   list.querySelectorAll(".combo-opt").forEach(o => {

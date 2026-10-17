@@ -28,9 +28,26 @@ function renderInningsSummary(match, inn){
         <thead><tr><th>Bowler</th><th>O</th><th>M</th><th>R</th><th>W</th><th>Econ</th></tr></thead>
         <tbody>${bowlingRows}</tbody>
       </table>
-      ${inn.fallOfWickets.length ? `<div class="fow">FoW: ${inn.fallOfWickets.map(f => `${f.score}/${f.wicket} (${f.over})`).join(", ")}</div>` : ""}
+      ${inn.fallOfWickets.length ? `<div class="fow">FoW: ${inn.fallOfWickets.map(f => f.catchUp
+        ? `${f.wicket} ${escapeHtml(liveName(f.batsman))} (by ${f.over})`
+        : `${f.score}/${f.wicket} (${f.over})`).join(", ")}</div>` : ""}
+      ${renderCatchUpNote(inn)}
     </div>
   `;
+}
+
+/* A caught-up innings (applyCatchUp) says where, and what it couldn't
+   credit to anyone. Wickets in the gap list who fell "by" the catch-up. */
+function renderCatchUpNote(inn){
+  const un = catchUpUnattributed(inn);
+  if (!un) return "";
+  const bpo = inn.ballsPerOver;
+  const at = inn.overs.filter(o => o.gap).map(o => oversDisplay(o.gap.toBalls, bpo)).join(", ");
+  const parts = [];
+  if (un.batRuns > 0) parts.push(`${un.batRuns} run${un.batRuns === 1 ? "" : "s"} not credited to a batter`);
+  if (un.bowlBalls > 0) parts.push(`${oversDisplay(un.bowlBalls, bpo)} overs and ${Math.max(un.bowlRuns, 0)} runs not credited to a bowler`);
+  else if (un.bowlRuns > 0) parts.push(`${un.bowlRuns} run${un.bowlRuns === 1 ? "" : "s"} not credited to a bowler`);
+  return `<div class="catch-up-note">Score caught up at ${at} ov${parts.length ? ` · ${parts.join(" · ")}` : ""}.</div>`;
 }
 
 /* The tabbed scorecard: one tab per innings, then Scorecard / Ball by ball.
@@ -65,6 +82,11 @@ function renderCommentary(match, inn){
   const team = escapeHtml(teamName(match, inn.battingTeam));
   const note = (texts, cls) => texts.length ? `<div class="comm-note ${cls}">${texts.map(t => `<p>${escapeHtml(t)}</p>`).join("")}</div>` : "";
   const rows = lines.slice().reverse().map(l => {
+    if (l.type === "gap") return `
+      <div class="comm-over comm-gap">
+        <div class="comm-over-top"><span>Score caught up</span><span class="n">${team} ${escapeHtml(l.to)}</span></div>
+        <div class="comm-over-sub n">From ${escapeHtml(l.from)} · ${l.runs} run${l.runs === 1 ? "" : "s"}${l.wickets ? ` · ${l.wickets} wkt${l.wickets === 1 ? "" : "s"}` : ""} not scored ball by ball</div>
+      </div>`;
     if (l.type === "over") return `
       <div class="comm-over">
         <div class="comm-over-top"><span>End of over ${l.over}</span><span class="n">${team} ${l.score}-${l.wkts}</span></div>
@@ -95,11 +117,31 @@ function renderCommentary(match, inn){
    score at its end. The over in progress (currentOverEvents) leads. */
 function renderBallByBall(match, inn){
   const bpo = inn.ballsPerOver;
-  const overs = inn.overs.map(o => ({ bowler: o.bowler, events: o.events }));
+  const overs = inn.overs.map(o => ({ bowler: o.bowler, events: o.events, gap: o.gap, part: !!o.partial }));
   if (inn.currentOverEvents.length) overs.push({ bowler: inn.bowler, events: inn.currentOverEvents, live: !inn.complete });
   if (!overs.length) return `<p class="hint">No balls bowled yet.</p>`;
-  let score = 0, wkts = 0;
-  const rows = overs.map((o, i) => {
+  // Over numbers come from the legal balls before each over: after a catch-up
+  // gap the next over can start part way through (it shows as "part").
+  let score = 0, wkts = 0, balls = 0;
+  const rows = overs.map(o => {
+    if (o.gap){
+      const g = o.gap;
+      score = g.toRuns; wkts = g.toWickets; balls = g.toBalls;
+      const r = g.toRuns - g.fromRuns, w = g.toWickets - g.fromWickets;
+      return `
+      <div class="bbb-over bbb-gap">
+        <div class="bbb-head">
+          <span class="bbb-num">Score caught up</span>
+          <span class="n bbb-sum">${oversDisplay(g.fromBalls, bpo)} → ${oversDisplay(g.toBalls, bpo)} ov · ${r} run${r === 1 ? "" : "s"}${w ? ` · ${w} wkt${w === 1 ? "" : "s"}` : ""}</span>
+        </div>
+        <p class="hint" style="margin:2px 0 0;">Not scored ball by ball.</p>
+        <div class="n bbb-score">${escapeHtml(teamName(match, inn.battingTeam))} ${score}-${wkts}</div>
+      </div>`;
+    }
+    const start = balls, i = Math.floor(start / bpo);
+    const legal = o.events.filter(ev => !/^(Wd|Nb)/.test(ev.display)).length;
+    balls = start + legal;
+    const part = o.part || start % bpo !== 0;
     const runs = o.events.reduce((s, ev) => s + (ev.runs || 0), 0);
     const w = o.events.filter(ev => ev.isWicket).length;
     score += runs; wkts += w;
@@ -114,7 +156,7 @@ function renderBallByBall(match, inn){
     return `
       <div class="bbb-over">
         <div class="bbb-head">
-          <span class="bbb-num">Over ${i + 1}${o.live ? " · now" : ""}</span>
+          <span class="bbb-num">Over ${i + 1}${part ? " (part)" : ""}${o.live ? " · now" : ""}</span>
           <span class="bbb-bowler">${o.bowler ? escapeHtml(liveName(o.bowler)) : "—"}</span>
           <span class="n bbb-sum">${runs} run${runs === 1 ? "" : "s"}${w ? ` · ${w} wkt${w === 1 ? "" : "s"}` : ""}</span>
         </div>

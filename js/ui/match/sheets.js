@@ -22,6 +22,7 @@ function renderOpeningModal(match){
           <button type="submit" class="primary">Start innings</button>
         </form>
         ${match.innings.length === 1 ? `<button type="button" data-action="swap-toss" class="link-btn">Wrong toss? ${escapeHtml(teamName(match, inn.bowlingTeam))} bats first instead</button>` : ""}
+        <button type="button" data-action="open-catch-up" class="link-btn">Already under way? Enter the score so far</button>
         <button type="button" data-action="open-match-menu" class="link-btn">Match options: cancel, forfeit${match.squads ? ", switch players" : ""}</button>
         ${state.snapshots.length ? `<div class="modal-footer-hint"><p class="hint">${match.innings.length === 1 ? "Undo goes back to the match as it was before the restart." : "Undo goes back to the innings break."}</p><button type="button" data-action="undo" class="undo-chip">UNDO</button></div>` : ""}
       </div>
@@ -140,6 +141,7 @@ function renderMatchMenuModal(match){
       ${row("swap-toss", "⇄", "Change who bats first", started
         ? `Toss got reversed? Restarts from ball one with ${escapeHtml(teamName(match, otherFirst))} batting`
         : `Nothing bowled yet: ${escapeHtml(teamName(match, otherFirst))} bats first instead`)}
+      ${!cur.complete ? row("open-catch-up", "⏩", "Catch up the score", "Missed some balls? Enter the score as it is now and carry on") : ""}
       ${match.squads ? row("match-menu-view", "👥", "Switch players between sides", "Move a player to the other team, or add a late arrival", `data-view="squads"`) : ""}
       ${matchHasNicknames() ? `
         <button type="button" data-action="toggle-nicknames" class="menu-row" role="switch" aria-checked="${!!state.useNicknames}">

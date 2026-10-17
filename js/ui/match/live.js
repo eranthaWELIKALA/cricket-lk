@@ -132,7 +132,7 @@ function renderPickLaterButton(){
 function handleUndo(){
   if (!state.snapshots.length) return;
   state.match = state.snapshots.pop();
-  ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.runoutAt = null; ui.confirm = null; ui.matchMenu = null; ui.liveScorecard = false;
+  ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.runoutAt = null; ui.confirm = null; ui.matchMenu = null; ui.catchUp = null; ui.liveScorecard = false;
   save(); render();
 }
 
@@ -150,10 +150,14 @@ function ordinalSuffix(n){
    run total on the right. `events` items carry `runs` (added to
    recordBall's currentOverEvents push) so the total doesn't need to
    re-parse `display` strings. */
-function renderOverRow(label, events, bpo, dimmed){
-  const slotCount = Math.max(bpo, events.length);
+function renderOverRow(label, events, bpo, dimmed, unknown){
+  // `unknown`: balls of this over bowled before a catch-up (applyCatchUp),
+  // never scored one by one -- shown as "?" ahead of the recorded ones.
+  const lead = unknown || 0;
+  const slotCount = Math.max(bpo, events.length + lead);
   const slots = [];
-  for (let i = 0; i < slotCount; i++){
+  for (let i = 0; i < lead; i++) slots.push(`<span class="chip unknown" data-chip="${escapeHtml(`${label}:u${i}`)}">?</span>`);
+  for (let i = 0; i < slotCount - lead; i++){
     const ev = events[i];
     // data-chip: render() only lets a chip that wasn't there before pop in.
     const key = escapeHtml(`${label}:${i}:${ev ? ev.display : ""}`);
@@ -215,7 +219,10 @@ function renderLive(match){
   const slotName = (name, label) => name ? escapeHtml(liveName(name)) : later ? pickBtn(label) : "—";
 
   const overNumber = Math.floor(inn.legalBalls / bpo) + 1;
-  const prevOver = inn.overs.length ? inn.overs[inn.overs.length - 1] : null;
+  // No "previous over" row straight after a catch-up (its last entry is the gap).
+  const prevOver = inn.overs.length && !inn.overs[inn.overs.length - 1].gap ? inn.overs[inn.overs.length - 1] : null;
+  const unknownBalls = inn.partOverUnknown
+    ? Math.max(0, inn.legalBalls % bpo - inn.currentOverEvents.filter(ev => !/^(Wd|Nb)/.test(ev.display)).length) : 0;
   const lastFow = inn.fallOfWickets.length ? inn.fallOfWickets[inn.fallOfWickets.length - 1] : null;
   const partnershipRuns = inn.runs - (lastFow ? lastFow.score : 0);
   const partnershipBalls = inn.legalBalls - (lastFow ? lastFow.balls : 0);
@@ -271,7 +278,7 @@ function renderLive(match){
           <span>${overNumber}${ordinalSuffix(overNumber)} OVER · ${bpo}-BALL</span>
           ${inn.freeHit ? `<span class="freehit-badge">FREE HIT</span>` : ""}
         </div>
-        ${renderOverRow(`${overNumber}${ordinalSuffix(overNumber)}`, inn.currentOverEvents, bpo, false)}
+        ${renderOverRow(`${overNumber}${ordinalSuffix(overNumber)}`, inn.currentOverEvents, bpo, false, unknownBalls)}
         ${prevOver ? renderOverRow(`${overNumber - 1}${ordinalSuffix(overNumber - 1)}`, prevOver.events, bpo, true) : ""}
       </div>
 

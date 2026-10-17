@@ -214,7 +214,10 @@ function recordBall(inn, event){
 
   const overCompleted = legal && inn.legalBalls % inn.ballsPerOver === 0;
   if (overCompleted){
-    if (bwl.curOverRuns === 0) bwl.maidens += 1;
+    // After a catch-up mid-over the over's earlier balls weren't scored one by
+    // one, so whether it was a maiden is unknown: never award one then.
+    if (bwl.curOverRuns === 0 && !inn.partOverUnknown) bwl.maidens += 1;
+    delete inn.partOverUnknown;
     inn.overs.push({ bowler: inn.bowler, events: inn.currentOverEvents });
     inn.currentOverEvents = [];
     bwl.curOverRuns = 0; bwl.curOverLegal = 0;
@@ -416,7 +419,7 @@ function playerLabel(p){
    behind by approved merges (supabase/009), so stats recorded under an old
    spelling still count. */
 function playerCareer(nameOrNames, matches){
-  matches = matches.filter(m => !m.anonymous);
+  matches = matches.filter(m => !playerStatsExcluded(m));
   const names = (Array.isArray(nameOrNames) ? nameOrNames : [nameOrNames]);
   const seen = new Set();
   const careers = [];
@@ -751,10 +754,18 @@ function matchPlayerNames(match){
   return names;
 }
 
+/* Matches left out of every player figure (leaderboards, MVP, MOTM,
+   profiles, tournament bests) -- team totals and standings still count:
+   - a "no names" match: its Batter 1 / Over 3 aren't people (fillAnonymousSlots);
+   - a caught-up match: part of it was entered as totals (applyCatchUp), so
+     players' lines are incomplete. */
+function playerStatsExcluded(match){
+  return !!(match && (match.anonymous || match.caughtUp));
+}
+
 function aggregatePlayerStats(matches){
   const totals = {};
-  // A "no names" match's Batter 1 / Over 3 aren't people (see fillAnonymousSlots).
-  matches.filter(match => !match.anonymous).forEach(match => {
+  matches.filter(match => !playerStatsExcluded(match)).forEach(match => {
     match.innings.forEach(inn => foldInningsIntoTotals(totals, inn));
     matchPlayerNames(match).forEach(name => { if (totals[name]) totals[name].matches += 1; });
   });
@@ -762,7 +773,7 @@ function aggregatePlayerStats(matches){
 }
 
 function pickMatchMOTM(match){
-  if (match.anonymous) return null;
+  if (playerStatsExcluded(match)) return null;
   const totals = {};
   match.innings.forEach(inn => foldInningsIntoTotals(totals, inn));
   const ranked = Object.values(totals).sort((a, b) => {
@@ -914,6 +925,313 @@ function fillAnonymousSlots(match){
   return changed;
 }
 
+/* --- catching up the score ---
+   A scorer who stopped updating the board can jump to where the game is now
+   instead of replaying every ball: the totals, every batter who got out (how,
+   the bowler, the fielder), who's batting and bowling now, and optionally
+   each player's runs/balls/overs. It's laid on top of what's already
+   recorded, which never goes backwards, and leaves one "gap" entry in
+   inn.overs ({ gap: { from/to balls, runs, wickets, and every batter's and
+   bowler's figures at that point } }) so ball by ball and commentary can say
+   where the score was caught up. Whatever isn't credited to a player shows
+   as "not attributed" (catchUpUnattributed), and the match is left out of
+   player stats (playerStatsExcluded). Gap wickets go into fallOfWickets with
+   `catchUp: true` and the score/balls of the catch-up (the real moment isn't
+   known), so the partnership counter restarts from there.
+
+   data: { runs, wickets, balls (legal), extras: { wides, noBalls, byes, legByes },
+           finished,            -- this innings is over (else it ends on its own
+                                   only by target / all out / overs)
+           batters: [{ name, status: "striker"|"nonStriker"|"out", runs, balls,
+                       wicketType, bowler, fielder }]
+                                -- every batter not already out (those at the
+                                   crease too) plus new ones; runs/balls null =
+                                   leave as recorded,
+           bowlers: [{ name, balls, runs }],   -- null = leave as recorded
+           bowlerNow, lastOver }  -- bowling the over now (needed mid-over);
+                                     bowled the last one (needed at x.0)
+   A "no names" match uses only the totals and `finished`. */
+const CATCH_UP_DISMISSALS = ["bowled", "caught", "lbw", "stumped", "hitwicket", "runout"];
+function catchUpWillFinish(inn, data){
+  const quota = inn.oversLimit != null ? inn.oversLimit * inn.ballsPerOver : null;
+  return !!data.finished
+    || (inn.target != null && data.runs >= inn.target)
+    || (inn.maxWickets != null && data.wickets >= inn.maxWickets)
+    || (quota != null && data.balls >= quota);
+}
+function catchUpHowOut(wicketType, bowler, fielder){
+  if (wicketType === "runout") return fielder ? `run out (${fielder})` : "run out";
+  if (wicketType === "caught" && fielder) return `c ${fielder} b ${bowler}`;
+  return `${WICKET_LABELS[wicketType]} b ${bowler}`;
+}
+/* Who's pinned to a point in an over: mid-over the bowler of the over in
+   progress has bowled B % bpo balls of it; at x.0 the last over's bowler has
+   just finished one (so whole overs, at least one) and the next over's has
+   none of theirs yet. With no figures entered, their balls are raised to the
+   smallest count >= what's recorded that fits (catchUpRaise) -- a lower
+   bound, the rest stays unattributed; figures that were entered must fit. */
+function catchUpPins(inn, data){
+  const bpo = inn.ballsPerOver, rem = data.balls % bpo, lc = n => (n || "").trim().toLowerCase();
+  const pins = [];
+  if (rem && lc(data.bowlerNow)) pins.push({ name: data.bowlerNow.trim(), rem, min: rem, why: "now" });
+  if (!rem && lc(data.lastOver)) pins.push({ name: data.lastOver.trim(), rem: 0, min: bpo, why: "last" });
+  if (!rem && lc(data.bowlerNow)) pins.push({ name: data.bowlerNow.trim(), rem: 0, min: 0, why: "next" });
+  return pins;
+}
+function catchUpRaise(n, pin, bpo){
+  let x = Math.max(n, pin.min);
+  while (x % bpo !== pin.rem) x++;
+  return x;
+}
+// Error text, or null when `data` can be applied to the innings in play.
+function catchUpError(match, data){
+  if (!match || (match.status !== "opening" && match.status !== "live")) return "There's no innings in progress to catch up.";
+  const inn = currentInnings(match);
+  if (inn.complete) return "This innings is already over.";
+  const bpo = inn.ballsPerOver;
+  const lc = n => (n || "").trim().toLowerCase();
+  const int = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
+  const ov = n => oversDisplay(n, bpo);
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+  if (data.balls == null || Number.isNaN(data.balls) || !int(data.balls, 0, 99999)) return `Enter the overs bowled, like 6 or 6.1 (up to ${bpo - 1} balls after the dot).`;
+  if (data.balls < inn.legalBalls) return `Overs can't go back: ${ov(inn.legalBalls)} are already scored.`;
+  const quota = inn.oversLimit != null ? inn.oversLimit * bpo : null;
+  if (quota != null && data.balls > quota) return `It's a ${plural(inn.oversLimit, "over")} innings, so overs can't be more than ${inn.oversLimit}.`;
+  if (!int(data.runs, 0, 9999)) return "Enter the team's runs.";
+  if (data.runs < inn.runs) return `Runs can't go down: ${inn.runs} are already scored.`;
+  const ex = data.extras || {};
+  const EX = [["wides", "Wides"], ["noBalls", "No-balls"], ["byes", "Byes"], ["legByes", "Leg byes"]];
+  for (const [k, label] of EX){
+    if (!int(ex[k], 0, 999)) return `${label} must be a number (0 or more).`;
+    if (ex[k] < inn.extras[k]) return `${label} can't go down: ${inn.extras[k]} already scored.`;
+  }
+  const extrasTotal = EX.reduce((a, [k]) => a + ex[k], 0);
+  if (extrasTotal > data.runs) return `Extras (${extrasTotal}) can't be more than the total (${data.runs}).`;
+  if (inn.target != null && data.runs > inn.target + 5) return `${teamName(match, inn.battingTeam)} needed ${inn.target}. A chase stops once it's reached, so they can't have more than ${inn.target + 5}.`;
+  const maxW = inn.maxWickets != null ? inn.maxWickets : 99;
+  if (!int(data.wickets, 0, maxW)) return `Wickets must be 0–${maxW}.`;
+  if (data.wickets < inn.wickets) return `Wickets can't go down: ${inn.wickets} already fell.`;
+  if (match.anonymous) return catchUpUnchanged(match, data) ? "Nothing has changed yet. Enter the score as it is now." : null;
+
+  const finish = catchUpWillFinish(inn, data);
+  const batters = data.batters || [], bowlers = data.bowlers || [];
+  const existingOut = new Set(inn.batting.order.filter(n => inn.batting.stats[n].out).map(lc));
+  const seen = new Set();
+  for (const b of batters){
+    if (!lc(b.name)) return "Every batter needs a name.";
+    if (seen.has(lc(b.name))) return `${b.name} is listed twice.`;
+    seen.add(lc(b.name));
+    if (existingOut.has(lc(b.name))) return `${b.name} is already out.`;
+    const conflict = playerSideConflict(match, b.name, inn.battingTeam);
+    if (conflict) return conflict;
+  }
+  const missing = inn.batting.order.find(n => !inn.batting.stats[n].out && !seen.has(lc(n)));
+  if (missing) return `${missing} has batted. Say whether they're still in or out.`;
+  const outs = batters.filter(b => b.status === "out");
+  const outCount = inn.wickets + outs.length;
+  if (outCount !== data.wickets) return `Wickets say ${data.wickets}, but ${outCount} ${outCount === 1 ? "batter is" : "batters are"} out. Add or fix the batters who got out.`;
+  const strikers = batters.filter(b => b.status === "striker").length, others = batters.filter(b => b.status === "nonStriker").length;
+  if (strikers > 1 || others > 1) return "Only one batter can be on strike and one at the other end.";
+  if (!finish){
+    const alone = inn.lastManStands && inn.maxWickets != null && data.wickets === inn.maxWickets - 1;
+    if (alone){ if (strikers + others !== 1) return "Last man stands: only one batter is left in."; }
+    else if (!strikers || !others) return "Pick who's on strike and who's at the other end.";
+  }
+
+  const fieldSide = [];   // every fielding-side name the form mentions
+  for (const b of outs){
+    if (!CATCH_UP_DISMISSALS.includes(b.wicketType)) return `How was ${b.name} out?`;
+    if (b.wicketType !== "runout" && !lc(b.bowler)) return `Who was bowling when ${b.name} got out?`;
+    if (b.wicketType === "caught" && match.requireFielderOnCatch && !lc(b.fielder)) return `Who caught ${b.name}?`;
+    if (b.wicketType === "runout" && match.requireFielderOnRunout && !lc(b.fielder)) return `Who ran ${b.name} out?`;
+    if (b.wicketType !== "runout") fieldSide.push(b.bowler);
+    if ((b.wicketType === "caught" || b.wicketType === "runout") && lc(b.fielder)) fieldSide.push(b.fielder);
+  }
+  const bowlerSeen = new Set();
+  for (const b of bowlers){
+    if (!lc(b.name)) return "Every bowler needs a name.";
+    if (bowlerSeen.has(lc(b.name))) return `${b.name} is listed twice.`;
+    bowlerSeen.add(lc(b.name));
+    fieldSide.push(b.name);
+  }
+  if (lc(data.bowlerNow)) fieldSide.push(data.bowlerNow);
+  if (lc(data.lastOver)) fieldSide.push(data.lastOver);
+  const batNames = new Set([...inn.batting.order, ...batters.map(b => b.name)].map(lc));
+  for (const n of fieldSide){
+    if (batNames.has(lc(n))) return `${n.trim()} can't bat and bowl or field in the same innings. They'd be on both teams.`;
+    const conflict = playerSideConflict(match, n.trim(), inn.bowlingTeam);
+    if (conflict) return conflict;
+  }
+  if (!finish){
+    const midOver = data.balls % bpo !== 0;
+    if (midOver && !lc(data.bowlerNow)) return `Who's bowling the over in progress (${ov(data.balls)})?`;
+    if (!midOver && data.balls > 0 && !lc(data.lastOver)) return `Who bowled the last over (up to ${ov(data.balls)})? They can't bowl the next one.`;
+    if (!midOver && lc(data.bowlerNow) && lc(data.bowlerNow) === lc(data.lastOver)) return `${data.bowlerNow.trim()} bowled the last over, so they can't bowl the next one too.`;
+  }
+
+  const find = (order, n) => order.find(x => lc(x) === lc(n));
+  let batRuns = 0, batBalls = 0;
+  inn.batting.order.forEach(n => { const s = inn.batting.stats[n]; if (s.out){ batRuns += s.runs; batBalls += s.balls; } });
+  for (const b of batters){
+    const k = find(inn.batting.order, b.name), s = k ? inn.batting.stats[k] : null;
+    if (b.runs != null && !int(b.runs, 0, 999)) return `${b.name}'s runs must be a number.`;
+    if (b.balls != null && !int(b.balls, 0, 999)) return `${b.name}'s balls must be a number.`;
+    if (s && b.runs != null && b.runs < s.runs) return `${k} already has ${s.runs} runs, so that can't go down.`;
+    if (s && b.balls != null && b.balls < s.balls) return `${k} has already faced ${plural(s.balls, "ball")}.`;
+    batRuns += b.runs != null ? b.runs : (s ? s.runs : 0);
+    batBalls += b.balls != null ? b.balls : (s ? s.balls : 0);
+  }
+  const offBat = data.runs - extrasTotal;
+  if (batRuns > offBat) return `The batters' runs add up to ${batRuns}, but only ${offBat} came off the bat (${data.runs} minus ${extrasTotal} extras).`;
+  // a no-ball is faced too (recordBall counts it in the batter's balls)
+  const noBallsBowled = inn.noBallBaseRuns > 0 ? Math.floor(ex.noBalls / inn.noBallBaseRuns) : Infinity;
+  if (batBalls > data.balls + noBallsBowled) return `The batters have faced ${batBalls} balls, but only ${plural(data.balls, "ball")} (${ov(data.balls)} overs)${noBallsBowled ? ` and ${plural(noBallsBowled, "no-ball")}` : ""} have been bowled.`;
+
+  const pins = catchUpPins(inn, data);
+  const pinOf = n => pins.find(p => lc(p.name) === lc(n));
+  for (const p of pins){
+    const row = bowlers.find(b => lc(b.name) === lc(p.name));
+    if (!row || row.balls == null || Number.isNaN(row.balls)) continue;
+    if (p.why === "now" && row.balls % bpo !== p.rem) return `${p.name} is bowling the over in progress (${ov(data.balls)}), so their overs should end in .${p.rem}.`;
+    if (p.why !== "now" && (row.balls % bpo !== 0 || row.balls < p.min)) return `${p.name} ${p.why === "last" ? "bowled the last over" : "starts the next over"}, so their overs should be whole (like ${p.why === "last" ? "2" : "0"}).`;
+  }
+  let bowlBalls = 0, bowlRuns = 0;
+  const counted = new Set();
+  inn.bowling.order.forEach(n => {
+    if (bowlers.some(b => lc(b.name) === lc(n))) return;
+    const p = pinOf(n);
+    if (p) counted.add(lc(n));
+    bowlBalls += p ? catchUpRaise(inn.bowling.stats[n].legalBalls, p, bpo) : inn.bowling.stats[n].legalBalls;
+    bowlRuns += inn.bowling.stats[n].runs;
+  });
+  // a pinned bowler who isn't on the scorecard yet (or listed without overs)
+  pins.forEach(p => {
+    if (counted.has(lc(p.name)) || bowlers.some(b => lc(b.name) === lc(p.name))) return;
+    counted.add(lc(p.name));
+    bowlBalls += catchUpRaise(0, p, bpo);
+  });
+  for (const b of bowlers){
+    const k = find(inn.bowling.order, b.name), s = k ? inn.bowling.stats[k] : null;
+    if (b.balls != null && (Number.isNaN(b.balls) || !int(b.balls, 0, 99999))) return `${b.name}'s overs should look like 3 or 3.2 (up to ${bpo - 1} balls after the dot).`;
+    if (b.runs != null && !int(b.runs, 0, 999)) return `${b.name}'s runs must be a number.`;
+    if (s && b.balls != null && b.balls < s.legalBalls) return `${k} has already bowled ${ov(s.legalBalls)} overs.`;
+    if (s && b.runs != null && b.runs < s.runs) return `${k} has already conceded ${s.runs} runs.`;
+    const p = pinOf(b.name);
+    bowlBalls += b.balls != null ? b.balls : p ? catchUpRaise(s ? s.legalBalls : 0, p, bpo) : (s ? s.legalBalls : 0);
+    bowlRuns += b.runs != null ? b.runs : (s ? s.runs : 0);
+  }
+  if (bowlBalls > data.balls) return `The bowlers' overs add up to ${ov(bowlBalls)}, more than the ${ov(data.balls)} bowled.`;
+  const offBowler = data.runs - ex.byes - ex.legByes;
+  if (bowlRuns > offBowler) return `The bowlers have conceded ${bowlRuns}, but only ${offBowler} runs count against them (byes and leg byes don't).`;
+  if (catchUpUnchanged(match, data)) return "Nothing has changed yet. Enter the score as it is now.";
+  return null;
+}
+function catchUpUnchanged(match, data){
+  const probe = JSON.parse(JSON.stringify(match));
+  applyCatchUp(probe, data);
+  const pick = inn => JSON.stringify([inn.runs, inn.wickets, inn.legalBalls, inn.extras, inn.batting, inn.bowling, inn.fielding,
+    inn.striker, inn.nonStriker, inn.bowler, inn.lastOverBowler, inn.complete]);
+  return pick(currentInnings(match)) === pick(currentInnings(probe));
+}
+// Mutates `match` (check catchUpError first). The UI snapshots before, so Undo walks it back.
+function applyCatchUp(match, data){
+  const inn = currentInnings(match);
+  const bpo = inn.ballsPerOver;
+  const lc = n => (n || "").trim().toLowerCase();
+  const from = { balls: inn.legalBalls, runs: inn.runs, wickets: inn.wickets };
+  const midOver = data.balls % bpo !== 0;
+  // The over in progress keeps the balls it has, as a part over before the gap.
+  if (inn.currentOverEvents.length) inn.overs.push({ bowler: inn.bowler, events: inn.currentOverEvents, partial: true });
+  inn.currentOverEvents = [];
+  const fallen = [];
+  if (match.anonymous){
+    // No names: the batters at the crease go first, then placeholder batters;
+    // fillAnonymousSlots sends in the next ones and names the over's bowler.
+    let need = data.wickets - inn.wickets;
+    const out = n => { inn.batting.stats[n].out = true; inn.batting.stats[n].howOut = "out"; fallen.push(n); need--; };
+    [inn.striker, inn.nonStriker].forEach(n => { if (n && need > 0) out(n); });
+    while (need > 0){ const n = `Batter ${inn.batting.order.length + 1}`; ensureBatsman(inn, n); out(n); }
+    if (inn.striker && inn.batting.stats[inn.striker].out) inn.striker = null;
+    if (inn.nonStriker && inn.batting.stats[inn.nonStriker].out) inn.nonStriker = null;
+    if (data.balls !== from.balls) inn.bowler = null;
+  } else {
+    // A typed name in another case is the same person (case-insensitive, like every name check).
+    const keyOf = (order, n) => order.find(x => lc(x) === lc(n)) || n.trim();
+    data.batters.forEach(b => {
+      const name = keyOf(inn.batting.order, b.name);
+      ensureBatsman(inn, name);
+      const s = inn.batting.stats[name];
+      if (b.runs != null) s.runs = b.runs;
+      if (b.balls != null) s.balls = b.balls;
+      if (b.status !== "out") return;
+      const bowler = b.wicketType === "runout" ? null : keyOf(inn.bowling.order, b.bowler);
+      const fielder = (b.wicketType === "caught" || b.wicketType === "runout") && lc(b.fielder)
+        ? keyOf([...inn.fielding.order, ...inn.bowling.order], b.fielder) : null;
+      s.out = true;
+      s.howOut = catchUpHowOut(b.wicketType, bowler, fielder);
+      if (bowler){ ensureBowler(inn, bowler); inn.bowling.stats[bowler].wickets += 1; }
+      if (fielder){ ensureFielder(inn, fielder); inn.fielding.stats[fielder][b.wicketType === "caught" ? "catches" : "runouts"] += 1; }
+      fallen.push(name);
+    });
+    (data.bowlers || []).forEach(b => {
+      const name = keyOf(inn.bowling.order, b.name);
+      ensureBowler(inn, name);
+      const s = inn.bowling.stats[name];
+      if (b.balls != null) s.legalBalls = b.balls;
+      if (b.runs != null) s.runs = b.runs;
+    });
+    const at = status => { const b = data.batters.find(x => x.status === status); return b ? keyOf(inn.batting.order, b.name) : null; };
+    inn.striker = at("striker"); inn.nonStriker = at("nonStriker");
+    const now = lc(data.bowlerNow) ? keyOf(inn.bowling.order, data.bowlerNow) : null;
+    const last = !midOver && lc(data.lastOver) ? keyOf(inn.bowling.order, data.lastOver) : null;
+    if (now) ensureBowler(inn, now);
+    if (last) ensureBowler(inn, last);
+    catchUpPins(inn, data).forEach(p => {
+      const row = (data.bowlers || []).find(b => lc(b.name) === lc(p.name));
+      if (row && row.balls != null) return;
+      const s = inn.bowling.stats[keyOf(inn.bowling.order, p.name)];
+      s.legalBalls = catchUpRaise(s.legalBalls, p, bpo);
+    });
+    const samePlace = data.balls === from.balls && now === inn.bowler;
+    if (!samePlace){
+      inn.bowling.order.forEach(n => { inn.bowling.stats[n].curOverRuns = 0; inn.bowling.stats[n].curOverLegal = 0; });
+      if (now && midOver) inn.bowling.stats[now].curOverLegal = data.balls % bpo;
+      inn.lastOverBowler = midOver ? null : last;
+    }
+    inn.bowler = now;
+  }
+  inn.runs = data.runs; inn.legalBalls = data.balls; inn.wickets = data.wickets;
+  inn.extras = { wides: data.extras.wides, noBalls: data.extras.noBalls, byes: data.extras.byes, legByes: data.extras.legByes };
+  fallen.forEach((n, i) => inn.fallOfWickets.push({ score: data.runs, wicket: from.wickets + i + 1, over: oversDisplay(data.balls, bpo), balls: data.balls, batsman: n, catchUp: true }));
+  inn.freeHit = false;
+  if (midOver) inn.partOverUnknown = true; else delete inn.partOverUnknown;
+  const batters = {}, bowlers = {};
+  inn.batting.order.forEach(n => { const s = inn.batting.stats[n]; batters[n] = { runs: s.runs, balls: s.balls }; });
+  inn.bowling.order.forEach(n => { const s = inn.bowling.stats[n]; bowlers[n] = { balls: s.legalBalls, runs: s.runs, wickets: s.wickets, maidens: s.maidens }; });
+  inn.overs.push({ bowler: null, events: [], gap: {
+    fromBalls: from.balls, fromRuns: from.runs, fromWickets: from.wickets,
+    toBalls: data.balls, toRuns: data.runs, toWickets: data.wickets, batters, bowlers } });
+  checkInningsComplete(inn);
+  if (!inn.complete && data.finished){ inn.complete = true; inn.completeReason = "closed"; }
+  if (!inn.complete && battingAlone(inn)){ inn.striker = inn.striker || inn.nonStriker; inn.nonStriker = null; }
+  match.caughtUp = true;
+  if (match.status === "opening") match.status = "live";
+  afterBall(match);
+}
+/* What a caught-up innings couldn't credit to anyone: runs off the bat no
+   batter has, and balls/runs no bowler has. null if it was never caught up. */
+function catchUpUnattributed(inn){
+  if (!inn.overs.some(o => o.gap)) return null;
+  const sum = (side, k) => side.order.reduce((a, n) => a + (side.stats[n][k] || 0), 0);
+  const e = inn.extras;
+  return {
+    batRuns: inn.runs - (e.wides + e.noBalls + e.byes + e.legByes) - sum(inn.batting, "runs"),
+    bowlBalls: (inn.legalBalls || 0) - sum(inn.bowling, "legalBalls"),
+    bowlRuns: inn.runs - e.byes - e.legByes - sum(inn.bowling, "runs")
+  };
+}
+
 /* --- ball-by-ball commentary ---
    One line per delivery, oldest first, plus an "end of over" row after each
    completed over (its runs, the score, the bowler's figures). Built from the
@@ -943,12 +1261,28 @@ function inningsCommentary(inn, opts){
   const o = opts || {};
   const nm = n => (o.name ? o.name(n) : n);
   const bpo = inn.ballsPerOver || 6;
-  const overs = inn.overs.map(x => ({ bowler: x.bowler, events: x.events, done: true }));
+  // A part over (the balls scored before a catch-up) has no end-of-over row;
+  // a catch-up gap resets the running totals to what was entered.
+  const overs = inn.overs.map(x => ({ bowler: x.bowler, events: x.events, done: !x.partial && !x.gap, gap: x.gap }));
   if (inn.currentOverEvents.length) overs.push({ bowler: inn.bowler, events: inn.currentOverEvents, done: false });
-  const out = [], batRuns = {}, batBalls = {}, figs = {};
-  let score = 0, wkts = 0;
-  overs.forEach((ov, i) => {
-    let legal = 0, overRuns = 0, overWkts = 0, bowlerRuns = 0;
+  const out = [];
+  let batRuns = {}, batBalls = {}, figs = {};
+  let score = 0, wkts = 0, balls = 0;
+  overs.forEach(ov => {
+    if (ov.gap){
+      const g = ov.gap;
+      score = g.toRuns; wkts = g.toWickets; balls = g.toBalls;
+      batRuns = {}; batBalls = {}; figs = {};
+      Object.keys(g.batters || {}).forEach(n => { batRuns[n] = g.batters[n].runs; batBalls[n] = g.batters[n].balls; });
+      Object.keys(g.bowlers || {}).forEach(n => { const b = g.bowlers[n]; figs[n] = { balls: b.balls, maidens: b.maidens, runs: b.runs, wickets: b.wickets }; });
+      out.push({ type: "gap", from: `${g.fromRuns}-${g.fromWickets} (${oversDisplay(g.fromBalls, bpo)})`, to: `${g.toRuns}-${g.toWickets} (${oversDisplay(g.toBalls, bpo)})`,
+        runs: g.toRuns - g.fromRuns, wickets: g.toWickets - g.fromWickets });
+      return;
+    }
+    // Over number and ball count from the legal balls before it, not the
+    // list position: after a catch-up an over can start part way through.
+    const start = balls, i = Math.floor(start / bpo);
+    let legal = start % bpo, overRuns = 0, overWkts = 0, bowlerRuns = 0;
     const f = ov.bowler ? (figs[ov.bowler] = figs[ov.bowler] || { balls: 0, maidens: 0, runs: 0, wickets: 0 }) : null;
     ov.events.forEach(ev => {
       const c = commentaryEvent(ev);
@@ -996,8 +1330,10 @@ function inningsCommentary(inn, opts){
         ? `${nm(ev.batter)} ${batRuns[ev.batter]} (${batBalls[ev.batter] || 0})` : "";
       out.push({ type: "ball", over: i, label, who, text, detail, batter, milestone, tone, display: ev.display, runs });
     });
+    balls = start - (start % bpo) + legal;
     if (ov.done){
-      const maiden = legal === bpo && bowlerRuns === 0;
+      // only a whole over seen ball by ball can be called a maiden
+      const maiden = start % bpo === 0 && legal === bpo && bowlerRuns === 0;
       if (f && maiden) f.maidens += 1;
       out.push({ type: "over", over: i + 1, runs: overRuns, wickets: overWkts, score, wkts, maiden,
         bowler: !o.anonymous && ov.bowler ? nm(ov.bowler) : null,
@@ -1047,7 +1383,7 @@ function tournamentSummary(matches, preset){
     runs += inn.runs; wickets += inn.wickets;
     const team = teamName(m, inn.battingTeam);
     if (!highestTotal || inn.runs > highestTotal.runs) highestTotal = { team, runs: inn.runs, wickets: inn.wickets, against: teamName(m, inn.bowlingTeam) };
-    if (m.anonymous) return;
+    if (playerStatsExcluded(m)) return;
     inn.batting.order.forEach(n => {
       const b = inn.batting.stats[n];
       sixes += b.sixes;

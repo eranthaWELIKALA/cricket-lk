@@ -73,6 +73,10 @@ document.addEventListener("click", (e) => {
   else if (action === "open-match-menu"){ ui.matchMenu = "menu"; ui.squadError = null; render(); }
   else if (action === "match-menu-view"){ ui.matchMenu = btn.dataset.view; ui.squadError = null; render(); }
   else if (action === "close-match-menu"){ ui.matchMenu = null; ui.squadError = null; render(); }
+  else if (action === "open-catch-up") openCatchUp();
+  else if (action === "close-catch-up") closeCatchUp();
+  else if (action === "catch-up-add") catchUpAddRow(btn.dataset.kind);
+  else if (action === "catch-up-remove") catchUpRemoveRow(btn.dataset.kind, parseInt(btn.dataset.i, 10));
   else if (action === "swap-toss") askSwapToss();
   else if (action === "ask-cancel-match") askCancelMatch();
   else if (action === "move-squad-player"){
@@ -326,6 +330,7 @@ document.addEventListener("submit", (e) => {
   if (id === "match-setup-form") handleMatchSetupSubmit(e);
   else if (id === "opening-form") handleOpeningSubmit(e);
   else if (id === "squad-add-form") handleSquadAddSubmit(e);
+  else if (id === "catch-up-form") handleCatchUpSubmit(e);
   else if (id === "new-batsman-form") handleNewBatsmanSubmit(e);
   else if (id === "new-bowler-form") handleNewBowlerSubmit(e);
   else if (id === "wicket-fielder-form") handleWicketFielderSubmit(e);

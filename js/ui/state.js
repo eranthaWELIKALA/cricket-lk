@@ -6,7 +6,7 @@
 var state = defaultState();
 function defaultUi(){
   return {
-    pendingExtra: null, wicketFlow: null, runoutRuns: 0, runoutEnd: "striker", runoutAt: null, showFullScorecard: false, liveScorecard: false, scorecard: null, matchDetail: null, statsTab: "mvp", confirm: null, syncSheet: false, matchMenu: null, squadError: null, pickDismissed: null, awayFromMatch: false, clubRosterLoading: null, clubTournamentLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
+    pendingExtra: null, wicketFlow: null, runoutRuns: 0, runoutEnd: "striker", runoutAt: null, showFullScorecard: false, liveScorecard: false, scorecard: null, matchDetail: null, statsTab: "mvp", confirm: null, syncSheet: false, matchMenu: null, catchUp: null, squadError: null, pickDismissed: null, awayFromMatch: false, clubRosterLoading: null, clubTournamentLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
     matchSetupPresetId: null, presetInfo: null,
     tournamentSetupPresetId: null, tournamentSetupTeamIds: [],
     tournamentTab: null, resultEntry: null, sharePreview: null,

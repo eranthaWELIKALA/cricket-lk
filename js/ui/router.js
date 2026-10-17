@@ -101,7 +101,7 @@ function overlayOpen(){
     || (ui.matchDetail && ui.matchDetail.view === state.view)
     || (ui.resultEntry && ui.resultEntry.view === state.view)
     || (ui.sharePreview && ui.sharePreview.view === navKey())
-    || (onMatch && (ui.matchMenu || ui.wicketFlow || ui.pendingExtra || ui.liveScorecard)));
+    || (onMatch && (ui.matchMenu || ui.catchUp || ui.wicketFlow || ui.pendingExtra || ui.liveScorecard)));
 }
 // Called at the end of render(): record a screen change in browser history.
 function syncRoute(){
@@ -333,6 +333,7 @@ function closeTopOverlay(){
     if (hasDirtyForm("#modal-root")) confirmDiscard(close); else close();
     return true;
   }
+  if (onMatch && ui.catchUp){ closeCatchUp(); return true; }
   if (onMatch && ui.matchMenu){ ui.matchMenu = ui.matchMenu === "menu" ? null : "menu"; ui.squadError = null; render(); return true; }
   if (onMatch && ui.wicketFlow){ ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.runoutAt = null; render(); return true; }
   if (onMatch && ui.pendingExtra){ ui.pendingExtra = null; render(); return true; }
