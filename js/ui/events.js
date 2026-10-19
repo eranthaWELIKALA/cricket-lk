@@ -50,7 +50,15 @@ document.addEventListener("click", (e) => {
   else if (action === "toggle-extra"){ ui.pendingExtra = btn.dataset.extra; render(); }
   else if (action === "close-extra"){ ui.pendingExtra = null; render(); }
   else if (action === "open-wicket"){ ui.wicketFlow = "menu"; render(); }
-  else if (action === "close-wicket-modal"){ ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.runoutAt = null; render(); }
+  // Off a wide / no-ball, closing goes back to that extra's runs sheet (ui.pendingExtra stays).
+  else if (action === "close-wicket-modal"){ resetWicketUi(); render(); }
+  else if (action === "wicket-on-extra" && (ui.pendingExtra === "wide" || ui.pendingExtra === "noball")){ ui.wicketExtra = ui.pendingExtra; ui.wicketFlow = "menu"; render(); }
+  else if (action === "swap-strike") handleSwapStrike();
+  else if (action === "open-edit-balls") openEditBalls();
+  else if (action === "edit-ball") openBallEdit(parseInt(btn.dataset.inn, 10), parseInt(btn.dataset.seq, 10), btn.dataset.label);
+  else if (action === "ball-edit-set") ballEditSet(btn.dataset.field, btn.dataset.value);
+  else if (action === "ball-edit-delete") ballEditSave(true);
+  else if (action === "close-ball-edit") closeBallEdit();
   else if (action === "pick-runout-end"){ ui.runoutEnd = btn.dataset.end; render(); }
   else if (action === "pick-runout-at"){ ui.runoutAt = btn.dataset.end; render(); }
   else if (action === "pick-bowler"){ confirmNewBowler(btn.dataset.name); }
@@ -87,7 +95,7 @@ document.addEventListener("click", (e) => {
   }
   else if (action === "undo") handleUndo();
   else if (action === "toggle-scorecard"){ ui.showFullScorecard = !ui.showFullScorecard; ui.scorecard = null; render(); } // Result's condensed/full cards
-  else if (action === "open-live-scorecard"){ ui.liveScorecard = true; ui.scorecard = null; render(); }
+  else if (action === "open-live-scorecard" && state.match){ ui.liveScorecard = state.match.status; ui.scorecard = null; render(); }
   else if (action === "scorecard-inn"){ ui.scorecard = Object.assign({}, ui.scorecard, { inn: parseInt(btn.dataset.tab, 10) }); render(); }
   else if (action === "scorecard-mode"){ ui.scorecard = Object.assign({}, ui.scorecard, { mode: btn.dataset.tab }); render(); }
   else if (action === "profile-tab" && ui.profile){ ui.profile.tab = btn.dataset.tab; render(); }
@@ -335,6 +343,7 @@ document.addEventListener("submit", (e) => {
   else if (id === "new-bowler-form") handleNewBowlerSubmit(e);
   else if (id === "wicket-fielder-form") handleWicketFielderSubmit(e);
   else if (id === "motm-form") handleMotmSubmit(e);
+  else if (id === "ball-edit-form"){ e.preventDefault(); ballEditSave(false); }
   else if (id === "tournament-setup-form") handleTournamentSetupSubmit(e);
   else if (id === "tournament-start-match-form") handleTournamentStartMatchSubmit(e);
   else if (id === "result-entry-form") handleResultEntrySubmit(e);

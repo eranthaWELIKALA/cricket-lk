@@ -180,7 +180,12 @@ function render(){
   // all -- while it asks.
   // The live scorecard sheet belongs to one stretch of live scoring: an
   // innings ending (or the match leaving the screen) closes it for good.
-  if (ui.liveScorecard && !(m && m.status === "live" && !away)) ui.liveScorecard = false;
+  // ui.liveScorecard holds the status it was opened in ("live" / "innings_break"),
+  // so the innings ending closes it rather than carrying it onto the break.
+  if (ui.liveScorecard && !(m && m.status === ui.liveScorecard && !away)) ui.liveScorecard = false;
+  // Editing a ball belongs to the match on screen (live, the break, or its Result).
+  const ballEditOpen = !!(ui.ballEdit && m && !away && ballEditAllowed(m) && editableBall(m, ui.ballEdit.inn, ui.ballEdit.seq));
+  if (ui.ballEdit && !ballEditOpen) ui.ballEdit = null;
   if (ui.catchUp && !(m && (m.status === "opening" || m.status === "live"))) ui.catchUp = null;
   if (ui.sharePreview && ui.sharePreview.view !== navKey()) ui.sharePreview = null;
   if (ui.sharePreview){
@@ -197,6 +202,8 @@ function render(){
   } else if (resultEntryOpen){
     modalKey = "result-entry";   // keep typed scores across background re-renders
     modalHtml = renderResultEntryModal();
+  } else if (ballEditOpen){
+    modalHtml = renderBallEditModal(m);
   } else if (away){
     modalHtml = "";
   } else if (m && (m.status === "opening" || m.status === "live") && ui.catchUp){
@@ -204,7 +211,7 @@ function render(){
     modalHtml = renderCatchUpModal(m);
   } else if (m && m.status !== "complete" && ui.matchMenu){
     modalHtml = renderMatchMenuModal(m);
-  } else if (m && m.status === "live" && ui.liveScorecard){
+  } else if (m && (m.status === "live" || m.status === "innings_break") && ui.liveScorecard){
     modalHtml = renderLiveScorecardModal(m);
   } else if (m && m.status === "opening"){
     modalHtml = renderOpeningModal(m);

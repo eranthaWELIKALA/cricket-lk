@@ -141,6 +141,8 @@ function renderMatchMenuModal(match){
       ${row("swap-toss", "⇄", "Change who bats first", started
         ? `Toss got reversed? Restarts from ball one with ${escapeHtml(teamName(match, otherFirst))} batting`
         : `Nothing bowled yet: ${escapeHtml(teamName(match, otherFirst))} bats first instead`)}
+      ${match.status === "live" && canSwapStrike(cur) ? row("swap-strike", "⇅", "Swap strike", `Put ${escapeHtml(liveName(cur.nonStriker))} on strike instead of ${escapeHtml(liveName(cur.striker))}`) : ""}
+      ${match.innings.some(i => i.log && i.log.some(x => x.t === "ball")) ? row("open-edit-balls", "✎", "Edit an earlier ball", "Wrong runs, a missed wide or wicket? Fix it from ball by ball") : ""}
       ${!cur.complete ? row("open-catch-up", "⏩", "Catch up the score", "Missed some balls? Enter the score as it is now and carry on") : ""}
       ${match.squads ? row("match-menu-view", "👥", "Switch players between sides", "Move a player to the other team, or add a late arrival", `data-view="squads"`) : ""}
       ${matchHasNicknames() ? `
@@ -184,7 +186,7 @@ function swapToss(){
   if (!m || m.status === "complete") return;
   pushSnapshot();
   state.match = restartMatch(m, m.battingFirst === "A" ? "B" : "A");
-  ui.matchMenu = null; ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.runoutAt = null;
+  ui.matchMenu = null; ui.pendingExtra = null; resetWicketUi();
   save(); render();
 }
 
@@ -283,9 +285,8 @@ function handleOpeningSubmit(e){
   if (conflict){ showFormError(e.target, conflict); return; }
   pushSnapshot();
   const inn = currentInnings(state.match);
-  ensureBatsman(inn, striker); ensureBatsman(inn, nonStriker); ensureBowler(inn, bowler);
+  openInnings(inn, striker, nonStriker, bowler);
   registerMatchPlayer(striker, inn.battingTeam); registerMatchPlayer(nonStriker, inn.battingTeam); registerMatchPlayer(bowler, inn.bowlingTeam);
-  inn.striker = striker; inn.nonStriker = nonStriker; inn.bowler = bowler;
   state.match.status = "live";
   save(); render();
 }
@@ -357,9 +358,8 @@ function submitNewBatsman(name, form){
   const sideConflict = playerSideConflict(state.match, name, inn.battingTeam);
   if (sideConflict){ showFormError(form, sideConflict); return; }
   pushSnapshot();
-  ensureBatsman(inn, name);
+  sendInBatter(inn, name);
   registerMatchPlayer(name, inn.battingTeam);
-  inn[slot] = name;
   save(); render();
 }
 
@@ -419,9 +419,8 @@ function confirmNewBowler(name){
   if (inn.bowler || !name) return;
   if (inn.lastOverBowler && name.toLowerCase() === inn.lastOverBowler.toLowerCase()) return;
   pushSnapshot();
-  ensureBowler(inn, name);
+  setBowler(inn, name);
   registerMatchPlayer(name, inn.bowlingTeam);
-  inn.bowler = name;
   save(); render();
 }
 
@@ -473,6 +472,11 @@ function renderWicketModal(inn){
   const isRunout = selected === "runout";
   const isCaught = selected === "caught";
   const strikerStats = inn.striker ? inn.batting.stats[inn.striker] : null;
+  // A wicket off a wide / no-ball (ui.wicketExtra, from the extra-runs sheet).
+  const extra = ui.wicketExtra;
+  const allowed = wicketTypesFor(inn.freeHit, extra);
+  const extraLabel = extra === "wide" ? "Wide" : extra === "noball" ? "No ball" : null;
+  const extraBase = extra === "wide" ? inn.wideBaseRuns : extra === "noball" ? inn.noBallBaseRuns : 0;
 
   const types = [
     { type: "bowled", label: "Bowled" },
@@ -481,7 +485,7 @@ function renderWicketModal(inn){
     { type: "stumped", label: "Stumped" },
     { type: "hitwicket", label: "Hit wicket" },
     { type: "runout", label: "Run out" }
-  ].filter(t => !inn.freeHit || t.type === "runout");
+  ].filter(t => allowed.includes(t.type));
 
   // Where the wicket was broken -- defaults to the end the out batter
   // started the ball at until the scorer picks one.
@@ -498,10 +502,12 @@ function renderWicketModal(inn){
           <h2>How out?</h2>
           ${strikerStats ? `<span class="batter">${escapeHtml(inn.striker)} ${strikerStats.runs} (${strikerStats.balls})</span>` : ""}
         </div>
-        ${inn.freeHit ? `
+        ${extraLabel ? `
+          <div class="freehit-note extra-note"><span class="tag">${extraLabel.toUpperCase()}</span><span class="desc">${extra === "wide" && !inn.freeHit ? "Off a wide: stumped, hit wicket or run out" : "Off a no-ball: only a run out"}. The ${extraLabel.toLowerCase()} still counts (+${extraBase}) and the ball is bowled again.</span></div>
+        ` : inn.freeHit ? `
           <div class="freehit-note"><span class="tag">FREE HIT</span><span class="desc">A run out is the only dismissal available</span></div>
         ` : ""}
-        <div class="wicket-types${inn.freeHit ? " solo" : ""}">
+        <div class="wicket-types${types.length === 1 ? " solo" : ""}">
           ${types.map(t => `<button type="button" data-action="pick-wicket" data-type="${t.type}" class="${selected === t.type ? "active" : ""}">${t.label}</button>`).join("")}
         </div>
         <form id="wicket-fielder-form">
@@ -524,11 +530,11 @@ function renderWicketModal(inn){
                 </button>`).join("")}
             </div>
             ${runoutSurvivor ? `<p class="hint">${escapeHtml(runoutSurvivor)} stays at the ${runoutAt === "striker" ? "bowler's" : "keeper's"} end; the new batter comes in at the ${runoutAt === "striker" ? "keeper's" : "bowler's"} end.</p>` : ""}
-            <div class="section-label">Runs completed before the run out</div>
+            <div class="section-label">Runs completed before the run out${extraLabel ? ` (on top of the ${extraLabel.toLowerCase()})` : ""}</div>
             <div class="run-pad small">
               ${[0, 1, 2, 3].map(n => `<button type="button" data-action="runout-runs" data-runs="${n}" class="run-btn ${ui.runoutRuns === n ? "active" : ""}">${n}</button>`).join("")}
             </div>
-            <p class="hint">These runs count against the bowler, unlike byes and leg byes.</p>
+            <p class="hint">${extra === "wide" ? "They count as wides, against the bowler." : "These runs count against the bowler, unlike byes and leg byes."}</p>
           ` : ""}
           ${(isRunout || isCaught) ? `
             ${match.anonymous ? "" : `            <div class="fielder-box">
@@ -544,7 +550,7 @@ function renderWicketModal(inn){
               <button type="submit" class="primary danger-confirm" style="flex-grow:1;">Confirm ${isRunout ? "run out" : "wicket"}</button>
             </div>
           ` : `
-            <button type="button" data-action="close-wicket-modal" class="ghost" style="width:100%;margin-top:14px;">Cancel</button>
+            <button type="button" data-action="close-wicket-modal" class="ghost" style="width:100%;margin-top:14px;">${extraLabel ? `Back to ${extraLabel.toLowerCase()}` : "Cancel"}</button>
           `}
         </form>
       </div>
@@ -562,14 +568,21 @@ function maybeArchiveCompletedMatch(match){
   }
 }
 
+/* Resets everything the wicket sheet keeps between taps (incl. the extra a
+   wicket off a wide / no-ball came from). */
+function resetWicketUi(){
+  ui.wicketFlow = null; ui.wicketExtra = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.runoutAt = null;
+}
 function confirmWicket(type){
-  pushSnapshot();
   const inn = currentInnings(state.match);
-  recordBall(inn, { kind: "wicket", wicketType: type });
+  const extra = ui.wicketExtra || undefined;
+  if (!wicketTypesFor(inn.freeHit, extra).includes(type)) return;
+  pushSnapshot();
+  recordBall(inn, { kind: "wicket", wicketType: type, extra });
   afterBall(state.match);
   maybeArchiveCompletedMatch(state.match);
   SFX.wicket();
-  ui.wicketFlow = null;
+  resetWicketUi(); ui.pendingExtra = null;
   save(); render();
 }
 
@@ -586,12 +599,12 @@ function handleWicketFielderSubmit(e){
     if (match.requireFielderOnRunout && !fielder){ showFormError(e.target, "This preset requires naming the run-out taker."); return; }
     pushSnapshot();
     const inn = currentInnings(match);
-    recordBall(inn, { kind: "wicket", wicketType: "runout", runs: ui.runoutRuns, endComingIn: ui.runoutEnd, outEnd: ui.runoutAt || ui.runoutEnd, fielder: fielder || undefined });
+    recordBall(inn, { kind: "wicket", wicketType: "runout", runs: ui.runoutRuns, endComingIn: ui.runoutEnd, outEnd: ui.runoutAt || ui.runoutEnd, fielder: fielder || undefined, extra: ui.wicketExtra || undefined });
     if (fielder) registerMatchPlayer(fielder, inn.bowlingTeam);
     afterBall(match);
     maybeArchiveCompletedMatch(match);
     SFX.wicket();
-    ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.runoutAt = null;
+    resetWicketUi(); ui.pendingExtra = null;
     save(); render();
   } else if (ui.wicketFlow === "caught"){
     if (match.requireFielderOnCatch && !fielder){ showFormError(e.target, "This preset requires naming the catch taker."); return; }
@@ -602,7 +615,7 @@ function handleWicketFielderSubmit(e){
     afterBall(match);
     maybeArchiveCompletedMatch(match);
     SFX.wicket();
-    ui.wicketFlow = null;
+    resetWicketUi(); ui.pendingExtra = null;
     save(); render();
   }
 }

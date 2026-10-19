@@ -114,7 +114,11 @@ function coalesceOp(queue, op){
     const key = (a.name || "").trim().toLowerCase();
     if (queue.some(o => same(o) && o.args.clubId === a.clubId && (o.args.name || "").trim().toLowerCase() === key)) return queue;
   }
-  if (op.kind === "match" && queue.some(o => same(o) && o.args.id === a.id)) return queue;
+  // A match edited after it was archived: the newest copy replaces the queued one.
+  if (op.kind === "match"){
+    const prev = queue.find(o => same(o) && o.args.id === a.id);
+    if (prev) return queue.map(o => o === prev ? Object.assign({}, prev, { args: a }) : o);
+  }
   // A tournament's settings: the latest pending update is the one that counts.
   if (op.kind === "tournament.update") queue = queue.filter(o => !(same(o) && o.args.id === a.id));
   return [...queue, op];

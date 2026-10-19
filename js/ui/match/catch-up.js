@@ -38,7 +38,7 @@ function catchUpDraftFrom(match){
 function openCatchUp(){
   const m = state.match;
   if (!m || (m.status !== "opening" && m.status !== "live") || currentInnings(m).complete) return;
-  ui.matchMenu = null; ui.pendingExtra = null; ui.wicketFlow = null; ui.liveScorecard = false;
+  ui.matchMenu = null; ui.pendingExtra = null; resetWicketUi(); ui.liveScorecard = false;
   ui.catchUp = { rev: 0, draft: catchUpDraftFrom(m) };
   render();
 }

@@ -6,7 +6,7 @@
 var state = defaultState();
 function defaultUi(){
   return {
-    pendingExtra: null, wicketFlow: null, runoutRuns: 0, runoutEnd: "striker", runoutAt: null, showFullScorecard: false, liveScorecard: false, scorecard: null, matchDetail: null, statsTab: "mvp", confirm: null, syncSheet: false, matchMenu: null, catchUp: null, squadError: null, pickDismissed: null, awayFromMatch: false, clubRosterLoading: null, clubTournamentLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
+    pendingExtra: null, wicketFlow: null, wicketExtra: null, ballEdit: null, runoutRuns: 0, runoutEnd: "striker", runoutAt: null, showFullScorecard: false, liveScorecard: false, scorecard: null, matchDetail: null, statsTab: "mvp", confirm: null, syncSheet: false, matchMenu: null, catchUp: null, squadError: null, pickDismissed: null, awayFromMatch: false, clubRosterLoading: null, clubTournamentLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
     matchSetupPresetId: null, presetInfo: null,
     tournamentSetupPresetId: null, tournamentSetupTeamIds: [],
     tournamentTab: null, resultEntry: null, sharePreview: null,
@@ -252,8 +252,15 @@ function createTournament({ name, tournamentPresetId, teamIds }){
   return tournament;
 }
 
+/* The archive (and the cloud copy) leaves out the innings' action logs:
+   only the match in progress (state.match) is edited ball by ball. */
+function archivedCopy(match){
+  const copy = JSON.parse(JSON.stringify(match));
+  copy.innings.forEach(inn => { delete inn.log; delete inn.logBase; });
+  return copy;
+}
 function archiveMatch(match){
-  const archived = JSON.parse(JSON.stringify(match));
+  const archived = archivedCopy(match);
   archived.id = genId("match");
   archived.completedAt = Date.now();
   state.matchHistory[archived.id] = archived;

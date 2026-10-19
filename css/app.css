@@ -1176,3 +1176,43 @@ button.primary.small{ width:auto; }
   .stat-num{ color:#0E9F6E !important; }
   .summary-label, .stat-label, .eyebrow{ color:#557566 !important; }
 }
+
+/* --- wicket off a wide / no-ball, swap strike, editing a ball --- */
+.extra-wicket-btn{
+  width:100%; margin-top:10px; min-height:48px; border-radius:var(--radius-md); border:2px solid var(--wicket);
+  background:rgba(255,77,99,.12); color:var(--wicket); font-weight:800;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; padding:8px 12px; box-shadow:var(--shadow-card);
+}
+.extra-wicket-btn .main{ font-size:.92rem; letter-spacing:.02em; }
+.extra-wicket-btn .sub{ font-size:.7rem; font-weight:700; opacity:.8; }
+.freehit-note.extra-note{ background:var(--wicket); color:var(--bg); }
+.matchup-head span:first-child{ display:flex; align-items:center; gap:8px; text-align:left; }
+.swap-strike{
+  display:inline-flex; align-items:center; gap:3px; white-space:nowrap; width:auto; height:22px; min-height:0; margin:0;
+  padding:0 8px; border-radius:6px; border:2px solid var(--line-strong); background:var(--panel-2);
+  color:var(--text); font-size:.66rem; font-weight:800; letter-spacing:.06em; line-height:1; box-shadow:none;
+}
+.swap-strike:active{ border-color:var(--accent-2); color:var(--accent-2); }
+button.chip.chip-edit{ cursor:pointer; color:inherit; font-family:inherit; box-shadow:none; }
+button.chip.chip-edit:not(.wicket):not(.four):not(.six):not(.extra){ color:var(--text); }
+button.chip.chip-edit:hover, button.chip.chip-edit:focus-visible{ outline:2px solid var(--accent-2); outline-offset:1px; }
+.bbb-edit-hint{ color:var(--accent-2); font-weight:700; }
+.ball-edit-who{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0 0 6px; font-size:.82rem; color:var(--muted); }
+.ball-edit-who .chip{ display:inline-flex; }
+.ball-edit-kinds{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:6px 0 4px; }
+.ball-edit-kinds button{
+  min-height:44px; padding:4px; border-radius:var(--radius-md); border:2px solid var(--line-strong); background:var(--panel-2);
+  color:var(--text); font-weight:700; font-size:.84rem; box-shadow:var(--shadow-card);
+}
+.ball-edit-kinds button.active{ background:rgba(var(--accent-2-rgb),.16); border-color:var(--accent-2); color:var(--accent-2); font-weight:800; }
+.ball-edit-modal .section-label{ margin-top:12px; }
+.ball-edit-modal .run-pad.small .run-btn.active{ background:var(--accent-2); color:var(--accent-2-ink); border-color:var(--bg); }
+.ball-edit-need{ margin-top:12px; padding:10px 12px 12px; border:2px solid var(--accent); border-radius:var(--radius-md); background:rgba(var(--accent-rgb),.08); }
+.ball-edit-need .section-label{ margin-top:0; }
+.ball-edit-actions{ display:grid; grid-template-columns:auto 1fr; gap:10px; margin-top:12px; }
+button.ghost.danger-text{ color:var(--danger); border-color:rgba(255,93,112,.5); }
+.ball-edit-diff{ display:flex; align-items:center; gap:10px; font-size:.95rem; }
+.ball-edit-diff .chip{ display:inline-flex; }
+.ball-edit-diff .arrow{ color:var(--muted); font-weight:800; }
+.ball-edit-notes{ margin:6px 0; padding-left:18px; font-size:.86rem; line-height:1.45; }
+@media print{ .bbb-edit-hint{ display:none !important; } }

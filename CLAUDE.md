@@ -31,7 +31,7 @@ of `index.html`:
 | `js/ui/router.js` | page navigation (routes, history, back interception, unsaved-input checks) |
 | `js/ui/menus.js` | sync pill/sheet, side menu |
 | `js/ui/screens/*.js` | `home-account`, `clubs` (+ profiles, player modals), `club-tournaments` (+ team builder), `premier`, `guest` (teams/players/presets/tournaments), `stats` |
-| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `catch-up` (catch up the score), `live`, `result` (+ scorecards, share/export) |
+| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `catch-up` (catch up the score), `edit-ball` (edit/remove an earlier ball), `live`, `result` (+ scorecards, share/export) |
 | `js/ui/render.js` | `render()` |
 | `js/ui/events.js` | the delegated listeners |
 | `js/boot.js` | boot: `load()`, first route + render, `initAuth()`, sync triggers, service worker |
@@ -150,9 +150,24 @@ a run-out. The end-of-over `swapStrike()` still runs afterwards as usual.
 Reset `ui.runoutAt` wherever `runoutEnd` is reset. It does not model
 batsmen crossing. This is a
 deliberate simplification (see README's "Known simplifications"), not
-a bug — don't "fix" it by adding crossing math unless you're prepared to
-also model run-outs off wides/no-balls, which the engine doesn't
-attempt at all right now.
+a bug — don't "fix" it by adding crossing math (it would also have to
+cover run-outs off wides/no-balls, below).
+
+**A wicket can fall on a wide or a no-ball** (`event.extra: "wide"|"noball"`
+on a wicket event). `wicketTypesFor(freeHit, extra)` (ENGINE, tested) is the
+one list of what's allowed — off a wide: stumped, hit wicket, run out; off a
+no-ball or on a free hit: run out only — and both the live wicket sheet and
+the edit sheet read it. Such a ball isn't legal: the base extra plus runs
+completed go to wides (a wide isn't a ball faced) or, for a no-ball, the base
+to no-balls and the runs run to the batter (like any no-ball). All of it is
+charged to the bowler; a stumping/hit wicket off a wide is the bowler's
+wicket, and a no-ball still sets the free hit. The chip is `Wd+W`, `Wd+1+Ro`,
+`Nb+Ro`… (starts with Wd/Nb, so every "is it legal?" display check still
+works); the over event carries `extra` and `off` (runs run) for the
+commentary. UI: the Wide/No ball runs sheet has an "Out on this wide?" button
+→ `ui.wicketExtra` + the wicket sheet; closing it goes back to the runs sheet
+(`ui.pendingExtra` stays). `resetWicketUi()` resets every wicket-sheet field
+— use it instead of resetting `runoutEnd` etc. by hand.
 
 **Wicket events carry an optional `fielder` name**, used for
 `wicketType: 'caught'` and `'runout'` only. It changes the persisted
@@ -203,6 +218,55 @@ over-total is a plain sum.
 matters for the rare case where a boundary that reaches the target and
 an over/innings boundary happen on the same ball — reaching the target
 always wins and ends the match immediately, even mid-over.
+
+## The action log & editing an earlier ball
+
+Every change to an innings goes through a logging engine function, so it can
+be replayed: `openInnings` (openers), `recordBall` (each ball, given a `seq`
+id that its over event also carries), `sendInBatter` (fills whichever slot
+`pendingBatsmanSlot` says), `setBowler`, `swapStrikeByHand` (the live board's
+⇅ Swap / Match options → Swap strike) and `endInnings`. They append to
+`inn.log` via `logAction`, which on its first call stores `inn.logBase` (the
+innings before that action: a fresh innings, or wherever an older match left
+it). **Don't set `inn.striker`/`bowler` or call `ensureBatsman` directly for
+a match in progress** — an unlogged change is lost the next time a ball is
+edited. `fillAnonymousSlots` uses the same functions. `applyCatchUp` drops the
+log (balls before a catch-up can't be edited; the next action re-bases it).
+The archive and the cloud copy leave the logs out (`archivedCopy`); only
+`state.match` is editable. Undo still uses snapshots — the log isn't undo.
+
+`replayMatch(match, { inn, seq, ev | null }, supply)` (ENGINE, tested)
+returns a new match (never touches the input) rebuilt by `replayInnings`:
+- **Batters/bowlers are queues, in the order entered.** Before a ball, empty
+  slots are filled from what was entered so far, else the next later entry
+  is pulled forward, else `supply` (names the UI asked for), else it returns
+  `{ need: { kind: "batter"|"bowler", label, out|last } }`. So an added wicket
+  brings the next batter in earlier; a removed one leaves that batter queued
+  for the next wicket (or, at the end, "no longer comes in", in `notes`).
+- **Who faced each ball is pinned**: when the same two batters are at the
+  crease the other way round from the logged ball, they're put back. Changing
+  a 1 to a 2 doesn't flip who faced every later ball.
+- **Over boundaries come from legal balls** (the engine has no other notion
+  of an over), so a legal ⇄ wide/no-ball change shifts every later over by a
+  ball; a `bowl` entry waits for the over to finish, or is pulled forward.
+  `notes` says so.
+- The innings may end earlier (later balls dropped) or no longer be over
+  (back to live; with a chase already started that's an `error`). A first-
+  innings change moves the target and replays the chase. The status is
+  worked out again (`live`/`innings_break`/`complete` + `matchResult`).
+
+UI (`js/ui/match/edit-ball.js`): ball by ball's chips are `edit-ball` buttons
+when `ballEditAllowed(match)` (`state.match`, not forfeited/result only, not
+away) — from the live scorecard sheet (⋯ → Edit an earlier ball, or the
+innings break's "Full scorecard · fix a ball"; `ui.liveScorecard` now holds the
+status it was opened in, so an innings ending still closes it) or Result's
+full scorecard. `ui.ballEdit` is an overlay sheet (back closes it); the
+fielder lives in the draft, not just the input, since a submitted form isn't
+restored. Saving → `replayMatch` → (ask for a `need` name, retry) → the shared
+confirmation with old/new chip, score and notes → `applyBallEdit` (snapshot
+first). A finished match must stay finished; its `matchHistory` entry is
+replaced in place (same id, `completedAt`) and re-synced — `coalesceOp` now
+replaces a queued `match` op with the newer copy instead of dropping it.
 
 ## Playing conditions are per-match config, not hardcoded
 
@@ -327,7 +391,7 @@ read from; nothing recomputes retroactively if you edit an old match.
 `computeStandings`' NRR follows the standard convention that an
 all-out innings counts its full overs quota (not the fewer overs it
 actually took) — this is a simplification, not a bug, consistent with
-the run-out-crossing and run-out-off-extras simplifications above.
+the run-out-crossing simplification above.
 
 ## Forfeiting a match
 
@@ -561,7 +625,8 @@ It currently covers: end innings, toss restart, forfeit, cancel match,
 remove club player, delete tournament team, discard unsaved team edits,
 move a player between tournament teams, new club player vs guest in the team builder,
 end/reopen a tournament,
-delete guest team/player, delete match/tournament/club presets. **Don't add
+delete guest team/player, delete match/tournament/club presets, change or
+remove an earlier ball. **Don't add
 `window.confirm()` or "tap again to confirm" buttons** — use `askConfirm`.
 The wicket sheet's Confirm button is data entry, not a confirmation, and
 stays as it is. `admin.html` keeps its own typed-confirmation prompts (it's
@@ -581,7 +646,7 @@ be closed (the opening sheet, a busy confirmation) don't move
 
 Re-rendering a sheet that carries `data-keep-scroll="<key>"` (the confirm
 sheet, the team builder, and every in-match sheet: opening, new batsman/
-bowler, wicket, extra runs, match options) keeps its scroll position and adds `.no-anim`, so a
+bowler, wicket, extra runs, match options, ball edit) keeps its scroll position and adds `.no-anim`, so a
 tap inside doesn't jump to the top or replay the slide-up animation. **Give
 any new sheet a `data-keep-scroll` key**, or taps inside it will flicker.
 `render()` also skips the backdrop fade when a sheet was already open
@@ -622,7 +687,7 @@ History rules — these are what make it work on phones:
   (`navReplaceNext`). Home is the first entry, so back at Home exits the app.
 - **Sheets get their own entry** (same URL, `overlay: true`) when opened by a
   tap (`overlayOpen()`: confirm, side menu, sync sheet, player modal, team
-  builder, match options, catch-up sheet, wicket sheet, extra-runs sheet, live scorecard), so back closes them even on the first
+  builder, match options, catch-up sheet, wicket sheet, extra-runs sheet, live scorecard, ball edit), so back closes them even on the first
   entry; closing one by tap pops its entry again. The auto-opened pick sheets
   aren't overlays — `interceptNav` handles them.
 - **Intercepted moves** (`interceptNav`, most specific first): close the top
@@ -1018,10 +1083,8 @@ themselves and grow the sheet (fielder box, and for run-out the
 grid, ending in a Confirm button — still exactly two taps for those two,
 just without a full-screen swap. If you add a type that needs its own
 extra input, follow this pattern (extend the sheet, don't add a new
-screen) and remember to reset any new `ui.*` field everywhere
-`runoutEnd`/`runoutRuns` already get reset (`close-wicket-modal`,
-`handleUndo`, and the runout success path in
-`handleWicketFielderSubmit`) or it'll leak into the next wicket.
+screen) and add any new `ui.*` field to `resetWicketUi()` (sheets.js), which
+every close/undo/success path calls, or it'll leak into the next wicket.
 
 `renderNewBowlerModal()` lists every bowler in `inn.bowling.order` as a
 **one-tap row** (name + figures) via `confirmNewBowler(name)` — shared
@@ -1256,7 +1319,7 @@ is next online. Three pieces, all in the CLOUD section:
   and the tournament overlay also folds this device's archived matches for
   it, so standings count a match scored offline. Pending items render with
   a "not synced" tag.
-- **Offline sign-in.** `sw.js` (cache `cricket-lk-v11`; the page and the app's
+- **Offline sign-in.** `sw.js` (cache `cricket-lk-v12`; the page and the app's
   own `css/`/`js/` files are network-first, refreshing the cache, so a deploy
   never mixes versions) precaches the
   supabase-js CDN script and serves it stale-while-revalidate — keep its URL

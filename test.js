@@ -1251,6 +1251,247 @@ async function main(){
     assert(shown.tournament_preset.endedAt === 9, "a pending end shows as ended before it syncs");
   }
 
+  // --- wickets off a wide / no-ball ---
+  {
+    const fresh = () => {
+      const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+      const inn = currentInnings(m);
+      win.openInnings(inn, "A1", "A2", "B1");
+      m.status = "live";
+      return { m, inn };
+    };
+    assert(win.wicketTypesFor(false, "wide").join() === "stumped,hitwicket,runout", "off a wide: stumped, hit wicket or run out");
+    assert(win.wicketTypesFor(false, "noball").join() === "runout" && win.wicketTypesFor(true, "wide").join() === "runout", "off a no-ball (or on a free hit): run out only");
+    assert(win.wicketTypesFor(false).length === 6, "a fair ball allows every dismissal");
+
+    let { inn } = fresh();
+    recordBall(inn, { kind: "run", runs: 0 });
+    recordBall(inn, { kind: "wicket", wicketType: "stumped", extra: "wide" });
+    assert(inn.legalBalls === 1 && inn.runs === 1 && inn.extras.wides === 1 && inn.wickets === 1, "stumped off a wide: 1 wide, a wicket, and the ball doesn't count");
+    assert(inn.bowling.stats.B1.wickets === 1 && inn.bowling.stats.B1.runs === 1 && inn.bowling.stats.B1.legalBalls === 1, "the bowler gets the wicket and is charged the wide");
+    assert(inn.batting.stats.A1.balls === 1 && inn.batting.stats.A1.out && /^stumped b B1$/.test(inn.batting.stats.A1.howOut) && inn.striker === null, "a wide isn't a ball faced; the striker is out stumped");
+    assert(inn.currentOverEvents[1].display === "Wd+W" && inn.currentOverEvents[1].extra === "wide", "the chip reads Wd+W");
+
+    ({ inn } = fresh());
+    recordBall(inn, { kind: "wicket", wicketType: "runout", extra: "noball", runs: 1, endComingIn: "nonStriker", fielder: "F1" });
+    assert(inn.legalBalls === 0 && inn.runs === 2 && inn.extras.noBalls === 1 && inn.batting.stats.A1.runs === 1 && inn.batting.stats.A1.balls === 1, "run out off a no-ball: 1 no-ball + the run completed (to the batter), not a legal ball");
+    assert(inn.bowling.stats.B1.wickets === 0 && inn.bowling.stats.B1.runs === 2 && inn.freeHit === true, "no wicket for the bowler, both runs against them, and the next ball is a free hit");
+    assert(inn.batting.stats.A2.out && inn.nonStriker === null && inn.currentOverEvents[0].display === "Nb+1+Ro", "the non-striker is out and the chip reads Nb+1+Ro");
+    const c = win.inningsCommentary(inn).filter(l => l.type === "ball");
+    assert(c[0].label === "0.1" && /^No ball, and OUT! Run out/.test(c[0].text), "commentary: the ball is numbered as the next legal one and says no ball, and out");
+
+    ({ inn } = fresh());
+    for (let i = 0; i < 5; i++) recordBall(inn, { kind: "run", runs: 0 });
+    recordBall(inn, { kind: "wicket", wicketType: "runout", extra: "wide", runs: 0, endComingIn: "striker" });
+    assert(inn.legalBalls === 5 && inn.bowler === "B1" && inn.bowling.stats.B1.maidens === 0, "a wicket off a wide on the 6th ball: the over isn't over and it's no maiden");
+  }
+
+  // --- swapping strike by hand ---
+  {
+    const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    const inn = currentInnings(m);
+    win.openInnings(inn, "A1", "A2", "B1");
+    assert(win.swapStrikeByHand(inn) && inn.striker === "A2" && inn.nonStriker === "A1" && inn.log.at(-1).t === "swap", "swap strike: the batters change ends and it's logged");
+    inn.striker = null;
+    assert(!win.swapStrikeByHand(inn) && inn.nonStriker === "A1", "no swap with only one batter in");
+  }
+
+  // --- editing an earlier ball (replayMatch) ---
+  {
+    const setup = (opts) => {
+      const m = createMatch(Object.assign({ teamA: "Lions", teamB: "Tigers", oversLimit: 2, playersPerSide: 4, battingFirst: "A" }, opts || {}));
+      const inn = currentInnings(m);
+      win.openInnings(inn, "A1", "A2", "B1");
+      m.status = "live";
+      return { m, inn };
+    };
+    const seqOf = (inn, n) => inn.log.filter(a => a.t === "ball")[n].ev.seq;
+    const play = (m, ev) => { recordBall(currentInnings(m), ev); afterBall(m); };
+
+    // 0.1 dot, 0.2 single, 0.3 four -- change the single to a three
+    let { m, inn } = setup();
+    play(m, { kind: "run", runs: 0 }); play(m, { kind: "run", runs: 1 }); play(m, { kind: "run", runs: 4 });
+    const beforeJson = JSON.stringify(m);
+    let r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 1), ev: { kind: "run", runs: 3 } });
+    let ni = r.match && r.match.innings[0];
+    assert(JSON.stringify(m) === beforeJson, "replayMatch never touches the match it's given");
+    assert(ni.runs === 7 && ni.batting.stats.A1.runs === 3 && ni.batting.stats.A2.runs === 4, "1 -> 3: the total moves by 2 and each later ball stays with the batter who faced it");
+    assert(ni.currentOverEvents.map(e => e.display).join() === "0,3,4" && ni.currentOverEvents[1].seq === seqOf(inn, 1), "the over reads 0 3 4 and the ball keeps its id");
+
+    // dot -> wicket: the next batter comes in a ball earlier, and the one after is asked for
+    ({ m, inn } = setup());
+    play(m, { kind: "run", runs: 0 });
+    play(m, { kind: "run", runs: 0 });
+    play(m, { kind: "wicket", wicketType: "bowled" });
+    win.sendInBatter(inn, "A3");
+    play(m, { kind: "run", runs: 2 });
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 0), ev: { kind: "wicket", wicketType: "lbw" } });
+    assert(r.need && r.need.kind === "batter" && r.need.label === "0.4" && r.need.out === "A3", "a new wicket at 0.1: A3 comes in for 0.2, and after A3 is bowled at 0.3 the app asks who faced 0.4");
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 0), ev: { kind: "wicket", wicketType: "lbw" } }, { batters: ["A4"] });
+    ni = r.match.innings[0];
+    assert(ni.wickets === 2 && ni.batting.order.join() === "A1,A2,A3,A4" && ni.batting.stats.A4.runs === 2 && ni.batting.stats.A1.howOut === "lbw b B1" && ni.batting.stats.A3.balls === 2, "with A4 named: A1 lbw, A3 faced 0.2-0.3 and was bowled, A4 scored the 2");
+    assert(ni.fallOfWickets.map(f => f.batsman).join() === "A1,A3", "fall of wickets follows the new order");
+
+    // wicket -> dot: the batter who came in now comes in at the next wicket (or not at all)
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 2), ev: { kind: "run", runs: 0 } });
+    ni = r.match.innings[0];
+    assert(ni.wickets === 0 && !ni.batting.order.includes("A3") && ni.batting.stats.A1.runs === 2 && r.notes.some(t => /A3 no longer comes in/.test(t)), "removing the wicket: A1 bats on (and gets the 2), A3 no longer comes in");
+    // removing a ball altogether
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 0), ev: null });
+    assert(r.match.innings[0].legalBalls === 3 && r.match.innings[0].wickets === 1, "a ball can be removed");
+
+    // legal -> wide moves the over: the next bowler starts a ball later
+    ({ m, inn } = setup());
+    for (let i = 0; i < 6; i++) play(m, { kind: "run", runs: 0 });
+    win.setBowler(inn, "B2");
+    play(m, { kind: "run", runs: 1 });
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 2), ev: { kind: "wide", runs: 0 } });
+    ni = r.match.innings[0];
+    assert(ni.bowling.stats.B1.legalBalls === 6 && ni.bowling.stats.B1.runs === 2 && ni.legalBalls === 6, "a dot made a wide: B1's over takes the next ball too");
+    assert(ni.bowler === "B2" && !ni.bowling.stats.B2.legalBalls && r.notes.some(t => /every later over moves/.test(t)), "and B2 starts the next over instead (the scorer is told the overs moved)");
+    // wide -> legal moves it the other way, and the bowler is taken from the log
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 2), ev: { kind: "run", runs: 0 } });
+    assert(r.match && r.match.innings[0].legalBalls === 7, "editing a ball to the same kind of legal ball changes nothing else");
+
+    // the last wicket now falls earlier: the innings ends and later balls go
+    ({ m, inn } = setup({ playersPerSide: 2 }));
+    play(m, { kind: "run", runs: 4 });
+    play(m, { kind: "run", runs: 0 });
+    play(m, { kind: "wicket", wicketType: "bowled" });
+    assert(m.status === "innings_break", "(setup) all out at 0.3");
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 1), ev: { kind: "wicket", wicketType: "caught", fielder: "B9" } });
+    assert(r.match.status === "innings_break" && r.match.innings[0].legalBalls === 2 && r.notes.some(t => /1 later ball is removed/.test(t)), "a wicket two balls earlier ends the innings there");
+    // and the reverse: un-doing the last wicket goes back to live scoring
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 2), ev: { kind: "run", runs: 1 } });
+    assert(r.match.status === "live" && !r.match.innings[0].complete && r.match.innings[0].runs === 5, "removing the last wicket: the innings isn't over, back to live");
+
+    // editing the first innings during the chase moves the target
+    ({ m, inn } = setup({ oversLimit: 1 }));
+    for (let i = 0; i < 6; i++) play(m, { kind: "run", runs: 1 });
+    startSecondInnings(m);
+    const i2 = currentInnings(m);
+    win.openInnings(i2, "B1", "B2", "A1"); m.status = "live";
+    play(m, { kind: "run", runs: 6 });
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 0), ev: { kind: "run", runs: 6 } });
+    assert(r.match.innings[0].runs === 11 && r.match.innings[1].target === 12 && r.match.innings[1].runs === 6 && r.match.status === "live" && r.notes.some(t => /need 12/.test(t)), "a first-innings edit mid-chase: target 7 -> 12, the chase replays");
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 0), ev: { kind: "run", runs: 0 } });
+    assert(r.match.innings[1].target === 6 && r.match.status === "complete" && /won/.test(r.match.result), "a lower target the chase has already passed ends the match");
+
+    // a wide made legal: the over ends a ball sooner and the next bowler comes on earlier
+    ({ m, inn } = setup());
+    for (let i = 0; i < 5; i++) play(m, { kind: "run", runs: 0 });
+    play(m, { kind: "wide", runs: 0 });
+    play(m, { kind: "run", runs: 0 });
+    win.setBowler(inn, "B2");
+    play(m, { kind: "run", runs: 0 });
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 5), ev: { kind: "run", runs: 0 } });
+    assert(r.match && r.match.innings[0].bowling.stats.B1.legalBalls === 6 && r.match.innings[0].bowling.stats.B2.legalBalls === 2, "a wide made a dot: B2 starts the next over a ball earlier");
+
+    // catch-up: balls before it can't be edited
+    ({ m, inn } = setup());
+    play(m, { kind: "run", runs: 1 });
+    const firstSeq = seqOf(inn, 0);
+    win.applyCatchUp(m, { runs: 10, wickets: 0, balls: 3, extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0 },
+      batters: [{ name: "A1", status: "nonStriker", runs: null, balls: null }, { name: "A2", status: "striker", runs: null, balls: null }],
+      bowlers: [], bowlerNow: "B1" });
+    assert(!win.editableBall(m, 0, firstSeq) && win.replayMatch(m, { inn: 0, seq: firstSeq, ev: { kind: "run", runs: 2 } }).error, "balls before a catch-up can't be edited");
+    play(m, { kind: "run", runs: 2 });
+    r = win.replayMatch(m, { inn: 0, seq: m.innings[0].log.find(a => a.t === "ball").ev.seq, ev: { kind: "run", runs: 4 } });
+    assert(r.match && r.match.innings[0].runs === 14, "balls after it can (from the caught-up score)");
+
+    // "no names": placeholders are made up again
+    ({ m, inn } = setup({ anonymous: true }));
+    m.anonymous = true; m.innings[0] = win.createInnings("A", "B", null, 4, 2, {}); m.status = "opening";
+    win.fillAnonymousSlots(m);
+    play(m, { kind: "run", runs: 0 }); play(m, { kind: "run", runs: 0 });
+    r = win.replayMatch(m, { inn: 0, seq: currentInnings(m).log.find(a => a.t === "ball").ev.seq, ev: { kind: "wicket", wicketType: "bowled" } });
+    assert(r.match && r.match.innings[0].batting.order.join() === "Batter 1,Batter 2,Batter 3" && r.match.innings[0].striker === "Batter 3", "no names: a new wicket brings in the next placeholder");
+
+    // the archive leaves the logs out; a re-synced match replaces the queued copy
+    const arch = win.archivedCopy(m);
+    assert(!arch.innings[0].log && !arch.innings[0].logBase && m.innings[0].log, "the archived copy has no action log (the live match keeps it)");
+    const op = (args) => ({ id: Math.random().toString(36), kind: "match", args, userId: "u1", createdAt: 1, failed: false });
+    let q = win.coalesceOp([], op({ id: "M", data: { v: 1 } }));
+    q = win.coalesceOp(q, op({ id: "M", data: { v: 2 } }));
+    assert(q.length === 1 && q[0].args.data.v === 2, "an edited match replaces its queued upload");
+  }
+
+  // --- UI: out on a wide, swap strike, edit a ball from ball by ball ---
+  {
+    const doc = win.document;
+    win.eval(`
+      ui = defaultUi(); state.snapshots = [];
+      state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+      openInnings(currentInnings(state.match), "Kusal", "Pathum", "Wanindu");
+      state.match.status = "live"; render();`);
+    const inn = () => win.eval("currentInnings(state.match)");
+    doc.querySelector('#app [data-action="swap-strike"]').click();
+    assert(inn().striker === "Pathum" && win.eval("state.snapshots.length") === 1, "⇅ Swap on the live board swaps strike (undoable)");
+    doc.querySelector('#app [data-action="undo"]').click();
+    assert(inn().striker === "Kusal", "Undo puts them back");
+
+    doc.querySelector('#app [data-action="toggle-extra"][data-extra="wide"]').click();
+    doc.querySelector('#modal-root [data-action="wicket-on-extra"]').click();
+    const types = [...doc.querySelectorAll('#modal-root [data-action="pick-wicket"]')].map(b => b.dataset.type);
+    assert(types.join() === "stumped,hitwicket,runout" && /Off a wide/.test(doc.getElementById("modal-root").textContent), "'Out on this wide?' opens the wicket sheet with stumped / hit wicket / run out");
+    doc.querySelector('#modal-root [data-action="close-wicket-modal"]').click();
+    assert(doc.querySelector("#modal-root .extra-runs-modal"), "back goes to the wide's runs sheet");
+    doc.querySelector('#modal-root [data-action="wicket-on-extra"]').click();
+    doc.querySelector('#modal-root [data-action="pick-wicket"][data-type="stumped"]').click();
+    assert(inn().extras.wides === 1 && inn().wickets === 1 && inn().legalBalls === 0 && !doc.querySelector("#modal-root .extra-runs-modal") && doc.querySelector("#modal-root form#new-batsman-form"), "stumped off a wide is recorded; the next sheet asks for the new batter");
+    win.eval(`submitNewBatsman("Charith", null); for (let i = 0; i < 3; i++) handleBallClick(1);`);
+    assert(inn().runs === 4, "(three singles)");
+
+    win.eval(`ui.matchMenu = "menu"; render();`);
+    doc.querySelector('#modal-root [data-action="open-edit-balls"]').click();
+    const chips = [...doc.querySelectorAll('#modal-root [data-action="edit-ball"]')];
+    assert(chips.length === 4 && chips[1].dataset.label === "0.1" && chips[3].dataset.label === "0.3", "Match options → Edit opens ball by ball; every ball is a button labelled with its number");
+    chips[2].click();
+    const sheet = () => doc.querySelector("#modal-root .ball-edit-modal");
+    assert(sheet() && /Edit ball 0.2/.test(sheet().textContent), "tapping a ball opens its edit sheet");
+    sheet().querySelector('[data-field="runs"][data-value="4"]').click();
+    doc.getElementById("ball-edit-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    const confirm = doc.querySelector("#confirm-root");
+    assert(/Change ball 0.2/.test(confirm.textContent) && /4-1 \(0\.3\) → 7-1 \(0\.3\)/.test(confirm.textContent), "review shows the old and new score");
+    confirm.querySelector('[data-action="confirm-ok"]').click();
+    assert(inn().runs === 7 && !sheet() && doc.querySelector("#modal-root .scorecard-modal"), "saved: the score is 7 and the scorecard is back");
+    doc.querySelector('#modal-root [data-action="close-live-scorecard"]').click();
+    doc.querySelector('#app [data-action="undo"]').click();
+    assert(inn().runs === 4, "Undo brings the old ball back");
+    win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); save(); render();`);
+  }
+
+  // --- UI: a finished match can be fixed from its Result screen (and stays finished) ---
+  {
+    const doc = win.document;
+    win.eval(`
+      ui = defaultUi(); state.snapshots = [];
+      state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 1, playersPerSide: 11, battingFirst: "A" });
+      { const m = state.match;
+        openInnings(currentInnings(m), "Kusal", "Pathum", "Wanindu"); m.status = "live";
+        for (let i = 0; i < 6; i++) handleBallClick(1);
+        startSecondInnings(m); openInnings(currentInnings(m), "Babar", "Rizwan", "Dushmantha"); m.status = "live";
+        for (let i = 0; i < 6; i++) handleBallClick(i === 5 ? 0 : 1);
+      }
+      ui.showFullScorecard = true; ui.scorecard = { inn: 1, mode: "balls" }; render();`);
+    const id = win.eval("state.match.archivedId");
+    assert(win.eval("state.match.status") === "complete" && /Lions won by 1 run/.test(win.eval("state.match.result")), "(setup) Lions won by 1 run");
+    doc.querySelector('#app [data-action="edit-ball"][data-label="0.6"]').click();
+    const sheet = () => doc.querySelector("#modal-root .ball-edit-modal");
+    sheet().querySelector('[data-field="kind"][data-value="wide"]').click();
+    doc.getElementById("ball-edit-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(!doc.querySelector("#confirm-root .modal") && /isn't over any more/.test(sheet().textContent), "a change that would reopen a finished match is refused, with the reason");
+    doc.querySelector('#modal-root [data-action="close-ball-edit"]').click();
+    doc.querySelector('#app [data-action="edit-ball"][data-label="0.6"]').click();
+    doc.querySelector('#modal-root [data-field="runs"][data-value="2"]').click();
+    doc.getElementById("ball-edit-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(/Result: Tigers won/.test(doc.querySelector("#confirm-root").textContent), "a change that keeps it finished goes to review, showing the new result");
+    doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    assert(win.eval("state.match.archivedId") === id && /Tigers won/.test(win.eval(`state.matchHistory["${id}"].result`)) && win.eval(`state.matchHistory["${id}"].innings[1].runs`) === 7, "saved: the archived match (same id) has the new score and result");
+    assert(win.eval(`!state.matchHistory["${id}"].innings[0].log`), "the archive still has no action log");
+    win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); save(); render();`);
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }

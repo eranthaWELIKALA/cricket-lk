@@ -111,14 +111,24 @@ function checkInningsComplete(inn){
    defaults to `endComingIn`). The new batter comes in at `outEnd` and the
    survivor stands at the other end -- the scorer says where everyone is,
    no crossing math. Runs completed don't rotate strike on a run-out.
-   A wicket is always recorded as happening on a legal delivery — run-outs
-   off a wide/no-ball are a known simplification, not modelled here.
+   A wicket can also fall on a wide or a no-ball: `extra: "wide"|"noball"`
+   on a wicket event (see wicketTypesFor for which dismissals). The ball is
+   then not a legal delivery: the extra's own run(s) plus any runs completed
+   go to wides/no-balls (a no-ball's runs run go to the batter, as on any
+   no-ball) and against the bowler, a wide isn't a ball faced, and a no-ball
+   still brings a free hit.
    `fielder` is optional on wicketType 'caught'/'runout' and credits a
-   fielding-side player with a catch/run-out for stats/MVP purposes. */
+   fielding-side player with a catch/run-out for stats/MVP purposes.
+   Every ball is also written to the innings' action log (logAction) with a
+   `seq` id, so an earlier ball can be edited later (replayMatch). */
 function recordBall(inn, event){
+  if (event.seq == null) event = Object.assign({}, event, { seq: (inn.nextSeq = (inn.nextSeq || 0) + 1) });
+  else inn.nextSeq = Math.max(inn.nextSeq || 0, event.seq);
+  logAction(inn, { t: "ball", ev: event, striker: inn.striker, nonStriker: inn.nonStriker, bowler: inn.bowler });
   const bat = inn.batting.stats;
   const bwl = inn.bowling.stats[inn.bowler];
-  const legal = event.kind !== "wide" && event.kind !== "noball";
+  const extra = event.kind === "wicket" && (event.extra === "wide" || event.extra === "noball") ? event.extra : null;
+  const legal = event.kind !== "wide" && event.kind !== "noball" && !extra;
   let ballRuns = 0, display = "", rotate = false, outName;
   // Who faced and whether it was a free hit, read before anything moves --
   // the commentary (inningsCommentary) needs them, the scoring doesn't.
@@ -155,10 +165,17 @@ function recordBall(inn, event){
     rotate = ballRuns % 2 === 1;
     display = (event.kind === "bye" ? "B" : "Lb") + ballRuns;
   } else if (event.kind === "wicket"){
+    const base = extra === "wide" ? inn.wideBaseRuns : extra === "noball" ? inn.noBallBaseRuns : 0;
+    const tag = extra === "wide" ? "Wd+" : extra === "noball" ? "Nb+" : "";
     if (event.wicketType === "runout"){
-      ballRuns = event.runs || 0;
-      bat[inn.striker].runs += ballRuns;
-      bat[inn.striker].balls += 1;
+      const ran = event.runs || 0;
+      ballRuns = base + ran;
+      if (extra === "wide") inn.extras.wides += ballRuns;
+      else {
+        if (extra === "noball") inn.extras.noBalls += base;
+        bat[inn.striker].runs += ran;
+        bat[inn.striker].balls += 1;
+      }
       outName = inn[event.endComingIn];
       const survivor = event.endComingIn === "striker" ? inn.nonStriker : inn.striker;
       const outEnd = event.outEnd || event.endComingIn;
@@ -168,10 +185,13 @@ function recordBall(inn, event){
       inn[outEnd] = null;
       inn[outEnd === "striker" ? "nonStriker" : "striker"] = survivor;
       if (event.fielder){ ensureFielder(inn, event.fielder); inn.fielding.stats[event.fielder].runouts += 1; }
-      display = ballRuns ? `${ballRuns}+Ro` : "Ro";
+      display = tag + (ran ? `${ran}+Ro` : "Ro");
     } else {
+      ballRuns = base;
+      if (extra === "wide") inn.extras.wides += base;
+      if (extra === "noball") inn.extras.noBalls += base;
       outName = inn.striker;
-      bat[inn.striker].balls += 1;
+      if (extra !== "wide") bat[inn.striker].balls += 1;
       bat[inn.striker].out = true;
       bat[inn.striker].howOut = (event.wicketType === "caught" && event.fielder)
         ? `c ${event.fielder} b ${inn.bowler}`
@@ -180,7 +200,7 @@ function recordBall(inn, event){
       inn.wickets += 1;
       inn.striker = null;
       if (event.wicketType === "caught" && event.fielder){ ensureFielder(inn, event.fielder); inn.fielding.stats[event.fielder].catches += 1; }
-      display = "W";
+      display = tag + "W";
     }
   }
 
@@ -197,17 +217,19 @@ function recordBall(inn, event){
   // `runs` here is per-ball runs (bat + extras, whatever this event was
   // worth) -- the live-scoring screen's over-total sums this per row.
   // kind/batter/wicket fields only feed the commentary.
-  const ev = { display, isWicket: event.kind === "wicket", runs: ballRuns, kind: event.kind, batter };
+  // `seq` ties the chip back to its log entry (ball by ball's edit button).
+  const ev = { display, isWicket: event.kind === "wicket", runs: ballRuns, kind: event.kind, batter, seq: event.seq };
   if (freeHit) ev.freeHit = true;
   if (event.kind === "wicket"){
     const o = bat[outName];
     Object.assign(ev, { wicketType: event.wicketType, outName, howOut: o.howOut, outRuns: o.runs, outBalls: o.balls });
     if (event.fielder) ev.fielder = event.fielder;
+    if (extra){ ev.extra = extra; ev.off = event.wicketType === "runout" ? (event.runs || 0) : 0; }
   }
   inn.currentOverEvents.push(ev);
 
   if (legal) inn.freeHit = false;
-  if (event.kind === "noball" && inn.freeHitOnNoBall) inn.freeHit = true;
+  if ((event.kind === "noball" || extra === "noball") && inn.freeHitOnNoBall) inn.freeHit = true;
   if (rotate) swapStrike(inn);
 
   checkInningsComplete(inn);
@@ -242,9 +264,248 @@ function recordBall(inn, event){
 function endInnings(match){
   const inn = currentInnings(match);
   if (inn.complete) return;
+  logAction(inn, { t: "end" });
   inn.complete = true;
   inn.completeReason = "closed";
   afterBall(match);
+}
+
+/* Which dismissals a delivery allows. On a free hit only a run out (the
+   striker can't be bowled, caught, lbw, stumped or out hit wicket); off a
+   no-ball the same; off a wide, stumped, hit wicket or run out. */
+const WICKET_TYPES = ["bowled", "caught", "lbw", "stumped", "hitwicket", "runout"];
+function wicketTypesFor(freeHit, extra){
+  if (extra === "noball" || freeHit) return ["runout"];
+  if (extra === "wide") return ["stumped", "hitwicket", "runout"];
+  return WICKET_TYPES.slice();
+}
+
+/* --- the innings action log & editing an earlier ball ---
+   Every change to an innings is written to `inn.log`, in order: the openers
+   ({t:"open"}), each ball ({t:"ball", ev, striker, nonStriker, bowler}: the
+   event recordBall got, with its `seq` id, and who was where), each new
+   batter ({t:"bat", name}) and bowler ({t:"bowl", name}), a strike swap by
+   hand ({t:"swap"}) and closing the innings ({t:"end"}). `inn.logBase` is
+   the innings as it was before the first logged action: a fresh innings,
+   or wherever an older match / a catch-up left it (balls before that can't
+   be edited). replayMatch rebuilds an innings from its base by running the
+   log again with one ball changed or removed. Undo still uses snapshots. */
+function logAction(inn, a){
+  if (!inn.log){
+    const base = Object.assign({}, inn);
+    delete base.log; delete base.logBase;
+    inn.logBase = JSON.parse(JSON.stringify(base));
+    inn.log = [];
+  }
+  inn.log.push(JSON.parse(JSON.stringify(a)));
+}
+function openInnings(inn, striker, nonStriker, bowler){
+  logAction(inn, { t: "open", striker, nonStriker, bowler });
+  ensureBatsman(inn, striker); ensureBatsman(inn, nonStriker); ensureBowler(inn, bowler);
+  inn.striker = striker; inn.nonStriker = nonStriker; inn.bowler = bowler;
+}
+// The batter goes into whichever slot is empty (pendingBatsmanSlot).
+function sendInBatter(inn, name){
+  const slot = pendingBatsmanSlot(inn);
+  if (!slot) return;
+  logAction(inn, { t: "bat", name });
+  ensureBatsman(inn, name);
+  inn[slot] = name;
+}
+function setBowler(inn, name){
+  logAction(inn, { t: "bowl", name });
+  ensureBowler(inn, name);
+  inn.bowler = name;
+}
+/* The scorer says the batters are the other way round (a missed single, a
+   short run, or the umpire's call). Nothing else changes. */
+function canSwapStrike(inn){
+  return !!(inn && !inn.complete && inn.striker && inn.nonStriker);
+}
+function swapStrikeByHand(inn){
+  if (!canSwapStrike(inn)) return false;
+  logAction(inn, { t: "swap" });
+  swapStrike(inn);
+  return true;
+}
+
+/* "4.3": the over and ball number of the delivery about to be bowled. */
+function nextBallLabel(inn){
+  const bpo = inn.ballsPerOver || 6;
+  return `${Math.floor(inn.legalBalls / bpo)}.${inn.legalBalls % bpo + 1}`;
+}
+function isLegalEvent(ev){
+  return ev.kind !== "wide" && ev.kind !== "noball" && !(ev.kind === "wicket" && ev.extra);
+}
+
+/* Is ball `seq` of innings `idx` editable? Only balls in the log (not ones
+   from before a catch-up or from an app version without the log), only in
+   a match that wasn't forfeited or entered as a result only. */
+function editableBall(match, idx, seq){
+  const inn = match && !match.forfeited && !match.resultOnly && match.innings[idx];
+  if (!inn || !inn.log) return null;
+  return inn.log.find(a => a.t === "ball" && a.ev.seq === seq) || null;
+}
+
+/* Runs an innings' log again from its base. Batters and bowlers are taken
+   in the order they were entered, as the slots open up -- so if the change
+   adds a wicket, the next batter comes in earlier (and the last one is
+   asked for), and if it removes one, that batter comes in at the next
+   wicket instead. Who was on strike for each later ball stays as it was
+   recorded. A wide/no-ball that becomes a legal ball (or back) moves every
+   later over by one ball. Returns { inn, notes } or { need } (a name that
+   isn't in the log: `supply` gives them) or { error }. */
+function replayInnings(inn, actions, supply, anonymous){
+  const r = JSON.parse(JSON.stringify(inn.logBase));
+  r.logBase = inn.logBase; r.log = [];
+  const bpo = r.ballsPerOver || 6;
+  const notes = [];
+  const batQ = [], bowlQ = [], used = new Set(), skippedBatters = [];
+  let droppedBalls = 0;
+  const lc = n => (n || "").toLowerCase();
+  const ahead = (i, t) => {
+    for (let j = i + 1; j < actions.length; j++){
+      if (!used.has(j) && actions[j].t === t){ used.add(j); return actions[j].name; }
+    }
+    return null;
+  };
+  const batterError = name => {
+    const known = r.batting.order.find(n => lc(n) === lc(name));
+    if (known && (r.batting.stats[known].out || known === r.striker || known === r.nonStriker)) return `${known} is already out or batting.`;
+    return null;
+  };
+  // Fill the empty slots from what was entered (in order). `now`: a ball is
+  // about to be bowled, so a later entry or a supplied name may be used.
+  const fill = (i, now) => {
+    let slot;
+    while ((slot = pendingBatsmanSlot(r))){
+      let name = batQ.length ? batQ.shift() : null;
+      if (!name && now) name = anonymous ? `Batter ${r.batting.order.length + 1}` : (ahead(i, "bat") || supply.batters.shift() || null);
+      if (!name) break;
+      const err = batterError(name);
+      if (err) return { error: err };
+      sendInBatter(r, name);
+    }
+    if (!r.bowler && !r.complete && (r.striker || r.nonStriker)){
+      let name = bowlQ.length ? bowlQ.shift() : null;
+      if (!name && now) name = anonymous ? `Over ${Math.floor(r.legalBalls / bpo) + 1}` : (ahead(i, "bowl") || supply.bowlers.shift() || null);
+      if (name){
+        if (r.lastOverBowler && lc(name) === lc(r.lastOverBowler)) return { error: `${name} would bowl two overs in a row (from ball ${nextBallLabel(r)}).` };
+        setBowler(r, name);
+      }
+    }
+    return null;
+  };
+  for (let i = 0; i < actions.length; i++){
+    if (used.has(i)) continue;
+    const a = actions[i];
+    if (a.t === "open"){
+      openInnings(r, a.striker, a.nonStriker, a.bowler);
+    } else if (a.t === "bat"){
+      if (anonymous) continue;
+      if (r.complete){ skippedBatters.push(a.name); continue; }
+      batQ.push(a.name);
+      const res = fill(i, false); if (res) return res;
+    } else if (a.t === "bowl"){
+      if (anonymous || r.complete) continue;
+      bowlQ.push(a.name);
+      const res = fill(i, false); if (res) return res;
+    } else if (a.t === "swap"){
+      swapStrikeByHand(r);
+    } else if (a.t === "end"){
+      if (!r.complete){ logAction(r, { t: "end" }); r.complete = true; r.completeReason = "closed"; }
+    } else if (a.t === "ball"){
+      if (r.complete){ droppedBalls++; continue; }
+      const res = fill(i, true); if (res) return res;
+      if (pendingBatsmanSlot(r)){
+        const fow = r.fallOfWickets[r.fallOfWickets.length - 1];
+        return { need: { kind: "batter", label: nextBallLabel(r), out: fow ? fow.batsman : null } };
+      }
+      if (!r.bowler) return { need: { kind: "bowler", label: nextBallLabel(r), last: r.lastOverBowler } };
+      // The same two batters, the other way round from what was recorded:
+      // keep them where the scorer had them for this ball.
+      if (a.striker && a.nonStriker && r.striker === a.nonStriker && r.nonStriker === a.striker) swapStrike(r);
+      const ev = a.ev;
+      if (ev.kind === "wicket" && ev.wicketType === "runout" && !r[ev.endComingIn]){
+        return { error: `Ball ${nextBallLabel(r)} is a run out at a crease nobody is batting at any more.` };
+      }
+      if (ev.kind === "wicket" && !wicketTypesFor(r.freeHit, ev.extra).includes(ev.wicketType)){
+        notes.push(`Ball ${nextBallLabel(r)} is now a free hit, so it couldn't have been ${(DISMISSAL_WORDS[ev.wicketType] || "that dismissal").toLowerCase()}. Check it.`);
+      }
+      recordBall(r, ev);
+    }
+  }
+  const res = fill(actions.length, false); if (res) return res;
+  skippedBatters.push(...batQ);
+  r.nextSeq = Math.max(inn.nextSeq || 0, r.nextSeq || 0);
+  if (droppedBalls) notes.push(`The innings now ends earlier: ${droppedBalls} later ball${droppedBalls === 1 ? " is" : "s are"} removed.`);
+  if (skippedBatters.length) notes.push(`${skippedBatters.join(", ")} no longer come${skippedBatters.length === 1 ? "s" : ""} in to bat.`);
+  return { inn: r, notes };
+}
+
+/* The match with one ball changed: change = { inn: index, seq, ev } (ev =
+   the new recordBall event; null removes the ball). Later innings are run
+   again too when the target moves. `supply` = { batters: [], bowlers: [] }:
+   names for slots the log can't fill (see replayInnings' `need`). Returns
+   { match, notes } -- a new object, the input isn't touched -- or { need }
+   / { error }. The status follows the innings: an innings that is no longer
+   over goes back to live, a chase that now gets there ends the match. */
+function replayMatch(match, change, supply){
+  const m = JSON.parse(JSON.stringify(match));
+  const sup = { batters: [...((supply && supply.batters) || [])], bowlers: [...((supply && supply.bowlers) || [])] };
+  const notes = [];
+  if (!editableBall(m, change.inn, change.seq)) return { error: "This ball can't be edited." };
+  for (let idx = change.inn; idx < m.innings.length; idx++){
+    const inn = m.innings[idx];
+    let actions = inn.log || [];
+    if (idx === change.inn){
+      actions = actions.slice();
+      const at = actions.findIndex(a => a.t === "ball" && a.ev.seq === change.seq);
+      if (change.ev){
+        const old = actions[at].ev;
+        actions[at] = Object.assign({}, actions[at], { ev: Object.assign({}, change.ev, { seq: change.seq }) });
+        if (isLegalEvent(old) !== isLegalEvent(change.ev) && actions.slice(at + 1).some(a => a.t === "ball")){
+          notes.push(`This ${isLegalEvent(change.ev) ? "is now a legal ball" : "is no longer a legal ball"}, so every later over moves by one ball.`);
+        }
+      } else {
+        if (isLegalEvent(actions[at].ev) && actions.slice(at + 1).some(a => a.t === "ball")) notes.push("Removing a legal ball moves every later over by one ball.");
+        actions.splice(at, 1);
+      }
+    } else {
+      const target = m.innings[0].runs + 1;
+      if (inn.target === target) break;
+      notes.push(`${teamName(m, inn.battingTeam)} now need ${target} to win.`);
+      if (!inn.log){
+        if (inn.batting.order.length || inn.legalBalls) return { error: "The chase was started before balls could be edited, so the target can't change." };
+        inn.target = target;
+        continue;
+      }
+      inn.logBase.target = target;
+    }
+    const res = replayInnings(inn, actions, sup, !!m.anonymous);
+    if (res.need) return { need: Object.assign(res.need, { inn: idx }) };
+    if (res.error) return { error: res.error };
+    m.innings[idx] = res.inn;
+    notes.push(...res.notes);
+    if (idx === 0 && m.innings.length > 1 && !res.inn.complete){
+      const i2 = m.innings[1];
+      if (i2.batting.order.length || i2.legalBalls || (i2.log && i2.log.length)) {
+        return { error: "That would mean the first innings isn't over, but the chase has already started." };
+      }
+      m.innings.length = 1;
+      notes.push("The first innings isn't over any more, so scoring goes back to it.");
+      break;
+    }
+  }
+  const last = currentInnings(m);
+  if (last.complete){
+    if (m.innings.length === 1){ m.status = "innings_break"; m.result = null; }
+    else { m.status = "complete"; m.result = matchResult(m); }
+  } else {
+    m.status = last.batting.order.length ? "live" : "opening";
+    m.result = null;
+  }
+  return { match: m, notes };
 }
 
 function createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst, ballsPerOver, wideRuns, noBallRuns, wideEnabled, noBallEnabled, freeHitOnNoBall, lastManStands, requireFielderOnCatch, requireFielderOnRunout, presetId, presetName, tournamentId, tossWinner }){
@@ -914,14 +1175,9 @@ function fillAnonymousSlots(match){
   const inn = currentInnings(match);
   if (inn.complete) return false;
   let changed = false;
-  const bat = slot => { const n = `Batter ${inn.batting.order.length + 1}`; ensureBatsman(inn, n); inn[slot] = n; changed = true; };
   if (match.status === "opening"){ match.status = "live"; changed = true; }
-  let slot;
-  while ((slot = pendingBatsmanSlot(inn))) bat(slot);
-  if (!inn.bowler){
-    const n = `Over ${Math.floor(inn.legalBalls / inn.ballsPerOver) + 1}`;
-    ensureBowler(inn, n); inn.bowler = n; changed = true;
-  }
+  while (pendingBatsmanSlot(inn)){ sendInBatter(inn, `Batter ${inn.batting.order.length + 1}`); changed = true; }
+  if (!inn.bowler){ setBowler(inn, `Over ${Math.floor(inn.legalBalls / inn.ballsPerOver) + 1}`); changed = true; }
   return changed;
 }
 
@@ -1216,6 +1472,8 @@ function applyCatchUp(match, data){
   if (!inn.complete && data.finished){ inn.complete = true; inn.completeReason = "closed"; }
   if (!inn.complete && battingAlone(inn)){ inn.striker = inn.striker || inn.nonStriker; inn.nonStriker = null; }
   match.caughtUp = true;
+  // Balls before a catch-up can't be edited: the log starts again from here.
+  delete inn.log; delete inn.logBase;
   if (match.status === "opening") match.status = "live";
   afterBall(match);
 }
@@ -1243,7 +1501,7 @@ function catchUpUnattributed(inn){
 function commentaryEvent(ev){
   const d = ev.display || "";
   const off = Number((d.match(/^(?:Wd|Nb)\+(\d+)/) || [])[1] || 0);
-  if (ev.kind) return { kind: ev.kind, off, wicketType: ev.wicketType };
+  if (ev.kind) return { kind: ev.kind, off: ev.extra ? ev.off || 0 : off, wicketType: ev.wicketType, extra: ev.extra };
   if (/Ro$/.test(d)) return { kind: "wicket", wicketType: "runout", off: 0 };
   if (d === "W") return { kind: "wicket", wicketType: null, off: 0 };
   if (/^Wd/.test(d)) return { kind: "wide", off };
@@ -1286,7 +1544,7 @@ function inningsCommentary(inn, opts){
     const f = ov.bowler ? (figs[ov.bowler] = figs[ov.bowler] || { balls: 0, maidens: 0, runs: 0, wickets: 0 }) : null;
     ov.events.forEach(ev => {
       const c = commentaryEvent(ev);
-      const isLegal = c.kind !== "wide" && c.kind !== "noball";
+      const isLegal = c.kind !== "wide" && c.kind !== "noball" && !c.extra;
       if (isLegal) legal += 1;
       const label = `${i}.${isLegal ? legal : legal + 1}`;
       const runs = ev.runs || 0;
@@ -1299,7 +1557,8 @@ function inningsCommentary(inn, opts){
       else {
         const how = DISMISSAL_WORDS[c.wicketType] || "Wicket";
         const by = ev.fielder ? (c.wicketType === "caught" ? ` by ${nm(ev.fielder)}` : ` (${nm(ev.fielder)})`) : "";
-        text = `OUT! ${how}${by}${c.wicketType === "runout" && runs ? `, ${runsWord(runs)} completed` : ""}`;
+        const ran = c.extra ? c.off : runs;
+        text = `${c.extra === "wide" ? "Wide, and " : c.extra === "noball" ? "No ball, and " : ""}OUT! ${how}${by}${c.wicketType === "runout" && ran ? `, ${runsWord(ran)} completed` : ""}`;
         tone = "wicket";
       }
       if (ev.freeHit) text = `Free hit: ${text}`;
@@ -1307,9 +1566,9 @@ function inningsCommentary(inn, opts){
       let milestone = "";
       if (ev.batter){
         const before = batRuns[ev.batter] || 0;
-        const add = c.kind === "run" || (c.kind === "wicket" && c.wicketType === "runout") ? runs : c.kind === "noball" ? c.off : 0;
+        const add = c.kind === "run" || (c.kind === "wicket" && c.wicketType === "runout" && c.extra !== "wide") ? (c.extra ? c.off : runs) : c.kind === "noball" ? c.off : 0;
         batRuns[ev.batter] = before + add;
-        if (c.kind !== "wide") batBalls[ev.batter] = (batBalls[ev.batter] || 0) + 1;
+        if (c.kind !== "wide" && c.extra !== "wide") batBalls[ev.batter] = (batBalls[ev.batter] || 0) + 1;
         const m = [100, 50].find(x => before < x && before + add >= x);
         if (m) milestone = `${m === 100 ? "HUNDRED" : "FIFTY"} for ${nm(ev.batter)}!`;
       }

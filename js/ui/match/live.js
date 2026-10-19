@@ -62,6 +62,11 @@ function renderExtraRunsModal(inn){
             <span class="chip-label">${cfg.chip(n)} · ${cfg.base + n} total</span>
           </button>`).join("")}
         </div>
+        ${kind === "wide" || kind === "noball" ? `
+          <button type="button" data-action="wicket-on-extra" class="extra-wicket-btn">
+            <span class="main">Out on this ${kind === "wide" ? "wide" : "no-ball"}?</span>
+            <span class="sub">${kind === "wide" && !inn.freeHit ? "Stumped, hit wicket or run out" : "Run out"}</span>
+          </button>` : ""}
         <button type="button" data-action="close-extra" class="ghost" style="width:100%;margin-top:6px;">Cancel</button>
       </div>
     </div>
@@ -121,7 +126,7 @@ function dismissPick(){
 /* Returns true (and reopens the sheet) when a scoring tap has to wait for a name. */
 function reopenPick(){
   if (!pickSheetDismissed(state.match)) return false;
-  ui.pickDismissed = null; ui.pendingExtra = null; ui.wicketFlow = null;
+  ui.pickDismissed = null; ui.pendingExtra = null; resetWicketUi();
   render();
   return true;
 }
@@ -129,10 +134,23 @@ function renderPickLaterButton(){
   return `<button type="button" data-action="dismiss-pick" class="ghost" style="width:100%;margin-top:10px;">Pick later</button>`;
 }
 
+/* The scorer swaps who's on strike by hand (live screen's ⇅, or Match
+   options). Logged like any other change, so Undo and ball edits keep it. */
+function handleSwapStrike(){
+  const m = state.match;
+  if (!m || m.status !== "live") return;
+  const inn = currentInnings(m);
+  if (!canSwapStrike(inn)) return;
+  pushSnapshot();
+  swapStrikeByHand(inn);
+  ui.matchMenu = null;
+  save(); render();
+}
+
 function handleUndo(){
   if (!state.snapshots.length) return;
   state.match = state.snapshots.pop();
-  ui.pendingExtra = null; ui.wicketFlow = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.runoutAt = null; ui.confirm = null; ui.matchMenu = null; ui.catchUp = null; ui.liveScorecard = false;
+  ui.pendingExtra = null; resetWicketUi(); ui.confirm = null; ui.matchMenu = null; ui.catchUp = null; ui.liveScorecard = false; ui.ballEdit = null;
   save(); render();
 }
 
@@ -241,7 +259,7 @@ function renderLive(match){
       ${renderScoreBento(match, inn)}
 
       <div class="matchup-card">
-        <div class="matchup-head"><span>BATTER</span><span style="width:34px;">R</span><span style="width:30px;">B</span><span style="width:24px;">4s</span><span style="width:24px;">6s</span><span style="width:46px;">SR</span></div>
+        <div class="matchup-head"><span>BATTER${canSwapStrike(inn) ? ` <button type="button" data-action="swap-strike" class="swap-strike" aria-label="Swap strike: put ${escapeHtml(liveName(inn.nonStriker))} on strike">⇅ Swap</button>` : ""}</span><span style="width:34px;">R</span><span style="width:30px;">B</span><span style="width:24px;">4s</span><span style="width:24px;">6s</span><span style="width:46px;">SR</span></div>
         <div class="matchup-row">
           <span class="matchup-marker striker"></span><span class="name">${slotName(inn.striker, "Pick batsman")}</span>
           <span class="stat emph" style="width:34px;">${strikerStats ? strikerStats.runs + "*" : ""}</span>

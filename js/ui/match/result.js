@@ -117,6 +117,9 @@ function renderCommentary(match, inn){
    score at its end. The over in progress (currentOverEvents) leads. */
 function renderBallByBall(match, inn){
   const bpo = inn.ballsPerOver;
+  // The match being scored (or just finished) on this device: tap a ball to edit it.
+  const editable = ballEditAllowed(match) && !!inn.log;
+  const idx = match.innings.indexOf(inn);
   const overs = inn.overs.map(o => ({ bowler: o.bowler, events: o.events, gap: o.gap, part: !!o.partial }));
   if (inn.currentOverEvents.length) overs.push({ bowler: inn.bowler, events: inn.currentOverEvents, live: !inn.complete });
   if (!overs.length) return `<p class="hint">No balls bowled yet.</p>`;
@@ -141,6 +144,7 @@ function renderBallByBall(match, inn){
     const start = balls, i = Math.floor(start / bpo);
     const legal = o.events.filter(ev => !/^(Wd|Nb)/.test(ev.display)).length;
     balls = start + legal;
+    let inOver = start % bpo;
     const part = o.part || start % bpo !== 0;
     const runs = o.events.reduce((s, ev) => s + (ev.runs || 0), 0);
     const w = o.events.filter(ev => ev.isWicket).length;
@@ -151,6 +155,13 @@ function renderBallByBall(match, inn){
       else if (ev.runs === 4 && !/^(Wd|Nb|B|Lb)/.test(ev.display)) cls += " four";
       else if (ev.runs === 6 && !/^(Wd|Nb|B|Lb)/.test(ev.display)) cls += " six";
       else if (/^(Wd|Nb)/.test(ev.display)) cls += " extra";
+      // "4.3": a wide/no-ball carries the number of the ball still to come.
+      const isLegal = !/^(Wd|Nb)/.test(ev.display);
+      if (isLegal) inOver += 1;
+      const label = `${i}.${isLegal ? inOver : inOver + 1}`;
+      if (editable && ev.seq != null && editableBall(match, idx, ev.seq)){
+        return `<button type="button" data-action="edit-ball" data-inn="${idx}" data-seq="${ev.seq}" data-label="${label}" class="${cls} chip-edit" aria-label="Edit ball ${label}: ${escapeHtml(ev.display)}">${escapeHtml(ev.display)}</button>`;
+      }
       return `<span class="${cls}">${escapeHtml(ev.display)}</span>`;
     }).join("");
     return `
@@ -168,6 +179,7 @@ function renderBallByBall(match, inn){
     <div class="ball-by-ball">
       <h3>${escapeHtml(teamName(match, inn.battingTeam))} ${inn.runs}/${inn.wickets} <span class="ov">(${oversDisplay(inn.legalBalls, bpo)} ov)</span></h3>
       ${rows.reverse().join("")}
+      ${editable ? `<p class="hint bbb-edit-hint">Tap a ball to change or remove it.</p>` : ""}
       <p class="hint">Newest over first. W wicket · Wd wide · Nb no-ball · B bye · Lb leg bye · Ro run out.</p>
     </div>`;
 }
@@ -301,6 +313,7 @@ function renderInningsBreak(match){
         <span class="n tag-pill${i1.freeHitOnNoBall ? " gold" : ""}">free hit ${i1.freeHitOnNoBall ? "on" : "off"}</span>
       </div>
       ${match.presetName ? `<p class="hint">Playing conditions came from the <b style="color:var(--text);">${escapeHtml(match.presetName)}</b> preset and are fixed for the whole match.</p>` : ""}
+      <button type="button" data-action="open-edit-balls" class="link-btn">Full scorecard · fix a ball</button>
       <button data-action="start-second-innings" class="primary">Start 2nd innings</button>
     </div>
   `;

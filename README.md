@@ -95,10 +95,14 @@ gh api repos/<owner>/<name>/pages -X POST -f "source[branch]=master" -f "source[
   lists with autocomplete, but the crease/bowling-end name fields are
   still free text — there's no "yet to bat" list, and nothing stops you
   from typing a name that isn't in either team's roster.
-- **A wicket is always modelled as happening on a legal delivery.** A
-  run-out off a wide or no-ball is a real (if rare) part of cricket that
-  isn't captured here — score it as a normal-ball run-out and adjust by
-  hand if it matters to you.
+- **Wickets off a wide or no-ball are limited to the usual ones**: off a
+  wide stumped, hit wicket or run out; off a no-ball (or on a free hit) run
+  out only. Obstructing the field and handled the ball aren't offered at all.
+- **Editing an earlier ball replays the innings from the log.** Who faced
+  each later ball stays as it was recorded; batters and bowlers come in in
+  the order they were entered. If an edit turns a wide into a legal ball (or
+  back), every later over shifts by one ball, since the app counts overs from
+  legal balls. Balls before a "catch up the score" can't be edited.
 - **Run-outs are scored by asking, not by modelling the running.** The
   scorer picks who is out and the end where the wicket was broken; the new
   batter comes in at that end and the other batter stands at the other end.
