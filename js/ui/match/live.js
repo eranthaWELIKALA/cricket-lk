@@ -37,14 +37,44 @@ function wicketMoment(inn){
   const fow = inn.fallOfWickets[inn.fallOfWickets.length - 1];
   return { kind: "wicket", label: "WICKET", sub: fow ? fow.batsman : null };
 }
+// The glyph each moment punches in with (the stinger, css "Live moments").
+const MOMENT_GLYPHS = { four: "4", six: "6", wicket: "W", fifty: "50", hundred: "100" };
 function playLiveMoment(){
   const mo = liveMoment;
   liveMoment = null;
   // Gone if the ball ended the innings or the match (that screen has no board).
-  const tile = mo && document.querySelector("#app .screen.live .score-tile");
+  const app = document.getElementById("app");
+  const tile = mo && app.querySelector(".screen.live .score-tile");
   if (!tile) return;
   tile.classList.add("moment-" + mo.kind);
-  tile.insertAdjacentHTML("beforeend", `<span class="moment" aria-hidden="true"><b>${mo.label}</b>${mo.sub ? `<small>${escapeHtml(liveName(mo.sub))}</small>` : ""}</span>`);
+  // The band sits between the score tiles (left visible, so the new score
+  // shows at once) and the run pad -- or the top of a sheet this ball opened
+  // (a wicket's new batsman) -- so it never covers either. With too little
+  // room there, it covers the score tiles instead. It's inside #app, so the
+  // next render (the next ball, any sheet opening) removes it.
+  const board = app.querySelector(".screen.live .score-bento").getBoundingClientRect();
+  const pad = app.querySelector(".screen.live > .run-pad");
+  const sheet = document.querySelector("#modal-root .modal");
+  // Where the sheet will sit once it has slid up (its rect is mid-animation).
+  const sheetTop = !sheet ? Infinity : sheet.offsetParent ? sheet.offsetParent.getBoundingClientRect().top + sheet.offsetTop : sheet.getBoundingClientRect().top;
+  let top = board.bottom + 6;
+  let bottom = Math.min(pad ? pad.getBoundingClientRect().top - 6 : top + 200, sheetTop - 6);
+  if (bottom - top < 90){ top = board.top; bottom = Math.min(board.bottom, sheetTop - 6); }
+  const h = Math.round(Math.max(bottom - top, 72));
+  const w = Math.round(board.width) || 320;
+  const glyph = MOMENT_GLYPHS[mo.kind];
+  const compact = h < 150;
+  const g = Math.round(Math.min(h * (compact ? 0.9 : 0.72), (w * (compact ? 0.42 : 0.8)) / (0.62 * glyph.length)));
+  const caption = mo.sub ? `${mo.label} · ${liveName(mo.sub)}` : mo.label;
+  // Fixed spread (not random), so every four looks the same.
+  const stripes = Array.from({ length: 9 }, (_, i) =>
+    `<i style="--w:${12 + (i * 17) % 38}px;--d:${(i * 0.027).toFixed(3)}s;--t:${(0.78 + (i % 4) * 0.08).toFixed(2)}s"></i>`).join("");
+  app.insertAdjacentHTML("beforeend", `<div class="moment stinger ${mo.kind}${compact ? " compact" : ""}" aria-hidden="true"
+    style="top:${Math.round(top)}px;left:${Math.round(board.left)}px;width:${w}px;height:${h}px;--bw:${w}px;--g:${g}px">
+    <div class="stinger-bg"></div><div class="stinger-stripes">${stripes}</div>
+    <div class="stinger-glyph">${glyph}</div><div class="stinger-caption"><span>${escapeHtml(caption)}</span></div></div>`);
+  const el = app.lastElementChild;
+  el.addEventListener("animationend", e => { if (e.target === el) el.remove(); });
 }
 
 /* An extra (wide / no-ball / bye / leg bye) always asks how many runs it was

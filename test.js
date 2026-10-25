@@ -1670,14 +1670,14 @@ async function main(){
       openInnings(currentInnings(state.match), "Kusal", "Pathum", "Wanindu");
       state.match.status = "live"; render();
       handleBallClick(4);`);
-    const moment = () => doc.querySelector("#app .score-tile .moment");
-    assert(moment() && /FOUR/.test(moment().textContent) && doc.querySelector("#app .score-tile.moment-four"), "a four shows the FOUR moment on the score tile");
+    const moment = () => doc.querySelector("#app .moment.stinger");
+    assert(moment() && moment().querySelector(".stinger-glyph").textContent === "4" && /FOUR/.test(moment().textContent) && doc.querySelector("#app .score-tile.moment-four"), "a four plays the 4 stinger over the board (and rings the score tile)");
     win.eval(`render()`);
     assert(!moment() && !doc.querySelector("#app .score-tile[class*=moment-]"), "a re-render never replays the moment");
     win.eval(`handleUndo()`);
     assert(!moment(), "undo doesn't play one either");
     win.eval(`confirmWicket("bowled")`);
-    assert(moment() && /WICKET/.test(moment().textContent) && /Kusal/.test(moment().textContent), "a wicket names the batter who's out");
+    assert(moment() && moment().querySelector(".stinger-glyph").textContent === "W" && /WICKET · Kusal/.test(moment().textContent), "a wicket plays the W stinger, naming the batter who's out");
     // tabs: only a tab that actually changed gets .tab-switched
     win.eval(`state.matchHistory = { m1: Object.assign(JSON.parse(JSON.stringify(state.match)), { id: "m1", status: "complete", completedAt: 1 }) };
       state.match = null; state.snapshots = []; ui = defaultUi(); state.view = "stats"; render(); render();`);

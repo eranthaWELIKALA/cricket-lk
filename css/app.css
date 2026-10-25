@@ -619,7 +619,6 @@ button:active:not(:disabled){ transform:scale(.96); }
 @keyframes heroShine{ from{ transform:translateX(-120%) skewX(-18deg); } to{ transform:translateX(420%) skewX(-18deg); } }
 @keyframes confettiFall{ 0%{ opacity:1; transform:translate3d(0,-16px,0) rotate(0); } 100%{ opacity:0; transform:translate3d(var(--dx),120px,0) rotate(var(--rot)); } }
 @keyframes nudge{ 0%,100%{ transform:none; } 20%{ transform:translateX(-4px); } 40%{ transform:translateX(4px); } 60%{ transform:translateX(-3px); } 80%{ transform:translateX(2px); } }
-@keyframes momentIn{ 0%{ opacity:0; transform:translateY(-50%) scale(1.6); } 16%{ opacity:1; transform:translateY(-50%) scale(1); } 78%{ opacity:1; transform:translateY(-50%) scale(1); } 100%{ opacity:0; transform:translateY(-50%) scale(.94); } }
 @keyframes ringGreen{ from{ box-shadow:var(--shadow-card), 0 0 0 0 rgba(var(--accent-2-rgb),.6); } to{ box-shadow:var(--shadow-card), 0 0 0 16px rgba(var(--accent-2-rgb),0); } }
 @keyframes ringGold{ from{ box-shadow:var(--shadow-card), 0 0 0 0 rgba(var(--accent-rgb),.7); } to{ box-shadow:var(--shadow-card), 0 0 0 20px rgba(var(--accent-rgb),0); } }
 @keyframes ringRed{ 0%,55%{ border-color:var(--wicket); box-shadow:var(--shadow-card), 0 0 0 0 rgba(255,77,99,.6); } 100%{ box-shadow:var(--shadow-card), 0 0 0 16px rgba(255,77,99,0); } }
@@ -668,21 +667,67 @@ button:active:not(:disabled){ transform:scale(.96); }
 .tab-row.tab-switched ~ *{ animation:fadeUp .2s ease backwards; }
 /* A new form error nudges sideways. */
 .form-error.shake{ animation:nudge .32s ease; }
-/* Live moments (playLiveMoment): a badge on the score tile + a ring around it. */
-.score-tile{ position:relative; }
-.moment{
-  position:absolute; right:10px; top:50%; transform:translateY(-50%); pointer-events:none; z-index:1;
-  display:flex; flex-direction:column; align-items:flex-end; gap:1px; max-width:60%;
-  padding:5px 10px; border-radius:var(--radius-sm); border:2px solid var(--bg); box-shadow:var(--shadow-btn);
-  background:var(--accent-2); color:var(--accent-2-ink);
-  animation:momentIn 1.15s cubic-bezier(.16,1,.3,1) both;
+/* Live moments (playLiveMoment): a broadcast-style "stinger" over the board,
+   in the style of live-stream cricket graphics -- diagonal stripes sweep
+   across a dark frame while a giant two-tone glyph (4 / 6 / W / 50 / 100)
+   punches in with a slanted caption, then it all clears. It's a fixed band
+   between the score tiles and the run pad (or the top of an open sheet),
+   placed by JS, pointer-events:none, and the next render removes it -- so
+   it never hides or blocks the run pad. Above the sheets' scrim (z 50), so
+   it stays bright over a dimmed area, but it always ends above the sheet
+   itself. Plus a ring on the score tile. */
+@keyframes stingerFrame{ 0%{ opacity:0; } 10%{ opacity:1; } 80%{ opacity:1; } 100%{ opacity:0; } }
+@keyframes stripeSweep{ from{ transform:translateX(calc(var(--bw) * -.45)) skewX(-34deg); } to{ transform:translateX(calc(var(--bw) * 1.15)) skewX(-34deg); } }
+@keyframes glyphPunch{
+  0%{ opacity:0; transform:translate(-50%,-50%) scale(2.6) rotate(-10deg); }
+  14%{ opacity:1; transform:translate(-50%,-50%) scale(.92) rotate(0); }
+  22%{ transform:translate(-50%,-50%) scale(1.05); }
+  30%,78%{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+  100%{ opacity:0; transform:translate(-50%,-50%) translateX(26%) skewX(-12deg) scale(.96); }
 }
-.moment b{ font-size:1.05rem; font-weight:900; letter-spacing:.08em; line-height:1; }
-.moment small{ font-size:.62rem; font-weight:700; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.score-tile.moment-six .moment, .score-tile.moment-fifty .moment, .score-tile.moment-hundred .moment{ background:var(--accent); color:var(--accent-ink); }
-.score-tile.moment-wicket .moment{ background:var(--wicket); color:#fff; }
-.score-tile.moment-four{ animation:scorePulse .3s ease, ringGreen .7s ease-out; }
-.score-tile.moment-six, .score-tile.moment-fifty, .score-tile.moment-hundred{ animation:scorePulse .3s ease, ringGold .8s ease-out; }
+@keyframes captionIn{ 0%,18%{ opacity:0; transform:translateX(36px) skewX(-14deg); } 32%,78%{ opacity:1; transform:skewX(-14deg); } 100%{ opacity:0; transform:translateX(-24px) skewX(-14deg); } }
+.score-tile{ position:relative; }
+.moment.stinger{
+  position:fixed; z-index:55; pointer-events:none; overflow:hidden; border-radius:var(--radius-lg);
+  --ink:#FFD23F; --ink-2:#D99A00; --ink-3:#FFEB8A;
+  --s1:#fff; --s2:#1E2C82; --s3:#E8262E; --s4:#F28C8C;
+  animation:stingerFrame 1.4s ease both;
+}
+.moment.stinger.six{ --ink:#3EE07A; --ink-2:#12A048; --ink-3:#A4F7C2; --s1:#22E3F0; --s2:#B3159F; --s3:#fff; --s4:#22E3F0; }
+.moment.stinger.wicket{ --ink:#FF4D63; --ink-2:#B8142C; --ink-3:#FFA3AF; --s1:#fff; --s2:#1E2C82; --s3:#F28C8C; --s4:#fff; }
+.stinger-bg{ position:absolute; inset:0; background:rgba(4,7,9,.9); }
+.stinger-stripes i{
+  position:absolute; top:-30%; left:0; height:160%; width:var(--w); background:var(--s1);
+  animation:stripeSweep var(--t) var(--d) cubic-bezier(.55,0,.25,1) both;
+}
+.stinger-stripes i:nth-child(5n+2){ background:var(--s2); }
+.stinger-stripes i:nth-child(5n+3){ background:var(--s3); }
+.stinger-stripes i:nth-child(5n+4){ background:var(--s4); opacity:.85; }
+.stinger-stripes i:nth-child(5n){ background:none; border:1.5px solid rgba(255,255,255,.5); }
+.stinger-glyph{
+  position:absolute; left:50%; top:46%; font-size:var(--g); font-weight:900; line-height:.82; letter-spacing:-.05em; white-space:nowrap;
+  /* Hard-stop gradient = the faceted, two-tone look of the 3D letters. */
+  background:linear-gradient(118deg, var(--ink-3) 0 30%, var(--ink) 30% 50%, var(--ink-2) 50% 63%, var(--ink) 63%);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+  filter:drop-shadow(5px 6px 0 rgba(0,0,0,.6));
+  animation:glyphPunch 1.4s cubic-bezier(.2,.9,.25,1) both;
+}
+.stinger-caption{
+  position:absolute; left:50%; bottom:9%; max-width:88%; margin-left:-44%; width:88%; text-align:center;
+  animation:captionIn 1.4s cubic-bezier(.2,.9,.25,1) both;
+}
+.stinger-caption span{
+  display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:top;
+  padding:4px 14px; background:var(--ink); color:#0B0F0D; border:2px solid #000; box-shadow:3px 3px 0 rgba(0,0,0,.6);
+  font-size:.82rem; font-weight:900; letter-spacing:.12em; text-transform:uppercase;
+}
+/* A short band (a sheet is open under the board): glyph left, caption right. */
+.moment.stinger.compact .stinger-glyph{ left:26%; top:52%; }
+.moment.stinger.compact .stinger-caption{ left:auto; right:3%; bottom:auto; top:50%; margin:-13px 0 0; width:62%; max-width:62%; text-align:right; }
+.moment.stinger.compact .stinger-caption span{ font-size:.7rem; letter-spacing:.05em; padding:4px 10px; }
+.score-tile.moment-four{ animation:scorePulse .3s ease, ringGold .8s ease-out; }
+.score-tile.moment-six{ animation:scorePulse .3s ease, ringGreen .8s ease-out; }
+.score-tile.moment-fifty, .score-tile.moment-hundred{ animation:scorePulse .3s ease, ringGold .8s ease-out; }
 .score-tile.moment-wicket{ animation:nudge .36s ease, ringRed .9s ease-out; }
 
 @media (prefers-reduced-motion: reduce){

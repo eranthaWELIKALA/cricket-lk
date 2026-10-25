@@ -1150,11 +1150,20 @@ row and what follows it fades in), the side menu opening (it's `.no-anim`
 while it stays open), a fresh form error (`showFormError` adds `.shake`), and
 on Result a pop + shine, with confetti (`confettiHtml`) for a win only.
 **Live moments**: a four, a six, a wicket or a batter's fifty/hundred
-(`ballMoment`/`wicketMoment`, live.js; tested) put a badge and a ring on the
-score tile. They're set as `liveMoment` where the ball is recorded (next to its
+(`ballMoment`/`wicketMoment`, live.js; tested) play a broadcast-style
+"stinger", in the look of live-stream cricket graphics: diagonal stripes sweep
+across a dark band while a giant two-tone glyph (`MOMENT_GLYPHS`: 4 / 6 / W /
+50 / 100; gold, green for a six, red for a wicket) punches in with a slanted
+caption ("WICKET · Name"), plus a ring on the score tile. It's pure CSS (no
+video files: the app stays small and offline). They're set as `liveMoment` where the ball is recorded (next to its
 `SFX`) and played by `playLiveMoment()` at the end of `render()`, so a
-re-render, undo or reload never replays one. The badge is `pointer-events:none`
-and absolutely positioned, so the fixed live board doesn't move. Entrances use
+re-render, undo or reload never replays one. The band is a `position:fixed`,
+`pointer-events:none` element inside `#app` (so the next render removes it),
+placed from measured rects: between the score tiles (left visible) and the run
+pad, or the *final* top of a sheet the ball opened (`offsetTop`, since the sheet
+is mid-slide); with under 90px there it covers the score tiles instead
+(`.compact`). It's above the sheets' scrim (z 55) but always ends above the
+sheet, and it never covers the run pad, so scoring goes on through it. Entrances use
 `animation-fill-mode: backwards`, not `both`: a kept last frame would override
 `:active`'s press scale for good. Keep them ≤ ~.35s (screenshots and
 Playwright taps wait about that). All of it is off under
