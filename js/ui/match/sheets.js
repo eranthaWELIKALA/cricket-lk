@@ -144,6 +144,9 @@ function renderMatchMenuModal(match){
       ${match.status === "live" && canSwapStrike(cur) ? row("swap-strike", "⇅", "Swap strike", `Put ${escapeHtml(liveName(cur.nonStriker))} on strike instead of ${escapeHtml(liveName(cur.striker))}`) : ""}
       ${match.innings.some(i => i.log && i.log.some(x => x.t === "ball")) ? row("open-edit-balls", "✎", "Edit an earlier ball", "Wrong runs, a missed wide or wicket? Fix it from ball by ball") : ""}
       ${ballEditAllowed(match) ? row("open-score-set", "#", "Set the final score", "Skip ball by ball: type each side's runs, wickets and overs") : ""}
+      ${unnamedPlayers(match).map(u => row("name-later", "?", `Name ${escapeHtml(u.name)}`,
+        `Who ${u.role === "batter" ? "batted" : "bowled"} for ${escapeHtml(teamName(match, u.role === "batter" ? match.innings[u.inn].battingTeam : match.innings[u.inn].bowlingTeam))}? Leave it till you know`,
+        `data-name="${escapeHtml(u.name)}"`)).join("")}
       ${!cur.complete ? row("open-catch-up", "⏩", "Catch up the score", "Missed some balls? Enter the score as it is now and carry on") : ""}
       ${match.squads ? row("match-menu-view", "👥", "Switch players between sides", "Move a player to the other team, or add a late arrival", `data-view="squads"`) : ""}
       ${matchHasNicknames() ? `
@@ -295,13 +298,10 @@ function handleOpeningSubmit(e){
 /* The dismissal banner reads from the last `inn.fallOfWickets` entry's
    `batsman` (see recordBall's `outName` local) rather than re-deriving
    who's out from the null slot -- the null slot only says *where*, not
-   *who was there*. There's deliberately no "yet to bat" quick-pick chip
-   row here (the Design-canvas mockup had one, grouped by team) -- a
-   standalone match's teamA/teamB are plain display strings with no
-   linked roster to draw it from (see CLAUDE.md's "Teams, players &
-   presets"), and even a tournament match's `createMatch()` call only
-   ever receives resolved name strings, not team IDs, so there's no
-   squad list available at this point for either match type. */
+   *who was there*. Everyone who can still bat for this side (pickPool ->
+   pickCandidates: the squad, else the club roster / guest players) is a
+   one-tap row; the box on top filters them or takes a new name; "carry on
+   unnamed" scores on with a placeholder to be named later. */
 function renderNewBatsmanModal(inn, slot){
   const endBadge = slot === "striker" ? "STRIKER'S END" : "NON-STRIKER'S END";
   const lastFow = inn.fallOfWickets.length ? inn.fallOfWickets[inn.fallOfWickets.length - 1] : null;
@@ -322,12 +322,13 @@ function renderNewBatsmanModal(inn, slot){
         ` : ""}
         <form id="new-batsman-form">
           <div class="form-error"></div>
-          ${renderNameCombo("Name", `name="name" required maxlength="24" placeholder="Search or type a player"`, pickCandidates(state.match, pickPool(inn.battingTeam), "batter"))}
-          <p class="hint">A name that is not in your players list yet is added to it automatically.</p>
-          <button type="submit" class="primary">Send in</button>
+          ${renderPickSearch("Send in")}
+          ${renderUnnamedButton("batter")}
+          ${renderPickRows(state.match.squads ? "Yet to bat" : "Players", pickCandidates(state.match, pickPool(inn.battingTeam), "batter"), "pick-batter")}
+          <p class="hint">A new name is added to your players list automatically.</p>
         </form>
         <div class="modal-footer-hint">
-          <p class="hint">Scoring is paused until a name is entered. Pick later to do something else first.</p>
+          <p class="hint">Scoring is paused until you pick someone or carry on unnamed. Pick later to do something else first.</p>
           <button type="button" data-action="undo" class="undo-chip" ${state.snapshots.length ? "" : "disabled"}>UNDO BALL</button>
         </div>
         ${renderEndInningsButton(state.match, inn)}
@@ -347,6 +348,7 @@ function submitNewBatsman(name, form){
   const inn = currentInnings(state.match);
   const slot = pendingBatsmanSlot(inn);
   if (!slot || !name) return;
+  if (isUnnamedPlayer(name)){ showFormError(form, "That name is kept for unnamed players. Use “carry on unnamed” instead."); return; }
   const other = slot === "striker" ? inn.nonStriker : inn.striker;
   if (other && name.toLowerCase() === other.toLowerCase()){
     showFormError(form, "That player is already at the crease."); return;
@@ -374,7 +376,8 @@ function submitNewBatsman(name, form){
 function renderNewBowlerModal(inn){
   const bpo = inn.ballsPerOver;
   const overNumber = Math.floor(inn.legalBalls / bpo) + 1;
-  const pickable = inn.bowling.order.filter(name => name !== inn.lastOverBowler);
+  // Each unnamed over has its own placeholder -- they're never offered again.
+  const pickable = inn.bowling.order.filter(name => name !== inn.lastOverBowler && !isUnnamedPlayer(name));
   return `
     <div class="modal-backdrop with-score">
       ${renderSheetScore(state.match, inn)}
@@ -385,13 +388,14 @@ function renderNewBowlerModal(inn){
         </div>
         <form id="new-bowler-form">
           <div class="form-error"></div>
-          ${renderNameCombo("Name", `name="name" required maxlength="24" placeholder="Search or type a bowler"`, pickCandidates(state.match, pickPool(inn.bowlingTeam), "bowler"))}
-          ${inn.bowling.order.length ? `
+          ${renderPickSearch("Bowl")}
+          ${renderUnnamedButton("bowler")}
+          ${pickable.length || inn.lastOverBowler ? `
             <div class="section-label">Already bowled</div>
             <div class="bowler-pick-list">
               ${pickable.map(name => {
                 const b = inn.bowling.stats[name];
-                return `<button type="button" data-action="pick-bowler" data-name="${escapeHtml(name)}" class="bowler-pick-row"><span class="name">${escapeHtml(name)}</span><span class="n figs">${oversDisplay(b.legalBalls, bpo)}-${b.maidens}-${b.runs}-${b.wickets}</span></button>`;
+                return pickRowHtml(name, "pick-bowler", `${oversDisplay(b.legalBalls, bpo)}-${b.maidens}-${b.runs}-${b.wickets}`);
               }).join("")}
               ${inn.lastOverBowler ? `
                 <div class="bowler-pick-row disabled">
@@ -400,9 +404,9 @@ function renderNewBowlerModal(inn){
                 </div>
               ` : ""}
             </div>
-            <p class="hint">The previous over's bowler can't bowl two in a row.</p>
+            ${inn.lastOverBowler ? `<p class="hint">The previous over's bowler can't bowl two in a row.</p>` : ""}
           ` : ""}
-          <button type="submit" class="primary">Start over</button>
+          ${renderPickRows("Yet to bowl", pickCandidates(state.match, pickPool(inn.bowlingTeam), "bowler"), "pick-bowler")}
         </form>
         <div class="modal-footer-hint">
           <p class="hint">Strike has already been swapped for the new over.</p>
@@ -413,6 +417,71 @@ function renderNewBowlerModal(inn){
       </div>
     </div>
   `;
+}
+
+/* The pick sheets' building blocks: a box that filters the rows below as
+   you type and, for someone who isn't listed, takes a new name (its button
+   submits the form, so every check in the submit handler applies); one tap
+   per listed player; and the way to carry on without a name. DOM-only
+   filtering (the delegated input listener, [data-pick-filter]). */
+function renderPickSearch(submitLabel){
+  return `
+    <div class="pick-search">
+      <input name="name" required maxlength="24" placeholder="Search, or type a new name" data-pick-filter autocomplete="off" autocapitalize="words" aria-label="Search or type a name">
+      <button type="submit" class="primary">${submitLabel}</button>
+    </div>
+    <p class="hint pick-none" hidden>Nobody listed matches. Tap ${submitLabel} to use the name you typed.</p>`;
+}
+// DOM-only: hide the rows (and empty sections) that don't match the box.
+function applyPickFilter(input){
+  const sheet = input.closest(".modal"), q = input.value.trim().toLowerCase();
+  if (!sheet) return;
+  let shown = 0;
+  sheet.querySelectorAll(".pick-row-item").forEach(row => { row.hidden = !!q && !row.dataset.search.includes(q); if (!row.hidden) shown++; });
+  sheet.querySelectorAll(".bowler-pick-list").forEach(list => {
+    const any = [...list.children].some(c => !c.hidden && c.classList.contains("pick-row-item"));
+    list.hidden = !!q && !any;
+    const label = list.previousElementSibling;
+    if (label && label.classList.contains("section-label")) label.hidden = list.hidden;
+  });
+  const none = sheet.querySelector(".pick-none"); if (none) none.hidden = !q || shown > 0;
+}
+function pickRowHtml(name, action, figs){
+  const r = rosterEntryFor(name);
+  const nick = r && r.nickname ? r.nickname.trim() : "";
+  const jersey = r && r.jersey_no != null ? `#${r.jersey_no}` : "";
+  const search = [name, nick, jersey].filter(Boolean).join(" ").toLowerCase();
+  return `<button type="button" data-action="${action}" data-name="${escapeHtml(name)}" data-search="${escapeHtml(search)}" class="bowler-pick-row pick-row-item">`
+    + `<span class="name">${jersey ? `<span class="pick-jersey">${jersey}</span> ` : ""}${escapeHtml(name)}${nick ? ` <span class="combo-nick">${escapeHtml(nick)}</span>` : ""}</span>`
+    + (figs ? `<span class="n figs">${figs}</span>` : "")
+    + `</button>`;
+}
+function renderPickRows(label, names, action){
+  if (!names.length) return "";
+  return `
+    <div class="section-label">${label}</div>
+    <div class="bowler-pick-list">${names.map(n => pickRowHtml(n, action)).join("")}</div>`;
+}
+function renderUnnamedButton(role){
+  const next = nextUnnamedName(state.match, role);
+  return `
+    <button type="button" data-action="pick-unnamed" class="ghost unnamed-btn">Don't know yet · carry on as “${escapeHtml(next)}”</button>
+    <p class="hint" style="margin-top:4px;">Tap that name later (on the board, the scorecard or ⋯ Match options) to say who it was.</p>`;
+}
+/* Carry on without a name: the slot gets the next placeholder (see
+   nextUnnamedName). Logged like any name, so a later ball edit keeps it. */
+function pickUnnamed(){
+  const m = state.match;
+  if (!m || m.status !== "live") return;
+  const inn = currentInnings(m);
+  if (pendingBatsmanSlot(inn)){
+    pushSnapshot();
+    sendInBatter(inn, nextUnnamedName(m, "batter"));
+  } else if (!inn.bowler){
+    pushSnapshot();
+    setBowler(inn, nextUnnamedName(m, "bowler"));
+  } else return;
+  save(); render();
 }
 
 function confirmNewBowler(name){
@@ -435,6 +504,7 @@ function handleNewBowlerSubmit(e){
 function submitNewBowler(name, form){
   const inn = currentInnings(state.match);
   if (inn.bowler || !name) return;
+  if (isUnnamedPlayer(name)){ showFormError(form, "That name is kept for unnamed players. Use “carry on unnamed” instead."); return; }
   if (inn.lastOverBowler && name.toLowerCase() === inn.lastOverBowler.toLowerCase()){
     showFormError(form, `${name} can't bowl two overs in a row.`); return;
   }

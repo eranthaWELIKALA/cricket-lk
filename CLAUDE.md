@@ -31,7 +31,7 @@ of `index.html`:
 | `js/ui/router.js` | page navigation (routes, history, back interception, unsaved-input checks) |
 | `js/ui/menus.js` | sync pill/sheet, side menu |
 | `js/ui/screens/*.js` | `home-account`, `clubs` (+ profiles, player modals), `club-tournaments` (+ team builder), `premier`, `guest` (teams/players/presets/tournaments), `stats` |
-| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `catch-up` (catch up the score), `edit-ball` (edit/remove an earlier ball, set the final score by hand), `live`, `result` (+ scorecards, share/export) |
+| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `catch-up` (catch up the score), `edit-ball` (edit/remove an earlier ball, set the final score by hand), `name-later` (name an unnamed batter/bowler), `live`, `result` (+ scorecards, share/export) |
 | `js/ui/render.js` | `render()` |
 | `js/ui/events.js` | the delegated listeners |
 | `js/boot.js` | boot: `load()`, first route + render, `initAuth()`, sync triggers, service worker |
@@ -1130,7 +1130,26 @@ with the same styling as the others, the mockup (and the current CSS)
 deliberately makes it read as "not an option" rather than "option,
 temporarily off."
 
-**In-match name boxes are a search-select, not a `<datalist>`.** Native
+**The new-batsman / new-bowler sheets list players as one-tap rows** (no
+dropdown): a box on top filters the rows as you type (`applyPickFilter`, DOM
+only) and its button takes a name that isn't listed; the rows are
+`pickCandidates` (+ "Already bowled" with figures) and call
+`submitNewBatsman`/`submitNewBowler`, so every check applies. **"Don't know
+yet · carry on as …"** (`pickUnnamed`) fills the slot with a placeholder,
+`Bat ?N` / `Bowl ?N` (`nextUnnamedName`, numbered across the match, kept
+short for the board; ENGINE, tested), so scoring goes on. Placeholders are never
+registered (`registerMatchPlayer`) and are skipped by
+`foldInningsIntoTotals` and tournament bests. Wherever a ball can be edited
+(`ballEditAllowed`), a placeholder's name is a button (`unnamedNameHtml`: live
+board, `renderInningsSummary`, ⋯ Match options rows, Result's "Still
+unnamed" card) opening `ui.nameLater` (`js/ui/match/name-later.js`, an
+overlay): pick or type who it was → `nameUnnamedError` (side, already batted,
+two overs in a row) → `nameUnnamedPlayer` (pure: rewrites every string/key in
+the match, log included, merging a bowler placeholder into someone who
+already bowled) → `applyBallEdit` (snapshot, archive replaced in place). A
+finished match asks first (Result has no Undo).
+
+**Other in-match name boxes are a search-select, not a `<datalist>`.** Native
 datalist popups proved unreliable on phones (options showed but couldn't be
 tapped inside the bottom sheet), so the opening, new-batsman, new-bowler and
 fielder inputs have no `list` attribute; `renderNameCombo()` puts our own
@@ -1350,7 +1369,7 @@ is next online. Three pieces, all in the CLOUD section:
   and the tournament overlay also folds this device's archived matches for
   it, so standings count a match scored offline. Pending items render with
   a "not synced" tag.
-- **Offline sign-in.** `sw.js` (cache `cricket-lk-v12`; the page and the app's
+- **Offline sign-in.** `sw.js` (cache `cricket-lk-v13`; the page and the app's
   own `css/`/`js/` files are network-first, refreshing the cache, so a deploy
   never mixes versions) precaches the
   supabase-js CDN script and serves it stale-while-revalidate — keep its URL

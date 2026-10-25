@@ -189,6 +189,9 @@ function render(){
   const scoreSetOpen = !!(ui.scoreSet && m && !away && ballEditAllowed(m));
   if (ui.scoreSet && !scoreSetOpen) ui.scoreSet = null;
   if (ui.catchUp && !(m && (m.status === "opening" || m.status === "live"))) ui.catchUp = null;
+  // Naming an unnamed player: same rule as editing a ball, and only while that placeholder is still there.
+  const nameLaterOpen = !!(ui.nameLater && m && !away && ballEditAllowed(m) && unnamedPlayers(m).some(u => u.name === ui.nameLater.name));
+  if (ui.nameLater && !nameLaterOpen) ui.nameLater = null;
   if (ui.sharePreview && ui.sharePreview.view !== navKey()) ui.sharePreview = null;
   if (ui.sharePreview){
     modalHtml = renderSharePreviewModal();
@@ -204,6 +207,8 @@ function render(){
   } else if (resultEntryOpen){
     modalKey = "result-entry";   // keep typed scores across background re-renders
     modalHtml = renderResultEntryModal();
+  } else if (nameLaterOpen){
+    modalHtml = renderNameLaterModal(m);
   } else if (ballEditOpen){
     modalHtml = renderBallEditModal(m);
   } else if (scoreSetOpen){
@@ -242,6 +247,7 @@ function render(){
     if (backdrop) backdrop.classList.add("no-anim");
     modalRoot.dataset.modalKey = modalKey;
     restoreFormDrafts(modalRoot, modalDrafts);
+    modalRoot.querySelectorAll("[data-pick-filter]").forEach(i => { if (i.value) applyPickFilter(i); });
     const again = keep && modalRoot.querySelector(`[data-keep-scroll="${keep.key}"]`);
     if (again){ again.classList.add("no-anim"); again.scrollTop = keep.top; }
     if (modalKey === "add"){ const first = modalRoot.querySelector('input[name="name"]'); if (first) first.focus(); }

@@ -9,6 +9,8 @@ const { setup, BASE } = require('./cap-lib.js');
   await tap('[data-action="open-side-menu"], .topbar-menu, [aria-label="Menu"]'); await shot('04-menu');
   await tap('[data-action="close-side-menu"]');
   // --- first match ---
+  // A few saved players, so the new-batter / new-bowler sheets have rows to tap.
+  await run(`["Charith Asalanka","Kamindu Mendis","Dasun Shanaka","Dunith Wellalage","Wanindu Hasaranga","Dilshan Madushanka"].forEach(n => findOrCreatePlayer(n)); save();`);
   await tap('[data-action="go-match-setup"]');
   await p.fill('[name=teamA]', 'Colombo Lions'); await p.fill('[name=teamB]', 'Kandy Tigers');
   await shot('05-new-match');
@@ -33,16 +35,16 @@ const { setup, BASE } = require('./cap-lib.js');
   await p.fill('#wicket-fielder', 'Wanindu Hasaranga');
   await tap('#wicket-fielder-form button[type=submit]');
   await shot('12-new-batsman');
-  await tap('#modal-root [data-action="dismiss-pick"]'); await shot('13-pick-later');
-  await tap('#app [data-action="reopen-pick"]');
-  await p.fill('#new-batsman-form [name=name]', 'Charith Asalanka'); await tap('#new-batsman-form button[type=submit]');
+  // Not sure who walked out: carry on as "Bat ?1", name them a bit later.
+  await tap('#modal-root [data-action="pick-unnamed"]');
   for (const r of [1, 1, 6]) await ball(r);
   await shot('14-new-bowler');
-  await p.fill('#new-bowler-form [name=name]', 'Wanindu Hasaranga'); await tap('#new-bowler-form button[type=submit]');
+  await tap('#modal-root [data-action="pick-bowler"][data-name="Wanindu Hasaranga"]');
   for (const r of [2, 1, 0]) await ball(r);
   await tap('[data-action="open-match-menu"]'); await shot('15-match-options');
-  await tap('#modal-root [data-action="close-match-menu"], #modal-root .sheet-close, #modal-root [data-action="match-menu-close"]').catch(() => run('ui.matchMenu=null; render();'));
   await run('ui.matchMenu=null; render();');
+  await tap('#app [data-action="name-later"][data-name="Bat ?1"]'); await shot('13-name-later');
+  await tap('#modal-root [data-action="name-later-pick"][data-name="Charith Asalanka"]');
   await tap('#app [data-action="open-live-scorecard"]'); await shot('16-scorecard');
   await tap('#modal-root [data-action="scorecard-mode"][data-tab="balls"]'); await shot('17-ball-by-ball');
   await run('ui.liveScorecard=false; render();');

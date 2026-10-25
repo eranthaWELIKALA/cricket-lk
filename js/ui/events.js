@@ -63,7 +63,13 @@ document.addEventListener("click", (e) => {
   else if (action === "close-score-set") closeScoreSet();
   else if (action === "pick-runout-end"){ ui.runoutEnd = btn.dataset.end; render(); }
   else if (action === "pick-runout-at"){ ui.runoutAt = btn.dataset.end; render(); }
-  else if (action === "pick-bowler"){ confirmNewBowler(btn.dataset.name); }
+  // One-tap rows on the pick sheets go through the same checks as a typed name.
+  else if (action === "pick-bowler"){ submitNewBowler(btn.dataset.name, btn.closest(".modal").querySelector("form")); }
+  else if (action === "pick-batter"){ submitNewBatsman(btn.dataset.name, btn.closest(".modal").querySelector("form")); }
+  else if (action === "pick-unnamed") pickUnnamed();
+  else if (action === "name-later") openNameLater(btn.dataset.name);
+  else if (action === "name-later-pick") saveNameLater(btn.dataset.name, btn.closest(".modal").querySelector("form"));
+  else if (action === "close-name-later") closeNameLater();
   else if (action === "combo-pick"){
     const combo = btn.closest(".combo"), input = combo && combo.querySelector("input");
     if (input){
@@ -343,6 +349,7 @@ document.addEventListener("submit", (e) => {
   else if (id === "catch-up-form") handleCatchUpSubmit(e);
   else if (id === "new-batsman-form") handleNewBatsmanSubmit(e);
   else if (id === "new-bowler-form") handleNewBowlerSubmit(e);
+  else if (id === "name-later-form") handleNameLaterSubmit(e);
   else if (id === "wicket-fielder-form") handleWicketFielderSubmit(e);
   else if (id === "motm-form") handleMotmSubmit(e);
   else if (id === "ball-edit-form"){ e.preventDefault(); ballEditSave(false); }
@@ -405,6 +412,8 @@ document.addEventListener("pointerdown", (e) => {
 document.addEventListener("input", (e) => {
   // Search-select (renderNameCombo): narrow the list as you type.
   if (e.target.closest && e.target.closest(".combo")){ updateCombo(e.target, true); return; }
+  // Pick sheets: the box filters the one-tap rows under it.
+  if (e.target.matches && e.target.matches("[data-pick-filter]")){ applyPickFilter(e.target); return; }
   // Team builder: keep the name in ui, and filter roster rows without a re-render.
   const builder = e.target.closest && e.target.closest("#tournament-team-form");
   if (builder && ui.tournamentTeamEdit){

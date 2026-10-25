@@ -906,9 +906,11 @@ function playerSideConflict(match, name, teamKey){
    - "bowler": the bowling side, minus anyone who has already bowled (they
      have their own rows with figures) and the previous over's bowler;
    - "fielder": the bowling side.
-   Anyone already on the other side is dropped; duplicates (any case) too. */
-function pickCandidates(match, pool, role){
-  const inn = currentInnings(match);
+   Anyone already on the other side is dropped; duplicates (any case) too.
+   `inn` defaults to the innings in play (naming an unnamed player later
+   passes the innings they played in). */
+function pickCandidates(match, pool, role, inn){
+  inn = inn || currentInnings(match);
   const side = role === "batter" ? inn.battingTeam : inn.bowlingTeam;
   const lc = n => n.toLowerCase();
   const skip = new Set();
@@ -1124,7 +1126,9 @@ function emptyPlayerTotal(name){
 }
 
 function foldInningsIntoTotals(totals, inn){
+  // Placeholders ("Bat ?1") aren't people until they're named.
   inn.batting.order.forEach(name => {
+    if (isUnnamedPlayer(name)) return;
     const s = inn.batting.stats[name];
     const t = totals[name] || (totals[name] = emptyPlayerTotal(name));
     t.runs += s.runs; t.balls += s.balls; t.fours += s.fours; t.sixes += s.sixes;
@@ -1133,6 +1137,7 @@ function foldInningsIntoTotals(totals, inn){
     t.points += calcPlayerPoints(s, null, null);
   });
   inn.bowling.order.forEach(name => {
+    if (isUnnamedPlayer(name)) return;
     const b = inn.bowling.stats[name];
     const t = totals[name] || (totals[name] = emptyPlayerTotal(name));
     t.wickets += b.wickets; t.legalBalls += b.legalBalls; t.runsConceded += b.runs; t.maidens += b.maidens;
@@ -1321,6 +1326,116 @@ function fillAnonymousSlots(match){
   if (!inn.bowler){ setBowler(inn, `Over ${Math.floor(inn.legalBalls / inn.ballsPerOver) + 1}`); changed = true; }
   return changed;
 }
+
+/* --- unnamed players, named later ---
+   The scorer doesn't always know who walked out or who's bowling. Instead of
+   blocking scoring, the new-batsman / new-bowler sheet can carry on with a
+   placeholder ("Bat ?1", "Bowl ?2" -- numbered across the
+   whole match, so one name never stands for two people) and the real name is
+   filled in later (nameUnnamedPlayer). Each unnamed over gets its own
+   placeholder: it might be the same person as another, which naming sorts out
+   (two bowler placeholders named the same are merged). Placeholders aren't
+   people: they're skipped by every player figure (foldInningsIntoTotals,
+   tournament bests) until they're named. */
+// Short on purpose (it sits in the board's name column); the "?" keeps it
+// apart from a "no names" match's "Batter 1" / "Over 1".
+const UNNAMED_LABEL = { batter: "Bat", bowler: "Bowl" };
+const UNNAMED_RE = /^(bat|bowl) \?(\d+)$/i;
+function isUnnamedPlayer(name){ return UNNAMED_RE.test((name || "").trim()); }
+function nextUnnamedName(match, role){
+  let max = 0;
+  match.innings.forEach(inn => [...inn.batting.order, ...inn.bowling.order].forEach(n => {
+    const mt = UNNAMED_RE.exec(n);
+    if (mt && mt[1].toLowerCase() === UNNAMED_LABEL[role].toLowerCase()) max = Math.max(max, parseInt(mt[2], 10));
+  }));
+  return `${UNNAMED_LABEL[role]} ?${max + 1}`;
+}
+// Every placeholder still in the match: [{ name, inn (index), role }].
+function unnamedPlayers(match){
+  const out = [];
+  match.innings.forEach((inn, idx) => {
+    inn.batting.order.forEach(n => { if (isUnnamedPlayer(n)) out.push({ name: n, inn: idx, role: "batter" }); });
+    inn.bowling.order.forEach(n => { if (isUnnamedPlayer(n)) out.push({ name: n, inn: idx, role: "bowler" }); });
+  });
+  return out;
+}
+// The bowler of each over in order (null for a catch-up gap), plus whoever is
+// bowling the over in progress -- for the "no two overs in a row" rule.
+function overBowlerSequence(inn){
+  const seq = inn.overs.map(o => o.gap ? null : o.bowler);
+  // (An innings that ended on an over's last ball keeps that bowler in the
+  // slot -- that over is already in inn.overs.)
+  if (inn.bowler && (inn.currentOverEvents.length || !inn.complete)) seq.push(inn.bowler);
+  return seq;
+}
+/* Who `to` would be once `from` (a placeholder) is named: the spelling
+   already used in this match if there is one, else `to` as typed. */
+function unnamedTarget(match, to){
+  const key = (to || "").trim().toLowerCase();
+  for (const inn of match.innings){
+    const hit = [...inn.batting.order, ...inn.bowling.order, ...inn.fielding.order].find(n => n.toLowerCase() === key);
+    if (hit) return hit;
+  }
+  return (to || "").trim();
+}
+// Error text if placeholder `from` can't become `to`, else null.
+function nameUnnamedError(match, from, to){
+  const entry = unnamedPlayers(match).find(u => u.name === from);
+  if (!entry) return "That player has already been named.";
+  const name = unnamedTarget(match, to);
+  if (!name) return "Enter a name.";
+  if (isUnnamedPlayer(name)) return "Pick a real name.";
+  const inn = match.innings[entry.inn];
+  const key = name.toLowerCase();
+  if (entry.role === "batter"){
+    const conflict = playerSideConflict(match, name, inn.battingTeam);
+    if (conflict) return conflict;
+    if (inn.batting.order.some(n => n.toLowerCase() === key)) return `${name} has already batted in this innings.`;
+    return null;
+  }
+  const conflict = playerSideConflict(match, name, inn.bowlingTeam);
+  if (conflict) return conflict;
+  const seq = overBowlerSequence(inn).map(n => n === from ? name : n);
+  for (let i = 1; i < seq.length; i++){
+    if (seq[i] && seq[i - 1] && seq[i].toLowerCase() === key && seq[i - 1].toLowerCase() === key) return `${name} would have bowled two overs in a row.`;
+  }
+  return null;
+}
+/* A copy of `match` with placeholder `from` replaced by `to` everywhere: the
+   slots, stats, over events, commentary fields, howOut text, fall of wickets
+   and the action log (so a later ball edit replays with the real name). A
+   bowler placeholder named after someone who already bowled in that innings
+   is merged into their figures. Check nameUnnamedError first. */
+function nameUnnamedPlayer(match, from, to){
+  const entry = unnamedPlayers(match).find(u => u.name === from);
+  const name = unnamedTarget(match, to);
+  const m = JSON.parse(JSON.stringify(match));
+  if (entry && entry.role === "bowler"){
+    const inn = m.innings[entry.inn];
+    const into = inn.bowling.stats[name], b = inn.bowling.stats[from];
+    if (into && b){
+      into.legalBalls += b.legalBalls; into.runs += b.runs; into.wickets += b.wickets; into.maidens += b.maidens;
+      // The over in progress belongs to whoever is bowling it now.
+      if (inn.bowler === from){ into.curOverRuns = b.curOverRuns; into.curOverLegal = b.curOverLegal; }
+      delete inn.bowling.stats[from];
+      inn.bowling.order = inn.bowling.order.filter(n => n !== from);
+    }
+  }
+  // "Bowl ?1" must not also hit "Bowl ?10".
+  const re = new RegExp(from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?!\\d)", "g");
+  const walk = v => {
+    if (typeof v === "string") return v === from ? name : v.replace(re, name);
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === "object"){
+      const o = {};
+      Object.keys(v).forEach(k => { o[k === from ? name : k] = walk(v[k]); });
+      return o;
+    }
+    return v;
+  };
+  return walk(m);
+}
+
 /* --- catching up the score ---
    A scorer who stopped updating the board can jump to where the game is now
    instead of replaying every ball: the totals, every batter who got out (how,
@@ -1786,10 +1901,12 @@ function tournamentSummary(matches, preset){
     inn.batting.order.forEach(n => {
       const b = inn.batting.stats[n];
       sixes += b.sixes;
+      if (isUnnamedPlayer(n)) return;
       if (!bestInnings || b.runs > bestInnings.runs || (b.runs === bestInnings.runs && b.balls < bestInnings.balls)) bestInnings = { name: n, team, runs: b.runs, balls: b.balls, notOut: !b.out };
     });
     inn.bowling.order.forEach(n => {
       const b = inn.bowling.stats[n];
+      if (isUnnamedPlayer(n)) return;
       if (b.wickets && (!bestBowling || b.wickets > bestBowling.wickets || (b.wickets === bestBowling.wickets && b.runs < bestBowling.runs))) bestBowling = { name: n, team: teamName(m, inn.bowlingTeam), wickets: b.wickets, runs: b.runs };
     });
   }));

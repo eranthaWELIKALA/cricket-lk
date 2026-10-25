@@ -952,7 +952,7 @@ async function main(){
     win.eval(`{ const inn = currentInnings(state.match); inn.striker = "Kusal"; inn.batting.order = inn.batting.order.map(n => n.toLowerCase() === "kusal" ? "Kusal" : n);
       if (!inn.batting.stats.Kusal){ inn.batting.stats.Kusal = inn.batting.stats.kusal; delete inn.batting.stats.kusal; }
       recordBall(inn, { kind: "wicket", wicketType: "bowled", runs: 0 }); afterBall(state.match); save(); render(); }`);
-    const nb = [...doc.querySelectorAll("#new-batsman-form .combo-opt")].map(o => o.dataset.name);
+    const nb = [...doc.querySelectorAll("#new-batsman-form .pick-row-item")].map(o => o.dataset.name);
     assert(nb.length === 1 && nb[0] === "Charith", "new batsman: out and at-crease players aren't offered");
     const nbInput = doc.querySelector('#new-batsman-form input[name="name"]');
     nbInput.value = "kusal";
@@ -1047,6 +1047,61 @@ async function main(){
     const t2 = win.computeStandings([noLimit], { pointsForWin: 2, pointsForTie: 1, pointsForLoss: 0, useNRR: true });
     assert(t2.every(t => t.played === 1 && t.nrr === 0), "no overs limit + blank overs: points count, NRR left out");
     assert(win.aggregatePlayerStats([won]).length === 0 && win.pickMatchMOTM(won) === null, "no player stats from a result-only match");
+  }
+
+  // --- carry on unnamed, name them later ---
+  {
+    const m = win.createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    const inn = win.currentInnings(m);
+    const ball = (ev, n) => { for (let i = 0; i < (n || 1); i++) win.recordBall(inn, ev); };
+    const dot = { kind: "run", runs: 0 }, one = { kind: "run", runs: 1 }, bowled = { kind: "wicket", wicketType: "bowled" };
+    win.openInnings(inn, "Kusal", "Pathum", "Wanindu"); m.status = "live";
+    ball(one); ball(bowled);                                            // Pathum out
+    assert(win.nextUnnamedName(m, "batter") === "Bat ?1", "the first placeholder is Bat ?1");
+    win.sendInBatter(inn, win.nextUnnamedName(m, "batter"));
+    ball({ kind: "run", runs: 4 }); ball(dot, 3);                       // over 1 done
+    win.setBowler(inn, win.nextUnnamedName(m, "bowler"));
+    ball(one); ball(bowled);                                            // Bat ?1 out to Bowl ?1
+    win.sendInBatter(inn, "Charith"); ball(dot, 4);                     // over 2
+    win.setBowler(inn, "Wanindu"); ball(dot, 6);                        // over 3
+    win.setBowler(inn, win.nextUnnamedName(m, "bowler")); ball(one, 6); // over 4
+    assert(win.nextUnnamedName(m, "batter") === "Bat ?2" && win.nextUnnamedName(m, "bowler") === "Bowl ?3", "placeholders are numbered across the match");
+    assert(win.unnamedPlayers(m).map(u => u.name).join() === "Bat ?1,Bowl ?1,Bowl ?2", "unnamedPlayers lists every placeholder");
+    assert(!win.aggregatePlayerStats([m]).some(t => win.isUnnamedPlayer(t.name)), "placeholders stay out of player stats");
+    assert(/two overs in a row/.test(win.nameUnnamedError(m, "Bowl ?1", "Wanindu")), "naming can't make someone bowl two overs in a row");
+    assert(/already batted/.test(win.nameUnnamedError(m, "Bat ?1", "kusal")), "a batter placeholder can't be someone who already batted");
+    assert(/already plays for/.test(win.nameUnnamedError(m, "Bat ?1", "Wanindu")), "or someone from the other side");
+    assert(/real name/.test(win.nameUnnamedError(m, "Bat ?1", "Bat ?7")), "or another placeholder");
+    const before = JSON.stringify(m);
+    const m2 = win.nameUnnamedPlayer(m, "Bowl ?1", "Dushmantha");
+    assert(JSON.stringify(m) === before, "naming returns a copy, the input is untouched");
+    const i2 = m2.innings[0];
+    assert(i2.batting.stats["Bat ?1"].howOut.endsWith("b Dushmantha") && i2.overs[1].bowler === "Dushmantha" && i2.bowling.order.includes("Dushmantha"), "the bowler's name reaches howOut, the over and the order");
+    assert(win.nameUnnamedError(m2, "Bowl ?2", "Dushmantha") === null, "overs 2 and 4 by the same bowler are fine");
+    const m3 = win.nameUnnamedPlayer(m2, "Bowl ?2", "dushmantha");
+    const d = m3.innings[0].bowling.stats.Dushmantha;
+    assert(d.legalBalls === 12 && d.runs === 7 && d.wickets === 1 && !m3.innings[0].bowling.order.includes("Bowl ?2") && m3.innings[0].overs[3].bowler === "Dushmantha", "a second placeholder named the same is merged into their figures (any case)");
+    const m4 = win.nameUnnamedPlayer(m3, "Bat ?1", "Asitha");
+    const i4 = m4.innings[0];
+    assert(i4.batting.stats.Asitha.runs === 4 && i4.batting.order[2] === "Asitha" && i4.fallOfWickets[1].batsman === "Asitha", "a batter placeholder becomes the real batter: figures, order, fall of wickets");
+    assert(!/(Bat|Bowl) \?\d/.test(JSON.stringify(m4)), "no placeholder is left anywhere -- the action log included");
+    assert(win.aggregatePlayerStats([m4]).some(t => t.name === "Asitha" && t.runs === 4), "once named, they count in stats");
+    // In the page: the new-batsman sheet lists players, carries on unnamed, and the name is filled in later.
+    win.eval(`state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" }); ui = defaultUi();
+      openInnings(currentInnings(state.match), "Kusal", "Pathum", "Wanindu"); state.match.status = "live";
+      recordBall(currentInnings(state.match), { kind: "wicket", wicketType: "bowled" }); afterBall(state.match); save(); render();`);
+    assert(doc.querySelector('#modal-root #new-batsman-form [data-pick-filter]') && !doc.querySelector("#modal-root .combo"), "the new-batsman sheet has a search/type box, no dropdown");
+    doc.querySelector('#modal-root [data-action="pick-unnamed"]').click();
+    assert(win.eval("currentInnings(state.match).striker") === "Bat ?1" && !doc.querySelector("#modal-root #new-batsman-form"), "carry on unnamed fills the slot and closes the sheet");
+    doc.querySelector('#app [data-action="name-later"][data-name="Bat ?1"]').click();
+    const nf = doc.getElementById("name-later-form");
+    assert(nf, "tapping the placeholder on the board opens 'Who was it?'");
+    nf.querySelector('[name="name"]').value = "Asitha";
+    nf.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(win.eval("currentInnings(state.match).striker") === "Asitha" && !doc.getElementById("name-later-form"), "saving names them on the board");
+    win.eval(`handleUndo()`);
+    assert(win.eval("currentInnings(state.match).striker") === "Bat ?1", "Undo takes the name back off");
+    win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); save(); render();`);
   }
 
   // --- "no names" scoring: slots fill themselves, and the match stays out of player stats ---

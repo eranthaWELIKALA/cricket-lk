@@ -150,7 +150,7 @@ function handleSwapStrike(){
 function handleUndo(){
   if (!state.snapshots.length) return;
   state.match = state.snapshots.pop();
-  ui.pendingExtra = null; resetWicketUi(); ui.confirm = null; ui.matchMenu = null; ui.catchUp = null; ui.liveScorecard = false; ui.ballEdit = null; ui.scoreSet = null;
+  ui.pendingExtra = null; resetWicketUi(); ui.confirm = null; ui.matchMenu = null; ui.catchUp = null; ui.liveScorecard = false; ui.ballEdit = null; ui.nameLater = null; ui.scoreSet = null;
   save(); render();
 }
 
@@ -234,7 +234,7 @@ function renderLive(match){
   const econ = (b) => b.legalBalls ? (b.runs / (b.legalBalls / bpo)).toFixed(2) : "0.00";
   const later = pickSheetDismissed(match);
   const pickBtn = label => `<button type="button" data-action="reopen-pick" class="pick-slot">+ ${label}</button>`;
-  const slotName = (name, label) => name ? escapeHtml(liveName(name)) : later ? pickBtn(label) : "—";
+  const slotName = (name, label) => name ? unnamedNameHtml(match, name, liveName(name)) : later ? pickBtn(label) : "—";
 
   const overNumber = Math.floor(inn.legalBalls / bpo) + 1;
   // No "previous over" row straight after a catch-up (its last entry is the gap).

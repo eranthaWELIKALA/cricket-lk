@@ -1245,5 +1245,20 @@ button.ghost.danger-text{ color:var(--danger); border-color:rgba(255,93,112,.5);
 .score-set-fields input{ width:100%; min-width:0; }
 .score-set-inn .check-row{ margin-top:8px; font-size:.82rem; }
 @media print{ .bbb-score-set{ display:none !important; } }
+
+/* Pick sheets: search/type box + one-tap rows + "carry on unnamed"; unnamed placeholders. */
+.pick-search{ display:flex; gap:8px; align-items:stretch; margin-bottom:6px; }
+.pick-search input{ flex:1 1 auto; min-width:0; margin:0; }
+.pick-search button{ flex:0 0 auto; width:auto; padding:0 16px; margin:0; }
+.pick-row-item[hidden], .bowler-pick-list[hidden], .section-label[hidden], .pick-none[hidden]{ display:none; }
+.pick-row-item .pick-jersey{ color:var(--muted); font-size:.78rem; font-variant-numeric:tabular-nums; }
+.unnamed-btn{ width:100%; margin-top:4px; border-style:dashed; }
+.unnamed-slot{ font-style:italic; text-align:left; }
+.unnamed-card{ border:2px dashed var(--accent); border-radius:var(--radius-md); padding:12px; margin:12px 0; }
+.unnamed-list{ display:flex; flex-wrap:wrap; gap:8px; }
+@media print{
+  .unnamed-slot{ border:none; padding:0; color:inherit; font-size:inherit; }
+  .unnamed-card{ display:none !important; }
+}
 .score-set-inn .check-row{ flex-wrap:nowrap; }
 .score-set-inn .check-row input{ width:auto; flex-shrink:0; margin:0; }

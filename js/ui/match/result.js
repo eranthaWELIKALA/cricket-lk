@@ -8,12 +8,12 @@ function renderInningsSummary(match, inn){
     const s = inn.batting.stats[name];
     const sr = s.balls ? ((s.runs / s.balls) * 100).toFixed(1) : "0.0";
     const status = s.out ? s.howOut : "not out";
-    return `<tr><td>${escapeHtml(liveName(name))}</td><td class="status">${escapeHtml(status)}</td><td>${s.runs}</td><td>${s.balls}</td><td>${s.fours}</td><td>${s.sixes}</td><td>${sr}</td></tr>`;
+    return `<tr><td>${unnamedNameHtml(match, name, liveName(name))}</td><td class="status">${escapeHtml(status)}</td><td>${s.runs}</td><td>${s.balls}</td><td>${s.fours}</td><td>${s.sixes}</td><td>${sr}</td></tr>`;
   }).join("");
   const bowlingRows = inn.bowling.order.map(name => {
     const b = inn.bowling.stats[name];
     const econ = b.legalBalls ? (b.runs / (b.legalBalls / bpo)).toFixed(2) : "0.00";
-    return `<tr><td>${escapeHtml(liveName(name))}</td><td>${oversDisplay(b.legalBalls, bpo)}</td><td>${b.maidens}</td><td>${b.runs}</td><td>${b.wickets}</td><td>${econ}</td></tr>`;
+    return `<tr><td>${unnamedNameHtml(match, name, liveName(name))}</td><td>${oversDisplay(b.legalBalls, bpo)}</td><td>${b.maidens}</td><td>${b.runs}</td><td>${b.wickets}</td><td>${econ}</td></tr>`;
   }).join("");
   const extrasTotal = inn.extras.wides + inn.extras.noBalls + inn.extras.byes + inn.extras.legByes;
   return `
@@ -396,7 +396,8 @@ function formatMotmLine(match, t){
 }
 
 function renderResult(match){
-  const allNames = Array.from(matchPlayerNames(match));
+  const allNames = Array.from(matchPlayerNames(match)).filter(n => !isUnnamedPlayer(n));
+  const unnamed = ballEditAllowed(match) ? unnamedPlayers(match) : [];
   const motmName = match.motm || pickMatchMOTM(match);
   const motmTotal = motmName ? aggregatePlayerStats([match]).find(t => t.name === motmName) : null;
   const detail = renderResultDetail(match);
@@ -421,6 +422,12 @@ function renderResult(match){
           </form>
         ` : ""}
       </div>
+      ${unnamed.length ? `
+        <div class="unnamed-card">
+          <div class="section-label">Still unnamed</div>
+          <p class="hint" style="margin-top:0;">They're left out of stats until you say who they were.</p>
+          <div class="unnamed-list">${unnamed.map(u => unnamedNameHtml(match, u.name)).join("")}</div>
+        </div>` : ""}
       <button data-action="toggle-scorecard" class="link-btn">${ui.showFullScorecard ? "Show condensed summary" : "Show full scorecard"}</button>
       ${ui.showFullScorecard ? renderScorecard(match) : `
         ${renderResultInningsCard(match, match.innings[0])}
