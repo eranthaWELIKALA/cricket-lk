@@ -278,7 +278,7 @@ function captureFormDrafts(root){
 }
 function restoreFormDrafts(root, drafts){
   Object.keys(drafts).forEach(id => {
-    const f = root.querySelector(`form[id="${CSS.escape(id)}"]`);
+    const f = root.querySelector(`form[id="${window.CSS && CSS.escape ? CSS.escape(id) : String(id).replace(/["\\]/g, "\\$&")}"]`);
     if (!f) return;
     drafts[id].forEach(d => {
       const named = [...f.elements].filter(el => el.name === d.name);

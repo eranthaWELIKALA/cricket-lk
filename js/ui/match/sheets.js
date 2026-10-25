@@ -7,8 +7,17 @@
 function renderSheetScore(match, inn){
   return `<div class="sheet-score-banner" aria-label="Current score">${renderScoreBento(match, inn, teamName(match, inn.battingTeam))}</div>`;
 }
+/* Openers and the first bowler: the three boxes stay (type any name), and
+   each side's players are chips under them -- the first batter tapped goes
+   on strike, the second to the other end, a chosen chip tapped again is
+   un-picked; the bowler chips fill the bowler box. DOM-only (openingPick /
+   syncOpeningPicks), so typed text survives; the submit handler checks it all. */
 function renderOpeningModal(match){
   const inn = currentInnings(match);
+  const bat = pickCandidates(match, pickPool(inn.battingTeam), "batter");
+  const bowl = pickCandidates(match, pickPool(inn.bowlingTeam), "bowler");
+  const box = (name, label, group) => `<label class="open-slot">${label}<input name="${name}" required maxlength="24" placeholder="Tap below or type" data-open-group="${group}" autocomplete="off" autocapitalize="words"></label>`;
+  const chips = (group, names) => names.length ? `<div class="bowler-pick-list open-list" data-open-list="${group}">${names.map(n => pickRowHtml(n, "open-pick")).join("")}</div>` : "";
   return `
     <div class="modal-backdrop${inn.target != null ? " with-score" : ""}">
       ${inn.target != null ? renderSheetScore(match, inn) : ""}
@@ -16,9 +25,13 @@ function renderOpeningModal(match){
         <h2>${escapeHtml(teamName(match, inn.battingTeam))} — opening players</h2>
         <form id="opening-form">
           <div class="form-error"></div>
-          ${renderNameCombo("Striker", `name="striker" required maxlength="24" placeholder="Search players"`, pickCandidates(match, pickPool(inn.battingTeam), "batter"))}
-          ${renderNameCombo("Non-striker", `name="nonStriker" required maxlength="24" placeholder="Search players"`, pickCandidates(match, pickPool(inn.battingTeam), "batter"))}
-          ${renderNameCombo(`${escapeHtml(teamName(match, inn.bowlingTeam))} bowler`, `name="bowler" required maxlength="24" placeholder="Search players"`, pickCandidates(match, pickPool(inn.bowlingTeam), "bowler"))}
+          <div class="section-label">Openers</div>
+          <div class="open-slots">${box("striker", "On strike", "bat")}${box("nonStriker", "Other end", "bat")}</div>
+          ${bat.length ? `<p class="hint open-hint">Tap two players: the first one is on strike.</p>` : ""}
+          ${chips("bat", bat)}
+          <div class="section-label">${escapeHtml(teamName(match, inn.bowlingTeam))} · opening bowler</div>
+          ${box("bowler", "Bowler", "bowl")}
+          ${chips("bowl", bowl)}
           <button type="submit" class="primary">Start innings</button>
         </form>
         ${match.innings.length === 1 ? `<button type="button" data-action="swap-toss" class="link-btn">Wrong toss? ${escapeHtml(teamName(match, inn.bowlingTeam))} bats first instead</button>` : ""}
@@ -287,12 +300,87 @@ function handleOpeningSubmit(e){
   const conflict = openers.map(n => playerSideConflict(state.match, n, innOpen.battingTeam)).find(Boolean)
     || playerSideConflict(state.match, bowler, innOpen.bowlingTeam);
   if (conflict){ showFormError(e.target, conflict); return; }
-  pushSnapshot();
-  const inn = currentInnings(state.match);
-  openInnings(inn, striker, nonStriker, bowler);
-  registerMatchPlayer(striker, inn.battingTeam); registerMatchPlayer(nonStriker, inn.battingTeam); registerMatchPlayer(bowler, inn.bowlingTeam);
-  state.match.status = "live";
-  save(); render();
+  confirmUnlisted(state.match, [
+    { name: striker, teamKey: innOpen.battingTeam }, { name: nonStriker, teamKey: innOpen.battingTeam }, { name: bowler, teamKey: innOpen.bowlingTeam }
+  ], () => {
+    if (!state.match || state.match.status !== "opening") return;
+    pushSnapshot();
+    const inn = currentInnings(state.match);
+    openInnings(inn, striker, nonStriker, bowler);
+    registerMatchPlayer(striker, inn.battingTeam); registerMatchPlayer(nonStriker, inn.battingTeam); registerMatchPlayer(bowler, inn.bowlingTeam);
+    state.match.status = "live";
+    save(); render();
+  });
+}
+
+/* A chip on the opening sheet: fill the next empty box of its group (or
+   take the chosen one back out). */
+function openingPick(btn){
+  const form = btn.closest("form"), list = btn.closest("[data-open-list]");
+  if (!form || !list) return;
+  const inputs = [...form.querySelectorAll(`input[data-open-group="${list.dataset.openList}"]`)];
+  const key = btn.dataset.name.toLowerCase();
+  const hit = inputs.find(i => i.value.trim().toLowerCase() === key);
+  if (hit) hit.value = "";
+  else (inputs.find(i => !i.value.trim()) || inputs[inputs.length - 1]).value = btn.dataset.name;
+  list.querySelectorAll(".pick-row-item").forEach(r => { r.hidden = false; });
+  showFormError(form, "");
+  syncOpeningPicks(form);
+}
+// Mark the chips whose names are in the boxes (and which box); a name picked
+// for the other side is greyed out (one player can't bat and bowl here).
+function syncOpeningPicks(form){
+  const tags = { striker: "on strike", nonStriker: "other end", bowler: "bowling" };
+  form.querySelectorAll("[data-open-list]").forEach(list => {
+    const group = list.dataset.openList;
+    const inputs = [...form.querySelectorAll(`input[data-open-group="${group}"]`)];
+    const taken = new Set([...form.querySelectorAll(`input[data-open-group]:not([data-open-group="${group}"])`)].map(i => i.value.trim().toLowerCase()).filter(Boolean));
+    list.querySelectorAll(".pick-row-item").forEach(row => {
+      const key = row.dataset.name.toLowerCase();
+      const hit = inputs.find(i => i.value.trim().toLowerCase() === key);
+      row.classList.toggle("active", !!hit);
+      if (hit) row.dataset.tag = tags[hit.name]; else delete row.dataset.tag;
+      row.disabled = !hit && taken.has(key);
+    });
+  });
+}
+// Typing in an opening box narrows that side's chips.
+function filterOpeningChips(input){
+  const list = input.form && input.form.querySelector(`[data-open-list="${input.dataset.openGroup}"]`);
+  const q = input.value.trim().toLowerCase();
+  if (list) list.querySelectorAll(".pick-row-item").forEach(row => { row.hidden = !!q && !row.dataset.search.includes(q); });
+  syncOpeningPicks(input.form);
+}
+
+/* A typed name that isn't on that side's list -- its squad, else the club
+   roster / guest players (pickPool) -- and hasn't played for that side in
+   this match yet is asked about before it's recorded: a typo would become a
+   new player. A side with no list at all (a friendly's visitors) has nothing
+   to compare against, so it never asks. Placeholders (Bat ?1) never ask. */
+function unlistedNames(match, entries){
+  const seen = new Set();
+  return entries.filter(({ name, teamKey }) => {
+    const key = (name || "").trim().toLowerCase();
+    if (!key || seen.has(key) || isUnnamedPlayer(name)) return false;
+    seen.add(key);
+    const pool = pickPool(teamKey);
+    if (!pool.length || pool.some(n => n.toLowerCase() === key)) return false;
+    return playerTeamInMatch(match, name) !== teamKey;
+  });
+}
+function confirmUnlisted(match, entries, proceed){
+  const fresh = unlistedNames(match, entries);
+  if (!fresh.length){ proceed(); return; }
+  const one = fresh.length === 1;
+  const list = match.squads ? "this match's squad" : match.clubId ? "the club roster" : "your players list";
+  askConfirm({
+    title: one ? `Add ${fresh[0].name}?` : "Add new players?", icon: "👤", tone: "primary",
+    body: `<p>${one ? "This name isn't" : "These names aren't"} in ${list}:</p>`
+      + `<ul class="confirm-names">${fresh.map(f => `<li><b>${escapeHtml(f.name)}</b> · ${escapeHtml(teamName(match, f.teamKey))}</li>`).join("")}</ul>`
+      + `<p class="hint">Add ${one ? "them as a new player" : "them as new players"} and carry on? Check the spelling: a typo becomes a separate player.</p>`,
+    confirmLabel: one ? "Add player" : "Add players", cancelLabel: "Go back",
+    onConfirm: () => { proceed(); }
+  });
 }
 
 /* The dismissal banner reads from the last `inn.fallOfWickets` entry's
@@ -360,10 +448,13 @@ function submitNewBatsman(name, form){
   }
   const sideConflict = playerSideConflict(state.match, name, inn.battingTeam);
   if (sideConflict){ showFormError(form, sideConflict); return; }
-  pushSnapshot();
-  sendInBatter(inn, name);
-  registerMatchPlayer(name, inn.battingTeam);
-  save(); render();
+  confirmUnlisted(state.match, [{ name, teamKey: inn.battingTeam }], () => {
+    if (pendingBatsmanSlot(currentInnings(state.match)) !== slot) return;   // something else filled it meanwhile
+    pushSnapshot();
+    sendInBatter(inn, name);
+    registerMatchPlayer(name, inn.battingTeam);
+    save(); render();
+  });
 }
 
 /* Previous-over bowlers get a real one-tap row (their own figures shown)
@@ -510,7 +601,7 @@ function submitNewBowler(name, form){
   }
   const sideConflict = playerSideConflict(state.match, name, inn.bowlingTeam);
   if (sideConflict){ showFormError(form, sideConflict); return; }
-  confirmNewBowler(name);
+  confirmUnlisted(state.match, [{ name, teamKey: inn.bowlingTeam }], () => confirmNewBowler(name));
 }
 
 function showFormError(form, msg){

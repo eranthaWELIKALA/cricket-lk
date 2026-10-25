@@ -10,14 +10,16 @@ const { setup, BASE } = require('./cap-lib.js');
   await tap('[data-action="close-side-menu"]');
   // --- first match ---
   // A few saved players, so the new-batter / new-bowler sheets have rows to tap.
-  await run(`["Charith Asalanka","Kamindu Mendis","Dasun Shanaka","Dunith Wellalage","Wanindu Hasaranga","Dilshan Madushanka"].forEach(n => findOrCreatePlayer(n)); save();`);
+  await run(`["Kusal Mendis","Pathum Nissanka","Charith Asalanka","Kamindu Mendis","Dasun Shanaka","Dunith Wellalage","Wanindu Hasaranga","Matheesha Pathirana","Maheesh Theekshana","Dilshan Madushanka"].forEach(n => findOrCreatePlayer(n)); save();`);
+  // A typed name that isn't on the list asks first: say yes.
+  const okIfAsked = () => p.evaluate(() => { const b = document.querySelector('#confirm-root [data-action="confirm-ok"]'); if (b) b.click(); }).then(() => p.waitForTimeout(250));
   await tap('[data-action="go-match-setup"]');
   await p.fill('[name=teamA]', 'Colombo Lions'); await p.fill('[name=teamB]', 'Kandy Tigers');
   await shot('05-new-match');
   await tap('.preset-info-btn, [data-action="preset-info"]'); await shot('06-preset-info');
   await tap('#match-setup-form button[type=submit]');
-  await p.fill('#opening-form [name=striker]', 'Kusal Mendis'); await p.fill('#opening-form [name=nonStriker]', 'Pathum Nissanka'); await p.fill('#opening-form [name=bowler]', 'Matheesha Pathirana');
-  await p.evaluate(() => document.activeElement.blur()); await p.waitForTimeout(300);
+  await tap('#opening-form [data-open-list="bat"] [data-name="Kusal Mendis"]'); await tap('#opening-form [data-open-list="bat"] [data-name="Pathum Nissanka"]');
+  await tap('#opening-form [data-open-list="bowl"] [data-name="Matheesha Pathirana"]');
   await shot('07-opening');
   await tap('#opening-form button[type=submit]');
   const ball = r => tap(`#app [data-action="ball"][data-runs="${r}"]`);
@@ -54,12 +56,12 @@ const { setup, BASE } = require('./cap-lib.js');
   // second innings via the UI, then finish the chase with code for brevity
   await tap('#app [data-action="start-second-innings"]');
   await p.fill('#opening-form [name=striker]', 'Jos Buttler'); await p.fill('#opening-form [name=nonStriker]', 'Phil Salt'); await p.fill('#opening-form [name=bowler]', 'Nuwan Thushara');
-  await tap('#opening-form button[type=submit]');
+  await tap('#opening-form button[type=submit]'); await shot('07b-add-players'); await okIfAsked();
   for (const r of [4, 1, 0, 6, 1, 1]) await ball(r);
   await p.fill('#new-bowler-form [name=name]', 'Dilshan Madushanka'); await tap('#new-bowler-form button[type=submit]');
   for (const r of [1, 0, 2]) await ball(r);
   await tap('#app [data-action="open-wicket"]'); await tap('#modal-root [data-action="pick-wicket"][data-type="bowled"]');
-  await p.fill('#new-batsman-form [name=name]', 'Liam Livingstone'); await tap('#new-batsman-form button[type=submit]');
+  await p.fill('#new-batsman-form [name=name]', 'Liam Livingstone'); await tap('#new-batsman-form button[type=submit]'); await okIfAsked();
   await run(`{ const m = state.match; pushSnapshot(); endInnings(m); maybeArchiveCompletedMatch(m); save(); render(); }`);
   await shot('19-result');
   await tap('#app [data-action="share-image"]'); await p.waitForTimeout(900); await shot('20-share');

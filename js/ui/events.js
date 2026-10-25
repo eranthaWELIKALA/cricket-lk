@@ -67,6 +67,7 @@ document.addEventListener("click", (e) => {
   else if (action === "pick-bowler"){ submitNewBowler(btn.dataset.name, btn.closest(".modal").querySelector("form")); }
   else if (action === "pick-batter"){ submitNewBatsman(btn.dataset.name, btn.closest(".modal").querySelector("form")); }
   else if (action === "pick-unnamed") pickUnnamed();
+  else if (action === "open-pick") openingPick(btn);
   else if (action === "name-later") openNameLater(btn.dataset.name);
   else if (action === "name-later-pick") saveNameLater(btn.dataset.name, btn.closest(".modal").querySelector("form"));
   else if (action === "close-name-later") closeNameLater();
@@ -414,6 +415,7 @@ document.addEventListener("input", (e) => {
   if (e.target.closest && e.target.closest(".combo")){ updateCombo(e.target, true); return; }
   // Pick sheets: the box filters the one-tap rows under it.
   if (e.target.matches && e.target.matches("[data-pick-filter]")){ applyPickFilter(e.target); return; }
+  if (e.target.dataset && e.target.dataset.openGroup){ filterOpeningChips(e.target); return; }
   // Team builder: keep the name in ui, and filter roster rows without a re-render.
   const builder = e.target.closest && e.target.closest("#tournament-team-form");
   if (builder && ui.tournamentTeamEdit){

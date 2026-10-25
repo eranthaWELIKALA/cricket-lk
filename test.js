@@ -933,15 +933,19 @@ async function main(){
       state.match.squads = { A: ["Kusal", "Pathum", "Charith"], B: ["Wanindu", "Dushmantha"] };
       state.snapshots = []; render();`);
     const box = n => doc.querySelector(`#opening-form input[name="${n}"]`);
-    const offered = n => [...box(n).closest(".combo").querySelectorAll(".combo-opt")].filter(o => !o.hidden).map(o => o.dataset.name);
-    assert(box("striker") && box("nonStriker"), "opening sheet is on screen");
-    box("striker").value = "kusal";
-    box("nonStriker").dispatchEvent(new win.FocusEvent("focusin", { bubbles: true }));
-    assert(!offered("nonStriker").includes("Kusal") && offered("nonStriker").includes("Pathum"), "a name in the striker box isn't offered for non-striker (any case)");
-    box("nonStriker").value = "Pathum";
-    box("striker").dispatchEvent(new win.FocusEvent("focusin", { bubbles: true }));
-    assert(offered("striker").includes("Kusal") && !offered("striker").includes("Pathum"), "...and the other way round; a box's own value stays offered");
-    box("nonStriker").value = "KUSAL"; box("bowler").value = "Wanindu";
+    const chip = (g, n) => doc.querySelector(`#opening-form [data-open-list="${g}"] [data-name="${n}"]`);
+    assert(box("striker") && box("nonStriker") && chip("bat", "Kusal") && chip("bowl", "Wanindu") && !chip("bat", "Wanindu") && !doc.querySelector("#opening-form .combo"), "opening sheet: each side's players as chips, no dropdown");
+    chip("bat", "Kusal").click(); chip("bat", "Pathum").click(); chip("bowl", "Wanindu").click();
+    assert(box("striker").value === "Kusal" && box("nonStriker").value === "Pathum" && box("bowler").value === "Wanindu" && chip("bat", "Kusal").dataset.tag === "on strike" && chip("bowl", "Wanindu").classList.contains("active"), "chips fill on strike, then the other end, then the bowler");
+    // Without squads both sides list the same players: one picked to bat is greyed out as a bowler.
+    win.eval(`state.match.squadsSaved = state.match.squads; state.match.squads = null; findOrCreatePlayer("Kusal"); findOrCreatePlayer("Wanindu"); render();`);
+    assert(box("striker").value === "Kusal" && chip("bowl", "Kusal") && chip("bowl", "Kusal").disabled && !chip("bowl", "Wanindu").disabled, "a name picked to bat is greyed out in the bowler chips");
+    win.eval(`state.match.squads = state.match.squadsSaved; delete state.match.squadsSaved; render();`);
+    chip("bat", "Kusal").click();
+    assert(box("striker").value === "" && !chip("bat", "Kusal").classList.contains("active") && box("nonStriker").value === "Pathum", "a chosen chip tapped again is un-picked");
+    box("striker").value = "Charith"; box("striker").dispatchEvent(new win.Event("input", { bubbles: true }));
+    assert(chip("bat", "Charith") && !chip("bat", "Charith").hidden && chip("bat", "Pathum").hidden, "typing in a box narrows that side's chips");
+    box("striker").value = "kusal"; box("nonStriker").value = "KUSAL";
     doc.getElementById("opening-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
     assert(/must be different players/.test(doc.querySelector("#opening-form .form-error").textContent) && win.eval("currentInnings(state.match).striker") === null, "same name at both ends (any case) is refused");
     box("nonStriker").value = "Pathum";
@@ -961,6 +965,13 @@ async function main(){
     nbInput.value = "PATHUM";
     doc.getElementById("new-batsman-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
     assert(/already at the crease/.test(doc.querySelector("#new-batsman-form .form-error").textContent), "the batter at the other end can't come in again");
+    nbInput.value = "Dasun";
+    doc.getElementById("new-batsman-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(/Add Dasun\?/.test(doc.querySelector("#confirm-root").textContent) && win.eval("currentInnings(state.match).striker") === null, "a typed name that isn't in the squad asks before it's added");
+    doc.querySelector('#confirm-root [data-action="confirm-cancel"]').click();
+    assert(win.eval("currentInnings(state.match).striker") === null && doc.getElementById("new-batsman-form") && !doc.querySelector("#confirm-root .modal"), "Go back records nothing");
+    assert(win.eval(`unlistedNames(state.match, [{ name: "charith", teamKey: "A" }, { name: "Kusal", teamKey: "A" }, { name: "Bat ?3", teamKey: "A" }]).length`) === 0, "squad names (any case), players already in the match and placeholders never ask");
+    assert(win.eval(`unlistedNames(state.match, [{ name: "Dasun", teamKey: "A" }, { name: "dasun", teamKey: "A" }]).length`) === 1, "one question per name");
 
     // Nicknames: club match with a roster that has them.
     win.eval(`{ const inn = currentInnings(state.match); inn.striker = "Charith"; ensureBatsman(inn, "Charith");
@@ -1087,7 +1098,7 @@ async function main(){
     assert(!/(Bat|Bowl) \?\d/.test(JSON.stringify(m4)), "no placeholder is left anywhere -- the action log included");
     assert(win.aggregatePlayerStats([m4]).some(t => t.name === "Asitha" && t.runs === 4), "once named, they count in stats");
     // In the page: the new-batsman sheet lists players, carries on unnamed, and the name is filled in later.
-    win.eval(`state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" }); ui = defaultUi();
+    win.eval(`findOrCreatePlayer("Kusal"); state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" }); ui = defaultUi();
       openInnings(currentInnings(state.match), "Kusal", "Pathum", "Wanindu"); state.match.status = "live";
       recordBall(currentInnings(state.match), { kind: "wicket", wicketType: "bowled" }); afterBall(state.match); save(); render();`);
     assert(doc.querySelector('#modal-root #new-batsman-form [data-pick-filter]') && !doc.querySelector("#modal-root .combo"), "the new-batsman sheet has a search/type box, no dropdown");
@@ -1098,6 +1109,10 @@ async function main(){
     assert(nf, "tapping the placeholder on the board opens 'Who was it?'");
     nf.querySelector('[name="name"]').value = "Asitha";
     nf.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    // Asitha isn't on the players list: asked first, like a typed name on the pick sheets.
+    const addOk = doc.querySelector('#confirm-root [data-action="confirm-ok"]');
+    assert(addOk && /Add Asitha\?/.test(doc.getElementById("confirm-root").textContent), "naming someone who isn't on the list asks first");
+    addOk.click();
     assert(win.eval("currentInnings(state.match).striker") === "Asitha" && !doc.getElementById("name-later-form"), "saving names them on the board");
     win.eval(`handleUndo()`);
     assert(win.eval("currentInnings(state.match).striker") === "Bat ?1", "Undo takes the name back off");
@@ -1494,7 +1509,7 @@ async function main(){
     doc.querySelector('#modal-root [data-action="wicket-on-extra"]').click();
     doc.querySelector('#modal-root [data-action="pick-wicket"][data-type="stumped"]').click();
     assert(inn().extras.wides === 1 && inn().wickets === 1 && inn().legalBalls === 0 && !doc.querySelector("#modal-root .extra-runs-modal") && doc.querySelector("#modal-root form#new-batsman-form"), "stumped off a wide is recorded; the next sheet asks for the new batter");
-    win.eval(`submitNewBatsman("Charith", null); for (let i = 0; i < 3; i++) handleBallClick(1);`);
+    win.eval(`submitNewBatsman("Charith", null); if (ui.confirm) runConfirm(); for (let i = 0; i < 3; i++) handleBallClick(1);`);
     assert(inn().runs === 4, "(three singles)");
 
     win.eval(`ui.matchMenu = "menu"; render();`);

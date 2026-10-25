@@ -89,11 +89,14 @@ function saveNameLater(typed, form){
     ui.nameLater = null;
     render();
   };
-  // The Result screen has no Undo, so a finished match asks first.
-  if (m.status !== "complete"){ apply(); return; }
+  // A name that isn't on the side's list asks first (confirmUnlisted); so
+  // does a finished match, since the Result screen has no Undo.
+  if (m.status !== "complete"){ confirmUnlisted(m, [{ name, teamKey: side }], apply); return; }
+  const fresh = unlistedNames(m, [{ name, teamKey: side }]).length;
   askConfirm({
     title: `${from} was ${name}?`, icon: "✎", tone: "primary", confirmLabel: "Save",
-    body: `<p>The scorecard, commentary and stats of this finished match will show <b>${escapeHtml(name)}</b> instead of ${escapeHtml(from)}.</p>`,
+    body: `<p>The scorecard, commentary and stats of this finished match will show <b>${escapeHtml(name)}</b> instead of ${escapeHtml(from)}.</p>`
+      + (fresh ? `<p class="hint">${escapeHtml(name)} isn't on ${escapeHtml(teamName(m, side))}'s list yet: they'll be added as a new player.</p>` : ""),
     onConfirm: apply
   });
 }

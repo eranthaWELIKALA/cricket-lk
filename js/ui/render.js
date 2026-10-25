@@ -248,6 +248,7 @@ function render(){
     modalRoot.dataset.modalKey = modalKey;
     restoreFormDrafts(modalRoot, modalDrafts);
     modalRoot.querySelectorAll("[data-pick-filter]").forEach(i => { if (i.value) applyPickFilter(i); });
+    const opening = modalRoot.querySelector("#opening-form"); if (opening) syncOpeningPicks(opening);
     const again = keep && modalRoot.querySelector(`[data-keep-scroll="${keep.key}"]`);
     if (again){ again.classList.add("no-anim"); again.scrollTop = keep.top; }
     if (modalKey === "add"){ const first = modalRoot.querySelector('input[name="name"]'); if (first) first.focus(); }

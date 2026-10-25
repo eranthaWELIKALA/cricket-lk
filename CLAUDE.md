@@ -1149,18 +1149,34 @@ the match, log included, merging a bowler placeholder into someone who
 already bowled) → `applyBallEdit` (snapshot, archive replaced in place). A
 finished match asks first (Result has no Undo).
 
+**The opening sheet** keeps its three boxes (`striker`/`nonStriker`/
+`bowler`, typeable) with each side's players as chips under them
+(`renderOpeningModal`, `.open-list`): `openingPick` fills the next empty box
+of its group (bat: on strike, then the other end; a chosen chip tapped again
+empties its box), `syncOpeningPicks` marks chosen chips (`data-tag`) and greys
+out a name already picked for the other side, `filterOpeningChips` narrows a
+side's chips while its box is typed in. DOM-only; `render()` re-syncs after
+restoring drafts.
+
+**A typed name that isn't on the side's list asks first.** `confirmUnlisted`
+(sheets.js, shared confirmation sheet) runs after the submit checks and
+before anything is recorded, in `handleOpeningSubmit`, `submitNewBatsman`,
+`submitNewBowler` and `saveNameLater`: a name not in `pickPool(teamKey)` (any
+case) and not already playing for that side in this match is listed ("Add
+players" / "Go back"). A side with no list (a friendly's visitors, a guest with
+no saved players) never asks; tapped chips/rows and placeholders never do.
+
 **Other in-match name boxes are a search-select, not a `<datalist>`.** Native
 datalist popups proved unreliable on phones (options showed but couldn't be
-tapped inside the bottom sheet), so the opening, new-batsman, new-bowler and
-fielder inputs have no `list` attribute; `renderNameCombo()` puts our own
+tapped inside the bottom sheet), so the fielder input (and Switch players'
+add box) has no `list` attribute; `renderNameCombo()` puts our own
 `.combo-list` under each, hidden until the input is focused, narrowed by the
 delegated `input` listener, closed on `focusout` (delayed; `pointerdown` on
 an option is cancelled so the input keeps focus). A tap (`combo-pick`) only
 fills the input — the form's own button still submits, so every check in
 `handleOpeningSubmit`/`submitNewBatsman`/`submitNewBowler`/
 `handleWicketFielderSubmit` applies. A name already typed or picked in
-another combo of the same form isn't offered (`updateCombo`), so the opening
-sheet's striker, non-striker and bowler lists never repeat one another.
+another combo of the same form isn't offered (`updateCombo`).
 All DOM-only, never `render()`. Options
 come from `pickPool(teamKey)` (the side's squad → else the club roster /
 guest list → nothing for a friendly's visitors) filtered by the pure
@@ -1369,7 +1385,7 @@ is next online. Three pieces, all in the CLOUD section:
   and the tournament overlay also folds this device's archived matches for
   it, so standings count a match scored offline. Pending items render with
   a "not synced" tag.
-- **Offline sign-in.** `sw.js` (cache `cricket-lk-v13`; the page and the app's
+- **Offline sign-in.** `sw.js` (cache `cricket-lk-v14`; the page and the app's
   own `css/`/`js/` files are network-first, refreshing the cache, so a deploy
   never mixes versions) precaches the
   supabase-js CDN script and serves it stale-while-revalidate — keep its URL

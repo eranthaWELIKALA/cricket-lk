@@ -1262,3 +1262,12 @@ button.ghost.danger-text{ color:var(--danger); border-color:rgba(255,93,112,.5);
 }
 .score-set-inn .check-row{ flex-wrap:nowrap; }
 .score-set-inn .check-row input{ width:auto; flex-shrink:0; margin:0; }
+
+/* Opening sheet: two boxes side by side, each side's players as chips. */
+.open-slots{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.open-list{ flex-direction:row; flex-wrap:wrap; }
+.open-list .pick-row-item{ width:auto; flex:0 1 auto; height:40px; }
+.open-list .pick-row-item[data-tag]::after{ content:attr(data-tag); margin-left:8px; font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
+.open-hint{ margin:-4px 0 0; }
+.confirm-names{ margin:6px 0 8px; padding-left:18px; }
+.open-list .pick-row-item:disabled{ opacity:.4; box-shadow:none; }
