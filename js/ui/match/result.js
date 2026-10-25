@@ -154,6 +154,7 @@ function renderBallByBall(match, inn){
     const runs = o.events.reduce((s, ev) => s + (ev.runs || 0), 0);
     const w = o.events.filter(ev => ev.isWicket).length;
     score += runs; wkts += w;
+    let lastLabel = "";
     const chips = o.events.map(ev => {
       let cls = "chip";
       if (ev.isWicket) cls += " wicket";
@@ -164,6 +165,7 @@ function renderBallByBall(match, inn){
       const isLegal = !/^(Wd|Nb)/.test(ev.display);
       if (isLegal) inOver += 1;
       const label = `${i}.${isLegal ? inOver : inOver + 1}`;
+      lastLabel = label;
       // Each ball sits over its number ("4.3"), so an over reads as one group.
       const ball = chip => `<span class="bbb-ball">${chip}<span class="bbb-ball-no n">${label}</span></span>`;
       if (editable && ev.seq != null && editableBall(match, idx, ev.seq)){
@@ -171,6 +173,14 @@ function renderBallByBall(match, inn){
       }
       return ball(`<span class="${cls}">${escapeHtml(ev.display)}</span>`);
     }).join("");
+    // A "+" on an over left short that isn't being bowled any more (an
+    // innings ended by hand mid-over): add the ball the scorer missed. Overs
+    // are counted in legal balls, so a full over can't take another one -- a
+    // ball elsewhere is added from its neighbour's sheet (+ Ball before/after).
+    const last = o.events[o.events.length - 1];
+    const short = !o.live && inOver < bpo && (!inn.complete || inn.completeReason === "closed");
+    const addBall = editable && short && last && last.seq != null && editableBall(match, idx, last.seq)
+      ? `<span class="bbb-ball"><button type="button" data-action="add-ball" data-inn="${idx}" data-seq="${last.seq}" data-where="after" data-label="${lastLabel}" class="chip chip-add" aria-label="Add a ball after ${lastLabel}">+</button><span class="bbb-ball-no n">add</span></span>` : "";
     return `
       <div class="bbb-over">
         <div class="bbb-head">
@@ -178,7 +188,7 @@ function renderBallByBall(match, inn){
           <span class="bbb-bowler">${o.bowler ? escapeHtml(liveName(o.bowler)) : "—"}</span>
           <span class="n bbb-sum">${runs} run${runs === 1 ? "" : "s"}${w ? ` · ${w} wkt${w === 1 ? "" : "s"}` : ""}</span>
         </div>
-        <div class="chips bbb-chips">${chips}</div>
+        <div class="chips bbb-chips">${chips}${addBall}</div>
         <div class="n bbb-score">${escapeHtml(teamName(match, inn.battingTeam))} ${score}-${wkts}</div>
       </div>`;
   });
@@ -186,7 +196,7 @@ function renderBallByBall(match, inn){
     <div class="ball-by-ball">
       <h3>${escapeHtml(teamName(match, inn.battingTeam))} ${inn.runs}/${inn.wickets} <span class="ov">(${oversDisplay(inn.legalBalls, bpo)} ov)</span></h3>
       ${rows.reverse().join("")}
-      ${editable ? `<p class="hint bbb-edit-hint">Tap a ball to change or remove it: every later ball is worked out again.</p>` : ""}
+      ${editable ? `<p class="hint bbb-edit-hint">Tap a ball to change it, remove it or add a missed ball next to it: every later ball is worked out again.</p>` : ""}
       ${ballEditAllowed(match) ? `<button type="button" data-action="open-score-set" class="ghost bbb-score-set">Set the final score instead</button>` : ""}
       <p class="hint">Newest over first. W wicket · Wd wide · Nb no-ball · B bye · Lb leg bye · Ro run out.</p>
     </div>`;
@@ -322,6 +332,7 @@ function renderInningsBreak(match){
       </div>
       ${match.presetName ? `<p class="hint">Playing conditions came from the <b style="color:var(--text);">${escapeHtml(match.presetName)}</b> preset and are fixed for the whole match.</p>` : ""}
       <button type="button" data-action="open-edit-balls" class="link-btn">Full scorecard · fix a ball</button>
+      ${renderGoBackRow(match)}
       <button data-action="start-second-innings" class="primary">Start 2nd innings</button>
     </div>
   `;
@@ -395,15 +406,25 @@ function formatMotmLine(match, t){
   return parts.join(" · ");
 }
 
+// A one-shot burst inside the result card (CSS .confetti: only when Result
+// first appears, never on a re-render). Spread is fixed, not random, so a
+// render stays a pure function of state.
+function confettiHtml(){
+  return `<div class="confetti" aria-hidden="true">${Array.from({ length: 14 }, (_, i) =>
+    `<i style="--x:${(i * 37 + 5) % 96}%;--d:${(i % 5) * 0.07}s;--dx:${(i % 2 ? 1 : -1) * (8 + (i * 5) % 22)}px;--rot:${(i % 3 ? 1 : -1) * (200 + i * 37)}deg"></i>`).join("")}</div>`;
+}
+
 function renderResult(match){
   const allNames = Array.from(matchPlayerNames(match)).filter(n => !isUnnamedPlayer(n));
   const unnamed = ballEditAllowed(match) ? unnamedPlayers(match) : [];
   const motmName = match.motm || pickMatchMOTM(match);
   const motmTotal = motmName ? aggregatePlayerStats([match]).find(t => t.name === motmName) : null;
   const detail = renderResultDetail(match);
+  const won = !match.forfeited && / won by /.test(match.result || "");
   return `
     <div class="screen result">
       <div class="result-hero">
+        ${won ? confettiHtml() : ""}
         <div class="eyebrow">RESULT</div>
         <h2>${escapeHtml(match.result)}</h2>
         ${detail ? `<div class="n detail">${escapeHtml(detail)}</div>` : ""}
@@ -438,9 +459,25 @@ function renderResult(match){
         <button data-action="share-image" class="ghost" style="font-weight:800;letter-spacing:.04em;">Share image</button>
         <button data-action="export-pdf" class="ghost" style="font-weight:800;letter-spacing:.04em;">Export PDF</button>
       </div>
+      ${renderGoBackRow(match)}
       <button data-action="finish-match" class="primary">${match.tournamentId ? "Back to tournament" : match.clubId ? "Back to club" : "New match"}</button>
     </div>
   `;
+}
+
+/* The way back from the innings break or Result: "Reopen <team>'s innings"
+   for an innings ended by hand (newest first), and Undo for the rest -- the
+   last ball that ended it, a forfeit, a ball edit. Undo isn't offered when
+   the newest innings can be reopened: that's the same step, said plainly. */
+function renderGoBackRow(match){
+  if (match !== state.match) return "";
+  const reopen = reopenableInnings(match);
+  const undo = reopen[0] !== match.innings.length - 1 ? undoLabel(match) : null;
+  if (!reopen.length && !undo) return "";
+  return `<div class="go-back-row">
+    ${reopen.map(i => `<button type="button" data-action="reopen-innings" data-inn="${i}" class="ghost small">↺ Reopen ${escapeHtml(possessive(teamName(match, match.innings[i].battingTeam)))} innings</button>`).join("")}
+    ${undo ? `<button type="button" data-action="undo" class="ghost small">↶ ${undo}</button>` : ""}
+  </div>`;
 }
 
 function handleMotmSubmit(e){

@@ -1,14 +1,24 @@
-/* Cricket.lk — match: edit (or remove) an earlier ball, from ball by ball.
+/* Cricket.lk — match: edit, add or remove a ball from ball by ball; set the final score by hand.
    Classic script, loaded in order by index.html; all files share one global scope (see CLAUDE.md "Code layout"). */
-/* --- edit an earlier ball ---
+/* --- edit, add or remove a ball ---
    Ball by ball's chips are buttons for the match in progress (and a finished
-   one still on its Result screen). A tap opens this sheet: ui.ballEdit =
-   { inn, seq, label, d (the draft: kind, runs, wicketType, extra,
-   endComingIn, outEnd), need, supply, error }. Saving runs replayMatch
-   (ENGINE) on a copy; when the log can't say who batted or bowled next
-   (`need`), the sheet asks and tries again with that name in `supply`. The
-   shared confirmation sheet then shows old -> new before anything changes,
-   and the change is snapshotted first, so Undo walks it back. */
+   one still on its Result screen), and every over that's done ends in a "+".
+   A tap opens this sheet: ui.ballEdit = { inn, seq, label, mode, where, fill,
+   base, d, need, supply, supplied, error }.
+   - mode "edit": ball `seq` becomes the draft `d` (kind, runs, wicketType,
+     extra, endComingIn, outEnd, fielder);
+   - mode "add": a new ball `d` goes in just `where` ("before"/"after") `seq`;
+   - mode "remove": ball `seq` comes out. Taking out a legal ball moves every
+     later ball along, so the sheet asks (a "?") whether a ball was missed
+     instead: `fill` "over"/"end" adds the missing ball `d` at the end of that
+     over / the innings in the same change -- the only way to fix a finished
+     match, which must stay finished.
+   `base` "edit": add/remove was opened from the edit sheet, Back returns to it.
+   Everything is one replayMatch (ENGINE) on a copy with a list of changes;
+   when the log can't say who batted or bowled next (`need`), the sheet asks
+   and tries again with that name in `supply`. The shared confirmation sheet
+   shows old -> new before anything changes, and the change is snapshotted
+   first, so Undo walks it back. */
 const BALL_EDIT_KINDS = [["run", "Runs"], ["wide", "Wide"], ["noball", "No ball"], ["bye", "Bye"], ["legbye", "Leg bye"], ["wicket", "Wicket"]];
 
 // ⋯ Match options → "Edit an earlier ball": the scorecard sheet, on ball by ball.
@@ -32,20 +42,35 @@ function ballEditEvent(match, idx, seq){
   return all.find(ev => ev.seq === seq) || null;
 }
 
+function emptyBallDraft(){
+  return { kind: "run", runs: 0, wicketType: null, extra: "", endComingIn: "striker", outEnd: null, fielder: "" };
+}
+function ballDraftFrom(ev){
+  return {
+    kind: ev.kind, runs: ev.runs || 0, wicketType: ev.wicketType || null, extra: ev.extra || "",
+    endComingIn: ev.endComingIn || "striker", outEnd: ev.outEnd || null, fielder: ev.fielder || ""
+  };
+}
+// Anything asked for (a name, an error) belonged to the old draft.
+function resetBallEditAsks(be){
+  be.need = null; be.supply = { batters: [], bowlers: [] }; be.supplied = []; be.error = null;
+}
+
 function openBallEdit(idx, seq, label){
   const m = state.match;
   if (!ballEditAllowed(m)) return;
   const act = editableBall(m, idx, seq);
   if (!act) return;
-  const ev = act.ev;
-  ui.ballEdit = {
-    inn: idx, seq, label: label || "",
-    d: {
-      kind: ev.kind, runs: ev.runs || 0, wicketType: ev.wicketType || null, extra: ev.extra || "",
-      endComingIn: ev.endComingIn || "striker", outEnd: ev.outEnd || null, fielder: ev.fielder || ""
-    },
-    need: null, needFor: null, supply: { batters: [], bowlers: [] }, supplied: [], error: null
-  };
+  ui.ballEdit = { inn: idx, seq, label: label || "", mode: "edit", where: null, fill: null, base: null, d: ballDraftFrom(act.ev) };
+  resetBallEditAsks(ui.ballEdit);
+  render();
+}
+// Ball by ball's "+" at the end of an over: a new ball after its last one.
+function openAddBall(idx, seq, where, label){
+  const m = state.match;
+  if (!ballEditAllowed(m) || !editableBall(m, idx, seq)) return;
+  ui.ballEdit = { inn: idx, seq, label: label || "", mode: "add", where: where === "before" ? "before" : "after", fill: null, base: null, d: emptyBallDraft() };
+  resetBallEditAsks(ui.ballEdit);
   render();
 }
 
@@ -54,8 +79,41 @@ function closeBallEdit(){
   render();
 }
 
-/* One tap in the sheet: change one draft field. Anything asked for earlier
-   (a name, an error) belonged to the old draft, so it's dropped. */
+/* From the edit sheet: "add-before" / "add-after" / "remove", or "edit"
+   (Back). Removing a ball the plain way would leave a finished match
+   unfinished (or a started chase without its first innings): the missing
+   ball is then needed, so it starts at the end of the over. */
+function ballEditMode(mode){
+  const be = ui.ballEdit;
+  const m = state.match;
+  if (!be || !ballEditAllowed(m)) return;
+  readBallEditFielder(be);
+  if (mode === "edit"){
+    const act = editableBall(m, be.inn, be.seq);
+    if (!act) return;
+    Object.assign(be, { mode: "edit", where: null, fill: null, base: null, d: ballDraftFrom(act.ev) });
+  } else if (mode === "add-before" || mode === "add-after"){
+    Object.assign(be, { mode: "add", where: mode === "add-before" ? "before" : "after", fill: null, base: be.mode === "edit" ? "edit" : be.base, d: emptyBallDraft() });
+  } else if (mode === "remove"){
+    Object.assign(be, { mode: "remove", where: null, fill: null, base: be.mode === "edit" ? "edit" : be.base, d: emptyBallDraft() });
+    if (removalChoices(m, be).blocked) be.fill = "over";
+  }
+  resetBallEditAsks(be);
+  raiseBallEditNeed(m, be);
+  render();
+}
+function ballEditFill(value){
+  const be = ui.ballEdit;
+  if (!be || be.mode !== "remove") return;
+  readBallEditFielder(be);
+  be.fill = value === "over" || value === "end" ? value : null;
+  be.d = emptyBallDraft();
+  resetBallEditAsks(be);
+  raiseBallEditNeed(state.match, be);
+  render();
+}
+
+/* One tap in the sheet: change one draft field. */
 function ballEditSet(field, value){
   const be = ui.ballEdit;
   if (!be) return;
@@ -71,18 +129,21 @@ function ballEditSet(field, value){
   else if (field === "endComingIn"){ d.endComingIn = value; d.outEnd = null; }
   else if (field === "outEnd") d.outEnd = value;
   if (d.kind === "wicket"){
-    const fh = (ballEditEvent(state.match, be.inn, be.seq) || {}).freeHit;
+    const fh = (ballEditSubject(state.match, be).ev || {}).freeHit;
     const allowed = wicketTypesFor(fh, d.extra);
     if (d.wicketType && !allowed.includes(d.wicketType)) d.wicketType = null;
     if (!d.wicketType && allowed.length === 1) d.wicketType = allowed[0];
     if (d.wicketType !== "runout") d.runs = 0;
   }
-  be.need = null; be.supply = { batters: [], bowlers: [] }; be.supplied = []; be.error = null;
-  // A change the log can't follow (one more wicket, an over ending at
-  // another ball) is asked about at once, as a "?" in the sheet.
-  const pv = ballEditPreview(state.match, be);
-  if (pv.need){ be.need = pv.need; be.needFor = "edit"; }
+  resetBallEditAsks(be);
+  raiseBallEditNeed(state.match, be);
   render();
+}
+// A change the log can't follow (one more wicket, an over ending at another
+// ball) is asked about at once, as a "?" in the sheet.
+function raiseBallEditNeed(m, be){
+  const pv = ballEditPreview(m, be);
+  if (pv.need) be.need = pv.need;
 }
 
 /* The fielder box is typed, not tapped: keep what's in it in the draft, so a
@@ -98,6 +159,46 @@ function sameBallEvent(a, b){
   return norm(a) === norm(b);
 }
 
+// Does the sheet show the ball form? Not for a plain removal.
+function ballEditHasDraft(be){
+  return be.mode !== "remove" || !!be.fill;
+}
+
+/* Where the missing ball goes when one is taken out: after the last other
+   ball of that over ("over"), or after the last ball of the innings ("end"). */
+function ballEditFillAnchor(m, be){
+  const inn = m.innings[be.inn];
+  const balls = inningsBalls(inn).filter(b => b.seq !== be.seq && b.seq != null && editableBall(m, be.inn, b.seq));
+  const ctx = ballContext(inn, be.seq);
+  const pool = be.fill === "over" ? balls.filter(b => ctx && b.over.events === ctx.over.events) : balls;
+  const last = pool[pool.length - 1];
+  return last ? { seq: last.seq, insert: "after", label: last.label } : { seq: be.seq, insert: "before", label: ctx ? ctx.label : be.label };
+}
+
+// The sheet as a list of replayMatch changes; `ev` is the draft as an event.
+function ballEditChanges(m, be, ev){
+  const at = { inn: be.inn, seq: be.seq };
+  if (be.mode === "edit") return [Object.assign(at, { ev })];
+  if (be.mode === "add") return [Object.assign(at, { ev, insert: be.where })];
+  const out = [Object.assign(at, { ev: null })];
+  if (be.fill){
+    const a = ballEditFillAnchor(m, be);
+    out.push({ inn: be.inn, seq: a.seq, ev, insert: a.insert });
+  }
+  return out;
+}
+
+/* The ball the form describes and who was where on it: the ball itself when
+   editing, or -- for a new ball -- where a replay puts it (worked out with a
+   dot ball, since only its position matters). { act (log entry: striker,
+   nonStriker, bowler), ev (its over event, for the free hit) }. */
+function ballEditSubject(m, be){
+  if (be.mode === "edit" || !ballEditHasDraft(be)) return { act: editableBall(m, be.inn, be.seq), ev: ballEditEvent(m, be.inn, be.seq) };
+  const res = replayMatch(m, ballEditChanges(m, be, { kind: "run", runs: 0 }), be.supply);
+  const nm = res.match || res.partial, q = res.added && res.added[0];
+  return nm && q ? { act: editableBall(nm, be.inn, q), ev: ballEditEvent(nm, be.inn, q) } : { act: null, ev: null };
+}
+
 // The draft as a recordBall event, or { error }. `preview`: only what
 // changes the score -- the fielder is checked when it's saved.
 function ballEditToEvent(match, be, preview){
@@ -105,11 +206,11 @@ function ballEditToEvent(match, be, preview){
   const inn = match.innings[be.inn];
   if (d.kind !== "wicket") return { ev: { kind: d.kind, runs: d.runs } };
   if (!d.wicketType) return { error: "Pick how the batter was out." };
-  const act = editableBall(match, be.inn, be.seq);
   const ev = { kind: "wicket", wicketType: d.wicketType };
   if (d.extra) ev.extra = d.extra;
   if (d.wicketType === "runout"){
-    if (!act[d.endComingIn]) return { error: "Nobody was batting at that end on this ball." };
+    const act = ballEditSubject(match, be).act;
+    if (act && !act[d.endComingIn]) return { error: "Nobody was batting at that end on this ball." };
     Object.assign(ev, { runs: d.runs, endComingIn: d.endComingIn, outEnd: d.outEnd || d.endComingIn });
   }
   if (!preview && (d.wicketType === "caught" || d.wicketType === "runout")){
@@ -125,23 +226,42 @@ function ballEditToEvent(match, be, preview){
   return { ev };
 }
 
-function ballEditSave(remove){
+/* Removing a ball: does it need the "was a ball missed?" question, and can
+   it be taken out on its own? `blocked` is why not (a finished match has to
+   stay finished; a started chase needs its first innings over). */
+function removalChoices(m, be){
+  const inn = m.innings[be.inn];
+  const ctx = ballContext(inn, be.seq);
+  const balls = inningsBalls(inn);
+  const legal = !!ctx && !/^(Wd|Nb)/.test(ctx.ev.display);
+  const isLast = balls.length && balls[balls.length - 1].seq === be.seq;
+  const plain = replayMatch(m, [{ inn: be.inn, seq: be.seq, ev: null }], be.supply);
+  let blocked = null;
+  if (plain.error) blocked = plain.error;
+  else if (m.status === "complete" && plain.match && plain.match.status !== "complete") blocked = "The match is finished, so it has to stay finished: with this ball taken out, it wouldn't be.";
+  const over = ballEditFillAnchor(m, Object.assign({}, be, { fill: "over" }));
+  const end = ballEditFillAnchor(m, Object.assign({}, be, { fill: "end" }));
+  return { ask: !!blocked || (legal && (!isLast || inn.complete)), blocked, overNumber: ctx ? ctx.over.number : null, sameEnd: over.seq === end.seq && over.insert === end.insert, endLabel: end.label };
+}
+
+function ballEditSave(){
   const m = state.match;
   const be = ui.ballEdit;
   if (!be || !ballEditAllowed(m)) return;
   const form = document.getElementById("ball-edit-form");
-  const inn = m.innings[be.inn];
   const act = editableBall(m, be.inn, be.seq);
   if (!act){ closeBallEdit(); return; }
-  // A name asked for belongs to the change that asked (edit or remove).
-  if (be.need && be.needFor !== (remove ? "remove" : "edit")){ be.need = null; be.supply = { batters: [], bowlers: [] }; be.supplied = []; }
   readBallEditFielder(be);
   let ev = null;
-  if (!remove){
+  if (ballEditHasDraft(be)){
     const r = ballEditToEvent(m, be);
     if (r.error){ be.error = r.error; render(); return; }
     ev = r.ev;
-    if (sameBallEvent(act.ev, ev)){ be.error = "Nothing has changed yet."; render(); return; }
+    if (be.mode === "edit" && sameBallEvent(act.ev, ev)){ be.error = "Nothing has changed yet."; render(); return; }
+  }
+  if (be.mode === "remove" && !be.fill){
+    const blocked = removalChoices(m, be).blocked;
+    if (blocked){ be.error = blocked; render(); return; }
   }
   // A name the replay asked for last time (who came in / who bowled next).
   if (be.need){
@@ -156,9 +276,9 @@ function ballEditSave(remove){
     be.supply[be.need.kind === "batter" ? "batters" : "bowlers"].push(name);
     be.supplied.push({ name, team: be.need.kind === "batter" ? needInn.battingTeam : needInn.bowlingTeam });
   }
-  const res = replayMatch(m, { inn: be.inn, seq: be.seq, ev }, be.supply);
+  const res = replayMatch(m, ballEditChanges(m, be, ev), be.supply);
   if (res.need){
-    be.need = res.need; be.needFor = remove ? "remove" : "edit"; be.error = null;
+    be.need = res.need; be.error = null;
     render();
     const input = document.querySelector('#ball-edit-form input[name="newName"]');
     if (input) input.value = "";
@@ -169,26 +289,38 @@ function ballEditSave(remove){
     be.error = "This would mean the match isn't over any more. After the result, a change has to keep the match finished.";
     render(); return;
   }
-  askBallEditConfirm(m, res, remove, ev);
+  askBallEditConfirm(m, res, ev);
 }
 
-function askBallEditConfirm(m, res, remove, ev){
+// The sheet's heading: "Edit ball 3.4", "Add a ball after 3.6", "Remove ball 3.4".
+function ballEditTitle(be){
+  if (be.mode === "add") return `Add a ball ${be.where} ${be.label}`;
+  return `${be.mode === "remove" ? "Remove" : "Edit"} ball ${be.label}`;
+}
+
+function askBallEditConfirm(m, res, ev){
   const be = ui.ballEdit;
   const nm = res.match;
   const oldEv = ballEditEvent(m, be.inn, be.seq);
-  const newEv = remove ? null : ballEditEvent(nm, be.inn, be.seq);
-  const chip = e => e ? ballChipHtml(e) : "";
+  const addedSeq = res.added && res.added[0];
+  const added = addedSeq != null ? ballContext(nm.innings[be.inn], addedSeq) : null;
+  const addLine = added ? `<span class="arrow">+</span> ${ballChipHtml(added.ev)} <span class="hint">as ball ${escapeHtml(added.label)}</span>` : "";
+  const diff = be.mode === "edit" ? `${ballChipHtml(oldEv)} <span class="arrow">→</span> ${ballChipHtml(ballEditEvent(nm, be.inn, be.seq))}`
+    : be.mode === "add" ? addLine
+    : `${ballChipHtml(oldEv)} <span class="arrow">→</span> <b>removed</b>${addLine ? ` ${addLine}` : ""}`;
   const lines = scoreChangeLines(m, nm);
   const result = m.result !== nm.result && nm.result ? `<li>Result: <b>${escapeHtml(nm.result)}</b></li>` : "";
   const supplied = be.supplied.slice();
+  const title = be.mode === "add" ? `${ballEditTitle(be)}?`
+    : be.mode === "remove" ? `Remove ball ${be.label}${added ? " and add the missing one" : ""}?` : `Change ball ${be.label}?`;
   askConfirm({
-    title: remove ? `Remove ball ${be.label}?` : `Change ball ${be.label}?`, icon: "✎", tone: "primary",
+    title, icon: be.mode === "add" ? "+" : "✎", tone: "primary",
     body: `
-      <p class="ball-edit-diff">${chip(oldEv)} <span class="arrow">→</span> ${remove ? "<b>removed</b>" : chip(newEv)}</p>
+      <p class="ball-edit-diff">${diff}</p>
       ${lines || result ? `<ul class="ball-edit-notes">${lines}${result}</ul>` : `<p>The score stays the same.</p>`}
       ${res.notes.length ? `<ul class="ball-edit-notes">${res.notes.map(t => `<li>${escapeHtml(t)}</li>`).join("")}</ul>` : ""}
       <p class="hint">Every later ball is worked out again from here. Undo brings the old version back.</p>`,
-    confirmLabel: remove ? "Remove ball" : "Save change",
+    confirmLabel: be.mode === "add" ? "Add ball" : be.mode === "remove" ? "Remove ball" : "Save change",
     onConfirm: () => {
       applyBallEdit(m, nm);
       if (ev && ev.fielder) registerMatchPlayer(ev.fielder, nm.innings[be.inn].bowlingTeam);
@@ -211,28 +343,34 @@ function scoreChangeLines(m, nm){
     const before = m.innings[n], after = nm.innings[n];
     const was = before ? inningsScoreText(before) : "yet to bat";
     if (before && after && was === inningsScoreText(after) && !!before.complete === !!after.complete) return "";
-    const now = after ? inningsScoreText(after) + (after.complete && !(before && before.complete) ? ", innings over" : "") : "—";
+    const now = after ? inningsScoreText(after) + (after.complete && !(before && before.complete) ? ", innings over"
+      : !after.complete && before && before.complete ? ", innings not over" : "") : "cleared";
     return `<li><b>${escapeHtml(teamName(m, x.battingTeam))}</b> <span class="n">${was} → ${now}</span></li>`;
   }).join("");
 }
 
-/* What the draft would do, worked out on a copy on every render (cheap: one
-   replay). { pending } while the draft is incomplete (no dismissal picked),
-   { error }, or { match (the replayed match, or as far as it got), need,
-   left (later balls that can't be worked out until `need` is answered),
-   notes }. */
+/* What the sheet would do, worked out on a copy on every render (cheap: a
+   replay or two). { pending } while the draft is incomplete (no dismissal
+   picked), { error }, or { match (the replayed match, or as far as it got),
+   need, left (later balls that can't be worked out until `need` is
+   answered), notes, added (the new ball's id) }. */
 function ballEditPreview(m, be){
-  const r = ballEditToEvent(m, be, true);
-  if (r.error) return { pending: r.error };
-  const res = replayMatch(m, { inn: be.inn, seq: be.seq, ev: r.ev }, be.supply);
+  let ev = null;
+  if (ballEditHasDraft(be)){
+    const r = ballEditToEvent(m, be, true);
+    if (r.error) return { pending: r.error };
+    ev = r.ev;
+  }
+  const res = replayMatch(m, ballEditChanges(m, be, ev), be.supply);
   if (res.error) return { error: res.error };
-  return { match: res.match || res.partial, need: res.need || null, left: res.left || 0, notes: res.notes || [] };
+  return { match: res.match || res.partial, need: res.need || null, left: res.left || 0, notes: res.notes || [], added: res.added || [] };
 }
 
-/* The panel at the top of the edit sheet: the over as it was recorded (this
-   ball ringed), the score before this ball, the ball as it now reads, the
-   score after it, and the innings total before -> after the change. Anything
-   the change leaves unknown until the scorer answers below is a "?". */
+/* The panel at the top of the sheet: the over as it was recorded (the ball
+   tapped ringed; struck through when it's being removed), the same stretch
+   with the change, the ball the form describes (score before it, the ball,
+   score after it), and the innings total before -> after. Anything the
+   change leaves unknown until the scorer answers below is a "?". */
 function renderBallEditContext(m, be){
   const inn = m.innings[be.inn];
   const ctx = ballContext(inn, be.seq);
@@ -240,16 +378,26 @@ function renderBallEditContext(m, be){
   const bpo = inn.ballsPerOver;
   const pv = ballEditPreview(m, be);
   const nInn = pv.match ? pv.match.innings[be.inn] : null;
-  const nCtx = nInn ? ballContext(nInn, be.seq) : null;
   const q = `<span class="chip unknown">?</span>`;
   const sc = x => `${x.runs}-${x.wickets}`;
-  const changed = !!nCtx && !sameBallEvent(ctx.over.events[ctx.over.at], nCtx.over.events[nCtx.over.at]);
-  const overChips = (events, at, unknown) => events.map((e, k) => ballChipHtml(e, k === at ? "this" : "")).join("")
+  // The ball the form is about: this one (edit) or the new one (add / the missing ball).
+  const focusSeq = be.mode === "edit" ? be.seq : pv.added && pv.added[0];
+  const nCtx = nInn && focusSeq != null ? ballContext(nInn, focusSeq) : null;
+  const changed = be.mode !== "edit" || (!!nCtx && !sameBallEvent(ctx.ev, nCtx.ev));
+  const overChips = (events, ring, cls, unknown) => events.map(e => ballChipHtml(e, e.seq === ring ? cls : "")).join("")
     + (unknown ? q.repeat(Math.min(unknown, bpo)) : "");
-  // The edited over, worked out again (cut short where a name is needed).
-  const after = nCtx && changed ? (() => {
-    const unknown = pv.need ? Math.max(0, ctx.over.events.length - nCtx.over.events.length) || (pv.left ? 1 : 0) : 0;
-    return `<div class="bec-over"><span class="bec-k">With this change</span><div class="chips">${overChips(nCtx.over.events, nCtx.over.at, unknown)}</div></div>`;
+  // The over the change lands in, worked out again (cut short where a name is needed).
+  const shown = (() => {
+    if (!nInn || !changed) return null;
+    if (nCtx) return nCtx;
+    // a plain removal: the over the next ball (or the one before) now sits in
+    const balls = inningsBalls(inn), i = balls.findIndex(b => b.seq === be.seq);
+    const near = [...balls.slice(i + 1), ...balls.slice(0, i).reverse()].find(b => ballContext(nInn, b.seq));
+    return near ? ballContext(nInn, near.seq) : null;
+  })();
+  const after = shown ? (() => {
+    const unknown = pv.need ? Math.max(0, ctx.over.events.length - shown.over.events.length) || (pv.left ? 1 : 0) : 0;
+    return `<div class="bec-over"><span class="bec-k">With this change · over ${shown.over.number}</span><div class="chips">${overChips(shown.over.events, nCtx ? focusSeq : null, "this", unknown)}</div></div>`;
   })() : "";
   const total = (() => {
     if (!pv.match || !changed) return "";
@@ -261,19 +409,39 @@ function renderBallEditContext(m, be){
   const later = pv.need && pv.left ? `<p class="bec-unknown">${q} ${pv.left} later ball${pv.left === 1 ? "" : "s"}, from ${escapeHtml(pv.need.label)}, can't be worked out until you say who ${pv.need.kind === "batter" ? "came in" : "bowled"}.</p>` : "";
   const notes = pv.match && changed && pv.notes.length
     ? `<ul class="ball-edit-notes">${pv.notes.map(t => `<li${/Check it/.test(t) ? ` class="bec-check"` : ""}>${/Check it/.test(t) ? `${q} ` : ""}${escapeHtml(t)}</li>`).join("")}</ul>` : "";
+  const ballLine = !ballEditHasDraft(be) ? "" : (() => {
+    const was = be.mode === "edit" ? ctx : null;
+    const before = nCtx ? nCtx.before : was ? was.before : null;
+    return `
+      <div class="bec-grid">
+        <div><span class="bec-k">Before ${be.mode === "edit" ? "this" : "the new"} ball</span><span class="bec-v n">${before ? sc(before) : "?"}</span><span class="bec-s n">${before ? `${oversDisplay(before.balls, bpo)} ov` : ""}</span></div>
+        <div><span class="bec-k">${be.mode === "edit" ? "This ball" : `New ball${nCtx ? ` ${escapeHtml(nCtx.label)}` : ""}`}</span><span class="bec-v">${nCtx ? ballChipHtml(nCtx.ev) : q}</span><span class="bec-s n">${nCtx ? `+${nCtx.after.runs - nCtx.before.runs}${nCtx.after.wickets > nCtx.before.wickets ? " · wkt" : ""}` : escapeHtml(pv.pending || pv.error || "")}</span></div>
+        <div><span class="bec-k">After ${be.mode === "edit" ? "this" : "the new"} ball</span><span class="bec-v n">${nCtx ? sc(nCtx.after) : "?"}</span><span class="bec-s n">${nCtx ? `${oversDisplay(nCtx.after.balls, bpo)} ov` : ""}${be.mode === "edit" && changed && nCtx && sc(nCtx.after) !== sc(ctx.after) ? ` · was ${sc(ctx.after)}` : ""}</span></div>
+      </div>`;
+  })();
+  const ringCls = be.mode === "remove" ? "this gone" : be.mode === "edit" ? "this" : "anchor";
   return `
     <div class="ball-edit-context">
-      <div class="bec-over"><span class="bec-k">Over ${ctx.over.number}${ctx.over.bowler && !m.anonymous ? ` · ${escapeHtml(liveName(ctx.over.bowler))}` : ""} · as recorded</span><div class="chips">${overChips(ctx.over.events, ctx.over.at, 0)}</div></div>
+      <div class="bec-over"><span class="bec-k">Over ${ctx.over.number}${ctx.over.bowler && !m.anonymous ? ` · ${escapeHtml(liveName(ctx.over.bowler))}` : ""} · as recorded</span><div class="chips">${overChips(ctx.over.events, be.seq, ringCls, 0)}</div></div>
       ${after}
-      <div class="bec-grid">
-        <div><span class="bec-k">Before this ball</span><span class="bec-v n">${sc(ctx.before)}</span><span class="bec-s n">${oversDisplay(ctx.before.balls, bpo)} ov</span></div>
-        <div><span class="bec-k">This ball</span><span class="bec-v">${nCtx ? ballChipHtml(nCtx.over.events[nCtx.over.at]) : q}</span><span class="bec-s n">${nCtx ? `+${nCtx.after.runs - nCtx.before.runs}${nCtx.after.wickets > nCtx.before.wickets ? " · wkt" : ""}` : escapeHtml(pv.pending || pv.error || "")}</span></div>
-        <div><span class="bec-k">After this ball</span><span class="bec-v n">${nCtx ? sc(nCtx.after) : "?"}</span><span class="bec-s n">${nCtx ? `${oversDisplay(nCtx.after.balls, bpo)} ov` : ""}${changed && nCtx && sc(nCtx.after) !== sc(ctx.after) ? ` · was ${sc(ctx.after)}` : ""}</span></div>
-      </div>
-      ${total || result ? `<ul class="ball-edit-notes bec-total">${total}${result}</ul>` : `<p class="bec-same">Innings total <b class="n">${inningsScoreText(inn)}</b>${changed ? " · stays the same" : ""}</p>`}
+      ${ballLine}
+      ${pv.error && !ballEditHasDraft(be) ? `<p class="bec-unknown">${escapeHtml(pv.error)}</p>` : ""}
+      ${total || result ? `<ul class="ball-edit-notes bec-total">${total}${result}</ul>` : `<p class="bec-same">Innings total <b class="n">${inningsScoreText(inn)}</b>${changed && pv.match ? " · stays the same" : ""}</p>`}
       ${later}
       ${notes}
     </div>`;
+}
+
+/* Put a match's new version into its archive entry, in place: same id and
+   completedAt, re-queued for the cloud. Used after a ball edit of a finished
+   match, when a reopened match finishes again, and by Undo. */
+function replaceArchivedMatch(id, next){
+  const prev = state.matchHistory[id];
+  const archived = Object.assign(archivedCopy(next), { id, completedAt: prev.completedAt });
+  delete archived.reopenedFrom;
+  state.matchHistory[id] = archived;
+  if (next.clubId) syncMatchToCloud(next, archived);
+  return archived;
 }
 
 /* Swap in the replayed match. A finished match was archived (and maybe
@@ -283,14 +451,11 @@ function renderBallEditContext(m, be){
 function applyBallEdit(old, next){
   pushSnapshot();
   if (old.archivedId && state.matchHistory[old.archivedId]){
-    const prev = state.matchHistory[old.archivedId];
     const auto = pickMatchMOTM(old);
     const kept = old.motm && old.motm !== auto && Array.from(matchPlayerNames(next)).includes(old.motm);
     next.motm = kept ? old.motm : pickMatchMOTM(next);
-    const archived = Object.assign(archivedCopy(next), { id: prev.id, completedAt: prev.completedAt });
-    state.matchHistory[prev.id] = archived;
     state.match = next;
-    if (next.clubId) syncMatchToCloud(next, archived);
+    replaceArchivedMatch(old.archivedId, next);
   } else {
     state.match = next;
     maybeArchiveCompletedMatch(next);
@@ -306,12 +471,15 @@ function renderBallEditModal(m){
   const orig = ballEditEvent(m, be.inn, be.seq);
   if (!act || !orig) return "";
   const d = be.d;
-  const fh = !!orig.freeHit;
+  const subject = ballEditSubject(m, be);
+  const sAct = subject.act || {};
+  const fh = !!(subject.ev && subject.ev.freeHit);
   const name = n => n ? escapeHtml(liveName(n)) : "—";
   const tile = (field, value, label, on, sub) => `<button type="button" data-action="ball-edit-set" data-field="${field}" data-value="${value}" class="${on ? "active" : ""}">${label}${sub ? `<span class="sub">${sub}</span>` : ""}</button>`;
+  const editing = be.mode === "edit" ? orig : null;
   const kinds = BALL_EDIT_KINDS.filter(([k]) =>
-    (k !== "wide" || m.wideEnabled || orig.kind === "wide" || orig.extra === "wide")
-    && (k !== "noball" || m.noBallEnabled || orig.kind === "noball" || orig.extra === "noball"));
+    (k !== "wide" || m.wideEnabled || (editing && (editing.kind === "wide" || editing.extra === "wide")))
+    && (k !== "noball" || m.noBallEnabled || (editing && (editing.kind === "noball" || editing.extra === "noball"))));
   const runPad = (from, to) => {
     const out = [];
     for (let n = from; n <= to; n++) out.push(`<button type="button" data-action="ball-edit-set" data-field="runs" data-value="${n}" class="run-btn ${d.runs === n ? "active" : ""}">${n}</button>`);
@@ -328,53 +496,84 @@ function renderBallEditModal(m){
     ? pickPool(needInn.battingTeam).filter(n => !needInn.batting.order.some(x => x.toLowerCase() === n.toLowerCase()) && !playerSideConflict(m, n, needInn.battingTeam))
     : [...needInn.bowling.order, ...pickPool(needInn.bowlingTeam)].filter((n, i, a) => a.indexOf(n) === i
       && (!be.need.last || n.toLowerCase() !== be.need.last.toLowerCase()) && !playerSideConflict(m, n, needInn.bowlingTeam));
+  const choices = be.mode === "remove" ? removalChoices(m, be) : null;
+  const fillTile = (value, label, sub, disabled) => `<button type="button" data-action="ball-edit-fill" data-value="${value}" class="${(be.fill || "") === value ? "active" : ""}" ${disabled ? "disabled" : ""}>${label}${sub ? `<span class="sub">${sub}</span>` : ""}</button>`;
+  const ballForm = `
+    <div class="section-label">${be.mode === "edit" ? "What happened?" : be.mode === "add" ? "What happened on the new ball?" : "What happened on the missing ball?"}</div>
+    <div class="ball-edit-kinds">${kinds.map(([k, label]) => tile("kind", k, label, d.kind === k)).join("")}</div>
+    ${d.kind !== "wicket" ? `
+      <div class="section-label">${runsAsk}</div>
+      ${runPad(d.kind === "bye" || d.kind === "legbye" ? 1 : 0, 6)}
+    ` : `
+      ${m.wideEnabled || m.noBallEnabled || d.extra ? `
+        <div class="section-label">Off which ball?</div>
+        <div class="ball-edit-kinds three">
+          ${tile("extra", "", "Fair ball", !d.extra)}
+          ${m.wideEnabled || d.extra === "wide" ? tile("extra", "wide", "Wide", d.extra === "wide") : ""}
+          ${m.noBallEnabled || d.extra === "noball" ? tile("extra", "noball", "No ball", d.extra === "noball") : ""}
+        </div>` : ""}
+      <div class="section-label">How out?</div>
+      <div class="wicket-types${types.length === 1 ? " solo" : ""}">
+        ${types.map(t => `<button type="button" data-action="ball-edit-set" data-field="wicketType" data-value="${t}" class="${d.wicketType === t ? "active" : ""}">${DISMISSAL_WORDS[t]}</button>`).join("")}
+      </div>
+      ${isRunout ? `
+        <div class="section-label">Who's out?</div>
+        <div class="end-picker">
+          ${tile("endComingIn", "striker", `<span class="role">Striker</span><span class="n">${name(sAct.striker)}</span>`, d.endComingIn === "striker").replace("<button ", `<button ${subject.act && !sAct.striker ? "disabled " : ""}`).replace('class="', 'class="end-tile ')}
+          ${!subject.act || sAct.nonStriker ? tile("endComingIn", "nonStriker", `<span class="role">Non-striker</span><span class="n">${name(sAct.nonStriker)}</span>`, d.endComingIn === "nonStriker").replace('class="', 'class="end-tile ') : ""}
+        </div>
+        <div class="section-label">Run out at which end?</div>
+        <div class="end-picker">
+          ${tile("outEnd", "striker", `<span class="role">Striker's end</span><span class="n">Keeper's end</span>`, outAt === "striker").replace('class="', 'class="end-tile ')}
+          ${tile("outEnd", "nonStriker", `<span class="role">Non-striker's end</span><span class="n">Bowler's end</span>`, outAt === "nonStriker").replace('class="', 'class="end-tile ')}
+        </div>
+        <div class="section-label">Runs completed${d.extra ? ` (on top of the ${d.extra === "wide" ? "wide" : "no-ball"})` : ""}</div>
+        ${runPad(0, 3)}
+      ` : ""}
+      ${needsFielder ? `
+        <div class="fielder-box">
+          <div class="fielder-box-head"><label for="ball-edit-fielder">FIELDER</label></div>
+          ${renderNameCombo("", `id="ball-edit-fielder" name="fielder" maxlength="24" placeholder="Search players" value="${escapeHtml(d.fielder || "")}"`, fielderPool)}
+        </div>` : ""}
+    `}`;
+  const removal = !choices ? "" : `
+    ${choices.ask ? `
+      <div class="ball-edit-need">
+        <div class="section-label"><span class="chip unknown">?</span> Was a ball missed instead?</div>
+        <p class="hint">Taking out a legal ball moves every later ball along a place. If the scorer missed a ball somewhere else, add it here so the overs match up again.</p>
+        <div class="ball-edit-kinds fill-choices">
+          ${fillTile("", "Just remove it", choices.blocked ? "Not possible here" : "Later balls move up", !!choices.blocked)}
+          ${fillTile("over", `Add one at the end of over ${choices.overNumber}`, "Same bowler, same over")}
+          ${choices.sameEnd ? "" : fillTile("end", "Add one at the end of the innings", `After ball ${escapeHtml(choices.endLabel)}`)}
+        </div>
+        ${choices.blocked ? `<p class="hint">${escapeHtml(choices.blocked)}</p>` : ""}
+      </div>` : ""}
+    ${be.fill ? ballForm : ""}`;
+  const who = be.mode === "add"
+    ? `New ball ${be.where} <span class="chip">${escapeHtml(orig.display)}</span> (${escapeHtml(be.label)})${!m.anonymous && sAct.bowler ? ` · ${name(sAct.bowler)} to ${name(sAct.striker)}` : ""}`
+    : `${m.anonymous ? "" : `${name(act.bowler)} to ${name(act.striker)} · `}recorded as ${ballChipHtml(orig)}`;
+  const back = be.base === "edit" ? `<button type="button" data-action="ball-edit-mode" data-value="edit" class="ghost">Back</button>` : "";
+  const actions = be.mode === "edit" ? `
+      <div class="ball-edit-add-row">
+        <button type="button" data-action="ball-edit-mode" data-value="add-before" class="ghost small">+ Ball before</button>
+        <button type="button" data-action="ball-edit-mode" data-value="add-after" class="ghost small">+ Ball after</button>
+      </div>
+      <div class="ball-edit-actions">
+        <button type="button" data-action="ball-edit-mode" data-value="remove" class="ghost danger-text">Remove ball</button>
+        <button type="submit" class="primary">${be.need ? "Continue" : "Review change"}</button>
+      </div>`
+    : `<div class="ball-edit-actions${back ? "" : " solo"}">${back}<button type="submit" class="primary">${be.need ? "Continue" : be.mode === "add" ? "Review new ball" : "Review removal"}</button></div>`;
   return `
     <div class="modal-backdrop">
-      <div class="modal ball-edit-modal" data-keep-scroll="ball-edit" role="dialog" aria-modal="true" aria-label="Edit ball ${escapeHtml(be.label)}">
+      <div class="modal ball-edit-modal" data-keep-scroll="ball-edit" role="dialog" aria-modal="true" aria-label="${escapeHtml(ballEditTitle(be))}">
         <div class="wicket-modal-head">
-          <h2>Edit ball ${escapeHtml(be.label)}</h2>
+          <h2>${escapeHtml(ballEditTitle(be))}</h2>
           <button type="button" data-action="close-ball-edit" class="sheet-close" aria-label="Close">✕</button>
         </div>
-        <p class="ball-edit-who">${m.anonymous ? "" : `${name(act.bowler)} to ${name(act.striker)} · `}recorded as <span class="chip${orig.isWicket ? " wicket" : /^(Wd|Nb)/.test(orig.display) ? " extra" : ""}">${escapeHtml(orig.display)}</span>${fh ? ` <span class="freehit-badge">FREE HIT</span>` : ""}</p>
+        <p class="ball-edit-who">${who}${fh && ballEditHasDraft(be) ? ` <span class="freehit-badge">FREE HIT</span>` : ""}</p>
         ${renderBallEditContext(m, be)}
         <form id="ball-edit-form" data-nav-ignore>
-          <div class="section-label">What happened?</div>
-          <div class="ball-edit-kinds">${kinds.map(([k, label]) => tile("kind", k, label, d.kind === k)).join("")}</div>
-          ${d.kind !== "wicket" ? `
-            <div class="section-label">${runsAsk}</div>
-            ${runPad(d.kind === "bye" || d.kind === "legbye" ? 1 : 0, 6)}
-          ` : `
-            ${m.wideEnabled || m.noBallEnabled || d.extra ? `
-              <div class="section-label">Off which ball?</div>
-              <div class="ball-edit-kinds three">
-                ${tile("extra", "", "Fair ball", !d.extra)}
-                ${m.wideEnabled || d.extra === "wide" ? tile("extra", "wide", "Wide", d.extra === "wide") : ""}
-                ${m.noBallEnabled || d.extra === "noball" ? tile("extra", "noball", "No ball", d.extra === "noball") : ""}
-              </div>` : ""}
-            <div class="section-label">How out?</div>
-            <div class="wicket-types${types.length === 1 ? " solo" : ""}">
-              ${types.map(t => `<button type="button" data-action="ball-edit-set" data-field="wicketType" data-value="${t}" class="${d.wicketType === t ? "active" : ""}">${DISMISSAL_WORDS[t]}</button>`).join("")}
-            </div>
-            ${isRunout ? `
-              <div class="section-label">Who's out?</div>
-              <div class="end-picker">
-                ${tile("endComingIn", "striker", `<span class="role">Striker</span><span class="n">${name(act.striker)}</span>`, d.endComingIn === "striker").replace("<button ", `<button ${act.striker ? "" : "disabled "}`).replace('class="', 'class="end-tile ')}
-                ${act.nonStriker ? tile("endComingIn", "nonStriker", `<span class="role">Non-striker</span><span class="n">${name(act.nonStriker)}</span>`, d.endComingIn === "nonStriker").replace('class="', 'class="end-tile ') : ""}
-              </div>
-              <div class="section-label">Run out at which end?</div>
-              <div class="end-picker">
-                ${tile("outEnd", "striker", `<span class="role">Striker's end</span><span class="n">Keeper's end</span>`, outAt === "striker").replace('class="', 'class="end-tile ')}
-                ${tile("outEnd", "nonStriker", `<span class="role">Non-striker's end</span><span class="n">Bowler's end</span>`, outAt === "nonStriker").replace('class="', 'class="end-tile ')}
-              </div>
-              <div class="section-label">Runs completed${d.extra ? ` (on top of the ${d.extra === "wide" ? "wide" : "no-ball"})` : ""}</div>
-              ${runPad(0, 3)}
-            ` : ""}
-            ${needsFielder ? `
-              <div class="fielder-box">
-                <div class="fielder-box-head"><label for="ball-edit-fielder">FIELDER</label></div>
-                ${renderNameCombo("", `id="ball-edit-fielder" name="fielder" maxlength="24" placeholder="Search players" value="${escapeHtml(d.fielder || "")}"`, fielderPool)}
-              </div>` : ""}
-          `}
+          ${be.mode === "remove" ? removal : ballForm}
           ${be.need ? `
             <div class="ball-edit-need">
               <div class="section-label"><span class="chip unknown">?</span> ${be.need.kind === "batter"
@@ -386,10 +585,7 @@ function renderBallEditModal(m){
               ${renderNameCombo("", `name="newName" maxlength="24" placeholder="Search or type a player" required`, needPool)}
             </div>` : ""}
           <div class="form-error">${be.error ? escapeHtml(be.error) : ""}</div>
-          <div class="ball-edit-actions">
-            <button type="button" data-action="ball-edit-delete" class="ghost danger-text">Remove ball</button>
-            <button type="submit" class="primary">${be.need ? "Continue" : "Review change"}</button>
-          </div>
+          ${actions}
         </form>
         <button type="button" data-action="close-ball-edit" class="ghost" style="width:100%;margin-top:6px;">Cancel</button>
       </div>

@@ -7,17 +7,16 @@
 function renderSheetScore(match, inn){
   return `<div class="sheet-score-banner" aria-label="Current score">${renderScoreBento(match, inn, teamName(match, inn.battingTeam))}</div>`;
 }
-/* Openers and the first bowler: the three boxes stay (type any name), and
-   each side's players are chips under them -- the first batter tapped goes
-   on strike, the second to the other end, a chosen chip tapped again is
-   un-picked; the bowler chips fill the bowler box. DOM-only (openingPick /
-   syncOpeningPicks), so typed text survives; the submit handler checks it all. */
+/* Openers and the first bowler: three boxes, one per line, each a
+   search-select (renderNameCombo) -- focusing a box lists that side's players
+   under it as rows, typing narrows them, a tap fills that box. A name already
+   in one box isn't offered in the others (updateCombo). Any name can still be
+   typed; the submit handler checks it all. */
 function renderOpeningModal(match){
   const inn = currentInnings(match);
   const bat = pickCandidates(match, pickPool(inn.battingTeam), "batter");
   const bowl = pickCandidates(match, pickPool(inn.bowlingTeam), "bowler");
-  const box = (name, label, group) => `<label class="open-slot">${label}<input name="${name}" required maxlength="24" placeholder="Tap below or type" data-open-group="${group}" autocomplete="off" autocapitalize="words"></label>`;
-  const chips = (group, names) => names.length ? `<div class="bowler-pick-list open-list" data-open-list="${group}">${names.map(n => pickRowHtml(n, "open-pick")).join("")}</div>` : "";
+  const box = (name, label, names) => renderNameCombo(label, `name="${name}" required maxlength="24" placeholder="${names.length ? "Tap to pick, or type a name" : "Type a name"}"`, names);
   return `
     <div class="modal-backdrop${inn.target != null ? " with-score" : ""}">
       ${inn.target != null ? renderSheetScore(match, inn) : ""}
@@ -26,12 +25,10 @@ function renderOpeningModal(match){
         <form id="opening-form">
           <div class="form-error"></div>
           <div class="section-label">Openers</div>
-          <div class="open-slots">${box("striker", "On strike", "bat")}${box("nonStriker", "Other end", "bat")}</div>
-          ${bat.length ? `<p class="hint open-hint">Tap two players: the first one is on strike.</p>` : ""}
-          ${chips("bat", bat)}
+          ${box("striker", "On strike", bat)}
+          ${box("nonStriker", "Other end", bat)}
           <div class="section-label">${escapeHtml(teamName(match, inn.bowlingTeam))} · opening bowler</div>
-          ${box("bowler", "Bowler", "bowl")}
-          ${chips("bowl", bowl)}
+          ${box("bowler", "Bowler", bowl)}
           <button type="submit" class="primary">Start innings</button>
         </form>
         ${match.innings.length === 1 ? `<button type="button" data-action="swap-toss" class="link-btn">Wrong toss? ${escapeHtml(teamName(match, inn.bowlingTeam))} bats first instead</button>` : ""}
@@ -157,6 +154,9 @@ function renderMatchMenuModal(match){
       ${match.status === "live" && canSwapStrike(cur) ? row("swap-strike", "⇅", "Swap strike", `Put ${escapeHtml(liveName(cur.nonStriker))} on strike instead of ${escapeHtml(liveName(cur.striker))}`) : ""}
       ${match.innings.some(i => i.log && i.log.some(x => x.t === "ball")) ? row("open-edit-balls", "✎", "Edit an earlier ball", "Wrong runs, a missed wide or wicket? Fix it from ball by ball") : ""}
       ${ballEditAllowed(match) ? row("open-score-set", "#", "Set the final score", "Skip ball by ball: type each side's runs, wickets and overs") : ""}
+      ${reopenableInnings(match).map(i => row("reopen-innings", "↺", `Reopen ${escapeHtml(possessive(teamName(match, match.innings[i].battingTeam)))} innings`, match.innings[i + 1]
+        ? `Ended too early? Clears ${escapeHtml(possessive(teamName(match, match.innings[i + 1].battingTeam)))} innings so far and carries on from ${inningsScoreText(match.innings[i])}`
+        : `Ended too early? Carry on batting from ${inningsScoreText(match.innings[i])}`, `data-inn="${i}"`)).join("")}
       ${unnamedPlayers(match).map(u => row("name-later", "?", `Name ${escapeHtml(u.name)}`,
         `Who ${u.role === "batter" ? "batted" : "bowled"} for ${escapeHtml(teamName(match, u.role === "batter" ? match.innings[u.inn].battingTeam : match.innings[u.inn].bowlingTeam))}? Leave it till you know`,
         `data-name="${escapeHtml(u.name)}"`)).join("")}
@@ -230,7 +230,9 @@ function askCancelMatch(){
   const cur = currentInnings(m);
   askConfirm({
     title: "Cancel this match?", icon: "✕",
-    body: `<p>Started by mistake? The match is thrown away: no result, and nothing goes into stats, standings${m.clubId ? " or the club's cloud records" : ""}.${matchHasStarted(m) ? ` What's been scored so far (<b class="n">${cur.runs}-${cur.wickets}</b>) is lost.` : ""} This can't be undone.</p>${m.clubId ? `<p class="hint">Players already added to the club roster during this match stay on it.</p>` : ""}`,
+    body: m.reopenedFrom && state.matchHistory[m.reopenedFrom]
+      ? `<p>This match was finished, then reopened. Cancelling throws away the changes since then; match history keeps the result it had (<b>${escapeHtml(state.matchHistory[m.reopenedFrom].result || "")}</b>). This can't be undone.</p>`
+      : `<p>Started by mistake? The match is thrown away: no result, and nothing goes into stats, standings${m.clubId ? " or the club's cloud records" : ""}.${matchHasStarted(m) ? ` What's been scored so far (<b class="n">${cur.runs}-${cur.wickets}</b>) is lost.` : ""} This can't be undone.</p>${m.clubId ? `<p class="hint">Players already added to the club roster during this match stay on it.</p>` : ""}`,
     confirmLabel: "Cancel match", cancelLabel: "Keep playing",
     onConfirm: () => cancelMatch()
   });
@@ -257,7 +259,7 @@ function leaveMatch(){
     // `tournaments` row here, NOT a key into local state.tournaments.
     ui.currentClubId = clubId; ui.currentTournamentId = tournamentId; state.view = "clubTournamentDashboard";
   }
-  else if (clubId){ ui.currentClubId = clubId; state.view = "clubHome"; } // render() loads them
+  else if (clubId){ state.activeClubId = clubId; state.view = "home"; } // the club's Home; render() loads it
   else if (tournamentId){ state.activeTournamentId = tournamentId; state.view = "tournamentDashboard"; }
   else state.view = "home";
   save(); render();
@@ -311,45 +313,6 @@ function handleOpeningSubmit(e){
     state.match.status = "live";
     save(); render();
   });
-}
-
-/* A chip on the opening sheet: fill the next empty box of its group (or
-   take the chosen one back out). */
-function openingPick(btn){
-  const form = btn.closest("form"), list = btn.closest("[data-open-list]");
-  if (!form || !list) return;
-  const inputs = [...form.querySelectorAll(`input[data-open-group="${list.dataset.openList}"]`)];
-  const key = btn.dataset.name.toLowerCase();
-  const hit = inputs.find(i => i.value.trim().toLowerCase() === key);
-  if (hit) hit.value = "";
-  else (inputs.find(i => !i.value.trim()) || inputs[inputs.length - 1]).value = btn.dataset.name;
-  list.querySelectorAll(".pick-row-item").forEach(r => { r.hidden = false; });
-  showFormError(form, "");
-  syncOpeningPicks(form);
-}
-// Mark the chips whose names are in the boxes (and which box); a name picked
-// for the other side is greyed out (one player can't bat and bowl here).
-function syncOpeningPicks(form){
-  const tags = { striker: "on strike", nonStriker: "other end", bowler: "bowling" };
-  form.querySelectorAll("[data-open-list]").forEach(list => {
-    const group = list.dataset.openList;
-    const inputs = [...form.querySelectorAll(`input[data-open-group="${group}"]`)];
-    const taken = new Set([...form.querySelectorAll(`input[data-open-group]:not([data-open-group="${group}"])`)].map(i => i.value.trim().toLowerCase()).filter(Boolean));
-    list.querySelectorAll(".pick-row-item").forEach(row => {
-      const key = row.dataset.name.toLowerCase();
-      const hit = inputs.find(i => i.value.trim().toLowerCase() === key);
-      row.classList.toggle("active", !!hit);
-      if (hit) row.dataset.tag = tags[hit.name]; else delete row.dataset.tag;
-      row.disabled = !hit && taken.has(key);
-    });
-  });
-}
-// Typing in an opening box narrows that side's chips.
-function filterOpeningChips(input){
-  const list = input.form && input.form.querySelector(`[data-open-list="${input.dataset.openGroup}"]`);
-  const q = input.value.trim().toLowerCase();
-  if (list) list.querySelectorAll(".pick-row-item").forEach(row => { row.hidden = !!q && !row.dataset.search.includes(q); });
-  syncOpeningPicks(input.form);
 }
 
 /* A typed name that isn't on that side's list -- its squad, else the club
@@ -606,7 +569,11 @@ function submitNewBowler(name, form){
 
 function showFormError(form, msg){
   const el = form && form.querySelector(".form-error");
-  if (el) el.textContent = friendlyError(msg);
+  if (!el) return;
+  el.textContent = friendlyError(msg);
+  // Nudge it for every new error, even the same text twice in a row.
+  el.classList.remove("shake");
+  if (msg){ void el.offsetWidth; el.classList.add("shake"); }
 }
 /* A raw fetch failure reads as gibberish ("TypeError: Failed to fetch").
    While the device is online that means the server itself couldn't be
@@ -723,10 +690,19 @@ function renderWicketModal(inn){
 function maybeArchiveCompletedMatch(match){
   if (match.status === "complete" && !match.archivedId){
     match.motm = pickMatchMOTM(match);
-    const archived = archiveMatch(match);
-    match.archivedId = archived.id;
+    // A finished match that was reopened (or undone past its end) and has now
+    // finished again goes back into its own archive entry, not a second one.
+    const prevId = match.reopenedFrom && state.matchHistory[match.reopenedFrom] ? match.reopenedFrom : null;
+    delete match.reopenedFrom;
+    if (prevId){
+      match.archivedId = prevId;
+      replaceArchivedMatch(prevId, match);
+    } else {
+      const archived = archiveMatch(match);
+      match.archivedId = archived.id;
+      if (match.clubId) syncMatchToCloud(match, archived);
+    }
     SFX.win();
-    if (match.clubId) syncMatchToCloud(match, archived);
   }
 }
 
@@ -743,7 +719,7 @@ function confirmWicket(type){
   recordBall(inn, { kind: "wicket", wicketType: type, extra });
   afterBall(state.match);
   maybeArchiveCompletedMatch(state.match);
-  SFX.wicket();
+  SFX.wicket(); liveMoment = wicketMoment(inn);
   resetWicketUi(); ui.pendingExtra = null;
   save(); render();
 }
@@ -765,7 +741,7 @@ function handleWicketFielderSubmit(e){
     if (fielder) registerMatchPlayer(fielder, inn.bowlingTeam);
     afterBall(match);
     maybeArchiveCompletedMatch(match);
-    SFX.wicket();
+    SFX.wicket(); liveMoment = wicketMoment(inn);
     resetWicketUi(); ui.pendingExtra = null;
     save(); render();
   } else if (ui.wicketFlow === "caught"){
@@ -776,7 +752,7 @@ function handleWicketFielderSubmit(e){
     if (fielder) registerMatchPlayer(fielder, inn.bowlingTeam);
     afterBall(match);
     maybeArchiveCompletedMatch(match);
-    SFX.wicket();
+    SFX.wicket(); liveMoment = wicketMoment(inn);
     resetWicketUi(); ui.pendingExtra = null;
     save(); render();
   }

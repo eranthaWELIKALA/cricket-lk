@@ -26,9 +26,9 @@ const ROUTES = [
   ["/stats", "stats"], ["/settings", "settings"],
   ["/new-match", "matchSetup"], ["/tournaments/new", "tournamentSetup"], ["/tournaments/:t", "tournamentDashboard"],
   ["/sign-in", "signIn"], ["/sign-up", "signUp"], ["/account", "account"],
-  ["/clubs", "myClubs"], ["/clubs/:c", "clubHome"],
+  ["/clubs", "myClubs"], ["/clubs/:c", "clubHome"], // old club dashboard links: render() turns them into Home acting as the club
   ["/clubs/:c/players", "clubPlayers"], ["/clubs/:c/players/:p", "playerProfile", { scope: "club" }],
-  ["/clubs/:c/presets", "clubPresets"], ["/clubs/:c/stats", "clubStats"],
+  ["/clubs/:c/presets", "clubPresets"], ["/clubs/:c/stats", "clubStats"], ["/clubs/:c/admins", "clubAdmins"],
   ["/clubs/:c/new-match/:type", "matchSetup"],
   ["/clubs/:c/tournaments/new", "clubTournamentSetup"], ["/clubs/:c/tournaments/:ct", "clubTournamentDashboard"],
   ["/clubs/:c/tournaments/:ct/new-match", "matchSetup", { type: "tournament" }],
@@ -182,9 +182,7 @@ function applyRoute(path){
 // tournament; render() lazy-loads whatever the screen needs.
 function setView(view){
   state.view = view;
-  if (view === "clubHome" && ui.currentClubId && ui.club && ui.club.id !== ui.currentClubId){
-    ui.club = null;
-  } else if (view === "clubTournamentDashboard" && ui.currentTournamentId && ui.clubTournament && ui.clubTournament.id !== ui.currentTournamentId){
+  if (view === "clubTournamentDashboard" && ui.currentTournamentId && ui.clubTournament && ui.clubTournament.id !== ui.currentTournamentId){
     ui.clubTournament = null; ui.tournamentTeamEdit = null;
   }
 }

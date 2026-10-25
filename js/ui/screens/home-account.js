@@ -112,7 +112,12 @@ function renderHome(){
         <button data-action="go-club-view" data-view="clubStats" class="home-card">
           <span class="home-card-icon">📊</span><span class="home-card-title">Stats</span>
           <span class="home-card-sub">${clubMatchesFor(activeClub.id).length} club match${clubMatchesFor(activeClub.id).length === 1 ? "" : "es"}</span>
-        </button>` : `
+        </button>
+        ${isClubAdmin(activeClub.id) ? `
+        <button data-action="go-club-view" data-view="clubAdmins" class="home-card">
+          <span class="home-card-icon">🛡️</span><span class="home-card-title">Admins</span>
+          <span class="home-card-sub">${clubLoaded ? `${ui.club.members.length} admin${ui.club.members.length === 1 ? "" : "s"}${(ui.club.invites || []).length ? ` · ${ui.club.invites.length} invited` : ""}` : "Invite & manage"}</span>
+        </button>` : ""}` : `
         <button data-action="go-view" data-view="presets" class="home-card">
           <span class="home-card-icon">⚙️</span><span class="home-card-title">Presets</span>
           <span class="home-card-sub">Playing conditions</span>

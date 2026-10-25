@@ -459,26 +459,21 @@ function replayInnings(inn, actions, supply, anonymous){
    innings that is no longer over goes back to live, a chase that now gets
    there ends the match. */
 function replayMatch(match, change, supply){
+  const changes = Array.isArray(change) ? change : [change];
   const m = JSON.parse(JSON.stringify(match));
   const sup = { batters: [...((supply && supply.batters) || [])], bowlers: [...((supply && supply.bowlers) || [])] };
   const notes = [];
-  if (!editableBall(m, change.inn, change.seq)) return { error: "This ball can't be edited." };
-  for (let idx = change.inn; idx < m.innings.length; idx++){
+  const first = changes[0] && changes[0].inn;
+  if (!changes.length || changes.some(c => c.inn !== first || !editableBall(m, c.inn, c.seq))) return { error: "This ball can't be edited." };
+  // Added balls get new ids, after every id this innings has used.
+  let next = ballSeqMax(m.innings[first]);
+  const plan = changes.map(c => c.insert ? Object.assign({}, c, { newSeq: ++next }) : c);
+  const added = plan.filter(c => c.insert).map(c => c.newSeq);
+  for (let idx = first; idx < m.innings.length; idx++){
     const inn = m.innings[idx];
     let actions = inn.log || [];
-    if (idx === change.inn){
-      actions = actions.slice();
-      const at = actions.findIndex(a => a.t === "ball" && a.ev.seq === change.seq);
-      if (change.ev){
-        const old = actions[at].ev;
-        actions[at] = Object.assign({}, actions[at], { ev: Object.assign({}, change.ev, { seq: change.seq }) });
-        if (isLegalEvent(old) !== isLegalEvent(change.ev) && actions.slice(at + 1).some(a => a.t === "ball")){
-          notes.push(`This ${isLegalEvent(change.ev) ? "is now a legal ball" : "is no longer a legal ball"}, so every later over moves by one ball.`);
-        }
-      } else {
-        if (isLegalEvent(actions[at].ev) && actions.slice(at + 1).some(a => a.t === "ball")) notes.push("Removing a legal ball moves every later over by one ball.");
-        actions.splice(at, 1);
-      }
+    if (idx === first){
+      actions = applyBallChanges(actions, plan);
     } else {
       const target = m.innings[0].runs + 1;
       if (inn.target === target) break;
@@ -493,9 +488,14 @@ function replayMatch(match, change, supply){
     const res = replayInnings(inn, actions, sup, !!m.anonymous);
     if (res.need){
       m.innings[idx] = res.partial;
-      return { need: Object.assign(res.need, { inn: idx }), partial: m, left: res.left };
+      return { need: Object.assign(res.need, { inn: idx }), partial: m, left: res.left, added };
     }
     if (res.error) return { error: res.error };
+    if (idx === first){
+      const there = new Set(inningsBalls(res.inn).map(b => b.seq));
+      if (added.some(q => !there.has(q))) return { error: "The innings is already over before that point, so a ball can't be added there." };
+      notes.push(...ballShiftNotes(inn, res.inn, !!m.anonymous));
+    }
     m.innings[idx] = res.inn;
     notes.push(...res.notes);
     if (idx === 0 && m.innings.length > 1 && !res.inn.complete){
@@ -509,7 +509,56 @@ function replayMatch(match, change, supply){
     }
   }
   settleMatchStatus(m);
-  return { match: m, notes };
+  return { match: m, notes, added };
+}
+
+/* The log with the changes made: a ball replaced or removed (`ev` null), or
+   a new one put in just before / just after a ball (`insert`). An added ball
+   has no recorded batters or bowler, so the replay works them out. */
+function applyBallChanges(actions, plan){
+  const out = [];
+  const added = c => ({ t: "ball", ev: Object.assign({}, c.ev, { seq: c.newSeq }), striker: null, nonStriker: null, bowler: null });
+  actions.forEach(a => {
+    if (a.t !== "ball"){ out.push(a); return; }
+    const seq = a.ev.seq;
+    plan.filter(c => c.insert === "before" && c.seq === seq).forEach(c => out.push(added(c)));
+    const c = plan.find(x => !x.insert && x.seq === seq);
+    if (!c) out.push(a);
+    else if (c.ev) out.push(Object.assign({}, a, { ev: Object.assign({}, c.ev, { seq }) }));
+    plan.filter(x => x.insert === "after" && x.seq === seq).forEach(x => out.push(added(x)));
+  });
+  return out;
+}
+// The highest ball id this innings has used (a new ball takes the next one).
+function ballSeqMax(inn){
+  return (inn.log || []).reduce((mx, a) => a.t === "ball" ? Math.max(mx, a.ev.seq || 0) : mx, inn.nextSeq || 0);
+}
+
+/* What a change did to the balls around it, in the scorer's terms: balls
+   that now have another number ("3.5 is now 3.4") and balls that now count
+   in another bowler's over. A legal ball added or taken out moves every
+   later ball until another change moves them back. */
+function ballShiftNotes(oldInn, newInn, anonymous){
+  const now = new Map(inningsBalls(newInn).map(b => [b.seq, b]));
+  const common = inningsBalls(oldInn).filter(b => now.has(b.seq));
+  const moved = common.filter(b => now.get(b.seq).label !== b.label);
+  const notes = [];
+  if (moved.length){
+    const a = moved[0], z = moved[moved.length - 1];
+    const toEnd = z === common[common.length - 1] && common.indexOf(z) - common.indexOf(a) === moved.length - 1;
+    const eg = `${a.label} is now ${now.get(a.seq).label}`;
+    notes.push(toEnd ? `From ball ${a.label} on, every later over moves (${eg}).`
+      : `Balls ${a.label} to ${z.label} move (${eg}); the overs after that stay as they were.`);
+  }
+  if (!anonymous){
+    const lc = n => (n || "").toLowerCase();
+    const switched = common.filter(b => b.bowler && now.get(b.seq).bowler && lc(b.bowler) !== lc(now.get(b.seq).bowler));
+    if (switched.length){
+      const b = switched[0];
+      notes.push(`${switched.length} ball${switched.length === 1 ? " now counts" : "s now count"} in another bowler's over (${b.label} was ${b.bowler}'s, now ${now.get(b.seq).bowler}'s).`);
+    }
+  }
+  return notes;
 }
 
 // The status (and result) worked out again from the innings as they now are.
@@ -524,34 +573,73 @@ function settleMatchStatus(m){
   }
 }
 
-/* One ball in its innings, for the edit sheet: the score just before and
-   just after it ({ runs, wickets, balls }), its "4.3" label and its over
-   ({ number, bowler, events, at: this ball's index }). Walks the overs the
-   way ball by ball does (a catch-up/by-hand gap resets the running score).
-   null if the ball isn't there. */
-function ballContext(inn, seq){
+/* Every ball of an innings in order, the way ball by ball numbers them:
+   { seq, ev, label ("4.3"; a wide/no-ball carries the number of the ball
+   still to come), bowler, before/after ({ runs, wickets, balls }), over
+   ({ number, bowler, events, at: this ball's index }) }. A catch-up/by-hand
+   gap resets the running score. */
+function inningsBalls(inn){
   const bpo = inn.ballsPerOver || 6;
   const overs = inn.overs.concat(inn.currentOverEvents.length ? [{ bowler: inn.bowler, events: inn.currentOverEvents }] : []);
+  const out = [];
   let runs = 0, wickets = 0, balls = 0;
   for (const o of overs){
     if (o.gap){ runs = o.gap.toRuns; wickets = o.gap.toWickets; balls = o.gap.toBalls; continue; }
     const start = balls;
     let inOver = start % bpo;
-    for (let k = 0; k < o.events.length; k++){
-      const ev = o.events[k];
+    o.events.forEach((ev, k) => {
       const legal = !/^(Wd|Nb)/.test(ev.display);
       const before = { runs, wickets, balls };
       if (legal){ inOver += 1; balls += 1; }
       runs += ev.runs || 0;
       if (ev.isWicket) wickets += 1;
-      if (ev.seq === seq) return {
-        before, after: { runs, wickets, balls },
+      out.push({
+        seq: ev.seq, ev, bowler: o.bowler, before, after: { runs, wickets, balls },
         label: `${Math.floor(start / bpo)}.${legal ? inOver : inOver + 1}`,
         over: { number: Math.floor(start / bpo) + 1, bowler: o.bowler, events: o.events, at: k }
-      };
-    }
+      });
+    });
   }
+  return out;
+}
+// One ball of an innings (see inningsBalls), or null if it isn't there.
+function ballContext(inn, seq){
+  return inningsBalls(inn).find(b => b.seq === seq) || null;
+}
+
+/* --- reopening an innings ended by hand ---
+   End innings (rain, time, a declaration -- or a mistaken tap) is the one way
+   an innings ends with balls still to bowl (completeReason "closed"; a score
+   set by hand ends that way too), so it's the one that can be taken back: the
+   innings goes back to live from where it stopped, its `end` dropped from the
+   log. A later innings is cleared -- it was played against a total that isn't
+   final any more. An innings that ended on its own (all out, overs, target)
+   needs a ball edited instead. Returns { match, notes } (a copy) or { error }. */
+function reopenInningsError(match, idx){
+  const inn = match && match.innings[idx];
+  if (!inn || match.forfeited || match.resultOnly) return "This innings can't be reopened.";
+  if (!inn.complete) return "This innings isn't over.";
+  const why = { allout: "they were all out", overs: "the overs ran out", target: "the target was reached" }[inn.completeReason];
+  if (why) return `${possessive(teamName(match, inn.battingTeam))} innings ended because ${why}. To change that, edit a ball.`;
   return null;
+}
+function reopenInnings(match, idx){
+  const err = reopenInningsError(match, idx);
+  if (err) return { error: err };
+  const m = JSON.parse(JSON.stringify(match));
+  const notes = [];
+  const later = m.innings[idx + 1];
+  if (later){
+    if (later.batting.order.length || later.legalBalls) notes.push(`${possessive(teamName(m, later.battingTeam))} innings so far (${later.runs}-${later.wickets}, ${oversDisplay(later.legalBalls || 0, later.ballsPerOver)} ov) is cleared. They bat again once this innings is over.`);
+    m.innings.length = idx + 1;
+  }
+  const inn = m.innings[idx];
+  if (inn.log && inn.log.length && inn.log[inn.log.length - 1].t === "end") inn.log.pop();
+  inn.complete = false; inn.completeReason = null;
+  checkInningsComplete(inn);
+  if (inn.complete) return { error: reopenInningsError(m, idx) };
+  settleMatchStatus(m);
+  return { match: m, notes };
 }
 
 /* --- the final score, set by hand ---
@@ -685,6 +773,8 @@ function createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst, b
 function currentInnings(match){ return match.innings[match.innings.length - 1]; }
 
 function teamName(match, key){ return key === "A" ? match.teamA : match.teamB; }
+// "Lions'" / "Sri Lanka's": a name's possessive, for sentences about a side.
+function possessive(name){ return /s$/i.test(name || "") ? `${name}'` : `${name}'s`; }
 
 /* A match doesn't store rosters (names are typed freely), so a name's side
    is inferred from where it's already been used: batters belong to that
@@ -988,7 +1078,7 @@ function matchHasStarted(match){
    was scored (the UI warns and snapshots first, so Undo can bring it back).
    UI-only extras that recordBall never reads (club, match type, squads,
    visitor name) are carried over so the restart is the same fixture. */
-const MATCH_CARRY_FIELDS = ["clubId", "matchType", "squads", "guestNames", "opponentName", "anonymous"];
+const MATCH_CARRY_FIELDS = ["clubId", "matchType", "squads", "guestNames", "opponentName", "anonymous", "reopenedFrom"];
 function restartMatch(match, battingFirst){
   const i1 = match.innings[0];
   const fresh = createMatch({

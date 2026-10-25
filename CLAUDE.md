@@ -31,7 +31,7 @@ of `index.html`:
 | `js/ui/router.js` | page navigation (routes, history, back interception, unsaved-input checks) |
 | `js/ui/menus.js` | sync pill/sheet, side menu |
 | `js/ui/screens/*.js` | `home-account`, `clubs` (+ profiles, player modals), `club-tournaments` (+ team builder), `premier`, `guest` (teams/players/presets/tournaments), `stats` |
-| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `catch-up` (catch up the score), `edit-ball` (edit/remove an earlier ball, set the final score by hand), `name-later` (name an unnamed batter/bowler), `live`, `result` (+ scorecards, share/export) |
+| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `catch-up` (catch up the score), `edit-ball` (edit/add/remove a ball, set the final score by hand), `name-later` (name an unnamed batter/bowler), `live`, `result` (+ scorecards, share/export) |
 | `js/ui/render.js` | `render()` |
 | `js/ui/events.js` | the delegated listeners |
 | `js/boot.js` | boot: `load()`, first route + render, `initAuth()`, sync triggers, service worker |
@@ -235,8 +235,12 @@ log (balls before a catch-up can't be edited; the next action re-bases it).
 The archive and the cloud copy leave the logs out (`archivedCopy`); only
 `state.match` is editable. Undo still uses snapshots — the log isn't undo.
 
-`replayMatch(match, { inn, seq, ev | null }, supply)` (ENGINE, tested)
-returns a new match (never touches the input) rebuilt by `replayInnings`:
+`replayMatch(match, changes, supply)` (ENGINE, tested) takes one change or a
+list, all in one innings: `{ inn, seq, ev }` replaces ball `seq`, `ev: null`
+removes it, `{ inn, seq, ev, insert: "before"|"after" }` adds a new ball next
+to it (`applyBallChanges`; new ids follow `ballSeqMax`, returned as `added`;
+an added ball the innings never reaches is an `error`). It returns a new
+match (never touches the input) rebuilt by `replayInnings`:
 - **Batters/bowlers are queues, in the order entered.** Before a ball, empty
   slots are filled from what was entered so far, else the next later entry
   is pulled forward, else `supply` (names the UI asked for), else it returns
@@ -247,9 +251,14 @@ returns a new match (never touches the input) rebuilt by `replayInnings`:
   crease the other way round from the logged ball, they're put back. Changing
   a 1 to a 2 doesn't flip who faced every later ball.
 - **Over boundaries come from legal balls** (the engine has no other notion
-  of an over), so a legal ⇄ wide/no-ball change shifts every later over by a
-  ball; a `bowl` entry waits for the over to finish, or is pulled forward.
-  `notes` says so.
+  of an over), so a legal ⇄ wide/no-ball change, or a legal ball added or
+  taken out, shifts every later ball; a `bowl` entry waits for the over to
+  finish, or is pulled forward. So a full over can't take another ball (one
+  added after its last ball is the next over's first), and removing a ball
+  pulls the next one into that over. `ballShiftNotes` puts it in the scorer's
+  terms ("From ball 0.4 on, every later over moves (0.4 is now 0.3)", "1 ball
+  now counts in another bowler's over"), comparing `inningsBalls` (every
+  ball's label/bowler/score, which `ballContext` also reads) before and after.
 - The innings may end earlier (later balls dropped) or no longer be over
   (back to live; with a chase already started that's an `error`). A first-
   innings change moves the target and replays the chase. The status is
@@ -281,6 +290,39 @@ preview shows those balls and the total as `?` chips (`.chip.unknown`), and
 of waiting for Save. Replay notes that ask the scorer to "Check it" (a
 dismissal now on a free hit) are flagged with a `?` too. Ball by ball puts
 each ball's number (`4.3`) under its chip.
+
+**Adding and removing balls.** The edit sheet has three modes (`ui.ballEdit.mode`):
+`edit`, `add` ("+ Ball before / after", or ball by ball's dashed `+` —
+`add-ball`, shown only on an over left short that isn't being bowled: an
+innings ended by hand mid-over) and `remove`. Removing a legal ball (not the
+last one bowled) raises a "?" — *Was a ball missed instead?* — with
+`ui.ballEdit.fill`: just remove it, or add the missing ball at the end of
+that over / of the innings (`ballEditFillAnchor`) **in the same change**, so
+the overs and bowlers line up again. That's the only way to fix a ball in a
+finished match or under a started chase, where a removal on its own would
+leave an innings short (`removalChoices().blocked`; "Just remove it" is then
+disabled and the over is picked). The form for an added ball reads who was
+where from a replay with a dot ball in its place (`ballEditSubject`).
+
+**Reopening an innings & Undo after it ends.** An innings ended by hand
+(`completeReason: "closed"` — End innings, the pick sheets' button, finish
+match, a score set by hand) can be taken back: `reopenInnings(match, idx)`
+(ENGINE, tested; `reopenInningsError` says why not — an innings that was all
+out / out of overs / reached the target needs a ball edited) drops the log's
+`end`, sets it live again from where it stopped and **clears any later
+innings** (the chase was played against a total that isn't final). Offered as
+`reopen-innings` (`askReopenInnings`, snapshotted) in ⋯ Match options, on the
+innings break and on Result (`renderGoBackRow`, which also shows Undo —
+`undoLabel`: last ball / forfeit / last change — when the newest innings
+can't be reopened). **The archive follows a match that stops being finished**:
+reopen or Undo off a finished match sets `match.reopenedFrom` (its archive id)
+instead of `archivedId`; the entry keeps the old result meanwhile, and when the
+match finishes again `maybeArchiveCompletedMatch` replaces that entry in place
+(`replaceArchivedMatch`: same id and `completedAt`, re-synced) instead of
+adding a second one. Undo back to a finished version writes that version into
+the entry (`keepArchiveInStep`). Cancelling a reopened match leaves the old
+result in history (its cancel sheet says so). `reopenedFrom` is in
+`MATCH_CARRY_FIELDS`.
 
 **Set the final score by hand** (⋯ Match options, or "Set the final score
 instead" on Ball by ball; `ui.scoreSet`, `renderScoreSetModal`, same file)
@@ -331,8 +373,8 @@ also sits at the bottom of the new-batsman and new-bowler sheets, which
 otherwise block everything until a name is entered; in the 2nd innings it
 reads "finish match" and `afterBall` produces the result as usual.
 **Any** match (limits or not, guest or club) can also be closed early from
-⋯ Match options → End innings (rain, time, a declaration): `handleEndInnings`
-only refuses a completed innings; `canEndInningsByHand` just decides whether
+⋯ Match options → End innings (rain, time, a declaration), and reopened again
+(`reopenInnings`, see "The action log"): `handleEndInnings` only refuses a completed innings; `canEndInningsByHand` just decides whether
 the on-screen buttons show. Never compare against these directly — use
 `isAllOut(inn)` / check `oversLimit != null` (`x >= null` is `true` in JS).
 `lastManStands` (preset + match flag, copied onto each innings) makes
@@ -447,9 +489,9 @@ so it can interrupt any of them at any time. Two consequences worth remembering 
 `askForfeit()` passes the two teams as the confirmation's `choices`, so
 picking a team and confirming are deliberately two separate taps rather
 than firing on the first tap — unlike the wicket modal's simple types,
-a forfeit has no working undo path in practice: `pushSnapshot()` does
-run first, but the Result screen it lands on has no Undo control, so
-there's no way to actually walk it back once it lands. `forfeitTeamLine()`
+a forfeit is only walked back by Result's "Undo forfeit" (`pushSnapshot()`
+runs first; see "Reopening an innings & Undo after it ends"), and only until
+the scorer leaves Result. `forfeitTeamLine()`
 (next to it) reports each team as `"Batting · R-W"` (the current,
 in-progress innings), `"Bowling · R-W[ all out]"` (a team that has a
 past, completed innings — including at the break, where they're
@@ -581,9 +623,14 @@ stats and share image keep real names. Guest matches never show the toggle.
 `renderOverRow()` (next to `ordinalSuffix()`, just above `renderLive`)
 draws one row of the ball-by-over rail — the *current* over from
 `inn.currentOverEvents`, and the *previous* one (dimmed) from
-`inn.overs[inn.overs.length - 1].events` when it exists. It always pads
-to `inn.ballsPerOver` slots (dashed placeholders past whatever's been
-bowled), so an 8-ball preset renders 8 slots with no other change. The
+`inn.overs[inn.overs.length - 1].events` when it exists. It shows every
+delivery plus a dashed placeholder per *legal* ball still to come
+(`inn.ballsPerOver` minus legal balls so far), so an 8-ball preset renders
+8 slots and a wide/no-ball fills a slot and adds one at the end. The chips
+sit in `.over-balls`, a sideways strip with no scrollbar (label and total
+stay put); `focusLatestBalls()` (after every `render()` and on resize)
+scrolls it just far enough to show the latest ball and the next empty slot,
+and `.more-left`/`.more-right` fade an edge with balls hidden past it. The
 extras row (`Wide`/`No ball`/`Bye`/`Leg bye`) also adapts its own
 column count to however many are enabled for the match (`match.wideEnabled`/
 `noBallEnabled`; bye/leg-bye are always offered), rather than a fixed
@@ -657,7 +704,8 @@ remove club player, delete tournament team, discard unsaved team edits,
 move a player between tournament teams, new club player vs guest in the team builder,
 end/reopen a tournament,
 delete guest team/player, delete match/tournament/club presets, change or
-remove an earlier ball, set the final score by hand. **Don't add
+remove an earlier ball, add a ball, set the final score by hand, reopen an
+innings. **Don't add
 `window.confirm()` or "tap again to confirm" buttons** — use `askConfirm`.
 The wicket sheet's Confirm button is data entry, not a confirmation, and
 stays as it is. `admin.html` keeps its own typed-confirmation prompts (it's
@@ -688,7 +736,7 @@ and the pop on over-row chips already shown (`data-chip`).
 ## Page navigation: URL routes & the back button
 
 Every screen has a hash route (`ROUTES`, UI section: `#/`, `#/teams`,
-`#/clubs/<id>`, `#/clubs/<id>/players/<pid>`, `#/clubs/<id>/tournaments/<tid>`,
+`#/clubs/<id>/admins`, `#/clubs/<id>/players/<pid>`, `#/clubs/<id>/tournaments/<tid>`,
 `#/premier/players/<pid>`, `#/live`, `#/result`, …), so back, forward, reload
 and a pasted link go through the browser's own history. **Existing code
 doesn't change:** it still sets `state.view` (plus `ui.currentClubId` /
@@ -776,7 +824,7 @@ and the tabbed scorecard, over any screen. `open-match-detail` (data-id)
 finds the match with `findCompletedMatch` — local archive, then the loaded
 club tournament / club / Premier / profile match lists. It belongs to the
 view it was opened on, is an overlay (back closes it), and is opened from
-tournament fixtures, Home's Recent matches and club home's match list.
+tournament fixtures, Home's Recent matches and club Stats' match list.
 
 ## Catch up the score (`js/ui/match/catch-up.js`)
 
@@ -971,7 +1019,7 @@ by `completedAt`) and a "stored on this device" footnote — both need
 only existing data. Stats now leads with the MVP leaderboard
 (`.leaderboard.mvp`, gold-tinted, with M/Runs/Wkt/Pts columns) and ends
 with an "archived matches only" footnote. `renderLeaderboards` is shared
-with the tournament Stats tab and club home, so they pick this up too.
+with the tournament Stats tab and club Stats, so they pick this up too.
 
 Deliberately **not** adopted from those mockups, each because it needs
 something the app doesn't have (or would remove working behavior):
@@ -1018,7 +1066,7 @@ carry as clearly).
 **Home's bento grid is one CSS rule, not per-screen markup:**
 `.home-card.primary-card { grid-column: 1 / -1 }` makes whichever card
 carries `primary-card` span the full row as a hero tile, in *any*
-`.home-grid` — Home, the Premier dashboard, club home all reuse the same
+`.home-grid` — Home (guest or acting as a club) and the Premier dashboard reuse the same
 two classes and get the hero treatment for free. Don't hand-roll a
 different hero layout per screen; give the card `primary-card` instead.
 Similarly, `.home-card-icon`'s rotating accent-color badge (gold → blue
@@ -1034,7 +1082,7 @@ when a screen needs a section divider, a lone form, or a settings-style
 row:**
 - `.section-label` — the uppercase-eyebrow-with-bullet look (same as
   `.home-section h3`) for a bare in-page section heading, e.g. `<h3
-  class="section-label">Roster</h3>` in club home or Settings. Don't
+  class="section-label">Invited</h3>` on club Admins or Settings. Don't
   leave a section heading as a plain unstyled `<h3>`.
 - `.auth-card` — wraps a standalone form/profile block (sign in, sign
   up, account) in the same bordered-panel language every other screen
@@ -1048,7 +1096,7 @@ row:**
   as solid chip toggles now, not underlined text tabs — same visual
   family as `.preset-chip`.
 - `.leaderboard` (used by `renderLeaderboards`, shared across Stats, the
-  tournament dashboard's Stats tab, and club home) is a bordered card per
+  tournament dashboard's Stats tab, and club Stats) is a bordered card per
   table now, not a bare table with a heading — and `tbody tr:nth-child(even)`
   zebra-striping is a global `table` rule, so any new table picks it up
   automatically.
@@ -1090,6 +1138,30 @@ reverted because it never lets the element's layout "settle," which
 breaks Playwright/automation click-stability checks and is a mild UX
 annoyance besides. A static or short, non-repeating animation is fine;
 `infinite` on a persistent control is not.
+
+**Motion is one-shot and only for what's new** (css/app.css, the "more
+motion" block). Every render replaces the DOM, so an animation plays only
+when its content just appeared: a real screen change (`.screen` without
+`.no-anim` — Home tiles rise in one after another, list rows settle, the
+innings break and Result reveal top to bottom; Home's screen key includes
+`state.activeClubId`, so switching role counts), a tab that changed
+(`activeTabs`/`markTabSwitches` in render.js put `.tab-switched` on that tab
+row and what follows it fades in), the side menu opening (it's `.no-anim`
+while it stays open), a fresh form error (`showFormError` adds `.shake`), and
+on Result a pop + shine, with confetti (`confettiHtml`) for a win only.
+**Live moments**: a four, a six, a wicket or a batter's fifty/hundred
+(`ballMoment`/`wicketMoment`, live.js; tested) put a badge and a ring on the
+score tile. They're set as `liveMoment` where the ball is recorded (next to its
+`SFX`) and played by `playLiveMoment()` at the end of `render()`, so a
+re-render, undo or reload never replays one. The badge is `pointer-events:none`
+and absolutely positioned, so the fixed live board doesn't move. Entrances use
+`animation-fill-mode: backwards`, not `both`: a kept last frame would override
+`:active`'s press scale for good. Keep them ≤ ~.35s (screenshots and
+Playwright taps wait about that). All of it is off under
+`prefers-reduced-motion` and in print, and `cap-lib.js` hides confetti and
+moments so tutorial shots never catch one. A new entrance animation follows
+the same rule: scope it to `.screen:not(.no-anim)`, or mark it `.no-anim` in
+`render()` when it was already on screen.
 
 ## Editing dismissal types
 
@@ -1149,14 +1221,11 @@ the match, log included, merging a bowler placeholder into someone who
 already bowled) → `applyBallEdit` (snapshot, archive replaced in place). A
 finished match asks first (Result has no Undo).
 
-**The opening sheet** keeps its three boxes (`striker`/`nonStriker`/
-`bowler`, typeable) with each side's players as chips under them
-(`renderOpeningModal`, `.open-list`): `openingPick` fills the next empty box
-of its group (bat: on strike, then the other end; a chosen chip tapped again
-empties its box), `syncOpeningPicks` marks chosen chips (`data-tag`) and greys
-out a name already picked for the other side, `filterOpeningChips` narrows a
-side's chips while its box is typed in. DOM-only; `render()` re-syncs after
-restoring drafts.
+**The opening sheet** is three boxes, one per line (`striker` "On strike",
+`nonStriker` "Other end", `bowler`), each a search-select (`renderNameCombo`,
+see below): focusing a box lists that side's players under it as full-width
+rows, and a tapped row fills *that* box. A name in one box isn't offered in
+the other two (`updateCombo`). Typing any name still works.
 
 **A typed name that isn't on the side's list asks first.** `confirmUnlisted`
 (sheets.js, shared confirmation sheet) runs after the submit checks and
@@ -1168,8 +1237,8 @@ no saved players) never asks; tapped chips/rows and placeholders never do.
 
 **Other in-match name boxes are a search-select, not a `<datalist>`.** Native
 datalist popups proved unreliable on phones (options showed but couldn't be
-tapped inside the bottom sheet), so the fielder input (and Switch players'
-add box) has no `list` attribute; `renderNameCombo()` puts our own
+tapped inside the bottom sheet), so the opening sheet's boxes, the fielder
+input and Switch players' add box have no `list` attribute; `renderNameCombo()` puts our own
 `.combo-list` under each, hidden until the input is focused, narrowed by the
 delegated `input` listener, closed on `focusout` (delayed; `pointerdown` on
 an option is cancelled so the input keeps focus). A tap (`combo-pick`) only
@@ -1385,7 +1454,7 @@ is next online. Three pieces, all in the CLOUD section:
   and the tournament overlay also folds this device's archived matches for
   it, so standings count a match scored offline. Pending items render with
   a "not synced" tag.
-- **Offline sign-in.** `sw.js` (cache `cricket-lk-v14`; the page and the app's
+- **Offline sign-in.** `sw.js` (cache `cricket-lk-v15`; the page and the app's
   own `css/`/`js/` files are network-first, refreshing the cache, so a deploy
   never mixes versions) precaches the
   supabase-js CDN script and serves it stale-while-revalidate — keep its URL
@@ -1437,12 +1506,22 @@ screen. Rules that keep it clean: club setup screens read
 the built-in `DEFAULT_MATCH_PRESETS` — reference data, not guest data — so
 club and guest setup start alike); Home's tiles, its Tournaments list and the side menu
 swap the guest Teams/Players/Presets/Stats entries for the club's own
-**Players / Presets / Stats** (`clubPlayers` / `clubPresets` / `clubStats`
-views, opened by `go-club-view` from `state.activeClubId`; each renders
-through `renderClubScreen` and shows only that club's cloud data, with
-`clubMatchesFor(clubId)` merging the local archive and cloud matches by id)
-while a club is selected; `renderClubHome` (My clubs → a club) is now just
-that club's admins, tournaments and match list. Club presets are edited on
+**Players / Presets / Stats / Admins** (`clubPlayers` / `clubPresets` /
+`clubStats` / `clubAdmins` views, opened by `go-club-view` from
+`state.activeClubId`; each renders through `renderClubScreen` and shows only
+that club's cloud data, with `clubMatchesFor(clubId)` merging the local
+archive and cloud matches by id) while a club is selected. Admins (tile and
+menu item) shows only when `isClubAdmin(clubId)` — the role in `ui.myClubs`
+is owner/admin, which every member is today (002) — and lists the members,
+pending invites and the invite form; club Stats ends with the club's full
+match list (Home shows the latest 3). **A club has no dashboard of its own**:
+My clubs → a club (`open-club`) sets `state.activeClubId` and opens Home, the
+same as picking it in "Acting as", and leaving a club match lands there too.
+The old `clubHome` view is gone; a saved `view: "clubHome"` or an old
+`#/clubs/<id>` link becomes Home acting as that club (top of `render()`).
+Every club view also sets `state.activeClubId` to its club, so its back bar
+("Home", or the club's name on a tournament) lands on that club's Home even
+when it was reached by a link. Club presets are edited on
 `clubPresets` with the *same* forms (`renderMatchPresetForm(p, clubId)` etc.)
 but their own actions (`club-*-preset`) and ui fields
 (`editingClub*Preset`), and saved with `saveClubPreset` (a club's tournament
@@ -1454,14 +1533,14 @@ lazy-loads it for whichever screen needs it (one guarded block,
 `ui.clubRosterLoading` — the fetch *in flight*, cleared when it lands, so a
 club whose `ui.club` was dropped loads again). Club tournaments work the same
 way (`ui.clubTournamentLoading`; a tournament that no longer exists falls back
-to its club). Entry actions (`open-club`, `open-club-tournament`,
+to its club's Home). Entry actions (`open-club`, `open-club-tournament`,
 `leaveMatch`, `goToView`) just set the ids and render — don't add a second,
 explicit fetch there. **Club screens survive a reload** through
 `state.viewClubId`/`viewTournamentId`, which `render()` keeps in step with
 `ui.currentClubId`/`currentTournamentId` on every club view (those `ui` ids
-aren't persisted). Without them, a saved `view: "clubHome"` came back with no
-id to load and spun on "Loading…" forever. With nothing to restore, `render()`
-falls back to My clubs / Home rather than a spinner. Sign-out clears both. If you add a new kind of per-role data, add a row to
+aren't persisted). Without them, a saved club view came back with no id to
+load and spun on "Loading…" forever. With nothing to restore, `render()`
+falls back to Home rather than a spinner. Sign-out clears both. If you add a new kind of per-role data, add a row to
 this table and don't fall back to the guest store for club/Premier.
 
 **Player profiles (club + Premier).** Tapping a player on the club Players
@@ -1587,8 +1666,8 @@ account an admin when the email is confirmed (on insert when confirmation is
 off, on update when the link is clicked). **Only a confirmed email accepts
 an invite**; otherwise anyone could register someone else's address and be
 made an admin. The trigger swallows its own errors so it can never break
-sign-up. Members see and cancel pending invites under Admins on club home
-(`cancelClubInvite`). Like inviting, cancelling is online-only and doesn't
+sign-up. Members see and cancel pending invites on the club's Admins screen
+(`clubAdmins`, Home's Admins tile; `cancelClubInvite`). Like inviting, cancelling is online-only and doesn't
 go through the outbox. An older client shows its "no account" text for
 `invited`. The `not_found` result now only comes from a server without 014.
 

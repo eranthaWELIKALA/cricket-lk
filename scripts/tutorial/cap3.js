@@ -11,13 +11,13 @@ const SEED = require('./seed.js');
     var pid = 0; var ROSTER = [...SQUADS["Colombo Lions"], ...SQUADS["Kandy Tigers"]].map(n => ({ id: "p" + (++pid), name: n, nickname: NICK[n] ? NICK[n][0] : null, jersey_no: NICK[n] ? NICK[n][1] : null }));
     var cm = []; [["Colombo Lions","Kandy Tigers"],["Kandy Tigers","Colombo Lions"],["Colombo Lions","Kandy Tigers"]].forEach(([a,b], i) => { const m = createMatch({ teamA: a, teamB: b, oversLimit: 10, playersPerSide: 11, battingFirst: "A", tournamentId: "t1" }); simulate(m); m.clubId = "c1"; m.matchType = "tournament"; m.id = "cm" + i; m.completedAt = Date.now() - i * 86400000; cm.push({ id: m.id, match_type: "tournament", data: m, played_at: new Date(m.completedAt).toISOString() }); });
     ui.myClubs = [{ id: "c1", name: "Moratuwa CC", role: "owner" }];
-    ui.club = { id: "c1", name: "Moratuwa CC", members: [{ user_id: "u1", role: "owner", displayName: "Erantha Welikala" }, { user_id: "u2", role: "admin", displayName: "Nimal Perera" }],
+    ui.club = { id: "c1", name: "Moratuwa CC", members: [{ userId: "u1", role: "owner", displayName: "Erantha Welikala" }, { userId: "u2", role: "admin", displayName: "Nimal Perera" }],
       roster: ROSTER, matches: cm, tournaments: [{ id: "t1", name: "Saturday Super 10", created_at: new Date().toISOString() }], invites: [{ id: "i1", email: "coach@example.com", created_at: new Date().toISOString() }],
       presets: { match: DEFAULT_MATCH_PRESETS.map(x => Object.assign({}, x)), tournament: [] } };
     state.activeClubId = "c1"; state.view = "account"; render();`);
   await shot('41-account');
   await run(`state.view = "home"; render();`); await shot('42-home-club');
-  await run(`ui.currentClubId = "c1"; state.view = "clubHome"; render();`); await shot('43-club-home');
+  await run(`ui.currentClubId = "c1"; state.view = "clubAdmins"; render();`); await shot('43-club-admins');
   await run(`state.view = "clubPlayers"; render();`); await shot('44-club-players');
   await run(`ui.playerModal = { kind: "add" }; render();`);
   await p.fill('#modal-root input[name=name]', 'Kamindu Mendis'); await p.evaluate(() => document.activeElement.blur());

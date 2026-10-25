@@ -57,7 +57,9 @@ document.addEventListener("click", (e) => {
   else if (action === "open-edit-balls") openEditBalls();
   else if (action === "edit-ball") openBallEdit(parseInt(btn.dataset.inn, 10), parseInt(btn.dataset.seq, 10), btn.dataset.label);
   else if (action === "ball-edit-set") ballEditSet(btn.dataset.field, btn.dataset.value);
-  else if (action === "ball-edit-delete") ballEditSave(true);
+  else if (action === "ball-edit-mode") ballEditMode(btn.dataset.value);
+  else if (action === "ball-edit-fill") ballEditFill(btn.dataset.value);
+  else if (action === "add-ball") openAddBall(parseInt(btn.dataset.inn, 10), parseInt(btn.dataset.seq, 10), btn.dataset.where, btn.dataset.label);
   else if (action === "close-ball-edit") closeBallEdit();
   else if (action === "open-score-set") openScoreSet();
   else if (action === "close-score-set") closeScoreSet();
@@ -67,7 +69,6 @@ document.addEventListener("click", (e) => {
   else if (action === "pick-bowler"){ submitNewBowler(btn.dataset.name, btn.closest(".modal").querySelector("form")); }
   else if (action === "pick-batter"){ submitNewBatsman(btn.dataset.name, btn.closest(".modal").querySelector("form")); }
   else if (action === "pick-unnamed") pickUnnamed();
-  else if (action === "open-pick") openingPick(btn);
   else if (action === "name-later") openNameLater(btn.dataset.name);
   else if (action === "name-later-pick") saveNameLater(btn.dataset.name, btn.closest(".modal").querySelector("form"));
   else if (action === "close-name-later") closeNameLater();
@@ -103,6 +104,7 @@ document.addEventListener("click", (e) => {
     render();
   }
   else if (action === "undo") handleUndo();
+  else if (action === "reopen-innings") askReopenInnings(parseInt(btn.dataset.inn, 10));
   else if (action === "toggle-scorecard"){ ui.showFullScorecard = !ui.showFullScorecard; ui.scorecard = null; render(); } // Result's condensed/full cards
   else if (action === "open-live-scorecard" && state.match){ ui.liveScorecard = state.match.status; ui.scorecard = null; render(); }
   else if (action === "scorecard-inn"){ ui.scorecard = Object.assign({}, ui.scorecard, { inn: parseInt(btn.dataset.tab, 10) }); render(); }
@@ -131,10 +133,10 @@ document.addEventListener("click", (e) => {
     if (state.soundEnabled) SFX.tap();
   }
   else if (action === "go-view"){
-    // goToView self-heals ui.club etc. -- "clubHome" can be reached via
-    // back-bars without ever going through "open-club" first. The on-screen
-    // back bar behaves like the phone's back: asks before dropping typed
-    // input, and doesn't add the screen it leaves to the back stack.
+    // goToView self-heals ui.club etc. (render() loads whatever the screen
+    // needs). The on-screen back bar behaves like the phone's back: asks
+    // before dropping typed input, and doesn't add the screen it leaves to
+    // the back stack.
     const view = btn.dataset.view;
     if (btn.classList.contains("back-bar")) leaveScreen(() => backBarTo(view));
     else goToView(view);
@@ -152,7 +154,8 @@ document.addEventListener("click", (e) => {
   else if (action === "go-match-setup"){ ui.matchSetupPresetId = null; ui.clubMatchSetupType = null; state.view = "matchSetup"; render(); }
   else if (action === "go-my-clubs"){ state.view = "myClubs"; render(); } // render() loads it
   else if (action === "open-club"){
-    ui.currentClubId = btn.dataset.id; ui.club = null; state.view = "clubHome"; render(); // render() loads it
+    // A club has no dashboard of its own: it's Home, acting as that club.
+    state.activeClubId = btn.dataset.id; state.view = "home"; save(); render(); // render() loads it
   }
   else if (action === "open-player-profile"){
     openPlayerProfile(btn.dataset.scope, btn.dataset.id, btn.dataset.name);
@@ -181,7 +184,7 @@ document.addEventListener("click", (e) => {
   }
   else if (action === "ask-remove-club-player") askRemoveClubPlayer(btn.dataset.id, btn.dataset.name);
   else if (action === "go-club-view"){
-    ui.currentClubId = state.activeClubId; ui.editingClubMatchPreset = null; ui.editingClubTournamentPreset = null;
+    ui.currentClubId = state.activeClubId; ui.editingClubMatchPreset = null; ui.editingClubTournamentPreset = null; ui.clubInviteMessage = null;
     state.view = btn.dataset.view; render();
   }
   else if (action === "go-club-match-setup"){
@@ -353,7 +356,7 @@ document.addEventListener("submit", (e) => {
   else if (id === "name-later-form") handleNameLaterSubmit(e);
   else if (id === "wicket-fielder-form") handleWicketFielderSubmit(e);
   else if (id === "motm-form") handleMotmSubmit(e);
-  else if (id === "ball-edit-form"){ e.preventDefault(); ballEditSave(false); }
+  else if (id === "ball-edit-form"){ e.preventDefault(); ballEditSave(); }
   else if (id === "score-set-form"){ e.preventDefault(); scoreSetSave(); }
   else if (id === "tournament-setup-form") handleTournamentSetupSubmit(e);
   else if (id === "tournament-start-match-form") handleTournamentStartMatchSubmit(e);
@@ -415,7 +418,6 @@ document.addEventListener("input", (e) => {
   if (e.target.closest && e.target.closest(".combo")){ updateCombo(e.target, true); return; }
   // Pick sheets: the box filters the one-tap rows under it.
   if (e.target.matches && e.target.matches("[data-pick-filter]")){ applyPickFilter(e.target); return; }
-  if (e.target.dataset && e.target.dataset.openGroup){ filterOpeningChips(e.target); return; }
   // Team builder: keep the name in ui, and filter roster rows without a re-render.
   const builder = e.target.closest && e.target.closest("#tournament-team-form");
   if (builder && ui.tournamentTeamEdit){

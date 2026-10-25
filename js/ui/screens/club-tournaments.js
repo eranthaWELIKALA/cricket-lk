@@ -115,7 +115,7 @@ function renderClubTournamentDashboard(){
   if (!session) return renderSignIn();
   const t = ui.clubTournament;
   const clubName = currentClubName();
-  if (!t) return `<div class="screen tournament">${renderBackBar(clubName || "Club", "clubHome")}${loadingHtml()}</div>`;
+  if (!t) return `<div class="screen tournament">${renderBackBar(escapeHtml(clubName) || "Home", "home")}${loadingHtml()}</div>`;
   const p = t.tournament_preset || {};
   const ended = !!p.endedAt;
   const tab = tournamentTab(ended);
@@ -123,7 +123,7 @@ function renderClubTournamentDashboard(){
   const startBtn = `<button data-action="go-club-tournament-match-setup" class="primary">Start match</button>`;
   return `
     <div class="screen tournament">
-      ${renderBackBar(clubName || "Club", "clubHome")}
+      ${renderBackBar(escapeHtml(clubName) || "Home", "home")}
       <h1>🏆 ${escapeHtml(t.name)}</h1>
       <p class="tagline">${p.pointsForWin ?? 2}/${p.pointsForTie ?? 1}/${p.pointsForLoss ?? 0} pts${p.useNRR ? " · NRR" : ""} · ${matches.length} match${matches.length === 1 ? "" : "es"} played</p>
       ${tabsHtml("switch-tournament-tab", tournamentTabs(ended), tab, ended ? "main-tabs many" : "main-tabs")}

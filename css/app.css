@@ -170,6 +170,19 @@ button:disabled{opacity:.4;cursor:not-allowed;box-shadow:none;}
 .over-row.dimmed{ opacity:.55; margin-top:6px; padding-top:6px; border-top:2px solid var(--line); }
 .over-row-label{ width:34px; flex-shrink:0; font-size:.72rem; font-weight:800; color:var(--muted); }
 .over-row-total{ margin-left:auto; padding-left:6px; font-size:.75rem; font-weight:700; font-variant-numeric:tabular-nums; }
+/* The over's chips: a sideways strip with no scrollbar (focusLatestBalls
+   keeps the latest ball in view; a swipe shows the rest). The vertical
+   padding leaves room for the chip pop's overshoot; the edge fades say
+   there's more past them. */
+.over-balls{
+  position:relative; flex:1 1 auto; min-width:0; display:flex; gap:6px; padding:2px 0; margin:-2px 0;
+  overflow-x:auto; overflow-y:hidden; scrollbar-width:none; overscroll-behavior-x:contain;
+}
+.over-balls::-webkit-scrollbar{ display:none; }
+.over-balls > .chip{ flex-shrink:0; }
+.over-balls.more-left{ -webkit-mask-image:linear-gradient(90deg, transparent, #000 18px); mask-image:linear-gradient(90deg, transparent, #000 18px); }
+.over-balls.more-right{ -webkit-mask-image:linear-gradient(90deg, #000 calc(100% - 18px), transparent); mask-image:linear-gradient(90deg, #000 calc(100% - 18px), transparent); }
+.over-balls.more-left.more-right{ -webkit-mask-image:linear-gradient(90deg, transparent, #000 18px, #000 calc(100% - 18px), transparent); mask-image:linear-gradient(90deg, transparent, #000 18px, #000 calc(100% - 18px), transparent); }
 
 .freehit-badge{
   display:inline-flex;margin-left:auto;background:var(--accent);color:var(--accent-ink);font-weight:800;
@@ -590,6 +603,94 @@ button{ transition:transform .12s ease, background-color .15s ease, border-color
 button:active:not(:disabled){ transform:scale(.96); }
 .home-card, .list-row, .preset-chip{ transition:transform .12s ease, border-color .15s ease, box-shadow .15s ease; }
 .home-card:active, .list-row:active{ transform:scale(.98); }
+
+/* --- more motion, all one-shot (never infinite, never on an idle control).
+   Each plays only when its content is new: a real screen change (.screen
+   without .no-anim), a tab that just changed (.tab-switched, render()), the
+   side menu just opened (render() marks it .no-anim while it stays open), a
+   live "moment" (playLiveMoment) or a fresh form error (showFormError).
+   Entrances use `backwards`, not `both`: a finished animation that kept its
+   last frame would override :active's press scale for good. Kept short
+   (≤ ~.35s) so screenshots and Playwright taps settle as before. --- */
+@keyframes riseIn{ from{ opacity:0; transform:translateY(10px) scale(.97); } to{ opacity:1; transform:none; } }
+@keyframes fadeUp{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
+@keyframes drawerIn{ from{ transform:translateX(-100%); } to{ transform:none; } }
+@keyframes heroPop{ 0%{ opacity:.3; transform:scale(.94); } 60%{ opacity:1; transform:scale(1.015); } 100%{ transform:none; } }
+@keyframes heroShine{ from{ transform:translateX(-120%) skewX(-18deg); } to{ transform:translateX(420%) skewX(-18deg); } }
+@keyframes confettiFall{ 0%{ opacity:1; transform:translate3d(0,-16px,0) rotate(0); } 100%{ opacity:0; transform:translate3d(var(--dx),120px,0) rotate(var(--rot)); } }
+@keyframes nudge{ 0%,100%{ transform:none; } 20%{ transform:translateX(-4px); } 40%{ transform:translateX(4px); } 60%{ transform:translateX(-3px); } 80%{ transform:translateX(2px); } }
+@keyframes momentIn{ 0%{ opacity:0; transform:translateY(-50%) scale(1.6); } 16%{ opacity:1; transform:translateY(-50%) scale(1); } 78%{ opacity:1; transform:translateY(-50%) scale(1); } 100%{ opacity:0; transform:translateY(-50%) scale(.94); } }
+@keyframes ringGreen{ from{ box-shadow:var(--shadow-card), 0 0 0 0 rgba(var(--accent-2-rgb),.6); } to{ box-shadow:var(--shadow-card), 0 0 0 16px rgba(var(--accent-2-rgb),0); } }
+@keyframes ringGold{ from{ box-shadow:var(--shadow-card), 0 0 0 0 rgba(var(--accent-rgb),.7); } to{ box-shadow:var(--shadow-card), 0 0 0 20px rgba(var(--accent-rgb),0); } }
+@keyframes ringRed{ 0%,55%{ border-color:var(--wicket); box-shadow:var(--shadow-card), 0 0 0 0 rgba(255,77,99,.6); } 100%{ box-shadow:var(--shadow-card), 0 0 0 16px rgba(255,77,99,0); } }
+
+/* Home-style tile grids (Home, club Home, Premier) rise in, one after another. */
+.screen:not(.no-anim) .home-grid > .home-card{ animation:riseIn .26s cubic-bezier(.16,1,.3,1) backwards; }
+.screen:not(.no-anim) .home-grid > .home-card:nth-child(2){ animation-delay:.03s; }
+.screen:not(.no-anim) .home-grid > .home-card:nth-child(3){ animation-delay:.06s; }
+.screen:not(.no-anim) .home-grid > .home-card:nth-child(4){ animation-delay:.09s; }
+.screen:not(.no-anim) .home-grid > .home-card:nth-child(5){ animation-delay:.11s; }
+.screen:not(.no-anim) .home-grid > .home-card:nth-child(n+6){ animation-delay:.13s; }
+/* List rows settle in (not on the live board, which stays still). */
+.screen:not(.live):not(.no-anim) .list-row{ animation:fadeUp .22s ease backwards; }
+.screen:not(.live):not(.no-anim) .list-row:nth-child(n+3){ animation-delay:.03s; }
+.screen:not(.live):not(.no-anim) .list-row:nth-child(n+5){ animation-delay:.06s; }
+.screen:not(.live):not(.no-anim) .list-row:nth-child(n+7){ animation-delay:.09s; }
+/* Innings break and Result reveal top to bottom. */
+.screen.result:not(.no-anim) > *, .screen.break:not(.no-anim) > *{ animation:fadeUp .26s cubic-bezier(.16,1,.3,1) backwards; }
+.screen.result:not(.no-anim) > :nth-child(2), .screen.break:not(.no-anim) > :nth-child(2){ animation-delay:.05s; }
+.screen.result:not(.no-anim) > :nth-child(3), .screen.break:not(.no-anim) > :nth-child(3){ animation-delay:.09s; }
+.screen.result:not(.no-anim) > :nth-child(4), .screen.break:not(.no-anim) > :nth-child(4){ animation-delay:.12s; }
+.screen.result:not(.no-anim) > :nth-child(n+5), .screen.break:not(.no-anim) > :nth-child(n+5){ animation-delay:.14s; }
+.screen.result .result-hero{ position:relative; overflow:hidden; }
+.screen.result .result-hero > :not(.confetti){ position:relative; }
+.screen.result:not(.no-anim) > .result-hero{ animation:heroPop .42s cubic-bezier(.34,1.56,.64,1) backwards; }
+.screen.result:not(.no-anim) .result-hero::after{
+  content:""; position:absolute; top:0; bottom:0; left:0; width:30%; pointer-events:none;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,.38), transparent);
+  animation:heroShine .9s .3s ease-out both;
+}
+/* Confetti behind a won result (confettiHtml): clipped to the hero card. */
+.confetti{ position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+.screen.no-anim .confetti{ display:none; }
+.confetti i{
+  position:absolute; top:0; left:var(--x); width:7px; height:11px; border-radius:2px; background:var(--accent);
+  animation:confettiFall 1.3s var(--d) cubic-bezier(.2,.7,.4,1) both;
+}
+.confetti i:nth-child(4n+2){ background:#fff; }
+.confetti i:nth-child(4n+3){ background:var(--wicket); width:6px; height:6px; border-radius:50%; }
+.confetti i:nth-child(4n){ background:var(--info); }
+/* Side menu slides in (only when it opens). */
+.side-menu:not(.no-anim){ animation:drawerIn .24s cubic-bezier(.16,1,.3,1); }
+.side-menu-backdrop:not(.no-anim){ animation:backdropIn .2s ease; }
+.side-menu:not(.no-anim) .side-menu-item{ animation:fadeUp .22s .06s ease backwards; }
+/* A tab just picked: what follows its tab row fades in. */
+.tab-row.tab-switched ~ *{ animation:fadeUp .2s ease backwards; }
+/* A new form error nudges sideways. */
+.form-error.shake{ animation:nudge .32s ease; }
+/* Live moments (playLiveMoment): a badge on the score tile + a ring around it. */
+.score-tile{ position:relative; }
+.moment{
+  position:absolute; right:10px; top:50%; transform:translateY(-50%); pointer-events:none; z-index:1;
+  display:flex; flex-direction:column; align-items:flex-end; gap:1px; max-width:60%;
+  padding:5px 10px; border-radius:var(--radius-sm); border:2px solid var(--bg); box-shadow:var(--shadow-btn);
+  background:var(--accent-2); color:var(--accent-2-ink);
+  animation:momentIn 1.15s cubic-bezier(.16,1,.3,1) both;
+}
+.moment b{ font-size:1.05rem; font-weight:900; letter-spacing:.08em; line-height:1; }
+.moment small{ font-size:.62rem; font-weight:700; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.score-tile.moment-six .moment, .score-tile.moment-fifty .moment, .score-tile.moment-hundred .moment{ background:var(--accent); color:var(--accent-ink); }
+.score-tile.moment-wicket .moment{ background:var(--wicket); color:#fff; }
+.score-tile.moment-four{ animation:scorePulse .3s ease, ringGreen .7s ease-out; }
+.score-tile.moment-six, .score-tile.moment-fifty, .score-tile.moment-hundred{ animation:scorePulse .3s ease, ringGold .8s ease-out; }
+.score-tile.moment-wicket{ animation:nudge .36s ease, ringRed .9s ease-out; }
+
+@media (prefers-reduced-motion: reduce){
+  .screen, .modal, .modal-backdrop, .chip, .score-tile, .freehit-badge, .home-card, .list-row,
+  .screen.result > *, .screen.break > *, .side-menu, .side-menu-item, .side-menu-backdrop,
+  .tab-row.tab-switched ~ *, .form-error.shake{ animation:none !important; }
+  .confetti, .moment, .screen.result .result-hero::after{ display:none !important; }
+}
 
 /* --- topbar: one sticky row replaces the old three stacked floating
    circles (sound/sign-in/menu) that used to sit independently at
@@ -1149,7 +1250,8 @@ button.primary.small{ width:auto; }
   #app{ padding:0 !important; max-width:none; }
   #modal-root, #confirm-root, .share-row, .summary-actions, .motm-card form, button, .topbar, .tab-row, .back-bar, .result .hint, .standings-table + .hint{ display:none !important; }
   .sc-pane[hidden]{ display:block !important; }
-  .screen{ animation:none !important; }
+  .screen, .screen > *, .home-card, .list-row{ animation:none !important; }
+  .confetti, .moment, .result-hero::after{ display:none !important; }
   /* Branded header/footer (index.html). */
   .print-only{ display:flex !important; }
   #print-brand{ align-items:center; gap:12px; padding:0 0 10px; margin-bottom:14px; border-bottom:3px solid #0E9F6E; }
@@ -1263,11 +1365,20 @@ button.ghost.danger-text{ color:var(--danger); border-color:rgba(255,93,112,.5);
 .score-set-inn .check-row{ flex-wrap:nowrap; }
 .score-set-inn .check-row input{ width:auto; flex-shrink:0; margin:0; }
 
-/* Opening sheet: two boxes side by side, each side's players as chips. */
-.open-slots{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-.open-list{ flex-direction:row; flex-wrap:wrap; }
-.open-list .pick-row-item{ width:auto; flex:0 1 auto; height:40px; }
-.open-list .pick-row-item[data-tag]::after{ content:attr(data-tag); margin-left:8px; font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
-.open-hint{ margin:-4px 0 0; }
 .confirm-names{ margin:6px 0 8px; padding-left:18px; }
-.open-list .pick-row-item:disabled{ opacity:.4; box-shadow:none; }
+
+/* ball by ball: add a missed ball; edit sheet modes; reopen innings / undo row */
+button.chip.chip-add{ background:none; border-style:dashed; color:var(--accent-2); font-weight:800; cursor:pointer; font-family:inherit; box-shadow:none; animation:none; }
+button.chip.chip-add:hover, button.chip.chip-add:focus-visible{ outline:2px solid var(--accent-2); outline-offset:1px; }
+.chip.gone{ text-decoration:line-through; opacity:.55; outline:2px dashed var(--wicket); outline-offset:2px; }
+.chip.anchor{ outline:2px dashed var(--muted); outline-offset:2px; }
+.ball-edit-add-row{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
+.ball-edit-actions.solo{ grid-template-columns:1fr; }
+.ball-edit-kinds.fill-choices{ grid-template-columns:1fr; }
+.ball-edit-kinds.fill-choices button{ text-align:left; }
+.ball-edit-kinds.fill-choices button:disabled{ opacity:.45; }
+.go-back-row{ display:flex; flex-wrap:wrap; gap:8px; margin:4px 0 10px; }
+.go-back-row button{ flex:1 1 140px; }
+@media print{ .go-back-row, button.chip.chip-add{ display:none !important; } }
+.ball-edit-kinds.fill-choices button{ padding:8px 12px; }
+.ball-edit-kinds.fill-choices button .sub{ display:block; font-size:.72rem; font-weight:600; color:var(--muted); margin-top:2px; }

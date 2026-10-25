@@ -18,9 +18,11 @@ const { setup, BASE } = require('./cap-lib.js');
   await shot('05-new-match');
   await tap('.preset-info-btn, [data-action="preset-info"]'); await shot('06-preset-info');
   await tap('#match-setup-form button[type=submit]');
-  await tap('#opening-form [data-open-list="bat"] [data-name="Kusal Mendis"]'); await tap('#opening-form [data-open-list="bat"] [data-name="Pathum Nissanka"]');
-  await tap('#opening-form [data-open-list="bowl"] [data-name="Matheesha Pathirana"]');
-  await shot('07-opening');
+  // Each box lists its side's players while it's focused; a tapped row fills that box.
+  const pick = async (box, name) => { await p.focus(`#opening-form [name=${box}]`); await p.waitForTimeout(150); await tap(`#opening-form .combo:has([name=${box}]) [data-name="${name}"]`); };
+  await pick('striker', 'Kusal Mendis'); await pick('nonStriker', 'Pathum Nissanka');
+  await p.focus('#opening-form [name=bowler]'); await shot('07-opening');
+  await tap('#opening-form .combo:has([name=bowler]) [data-name="Matheesha Pathirana"]');
   await tap('#opening-form button[type=submit]');
   const ball = r => tap(`#app [data-action="ball"][data-runs="${r}"]`);
   for (const r of [1, 4, 0, 6, 1, 2]) await ball(r);

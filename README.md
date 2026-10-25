@@ -101,8 +101,14 @@ gh api repos/<owner>/<name>/pages -X POST -f "source[branch]=master" -f "source[
 - **Editing an earlier ball replays the innings from the log.** Who faced
   each later ball stays as it was recorded; batters and bowlers come in in
   the order they were entered. If an edit turns a wide into a legal ball (or
-  back), every later over shifts by one ball, since the app counts overs from
-  legal balls. Balls before a "catch up the score" can't be edited.
+  back), or a legal ball is added or taken out, every later over shifts by a
+  ball, since the app counts overs from legal balls — so removing a ball asks
+  whether one was missed instead, and adds it in the same change to keep the
+  overs lined up. Balls before a "catch up the score" can't be edited.
+- **Only an innings ended by hand can be reopened.** End innings (or a score
+  set by hand) can be taken back at the break, during the chase (which is
+  cleared) or on Result; an innings that was all out, ran out of overs or
+  reached the target is changed by editing a ball instead.
 - **Run-outs are scored by asking, not by modelling the running.** The
   scorer picks who is out and the end where the wicket was broken; the new
   batter comes in at that end and the other batter stands at the other end.

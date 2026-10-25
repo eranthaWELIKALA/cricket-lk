@@ -51,13 +51,14 @@ function renderSideMenu(){
     { view: "home", icon: "🏠", label: "Home" },
     { action: "go-premier", icon: "🏆", label: "Premier" },
     // Teams / Players / Presets / Stats are per role: the guest ones (on this
-    // device) only in guest mode; while acting as a club, one "Club" entry
-    // (that club's roster, presets and stats, all cloud) instead.
+    // device) only in guest mode; while acting as a club, that club's own
+    // Players / Presets / Stats (+ Admins), all cloud, instead.
     ...(clubRole
       ? [
         { action: "go-club-view", view: "clubPlayers", icon: "🧑‍🤝‍🧑", label: "Players" },
         { action: "go-club-view", view: "clubPresets", icon: "⚙️", label: "Presets" },
-        { action: "go-club-view", view: "clubStats", icon: "📊", label: "Stats" }
+        { action: "go-club-view", view: "clubStats", icon: "📊", label: "Stats" },
+        ...(isClubAdmin(clubRole.id) ? [{ action: "go-club-view", view: "clubAdmins", icon: "🛡️", label: "Admins" }] : [])
       ]
       : [
         { view: "teams", icon: "👥", label: "Teams" },

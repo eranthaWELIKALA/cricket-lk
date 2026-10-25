@@ -27,52 +27,26 @@ function renderMyClubs(){
       </form>
       ${ui.myClubs === null ? `${loadingHtml()}` : ui.myClubs.length ? ui.myClubs.map(c => `
         <button data-action="open-club" data-id="${c.id}" class="list-row">
-          <span>${escapeHtml(c.name)}</span><span class="muted">${escapeHtml(c.role)}</span>
+          <span>${escapeHtml(c.name)}<br><span class="muted">${escapeHtml(c.role)}</span></span><span class="chevron">›</span>
         </button>
       `).join("") : `<p class="hint">No clubs yet — create one above.</p>`}
+      ${ui.myClubs && ui.myClubs.length ? `<p class="hint">Tapping a club opens Home acting as that club.</p>` : ""}
     </div>
   `;
 }
 
-function renderClubHome(){
-  if (!session) return renderSignIn();
-  const club = ui.club;
-  return `
-    <div class="screen">
-      ${renderBackBar("My clubs", "myClubs")}
-      ${ui.clubBusy || !club ? `${loadingHtml()}` : `
-        <h1>${escapeHtml(club.name)}</h1>
-        <p class="hint">To start a practice/friendly match or a new tournament for this club, pick it from the switcher on <button data-action="go-view" data-view="home" class="link-btn">Home</button>.</p>
-
-        <h3 class="section-label">Tournaments</h3>
-        ${club.tournaments.length ? club.tournaments.map(t => `
-          <button data-action="open-club-tournament" data-id="${t.id}" class="list-row">
-            <span>${escapeHtml(t.name)}${t.pending ? `<span class="pending-tag">not synced</span>` : ""}</span><span class="chevron">›</span>
-          </button>
-        `).join("") : `<p class="hint">No tournaments yet — e.g. group everything played on one day into one.</p>`}
-
-        <h3 class="section-label">Admins</h3>
-        ${club.members.map(m => `<div class="list-row"><span>${escapeHtml(m.displayName)}</span><span class="muted">${escapeHtml(m.role)}</span></div>`).join("")}
-        ${(club.invites || []).map(i => `<div class="list-row"><span>${escapeHtml(i.email)}<span class="pending-tag">invited</span></span><button type="button" data-action="cancel-club-invite" data-id="${escapeHtml(i.id)}" class="link-btn">Cancel</button></div>`).join("")}
-        <form id="club-invite-admin-form" class="inline-form">
-          <input name="email" type="email" placeholder="Email to add as admin" required>
-          <button type="submit" class="ghost small">Invite</button>
-        </form>
-        ${ui.clubInviteMessage ? `<p class="hint">${escapeHtml(ui.clubInviteMessage)}</p>` : ""}
-
-        <h3 class="section-label">Matches</h3>
-        ${club.matches.length ? club.matches.map(m => `
-          <button type="button" data-action="open-match-detail" data-id="${escapeHtml((m.data && m.data.id) || m.id)}" class="list-row"><span>${escapeHtml(m.data.teamA)} v ${escapeHtml(m.data.teamB)}<br><span class="muted">${escapeHtml(m.data.result || "")}</span></span><span class="chevron">›</span></button>
-        `).join("") : `<p class="hint">No matches yet — play one above.</p>`}
-      `}
-    </div>
-  `;
+// Every club member is an owner or an admin (supabase/002), so this holds
+// for any club in ui.myClubs; checked anyway so a lesser role added later
+// doesn't get the Admins screen by default.
+function isClubAdmin(clubId){
+  const c = (ui.myClubs || []).find(x => x.id === clubId);
+  return !!c && (c.role === "owner" || c.role === "admin");
 }
 
-/* --- club-scoped screens: Players / Presets / Stats. Reached from Home's
-   tiles (and the side menu) while "Acting as" a club, they show only that
-   club's cloud data -- never the guest lists. ui.currentClubId is the club
-   (set by "go-club-view" from state.activeClubId). --- */
+/* --- club-scoped screens: Players / Presets / Stats / Admins. Reached from
+   Home's tiles (and the side menu) while "Acting as" a club, they show only
+   that club's cloud data -- never the guest lists. ui.currentClubId is the
+   club (set by "go-club-view" from state.activeClubId). --- */
 function clubMatchesFor(clubId){
   const local = Object.values(state.matchHistory).filter(m => m.clubId === clubId);
   const cloud = ui.club && ui.club.id === clubId ? ui.club.matches.map(x => x.data).filter(Boolean) : [];
@@ -81,7 +55,7 @@ function clubMatchesFor(clubId){
   return [...byId.values()];
 }
 
-function renderClubScreen(title, bodyFn){
+function renderClubScreen(title, bodyFn, note){
   if (!session) return renderSignIn();
   const clubId = ui.currentClubId;
   const club = ui.club && ui.club.id === clubId ? ui.club : null;
@@ -89,7 +63,7 @@ function renderClubScreen(title, bodyFn){
     <div class="screen">
       ${renderBackBar("Home", "home")}
       <h1>${escapeHtml(currentClubName() || "Club")} · ${title}</h1>
-      <p class="hint guest-note">Club ${title.toLowerCase()} — stored in the cloud for this club only. Guest data on this device is never shown here.</p>
+      <p class="hint guest-note">${note || `Club ${title.toLowerCase()} — stored in the cloud for this club only. Guest data on this device is never shown here.`}</p>
       ${!club || ui.clubBusy ? `${loadingHtml()}` : bodyFn(club)}
     </div>
   `;
@@ -511,10 +485,35 @@ function renderClubPresets(){
 function renderClubStats(){
   return renderClubScreen("Stats", club => {
     const matches = clubMatchesFor(club.id);
+    // The full match list lives here (Home shows the latest 3).
     return matches.length
       ? renderLeaderboards(aggregatePlayerStats(matches)) + `<p class="hint">Read from ${matches.length} archived club match${matches.length === 1 ? "" : "es"} only.</p>`
+        + renderRecentMatches("Matches", recentMatchesFor(matches, matches.length))
       : `<p class="hint">Play and finish a club match to see stats here.</p>`;
   });
+}
+
+/* The club's admins (every member -- see isClubAdmin), its pending email
+   invites (supabase/014) and the invite form. */
+function renderClubAdmins(){
+  const me = session && session.user.id;
+  const ownerFirst = m => m.role === "owner" ? 0 : 1;
+  // ui.myClubs isn't loaded after a reload onto this screen; RLS only shows
+  // members the list anyway, so don't block it on that.
+  return renderClubScreen("Admins", club => ui.myClubs && !isClubAdmin(club.id) ? `<p class="hint">Only this club's admins can see its admin list.</p>` : `
+    ${[...club.members].sort((a, b) => ownerFirst(a) - ownerFirst(b)).map(m => `
+      <div class="list-row"><span>${escapeHtml(m.displayName)}${m.userId === me ? ` <span class="muted">(you)</span>` : ""}</span><span class="muted">${escapeHtml(m.role)}</span></div>
+    `).join("")}
+    ${(club.invites || []).length ? `<h3 class="section-label">Invited</h3>` : ""}
+    ${(club.invites || []).map(i => `<div class="list-row"><span>${escapeHtml(i.email)}<span class="pending-tag">invited</span></span><button type="button" data-action="cancel-club-invite" data-id="${escapeHtml(i.id)}" class="link-btn">Cancel</button></div>`).join("")}
+    <h3 class="section-label">Invite an admin</h3>
+    <form id="club-invite-admin-form" class="inline-form">
+      <div class="form-error"></div>
+      <input name="email" type="email" placeholder="Email to add as admin" required>
+      <button type="submit" class="ghost small">Invite</button>
+    </form>
+    ${ui.clubInviteMessage ? `<p class="hint">${escapeHtml(ui.clubInviteMessage)}</p>` : `<p class="hint">Someone with an account is added at once. Anyone else becomes an admin when they sign up and confirm that email.</p>`}
+  `, "Admins can score this club's matches, manage its players, presets and tournaments, and invite more admins.");
 }
 
 function handleCreateClubSubmit(e){

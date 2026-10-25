@@ -7,13 +7,44 @@ function handleBallClick(runs){
   const inn = currentInnings(state.match);
   const kindMap = { wide: "wide", noball: "noball", bye: "bye", legbye: "legbye" };
   const kind = ui.pendingExtra ? kindMap[ui.pendingExtra] : "run";
+  const batter = inn.striker;
+  const runsBefore = inn.batting.stats[batter] ? inn.batting.stats[batter].runs : 0;
   pushSnapshot();
   recordBall(inn, { kind, runs });
   afterBall(state.match);
   maybeArchiveCompletedMatch(state.match);
   if (kind === "run") SFX.runs(runs); else SFX.extra();
+  liveMoment = ballMoment(kind, runs, batter, runsBefore, inn.batting.stats[batter] ? inn.batting.stats[batter].runs : 0);
   ui.pendingExtra = null;
   save(); render();
+}
+
+/* --- live "moments": a one-shot badge + ring on the score tile for a four,
+   a six, a wicket or a batter's fifty/hundred. Set where the ball is
+   recorded (next to its sound) and played by render() on the new board, so
+   a re-render, an undo or a reload never replays one. --- */
+let liveMoment = null;
+// Runs off the bat only (a run or a no-ball's runs); a milestone beats the boundary that brought it.
+function ballMoment(kind, runs, batter, before, after){
+  if (kind !== "run" && kind !== "noball") return null;
+  if (batter && before < 100 && after >= 100) return { kind: "hundred", label: "HUNDRED", sub: batter };
+  if (batter && before < 50 && after >= 50) return { kind: "fifty", label: "FIFTY", sub: batter };
+  if (runs === 6) return { kind: "six", label: "SIX" };
+  if (runs === 4) return { kind: "four", label: "FOUR" };
+  return null;
+}
+function wicketMoment(inn){
+  const fow = inn.fallOfWickets[inn.fallOfWickets.length - 1];
+  return { kind: "wicket", label: "WICKET", sub: fow ? fow.batsman : null };
+}
+function playLiveMoment(){
+  const mo = liveMoment;
+  liveMoment = null;
+  // Gone if the ball ended the innings or the match (that screen has no board).
+  const tile = mo && document.querySelector("#app .screen.live .score-tile");
+  if (!tile) return;
+  tile.classList.add("moment-" + mo.kind);
+  tile.insertAdjacentHTML("beforeend", `<span class="moment" aria-hidden="true"><b>${mo.label}</b>${mo.sub ? `<small>${escapeHtml(liveName(mo.sub))}</small>` : ""}</span>`);
 }
 
 /* An extra (wide / no-ball / bye / leg bye) always asks how many runs it was
@@ -73,8 +104,8 @@ function renderExtraRunsModal(inn){
   `;
 }
 
-/* Asks first: closing the 1st innings lands on the innings break, which has
-   no Undo control, and closing the 2nd ends the match. */
+/* Asks first: closing the 1st innings lands on the innings break and closing
+   the 2nd ends the match. Either can be taken back (Reopen innings, Undo). */
 function handleEndInnings(){
   const m = state.match;
   const inn = m && currentInnings(m);
@@ -149,9 +180,67 @@ function handleSwapStrike(){
 
 function handleUndo(){
   if (!state.snapshots.length) return;
-  state.match = state.snapshots.pop();
+  const prev = state.snapshots.pop();
+  keepArchiveInStep(state.match, prev);
+  state.match = prev;
   ui.pendingExtra = null; resetWicketUi(); ui.confirm = null; ui.matchMenu = null; ui.catchUp = null; ui.liveScorecard = false; ui.ballEdit = null; ui.nameLater = null; ui.scoreSet = null;
   save(); render();
+}
+
+/* Undo can step back across the end of a match (Result and the innings break
+   have Undo too), so the archive follows: back to a finished version, and
+   that version goes into the archive entry; back to before the finish, and
+   the entry stays (with the old result) until the match finishes again and
+   replaces it (`reopenedFrom`, see maybeArchiveCompletedMatch). */
+function keepArchiveInStep(cur, prev){
+  const id = cur && (cur.archivedId || cur.reopenedFrom);
+  if (!id || !prev || !state.matchHistory[id]) return;
+  if (prev.status === "complete"){ delete prev.reopenedFrom; prev.archivedId = id; replaceArchivedMatch(id, prev); }
+  else { delete prev.archivedId; prev.reopenedFrom = id; }
+}
+// What Undo would take back, for its button on the innings break / Result.
+function undoLabel(m){
+  const prev = state.snapshots[state.snapshots.length - 1];
+  if (!prev || !m) return null;
+  if (m.forfeited && !prev.forfeited) return "Undo forfeit";
+  if (prev.status === m.status) return "Undo last change";
+  return "Undo last ball";
+}
+
+/* Innings ended by hand (End innings, or a score set by hand) that can be
+   taken back, newest first (see reopenInnings, ENGINE). */
+function reopenableInnings(m){
+  if (!ballEditAllowed(m)) return [];
+  return m.innings.map((x, i) => i).filter(i => !reopenInningsError(m, i)).reverse();
+}
+/* Reopen an innings ended by hand: at the break, during the chase (which is
+   cleared) or after the match ended. A finished match keeps its archive entry
+   until it finishes again (`reopenedFrom`). Snapshotted, so Undo walks it
+   back. */
+function askReopenInnings(idx){
+  const m = state.match;
+  if (!ballEditAllowed(m)) return;
+  const res = reopenInnings(m, idx);
+  if (res.error) return;
+  ui.matchMenu = null;
+  const inn = m.innings[idx];
+  const team = escapeHtml(teamName(m, inn.battingTeam));
+  askConfirm({
+    title: `Reopen ${possessive(teamName(m, inn.battingTeam))} innings?`, icon: "↺", tone: "primary",
+    body: `<p>${team} carry on batting from <b class="n">${inningsScoreText(inn)}</b>${m.oversLimit != null ? `, with ${oversDisplay(m.oversLimit * inn.ballsPerOver - inn.legalBalls, inn.ballsPerOver)} overs left` : ""}.</p>
+      ${res.notes.map(t => `<p>${escapeHtml(t)}</p>`).join("")}
+      ${m.status === "complete" ? `<p>The result (${escapeHtml(m.result || "")}) is taken back until the match finishes again. Match history keeps the old result until then.</p>` : ""}
+      <p class="hint">Undo puts it back the way it was.</p>`,
+    confirmLabel: "Reopen innings",
+    onConfirm: () => {
+      pushSnapshot();
+      const next = res.match;
+      if (m.archivedId){ next.reopenedFrom = m.archivedId; delete next.archivedId; }
+      state.match = next;
+      ui.pickDismissed = null; ui.liveScorecard = false; ui.showFullScorecard = false; ui.pendingExtra = null; resetWicketUi();
+      save();
+    }
+  });
 }
 
 /* 1-indexed -> "1st"/"2nd"/"3rd"/"4th"... incl. the 11th-13th exception.
@@ -163,16 +252,19 @@ function ordinalSuffix(n){
 }
 
 /* One row of the live-scoring "this over"/previous-over rail: one slot
-   per ballsPerOver (padded with dashed empties when the over isn't full
-   yet), each tagged for color by what it actually was, plus the row's
-   run total on the right. `events` items carry `runs` (added to
-   recordBall's currentOverEvents push) so the total doesn't need to
-   re-parse `display` strings. */
+   per delivery so far plus a dashed empty for each legal ball still to
+   come (a wide/no-ball fills a slot and adds one at the end), each tagged
+   for color by what it actually was, plus the row's run total on the
+   right. `events` items carry `runs` (added to recordBall's
+   currentOverEvents push) so the total doesn't need to re-parse `display`
+   strings. The chips sit in a sideways-scrolling strip (.over-balls) that
+   focusLatestBalls() keeps on the latest ball. */
 function renderOverRow(label, events, bpo, dimmed, unknown){
   // `unknown`: balls of this over bowled before a catch-up (applyCatchUp),
   // never scored one by one -- shown as "?" ahead of the recorded ones.
   const lead = unknown || 0;
-  const slotCount = Math.max(bpo, events.length + lead);
+  const legal = lead + events.filter(ev => !/^(Wd|Nb)/.test(ev.display)).length;
+  const slotCount = events.length + lead + Math.max(0, bpo - legal);
   const slots = [];
   for (let i = 0; i < lead; i++) slots.push(`<span class="chip unknown" data-chip="${escapeHtml(`${label}:u${i}`)}">?</span>`);
   for (let i = 0; i < slotCount - lead; i++){
@@ -191,11 +283,36 @@ function renderOverRow(label, events, bpo, dimmed, unknown){
   return `
     <div class="over-row${dimmed ? " dimmed" : ""}">
       <span class="over-row-label">${label}</span>
-      ${slots.join("")}
+      <div class="over-balls">${slots.join("")}</div>
       <span class="over-row-total">${total}</span>
     </div>
   `;
 }
+
+/* After every render (and on resize): an over with extras can hold more
+   chips than fit, so scroll each strip just far enough to show its latest
+   ball and the next empty slot (no scrollbar -- it's swiped), and fade the
+   edge that has balls hidden past it. */
+function focusLatestBalls(){
+  document.querySelectorAll("#app .over-balls").forEach(box => {
+    const chips = [...box.children];
+    let last = -1;
+    chips.forEach((c, i) => { if (!c.classList.contains("empty")) last = i; });
+    const show = chips[last + 1] || chips[last];
+    // offsetLeft (box is position:relative), not getBoundingClientRect: a
+    // new chip is mid-pop (scaled) right now.
+    box.scrollLeft = show ? Math.max(0, show.offsetLeft + show.offsetWidth - box.clientWidth) : 0;
+    overBallsFade(box);
+  });
+}
+function overBallsFade(box){
+  box.classList.toggle("more-left", box.scrollLeft > 1);
+  box.classList.toggle("more-right", box.scrollLeft + box.clientWidth < box.scrollWidth - 1);
+}
+// scroll doesn't bubble: catch the strips' scrolls on the way down.
+document.addEventListener("scroll", e => {
+  if (e.target.classList && e.target.classList.contains("over-balls")) overBallsFade(e.target);
+}, true);
 
 /* The score + target tiles at the top of the live card. The pick/wicket/
    extra sheets reuse it as a banner above the sheet (renderSheetScore), with

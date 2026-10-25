@@ -24,19 +24,28 @@ function render(){
     ui.premierLoading = true;
     fetchPremierData().then(() => { ui.premierLoading = false; render(); });
   }
+  // Clubs used to have a dashboard of their own ("clubHome"); a club is now
+  // Home acting as it. An old saved view or #/clubs/<id> link lands there.
+  if (state.view === "clubHome"){
+    const id = ui.currentClubId || state.viewClubId;
+    if (id) state.activeClubId = id;
+    state.view = "home"; save();
+  }
   // A persisted club view after a reload has no ui.currentClubId /
   // currentTournamentId (ui isn't saved): take them from state.viewClubId /
   // viewTournamentId, and if there's still nothing to show, fall back to a
   // screen that can render instead of an endless spinner.
-  const CLUB_VIEWS = ["clubHome", "clubPlayers", "clubPresets", "clubStats", "clubTournamentSetup", "clubTournamentDashboard"];
+  const CLUB_VIEWS = ["clubPlayers", "clubPresets", "clubStats", "clubAdmins", "clubTournamentSetup", "clubTournamentDashboard"];
   if (!m && CLUB_VIEWS.includes(state.view)){
-    if (!ui.currentClubId) ui.currentClubId = state.viewClubId || (state.view !== "clubHome" ? state.activeClubId : null);
+    if (!ui.currentClubId) ui.currentClubId = state.viewClubId || state.activeClubId;
     if (state.view === "clubTournamentDashboard" && !ui.currentTournamentId) ui.currentTournamentId = state.viewTournamentId;
-    if (state.view === "clubTournamentDashboard" && !ui.currentTournamentId) state.view = ui.currentClubId ? "clubHome" : "myClubs";
-    else if (!ui.currentClubId) state.view = state.view === "clubHome" ? "myClubs" : "home";
+    if (!ui.currentClubId || (state.view === "clubTournamentDashboard" && !ui.currentTournamentId)) state.view = "home";
   }
-  if (CLUB_VIEWS.includes(state.view) && (state.viewClubId !== ui.currentClubId || state.viewTournamentId !== ui.currentTournamentId)){
+  // A club screen belongs to the club you're acting as, so its back bar
+  // ("Home") lands on that club's Home -- even when it was reached by a link.
+  if (CLUB_VIEWS.includes(state.view) && (state.viewClubId !== ui.currentClubId || state.viewTournamentId !== ui.currentTournamentId || (ui.currentClubId && state.activeClubId !== ui.currentClubId))){
     state.viewClubId = ui.currentClubId || null; state.viewTournamentId = ui.currentTournamentId || null;
+    if (ui.currentClubId) state.activeClubId = ui.currentClubId;
     save();
   }
   // Club data (roster, matches, presets) is loaded once per club the screen
@@ -47,7 +56,7 @@ function render(){
   const wantClubId = m && m.clubId ? m.clubId
     : (!m && state.view === "home" && state.activeClubId && (ui.myClubs || []).some(c => c.id === state.activeClubId)) ? state.activeClubId
     : (!m && (state.view === "matchSetup" || state.view === "clubTournamentSetup") && ui.currentClubId && (state.view !== "matchSetup" || ui.clubMatchSetupType)) ? ui.currentClubId
-    : (!m && ["clubHome", "clubPlayers", "clubPresets", "clubStats", "clubTournamentDashboard"].includes(state.view) && ui.currentClubId) ? ui.currentClubId
+    : (!m && ["clubPlayers", "clubPresets", "clubStats", "clubAdmins", "clubTournamentDashboard"].includes(state.view) && ui.currentClubId) ? ui.currentClubId
     : null;
   if (wantClubId && supabaseClient && session && (!ui.club || ui.club.id !== wantClubId) && ui.clubRosterLoading !== wantClubId){
     ui.clubRosterLoading = wantClubId;
@@ -65,7 +74,7 @@ function render(){
     fetchClubTournamentDetail(wantTournamentId).then(() => {
       if (ui.clubTournamentLoading === wantTournamentId) ui.clubTournamentLoading = null;
       if (!ui.clubTournament && state.view === "clubTournamentDashboard" && ui.currentTournamentId === wantTournamentId){
-        state.view = "clubHome"; ui.currentTournamentId = null; save();
+        state.view = "home"; ui.currentTournamentId = null; save();
       }
       render();
     });
@@ -99,8 +108,6 @@ function render(){
     html = renderAccount();
   } else if (state.view === "myClubs"){
     html = renderMyClubs();
-  } else if (state.view === "clubHome"){
-    html = renderClubHome();
   } else if (state.view === "clubTournamentSetup"){
     html = renderClubTournamentSetup();
   } else if (state.view === "clubTournamentDashboard"){
@@ -125,6 +132,8 @@ function render(){
     html = renderClubPresets();
   } else if (state.view === "clubStats"){
     html = renderClubStats();
+  } else if (state.view === "clubAdmins"){
+    html = renderClubAdmins();
   } else {
     html = renderHome();
   }
@@ -140,10 +149,13 @@ function render(){
   // Same screen re-rendered (a tap, a sheet opening, a ball scored): skip the
   // screen's settle animation, and only pulse the score when it changed --
   // replaying them on every render is what made taps flicker.
-  const screenKey = navKey() + (m ? ":" + m.status : "");
+  // Home acting as another role is new content too (its tiles rise in again).
+  const screenKey = navKey() + (m ? ":" + m.status : "") + (navKey() === "home" ? ":" + (state.activeClubId || "") : "");
   const sameScreen = root.dataset.screenKey === screenKey;
   const prevScore = sameScreen ? (root.querySelector(".score-n") || {}).textContent : null;
   const prevChips = sameScreen ? new Set([...root.querySelectorAll("[data-chip]")].map(c => c.dataset.chip)) : null;
+  const prevTabs = sameScreen ? activeTabs(root) : null;
+  const menuWasOpen = !!root.querySelector(".side-menu");
   syncRoute();
   root.innerHTML = renderTopBar(canNavigate, onAuthScreen) + html + renderPlayersDatalist() + renderTeamsDatalist()
     + (canNavigate ? renderSideMenu() : "");
@@ -154,7 +166,9 @@ function render(){
     const score = root.querySelector(".score-n");
     if (score && score.textContent === prevScore) root.querySelector(".score-tile").classList.add("no-anim");
     root.querySelectorAll("[data-chip]").forEach(c => { if (prevChips.has(c.dataset.chip)) c.classList.add("no-anim"); });
+    markTabSwitches(root, prevTabs);
   }
+  if (menuWasOpen) root.querySelectorAll(".side-menu, .side-menu-backdrop").forEach(el => el.classList.add("no-anim"));
   restoreFormDrafts(root, appDrafts);
 
   const modalRoot = document.getElementById("modal-root");
@@ -241,14 +255,15 @@ function render(){
     const keep = prev ? { key: prev.dataset.keepScroll, top: prev.scrollTop } : null;
     const hadBackdrop = !!modalRoot.querySelector(".modal-backdrop");
     const modalDrafts = captureFormDrafts(modalRoot);
+    const sheetTabs = activeTabs(modalRoot);
     modalRoot.innerHTML = modalHtml;
+    markTabSwitches(modalRoot, sheetTabs);
     // Sheet -> sheet (e.g. wicket -> new batsman): the scrim is already up.
     const backdrop = hadBackdrop && modalRoot.querySelector(".modal-backdrop");
     if (backdrop) backdrop.classList.add("no-anim");
     modalRoot.dataset.modalKey = modalKey;
     restoreFormDrafts(modalRoot, modalDrafts);
     modalRoot.querySelectorAll("[data-pick-filter]").forEach(i => { if (i.value) applyPickFilter(i); });
-    const opening = modalRoot.querySelector("#opening-form"); if (opening) syncOpeningPicks(opening);
     const again = keep && modalRoot.querySelector(`[data-keep-scroll="${keep.key}"]`);
     if (again){ again.classList.add("no-anim"); again.scrollTop = keep.top; }
     if (modalKey === "add"){ const first = modalRoot.querySelector('input[name="name"]'); if (first) first.focus(); }
@@ -263,8 +278,25 @@ function render(){
     againConfirm.closest(".modal-backdrop").classList.add("no-anim");
   }
   showBoardAboveSheet();
+  focusLatestBalls();
   // The DOM was just replaced: put the tapped button's spinner back.
   if (activity.shown || document.querySelector(".is-loading")) applyActivity();
+  if (liveMoment) playLiveMoment();
+}
+
+/* Which tab each tab row shows (by its data-action), so a re-render can let
+   the content of a row whose tab just changed fade in (.tab-switched) --
+   and nothing else, since every render replaces the whole DOM. */
+function activeTabs(rootEl){
+  const tabs = {};
+  rootEl.querySelectorAll(".tab-row .tab-btn.active").forEach(b => { tabs[b.dataset.action] = b.dataset.tab; });
+  return tabs;
+}
+function markTabSwitches(rootEl, before){
+  rootEl.querySelectorAll(".tab-row .tab-btn.active").forEach(b => {
+    const was = before[b.dataset.action];
+    if (was != null && was !== b.dataset.tab) b.closest(".tab-row").classList.add("tab-switched");
+  });
 }
 
 /* The pick/wicket sheets (.modal-backdrop.with-score) leave the live board's
@@ -285,4 +317,4 @@ function showBoardAboveSheet(){
   backdrop.style.setProperty("--board-h", Math.ceil(bottom + 8) + "px");
   backdrop.classList.add("board-through");
 }
-window.addEventListener("resize", () => showBoardAboveSheet());
+window.addEventListener("resize", () => { showBoardAboveSheet(); focusLatestBalls(); });

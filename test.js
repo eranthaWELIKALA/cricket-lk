@@ -933,18 +933,27 @@ async function main(){
       state.match.squads = { A: ["Kusal", "Pathum", "Charith"], B: ["Wanindu", "Dushmantha"] };
       state.snapshots = []; render();`);
     const box = n => doc.querySelector(`#opening-form input[name="${n}"]`);
-    const chip = (g, n) => doc.querySelector(`#opening-form [data-open-list="${g}"] [data-name="${n}"]`);
-    assert(box("striker") && box("nonStriker") && chip("bat", "Kusal") && chip("bowl", "Wanindu") && !chip("bat", "Wanindu") && !doc.querySelector("#opening-form .combo"), "opening sheet: each side's players as chips, no dropdown");
-    chip("bat", "Kusal").click(); chip("bat", "Pathum").click(); chip("bowl", "Wanindu").click();
-    assert(box("striker").value === "Kusal" && box("nonStriker").value === "Pathum" && box("bowler").value === "Wanindu" && chip("bat", "Kusal").dataset.tag === "on strike" && chip("bowl", "Wanindu").classList.contains("active"), "chips fill on strike, then the other end, then the bowler");
-    // Without squads both sides list the same players: one picked to bat is greyed out as a bowler.
+    const list = n => box(n).closest(".combo").querySelector(".combo-list");
+    const opt = (n, name) => list(n).querySelector(`.combo-opt[data-name="${name}"]`);
+    const shown = n => list(n).hidden ? [] : [...list(n).querySelectorAll(".combo-opt")].filter(o => !o.hidden).map(o => o.dataset.name);
+    const focus = n => { box(n).focus(); box(n).dispatchEvent(new win.FocusEvent("focusin", { bubbles: true })); };
+    assert(box("striker") && box("nonStriker") && box("bowler") && opt("striker", "Kusal") && opt("nonStriker", "Kusal") && opt("bowler", "Wanindu") && !opt("striker", "Wanindu") && !opt("bowler", "Kusal")
+      && !doc.querySelector("#opening-form [data-open-list]") && [...doc.querySelectorAll("#opening-form .combo-list")].every(l => l.hidden), "opening sheet: three boxes, each with its own side's list, all closed");
+    focus("nonStriker");
+    assert(!list("nonStriker").hidden && list("striker").hidden && list("bowler").hidden, "focusing a box opens only that box's list");
+    opt("nonStriker", "Pathum").click();
+    assert(box("nonStriker").value === "Pathum" && box("striker").value === "" && list("nonStriker").hidden, "a tapped row fills the focused box (not the first empty one) and closes the list");
+    focus("striker");
+    assert(shown("striker").join() === "Kusal,Charith", "a name in one box isn't offered in another");
+    opt("striker", "Kusal").click(); focus("bowler"); opt("bowler", "Wanindu").click();
+    assert(box("striker").value === "Kusal" && box("nonStriker").value === "Pathum" && box("bowler").value === "Wanindu", "each box takes the row tapped under it");
+    // Without squads both sides list the same players: one picked to bat isn't offered as a bowler.
     win.eval(`state.match.squadsSaved = state.match.squads; state.match.squads = null; findOrCreatePlayer("Kusal"); findOrCreatePlayer("Wanindu"); render();`);
-    assert(box("striker").value === "Kusal" && chip("bowl", "Kusal") && chip("bowl", "Kusal").disabled && !chip("bowl", "Wanindu").disabled, "a name picked to bat is greyed out in the bowler chips");
+    focus("bowler");
+    assert(box("striker").value === "Kusal" && opt("bowler", "Kusal") && opt("bowler", "Kusal").hidden && shown("bowler").includes("Wanindu"), "a name picked to bat isn't offered as the bowler");
     win.eval(`state.match.squads = state.match.squadsSaved; delete state.match.squadsSaved; render();`);
-    chip("bat", "Kusal").click();
-    assert(box("striker").value === "" && !chip("bat", "Kusal").classList.contains("active") && box("nonStriker").value === "Pathum", "a chosen chip tapped again is un-picked");
-    box("striker").value = "Charith"; box("striker").dispatchEvent(new win.Event("input", { bubbles: true }));
-    assert(chip("bat", "Charith") && !chip("bat", "Charith").hidden && chip("bat", "Pathum").hidden, "typing in a box narrows that side's chips");
+    box("striker").value = "Ch"; box("striker").dispatchEvent(new win.Event("input", { bubbles: true }));
+    assert(shown("striker").join() === "Charith", "typing in a box narrows its list");
     box("striker").value = "kusal"; box("nonStriker").value = "KUSAL";
     doc.getElementById("opening-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
     assert(/must be different players/.test(doc.querySelector("#opening-form .form-error").textContent) && win.eval("currentInnings(state.match).striker") === null, "same name at both ends (any case) is refused");
@@ -1645,6 +1654,194 @@ async function main(){
     assert(win.eval("state.match.status") === "complete" && win.eval("state.match.archivedId") && win.eval("state.match.caughtUp") === true, "saved: the match is finished and archived, out of player stats");
     win.eval(`handleUndo()`);
     assert(win.eval("state.match.status") === "live" && win.eval("currentInnings(state.match).runs") === 5, "Undo brings the ball-by-ball score back");
+    win.eval(`state.match = null; state.snapshots = []; state.matchHistory = {}; ui = defaultUi(); save(); render();`);
+  }
+
+  // --- UI: one-shot animations only play when their content is new ---
+  {
+    const doc = win.document;
+    const bm = (...a) => JSON.stringify(win.ballMoment(...a));
+    assert(bm("run", 4, "A", 10, 14) === JSON.stringify({ kind: "four", label: "FOUR" }) && win.ballMoment("run", 6, "A", 0, 6).kind === "six", "a 4 or 6 off the bat is a moment");
+    assert(win.ballMoment("noball", 4, "A", 0, 4).kind === "four" && win.ballMoment("bye", 4, "A", 0, 0) === null && win.ballMoment("wide", 4, "A", 0, 0) === null && win.ballMoment("run", 1, "A", 3, 4) === null, "a no-ball's four counts; byes, wides and singles don't");
+    assert(win.ballMoment("run", 4, "A", 48, 52).kind === "fifty" && win.ballMoment("run", 1, "A", 99, 100).kind === "hundred" && win.ballMoment("run", 6, "A", 50, 56).kind === "six", "crossing 50 / 100 beats the boundary; already past 50 is just the six");
+    win.eval(`
+      ui = defaultUi(); state.snapshots = [];
+      state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+      openInnings(currentInnings(state.match), "Kusal", "Pathum", "Wanindu");
+      state.match.status = "live"; render();
+      handleBallClick(4);`);
+    const moment = () => doc.querySelector("#app .score-tile .moment");
+    assert(moment() && /FOUR/.test(moment().textContent) && doc.querySelector("#app .score-tile.moment-four"), "a four shows the FOUR moment on the score tile");
+    win.eval(`render()`);
+    assert(!moment() && !doc.querySelector("#app .score-tile[class*=moment-]"), "a re-render never replays the moment");
+    win.eval(`handleUndo()`);
+    assert(!moment(), "undo doesn't play one either");
+    win.eval(`confirmWicket("bowled")`);
+    assert(moment() && /WICKET/.test(moment().textContent) && /Kusal/.test(moment().textContent), "a wicket names the batter who's out");
+    // tabs: only a tab that actually changed gets .tab-switched
+    win.eval(`state.matchHistory = { m1: Object.assign(JSON.parse(JSON.stringify(state.match)), { id: "m1", status: "complete", completedAt: 1 }) };
+      state.match = null; state.snapshots = []; ui = defaultUi(); state.view = "stats"; render(); render();`);
+    assert(doc.querySelector(".tab-row.stats-tabs") && !doc.querySelector(".tab-switched"), "re-rendering on the same tab animates nothing");
+    win.eval(`ui.statsTab = "bat"; render();`);
+    assert(doc.querySelector(".tab-row.stats-tabs.tab-switched"), "switching tab marks that tab row (its content fades in)");
+    win.eval(`render();`);
+    assert(!doc.querySelector(".tab-switched"), "the next re-render doesn't replay it");
+    // the side menu slides in once, not on every render while it's open
+    win.eval(`state.view = "home"; ui.sideMenuOpen = true; render();`);
+    assert(!doc.querySelector(".side-menu.no-anim"), "the side menu animates when it opens");
+    win.eval(`render();`);
+    assert(doc.querySelector(".side-menu.no-anim") && doc.querySelector(".side-menu-backdrop.no-anim"), "and stays still on re-renders while open");
+    win.eval(`ui = defaultUi(); state.matchHistory = {}; save(); render();`);
+  }
+
+  // --- adding a ball, removing one with the missing ball added, reopening an innings ---
+  {
+    const setup = (opts) => {
+      const m = createMatch(Object.assign({ teamA: "Lions", teamB: "Tigers", oversLimit: 2, playersPerSide: 4, battingFirst: "A" }, opts || {}));
+      win.openInnings(currentInnings(m), "A1", "A2", "B1"); m.status = "live";
+      return m;
+    };
+    const play = (m, ev) => { recordBall(currentInnings(m), ev); afterBall(m); };
+    const seqOf = (inn, n) => inn.log.filter(a => a.t === "ball")[n].ev.seq;
+    const labels = inn => win.inningsBalls(inn).map(b => `${b.label}:${b.bowler}:${b.ev.display}`).join(" ");
+
+    // over 1 by B1 (six dots), over 2 by B2 (a 1 and a 2)
+    let m = setup();
+    for (let i = 0; i < 6; i++) play(m, { kind: "run", runs: 0 });
+    win.setBowler(currentInnings(m), "B2");
+    play(m, { kind: "run", runs: 1 }); play(m, { kind: "run", runs: 2 });
+    let inn = currentInnings(m);
+    // a 4 added after 0.3: the over takes it, B2's first ball moves into B1's over
+    let r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 2), ev: { kind: "run", runs: 4 }, insert: "after" });
+    let ni = r.match.innings[0];
+    assert(r.added.length === 1 && win.ballContext(ni, r.added[0]).label === "0.4" && ni.runs === 7 && ni.legalBalls === 9, "a ball added after 0.3 is the new 0.4 (+4 runs, one more ball)");
+    assert(r.notes.some(t => /every later over moves \(0\.4 is now 0\.5\)/.test(t)) && r.notes.some(t => /1 ball now counts in another bowler's over \(0\.6 was B1's, now B2's\)/.test(t)), "the notes say which balls moved and that B1's last ball is now B2's first");
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 0), ev: { kind: "wide", runs: 0 }, insert: "before" });
+    assert(win.ballContext(r.match.innings[0], r.added[0]).label === "0.1" && r.match.innings[0].legalBalls === 8 && !r.notes.some(t => /moves/.test(t)), "a wide added before the first ball shifts nothing");
+
+    // remove 0.3 and add the missing ball at the end of that over: every later ball stays where it was
+    r = win.replayMatch(m, [{ inn: 0, seq: seqOf(inn, 2), ev: null }, { inn: 0, seq: seqOf(inn, 5), ev: { kind: "run", runs: 6 }, insert: "after" }]);
+    ni = r.match.innings[0];
+    assert(labels(ni) === "0.1:B1:0 0.2:B1:0 0.3:B1:0 0.4:B1:0 0.5:B1:0 0.6:B1:6 1.1:B2:1 1.2:B2:2" && !r.notes.some(t => /moves|another bowler/.test(t)), "remove 0.3 + add a 6 at the end of over 1: B1 still bowls six, B2's over is untouched");
+    // the remove alone pulls B2's first ball into B1's over
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 2), ev: null });
+    assert(/^0\.1:B1:0 0\.2:B1:0 0\.3:B1:0 0\.4:B1:0 0\.5:B1:0 0\.6:B1:1 1\.1:B2:2$/.test(labels(r.match.innings[0])), "(a removal on its own moves the next ball into the over)");
+
+    // a finished match: a ball added after the winning ball can't be, a remove + add keeps it finished
+    m = setup({ oversLimit: 1 });
+    for (let i = 0; i < 6; i++) play(m, { kind: "run", runs: 1 });
+    startSecondInnings(m); win.openInnings(currentInnings(m), "B1", "B2", "A1"); m.status = "live";
+    play(m, { kind: "run", runs: 4 }); play(m, { kind: "run", runs: 4 });
+    assert(m.status === "complete", "(setup) Tigers won off two balls");
+    const i2 = m.innings[1];
+    r = win.replayMatch(m, { inn: 1, seq: seqOf(i2, 1), ev: { kind: "run", runs: 1 }, insert: "after" });
+    assert(/already over/.test(r.error), "a ball added after the winning ball is refused");
+    r = win.replayMatch(m, [{ inn: 1, seq: seqOf(i2, 0), ev: null }, { inn: 1, seq: seqOf(i2, 1), ev: { kind: "run", runs: 2 }, insert: "before" }]);
+    assert(r.match.status === "live" && r.match.innings[1].runs === 6 && r.match.innings[1].legalBalls === 2, "a remove + add that no longer reaches the target leaves the chase unfinished (the sheet refuses that for a finished match)");
+
+    // reopening an innings ended by hand
+    m = setup();
+    play(m, { kind: "run", runs: 3 });
+    win.endInnings(m);
+    assert(m.status === "innings_break" && m.innings[0].completeReason === "closed", "(setup) innings closed at 3-0 (0.1)");
+    r = win.reopenInnings(m, 0);
+    assert(r.match.status === "live" && !r.match.innings[0].complete && r.match.innings[0].log.slice(-1)[0].t === "ball" && m.status === "innings_break", "reopen: back to live, the end comes off the log, the match given isn't touched");
+    play(r.match, { kind: "run", runs: 2 });
+    assert(r.match.innings[0].runs === 5 && r.match.innings[0].legalBalls === 2, "scoring carries on from where it stopped");
+    startSecondInnings(m); win.openInnings(currentInnings(m), "B1", "B2", "A1"); m.status = "live";
+    play(m, { kind: "run", runs: 1 });
+    r = win.reopenInnings(m, 0);
+    assert(r.match.innings.length === 1 && r.match.status === "live" && r.notes.some(t => /Tigers' innings so far \(1-0, 0\.1 ov\) is cleared/.test(t)), "reopening the first innings mid-chase clears the chase (and says so)");
+    m = setup({ playersPerSide: 2 });
+    play(m, { kind: "wicket", wicketType: "bowled" });
+    assert(/all out/.test(win.reopenInningsError(m, 0)) && win.reopenInnings(m, 0).error, "an all-out innings can't be reopened (edit a ball instead)");
+  }
+
+  // --- UI: + adds a ball, remove offers the missing ball, reopen and Undo keep the archive in step ---
+  {
+    const doc = win.document;
+    const submit = id => doc.getElementById(id).dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    const ok = () => doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    win.eval(`
+      ui = defaultUi(); state.snapshots = []; state.matchHistory = {};
+      state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 2, playersPerSide: 11, battingFirst: "A" });
+      openInnings(currentInnings(state.match), "Kusal", "Pathum", "Wanindu"); state.match.status = "live";
+      for (let i = 0; i < 6; i++) handleBallClick(1);
+      setBowler(currentInnings(state.match), "Dushmantha"); handleBallClick(1); handleBallClick(1);
+      ui.liveScorecard = "live"; ui.scorecard = { inn: null, mode: "balls" }; render();`);
+    assert(!doc.querySelector('#modal-root [data-action="add-ball"]'), "no + while live: the full over can't take a ball and the short one is still being bowled");
+    win.eval(`endInnings(state.match); ui.liveScorecard = "innings_break"; ui.scorecard = { inn: 0, mode: "balls" }; render();`);
+    const plus = doc.querySelectorAll('#modal-root [data-action="add-ball"]');
+    assert(plus.length === 1 && plus[0].dataset.label === "1.2", "ended by hand at 1.2: the short over ends in a + (after 1.2)");
+    plus[0].click();
+    const sheet = () => doc.querySelector("#modal-root .ball-edit-modal");
+    assert(/Add a ball after 1\.2/.test(sheet().textContent), "+ opens the sheet for a new ball after 1.2");
+    sheet().querySelector('[data-field="runs"][data-value="2"]').click();
+    assert(/New ball 1\.3/.test(sheet().textContent) && /8-0 \(1\.2\) → 10-0 \(1\.3\)/.test(sheet().textContent), "a 2 after the last ball: previewed as 1.3, total 8-0 (1.2) → 10-0 (1.3)");
+    submit("ball-edit-form");
+    assert(/Add a ball after 1\.2\?/.test(doc.querySelector("#confirm-root").textContent), "review asks before adding");
+    ok();
+    assert(win.eval("state.match.innings[0].runs") === 10 && win.eval("state.match.innings[0].legalBalls") === 9 && win.eval("state.match.status") === "innings_break", "saved: 10-0 in 1.3, still ended by hand");
+
+    // remove 0.3 at the break: the over is short, so the ? offers the missing ball; just removing reopens the innings
+    win.eval(`ui.liveScorecard = "innings_break"; ui.scorecard = { inn: 0, mode: "balls" }; render();`);
+    doc.querySelector('#modal-root [data-action="edit-ball"][data-label="0.3"]').click();
+    sheet().querySelector('[data-action="ball-edit-mode"][data-value="remove"]').click();
+    assert(/Remove ball 0\.3/.test(sheet().textContent) && /Was a ball missed instead\?/.test(sheet().textContent) && !sheet().querySelector('[data-action="ball-edit-fill"][data-value=""]').disabled, "Remove asks whether a ball was missed; just removing is allowed at the break");
+    assert(/Taking out a legal ball/.test(sheet().textContent) && /every later over moves/.test(sheet().textContent), "just removing it: the preview says every later over moves");
+    sheet().querySelector('[data-action="ball-edit-fill"][data-value="over"]').click();
+    sheet().querySelector('[data-field="runs"][data-value="4"]').click();
+    assert(/New ball 0\.6/.test(sheet().textContent) && /10-0 \(1\.3\) → 13-0 \(1\.3\)/.test(sheet().textContent) && !/every later over moves/.test(sheet().textContent), "the missing ball (a 4) at the end of over 1: overs as they were, 10 → 13");
+    submit("ball-edit-form");
+    assert(/Remove ball 0\.3 and add the missing one\?/.test(doc.querySelector("#confirm-root").textContent), "review names both changes");
+    ok();
+    assert(win.eval("state.match.status") === "innings_break" && win.eval("state.match.innings[0].runs") === 13 && win.eval("state.match.innings[0].legalBalls") === 9, "saved: still at the break, 13-0 in 1.3");
+
+    // End innings → the break offers Reopen; after the chase finishes by hand, Result offers it too
+    win.eval(`state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+      state.snapshots = []; ui = defaultUi();
+      openInnings(currentInnings(state.match), "Kusal", "Pathum", "Wanindu"); state.match.status = "live";
+      handleBallClick(4); pushSnapshot(); endInnings(state.match); save(); render();`);
+    let reopen = doc.querySelector('#app [data-action="reopen-innings"]');
+    assert(reopen && /Reopen Lions' innings/.test(reopen.textContent) && !doc.querySelector('#app .go-back-row [data-action="undo"]'), "the innings break offers Reopen for an innings ended by hand");
+    reopen.click(); ok();
+    assert(win.eval("state.match.status") === "live" && win.eval("currentInnings(state.match).runs") === 4, "reopened: live again at 4-0");
+    doc.querySelector('#app [data-action="undo"]').click();
+    assert(win.eval("state.match.status") === "innings_break", "Undo takes the reopen back");
+    win.eval(`startSecondInnings(state.match); openInnings(currentInnings(state.match), "Babar", "Rizwan", "Dushmantha"); state.match.status = "live";
+      handleBallClick(2); pushSnapshot(); endInnings(state.match); maybeArchiveCompletedMatch(state.match); save(); render();`);
+    const id = win.eval("state.match.archivedId");
+    assert(id && /Lions won by 2 runs/.test(win.eval("state.match.result")), "(setup) chase closed at 2-0: Lions won by 2 runs, archived");
+    reopen = doc.querySelector('#app [data-action="reopen-innings"][data-inn="1"]');
+    assert(reopen && doc.querySelector('#app [data-action="reopen-innings"][data-inn="0"]'), "Result offers Reopen for both innings ended by hand");
+    reopen.click();
+    assert(/Match history keeps the old result/.test(doc.querySelector("#confirm-root").textContent), "the confirmation says the old result stays in history until it finishes again");
+    ok();
+    assert(win.eval("state.match.status") === "live" && win.eval("state.match.reopenedFrom") === id && win.eval(`state.matchHistory["${id}"].result`) === "Lions won by 2 runs", "the chase is live again; the archive keeps the old result meanwhile");
+    win.eval(`handleBallClick(4);`);
+    assert(win.eval("state.match.status") === "complete" && win.eval("state.match.archivedId") === id && /Tigers won/.test(win.eval(`state.matchHistory["${id}"].result`)) && win.eval("Object.keys(state.matchHistory).length") === 1, "finishing again replaces the same archive entry (no second copy)");
+    // Undo on Result: back before the winning ball, then forward again
+    const undo = doc.querySelector('#app .go-back-row [data-action="undo"]');
+    assert(undo && /Undo last ball/.test(undo.textContent), "Result offers Undo for the ball that ended it");
+    undo.click();
+    assert(win.eval("state.match.status") === "live" && win.eval("state.match.reopenedFrom") === id && !win.eval("state.match.archivedId"), "Undo on Result: live again, still tied to its archive entry");
+    win.eval(`handleBallClick(1);`);
+    assert(win.eval("state.match.status") === "live", "(a single isn't enough)");
+    win.eval(`handleBallClick(2);`);
+    assert(win.eval("state.match.archivedId") === id && win.eval("Object.keys(state.matchHistory).length") === 1 && win.eval(`state.matchHistory["${id}"].innings[1].runs`) === 5, "finishing again still replaces the same entry");
+    // a forfeit can be undone from Result too
+    win.eval(`state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+      state.snapshots = []; ui = defaultUi();
+      openInnings(currentInnings(state.match), "Kusal", "Pathum", "Wanindu"); state.match.status = "live"; handleBallClick(1);
+      pushSnapshot(); forfeitMatch(state.match, "B"); maybeArchiveCompletedMatch(state.match); save(); render();`);
+    const fid = win.eval("state.match.archivedId");
+    const undoF = doc.querySelector('#app .go-back-row [data-action="undo"]');
+    assert(undoF && /Undo forfeit/.test(undoF.textContent) && !doc.querySelector('#app [data-action="reopen-innings"]'), "after a forfeit, Result offers Undo forfeit");
+    undoF.click();
+    assert(win.eval("state.match.status") === "live" && !win.eval("state.match.forfeited") && win.eval("state.match.reopenedFrom") === fid, "Undo forfeit: scoring carries on, tied to the archive entry");
+    win.eval(`ui.matchMenu = null; askCancelMatch();`);
+    assert(/match history keeps the result it had/.test(doc.querySelector("#confirm-root").textContent), "cancelling a reopened match says the old result stays in history");
+    doc.querySelector('#confirm-root [data-action="confirm-cancel"]').click();
     win.eval(`state.match = null; state.snapshots = []; state.matchHistory = {}; ui = defaultUi(); save(); render();`);
   }
 
