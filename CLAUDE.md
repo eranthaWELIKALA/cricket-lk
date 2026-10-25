@@ -1878,9 +1878,16 @@ ordered easy → advanced in nine chapters, with phone screenshots in
 app" goes back). Not in `sw.js`' cache list, like `admin.html`. The
 screenshots come from `scripts/tutorial/cap1–3.js` (Playwright against a
 local server, Supabase blocked, club/Premier screens drawn from sample data
-injected into the page — see the header of `cap-lib.js`). **When a screen it
+injected into the page — see the header of `cap-lib.js`). Every `shot()`
+finishes the one-shot animations first (`animations: 'disabled'`), and
+`freezeMoment(kind, label, sub, ms)` paints a live-moment stinger frozen
+mid-animation without recording a ball (`08b-big-moment`, shot with
+`{ animations: 'allow' }`). **When a screen it
 shows changes, re-run the matching script and update the page text**; delete
-any image the page no longer references.
+any image the page no longer references (the scripts also write a few the
+page doesn't use, e.g. `01-splash`, `16-scorecard`, `40-sign-in`). Run the
+scripts one at a time: in parallel, `python3 -m http.server` drops script
+requests and a shot catches a half-loaded page.
 
 ## Deployment
 

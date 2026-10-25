@@ -1,6 +1,6 @@
 const { setup, BASE } = require('./cap-lib.js');
 (async () => {
-  const { b, p, run, tap, shot, hideBanner } = await setup();
+  const { b, p, run, tap, shot, hideBanner, freezeMoment } = await setup();
   await p.goto(BASE, { waitUntil: 'domcontentloaded' });
   await p.waitForTimeout(250); await shot('01-splash');
   await p.waitForTimeout(4200); await shot('02-install');
@@ -29,6 +29,9 @@ const { setup, BASE } = require('./cap-lib.js');
   await p.fill('#new-bowler-form [name=name]', 'Maheesh Theekshana'); await tap('#new-bowler-form button[type=submit]');
   for (const r of [0, 1, 4]) await ball(r);
   await shot('08-live');
+  // A big moment (the broadcast-style stinger), frozen mid-animation; no ball recorded.
+  await freezeMoment('six', 'SIX', null, 560); await shot('08b-big-moment', { animations: 'allow' });
+  await run('render();');
   await tap('#app [data-action="toggle-extra"][data-extra="wide"]'); await shot('09-extras');
   await tap('#modal-root [data-action="ball"]');
   await tap('#app [data-action="open-wicket"]'); await tap('#modal-root [data-action="pick-wicket"][data-type="caught"]');
@@ -51,6 +54,9 @@ const { setup, BASE } = require('./cap-lib.js');
   await tap('#modal-root [data-action="name-later-pick"][data-name="Charith Asalanka"]');
   await tap('#app [data-action="open-live-scorecard"]'); await shot('16-scorecard');
   await tap('#modal-root [data-action="scorecard-mode"][data-tab="balls"]'); await shot('17-ball-by-ball');
+  // Tap a ball: change it, remove it, or add a missed ball next to it.
+  await tap('#modal-root [data-action="edit-ball"][data-label="0.4"]'); await shot('17b-edit-ball');
+  await tap('#modal-root [data-action="close-ball-edit"]');
   await run('ui.liveScorecard=false; render();');
   // finish the innings quickly, then the break
   await run(`{ const m = state.match; endInnings(m); save(); render(); }`);
