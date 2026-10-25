@@ -31,7 +31,7 @@ of `index.html`:
 | `js/ui/router.js` | page navigation (routes, history, back interception, unsaved-input checks) |
 | `js/ui/menus.js` | sync pill/sheet, side menu |
 | `js/ui/screens/*.js` | `home-account`, `clubs` (+ profiles, player modals), `club-tournaments` (+ team builder), `premier`, `guest` (teams/players/presets/tournaments), `stats` |
-| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `catch-up` (catch up the score), `edit-ball` (edit/remove an earlier ball), `live`, `result` (+ scorecards, share/export) |
+| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `catch-up` (catch up the score), `edit-ball` (edit/remove an earlier ball, set the final score by hand), `live`, `result` (+ scorecards, share/export) |
 | `js/ui/render.js` | `render()` |
 | `js/ui/events.js` | the delegated listeners |
 | `js/boot.js` | boot: `load()`, first route + render, `initAuth()`, sync triggers, service worker |
@@ -267,6 +267,37 @@ confirmation with old/new chip, score and notes → `applyBallEdit` (snapshot
 first). A finished match must stay finished; its `matchHistory` entry is
 replaced in place (same id, `completedAt`) and re-synced — `coalesceOp` now
 replaces a queued `match` op with the newer copy instead of dropping it.
+
+**The edit sheet previews the change** (`renderBallEditContext`): the over as
+recorded (this ball ringed), "with this change", and before this ball / this
+ball / after this ball / innings total old → new (+ result). It reruns
+`replayMatch` on a copy every render (`ballEditPreview`, the draft built by
+`ballEditToEvent(…, preview)` which skips the fielder checks); scores come
+from `ballContext(inn, seq)` (ENGINE, tested). **"?" means "can't be worked
+out yet"**: when the replay needs a name, `replayMatch` returns `partial`
+(the match as far as it got) and `left` (logged balls still to come), the
+preview shows those balls and the total as `?` chips (`.chip.unknown`), and
+`ballEditSet` raises the "who came in / who bowled" question at once instead
+of waiting for Save. Replay notes that ask the scorer to "Check it" (a
+dismissal now on a free hit) are flagged with a `?` too. Ball by ball puts
+each ball's number (`4.3`) under its chip.
+
+**Set the final score by hand** (⋯ Match options, or "Set the final score
+instead" on Ball by ball; `ui.scoreSet`, `renderScoreSetModal`, same file)
+is for a scorer who'd rather type the totals than fix balls: runs, wickets,
+overs per innings, including a chase not started yet. `setScoresByHand(match,
+scores)` (ENGINE, tested; checked by `scoreByHandError`) works on a copy: a
+finished innings counts only if changed; an innings in progress ends at what
+was entered (with "carry on scoring" ticked it's left alone — a new score
+mid-innings is Catch up's job). The same score just ends it (logged `end`,
+balls stay editable). A different one keeps the balls already scored and adds
+a gap with `gap.byHand` ("Score set by hand", may go *down*), drops that
+innings' log, trims `fallOfWickets` to the new wicket count and sets
+`match.caughtUp` (out of player stats, like a catch-up). The chase's target
+follows the first innings; a chase left alone is replayed against it (and a
+finished match that would no longer be finished is refused). It's applied
+through `applyBallEdit`, so it snapshots, archives or replaces the archive the
+same way.
 
 ## Playing conditions are per-match config, not hardcoded
 
@@ -626,7 +657,7 @@ remove club player, delete tournament team, discard unsaved team edits,
 move a player between tournament teams, new club player vs guest in the team builder,
 end/reopen a tournament,
 delete guest team/player, delete match/tournament/club presets, change or
-remove an earlier ball. **Don't add
+remove an earlier ball, set the final score by hand. **Don't add
 `window.confirm()` or "tap again to confirm" buttons** — use `askConfirm`.
 The wicket sheet's Confirm button is data entry, not a confirmation, and
 stays as it is. `admin.html` keeps its own typed-confirmation prompts (it's
@@ -687,7 +718,7 @@ History rules — these are what make it work on phones:
   (`navReplaceNext`). Home is the first entry, so back at Home exits the app.
 - **Sheets get their own entry** (same URL, `overlay: true`) when opened by a
   tap (`overlayOpen()`: confirm, side menu, sync sheet, player modal, team
-  builder, match options, catch-up sheet, wicket sheet, extra-runs sheet, live scorecard, ball edit), so back closes them even on the first
+  builder, match options, catch-up sheet, wicket sheet, extra-runs sheet, live scorecard, ball edit, set final score), so back closes them even on the first
   entry; closing one by tap pops its entry again. The auto-opened pick sheets
   aren't overlays — `interceptNav` handles them.
 - **Intercepted moves** (`interceptNav`, most specific first): close the top

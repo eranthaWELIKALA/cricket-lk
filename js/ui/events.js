@@ -59,6 +59,8 @@ document.addEventListener("click", (e) => {
   else if (action === "ball-edit-set") ballEditSet(btn.dataset.field, btn.dataset.value);
   else if (action === "ball-edit-delete") ballEditSave(true);
   else if (action === "close-ball-edit") closeBallEdit();
+  else if (action === "open-score-set") openScoreSet();
+  else if (action === "close-score-set") closeScoreSet();
   else if (action === "pick-runout-end"){ ui.runoutEnd = btn.dataset.end; render(); }
   else if (action === "pick-runout-at"){ ui.runoutAt = btn.dataset.end; render(); }
   else if (action === "pick-bowler"){ confirmNewBowler(btn.dataset.name); }
@@ -344,6 +346,7 @@ document.addEventListener("submit", (e) => {
   else if (id === "wicket-fielder-form") handleWicketFielderSubmit(e);
   else if (id === "motm-form") handleMotmSubmit(e);
   else if (id === "ball-edit-form"){ e.preventDefault(); ballEditSave(false); }
+  else if (id === "score-set-form"){ e.preventDefault(); scoreSetSave(); }
   else if (id === "tournament-setup-form") handleTournamentSetupSubmit(e);
   else if (id === "tournament-start-match-form") handleTournamentStartMatchSubmit(e);
   else if (id === "result-entry-form") handleResultEntrySubmit(e);

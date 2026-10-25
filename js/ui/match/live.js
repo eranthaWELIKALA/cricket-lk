@@ -150,7 +150,7 @@ function handleSwapStrike(){
 function handleUndo(){
   if (!state.snapshots.length) return;
   state.match = state.snapshots.pop();
-  ui.pendingExtra = null; resetWicketUi(); ui.confirm = null; ui.matchMenu = null; ui.catchUp = null; ui.liveScorecard = false; ui.ballEdit = null;
+  ui.pendingExtra = null; resetWicketUi(); ui.confirm = null; ui.matchMenu = null; ui.catchUp = null; ui.liveScorecard = false; ui.ballEdit = null; ui.scoreSet = null;
   save(); render();
 }
 

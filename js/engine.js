@@ -354,7 +354,8 @@ function editableBall(match, idx, seq){
    wicket instead. Who was on strike for each later ball stays as it was
    recorded. A wide/no-ball that becomes a legal ball (or back) moves every
    later over by one ball. Returns { inn, notes } or { need } (a name that
-   isn't in the log: `supply` gives them) or { error }. */
+   isn't in the log: `supply` gives them; with `partial` and `left`, see
+   stop()) or { error }. */
 function replayInnings(inn, actions, supply, anonymous){
   const r = JSON.parse(JSON.stringify(inn.logBase));
   r.logBase = inn.logBase; r.log = [];
@@ -396,6 +397,10 @@ function replayInnings(inn, actions, supply, anonymous){
     }
     return null;
   };
+  // Stopped for a name: `partial` is the innings up to the ball that needs
+  // it, `left` how many logged balls are still to come (shown as "?").
+  const stop = (i, need) => ({ need, partial: r,
+    left: actions.filter((a, j) => j >= i && a.t === "ball" && !used.has(j)).length });
   for (let i = 0; i < actions.length; i++){
     if (used.has(i)) continue;
     const a = actions[i];
@@ -419,9 +424,9 @@ function replayInnings(inn, actions, supply, anonymous){
       const res = fill(i, true); if (res) return res;
       if (pendingBatsmanSlot(r)){
         const fow = r.fallOfWickets[r.fallOfWickets.length - 1];
-        return { need: { kind: "batter", label: nextBallLabel(r), out: fow ? fow.batsman : null } };
+        return stop(i, { kind: "batter", label: nextBallLabel(r), out: fow ? fow.batsman : null });
       }
-      if (!r.bowler) return { need: { kind: "bowler", label: nextBallLabel(r), last: r.lastOverBowler } };
+      if (!r.bowler) return stop(i, { kind: "bowler", label: nextBallLabel(r), last: r.lastOverBowler });
       // The same two batters, the other way round from what was recorded:
       // keep them where the scorer had them for this ball.
       if (a.striker && a.nonStriker && r.striker === a.nonStriker && r.nonStriker === a.striker) swapStrike(r);
@@ -448,8 +453,11 @@ function replayInnings(inn, actions, supply, anonymous){
    again too when the target moves. `supply` = { batters: [], bowlers: [] }:
    names for slots the log can't fill (see replayInnings' `need`). Returns
    { match, notes } -- a new object, the input isn't touched -- or { need }
-   / { error }. The status follows the innings: an innings that is no longer
-   over goes back to live, a chase that now gets there ends the match. */
+   / { error }. With { need }, `partial` is the match replayed up to where
+   the name is needed (for a preview; never saved) and `left` the balls after
+   it that can't be worked out yet. The status follows the innings: an
+   innings that is no longer over goes back to live, a chase that now gets
+   there ends the match. */
 function replayMatch(match, change, supply){
   const m = JSON.parse(JSON.stringify(match));
   const sup = { batters: [...((supply && supply.batters) || [])], bowlers: [...((supply && supply.bowlers) || [])] };
@@ -483,7 +491,10 @@ function replayMatch(match, change, supply){
       inn.logBase.target = target;
     }
     const res = replayInnings(inn, actions, sup, !!m.anonymous);
-    if (res.need) return { need: Object.assign(res.need, { inn: idx }) };
+    if (res.need){
+      m.innings[idx] = res.partial;
+      return { need: Object.assign(res.need, { inn: idx }), partial: m, left: res.left };
+    }
     if (res.error) return { error: res.error };
     m.innings[idx] = res.inn;
     notes.push(...res.notes);
@@ -497,6 +508,12 @@ function replayMatch(match, change, supply){
       break;
     }
   }
+  settleMatchStatus(m);
+  return { match: m, notes };
+}
+
+// The status (and result) worked out again from the innings as they now are.
+function settleMatchStatus(m){
   const last = currentInnings(m);
   if (last.complete){
     if (m.innings.length === 1){ m.status = "innings_break"; m.result = null; }
@@ -505,6 +522,130 @@ function replayMatch(match, change, supply){
     m.status = last.batting.order.length ? "live" : "opening";
     m.result = null;
   }
+}
+
+/* One ball in its innings, for the edit sheet: the score just before and
+   just after it ({ runs, wickets, balls }), its "4.3" label and its over
+   ({ number, bowler, events, at: this ball's index }). Walks the overs the
+   way ball by ball does (a catch-up/by-hand gap resets the running score).
+   null if the ball isn't there. */
+function ballContext(inn, seq){
+  const bpo = inn.ballsPerOver || 6;
+  const overs = inn.overs.concat(inn.currentOverEvents.length ? [{ bowler: inn.bowler, events: inn.currentOverEvents }] : []);
+  let runs = 0, wickets = 0, balls = 0;
+  for (const o of overs){
+    if (o.gap){ runs = o.gap.toRuns; wickets = o.gap.toWickets; balls = o.gap.toBalls; continue; }
+    const start = balls;
+    let inOver = start % bpo;
+    for (let k = 0; k < o.events.length; k++){
+      const ev = o.events[k];
+      const legal = !/^(Wd|Nb)/.test(ev.display);
+      const before = { runs, wickets, balls };
+      if (legal){ inOver += 1; balls += 1; }
+      runs += ev.runs || 0;
+      if (ev.isWicket) wickets += 1;
+      if (ev.seq === seq) return {
+        before, after: { runs, wickets, balls },
+        label: `${Math.floor(start / bpo)}.${legal ? inOver : inOver + 1}`,
+        over: { number: Math.floor(start / bpo) + 1, bowler: o.bowler, events: o.events, at: k }
+      };
+    }
+  }
+  return null;
+}
+
+/* --- the final score, set by hand ---
+   For a scorer who'd rather type the score than fix it ball by ball.
+   scores[i] = { runs, wickets, balls } for innings i, or null to leave it;
+   scores[1] for a chase that hasn't started starts it. An innings given a
+   score is over at that score. If the score is what it already was, it just
+   ends there (like End innings, its balls stay editable); otherwise the balls
+   already scored stay and a "set by hand" gap (the same shape as a
+   catch-up's, `gap.byHand`) takes it to the new total, and its log goes. The
+   chase's target follows the first innings, and a chase left alone is
+   replayed against the new one. A changed total isn't credited to anyone,
+   so like a catch-up the match leaves player stats (match.caughtUp). Returns
+   { match, notes } -- a copy, the input isn't touched -- or { error }. */
+function scoreByHandError(match, scores){
+  if (match.forfeited || match.resultOnly) return "This match's score can't be set here.";
+  const i0 = match.innings[0];
+  if (!scores[0] && !scores[1]) return "Nothing has changed yet.";
+  if (scores[1] && !scores[0] && !i0.complete) return `Set ${teamName(match, i0.battingTeam)}'s score first: their innings isn't over.`;
+  const firstRuns = scores[0] ? scores[0].runs : i0.runs;
+  const bpo = match.ballsPerOver || i0.ballsPerOver || 6;
+  for (let i = 0; i < 2; i++){
+    const s = scores[i];
+    if (!s) continue;
+    const who = teamName(match, i === 0 ? i0.battingTeam : i0.bowlingTeam);
+    const maxW = i0.maxWickets;
+    if (!Number.isInteger(s.runs) || s.runs < 0 || s.runs > 9999) return `Enter ${who}'s runs.`;
+    if (!Number.isInteger(s.wickets) || s.wickets < 0 || s.wickets > 99) return `Enter ${who}'s wickets.`;
+    if (maxW != null && s.wickets > maxW) return `${who} can lose at most ${maxW} wicket${maxW === 1 ? "" : "s"}.`;
+    if (!Number.isInteger(s.balls) || s.balls < 0) return `Enter ${who}'s overs, like 19.4.`;
+    if (i0.oversLimit != null && s.balls > i0.oversLimit * bpo) return `${who} can face at most ${i0.oversLimit} over${i0.oversLimit === 1 ? "" : "s"}.`;
+    if (i === 1 && s.runs > firstRuns + 6) return `${who} needed ${firstRuns + 1}, so the chase can't end past ${firstRuns + 6}.`;
+    if (i === 1 && s.runs > firstRuns && maxW != null && s.wickets >= maxW) return `${who} can't both reach the target and be all out.`;
+  }
+  return null;
+}
+function applyScoreByHand(inn, s){
+  const same = inn.runs === s.runs && inn.wickets === s.wickets && inn.legalBalls === s.balls;
+  if (same){
+    if (!inn.complete){ logAction(inn, { t: "end" }); inn.complete = true; inn.completeReason = "closed"; }
+    return false;
+  }
+  if (inn.currentOverEvents.length) inn.overs.push({ bowler: inn.bowler, events: inn.currentOverEvents, partial: true });
+  inn.currentOverEvents = [];
+  const batters = {}, bowlers = {};
+  inn.batting.order.forEach(n => { const b = inn.batting.stats[n]; batters[n] = { runs: b.runs, balls: b.balls }; });
+  inn.bowling.order.forEach(n => { const b = inn.bowling.stats[n]; bowlers[n] = { balls: b.legalBalls, runs: b.runs, wickets: b.wickets, maidens: b.maidens }; });
+  inn.overs.push({ bowler: null, events: [], gap: {
+    fromBalls: inn.legalBalls || 0, fromRuns: inn.runs, fromWickets: inn.wickets,
+    toBalls: s.balls, toRuns: s.runs, toWickets: s.wickets, byHand: true, batters, bowlers } });
+  inn.runs = s.runs; inn.wickets = s.wickets; inn.legalBalls = s.balls;
+  if (inn.fallOfWickets.length > s.wickets) inn.fallOfWickets.length = s.wickets;
+  inn.striker = null; inn.nonStriker = null; inn.bowler = null; inn.freeHit = false;
+  delete inn.partOverUnknown;
+  inn.complete = false; inn.completeReason = null;
+  checkInningsComplete(inn);
+  if (!inn.complete){ inn.complete = true; inn.completeReason = "closed"; }
+  delete inn.log; delete inn.logBase;
+  return true;
+}
+function setScoresByHand(match, scores){
+  const err = scoreByHandError(match, scores);
+  if (err) return { error: err };
+  const m = JSON.parse(JSON.stringify(match));
+  const notes = [];
+  const i0 = m.innings[0];
+  let changed = false;
+  if (scores[0]) changed = applyScoreByHand(i0, scores[0]) || changed;
+  if (scores[1] || m.innings[1]){
+    if (!m.innings[1]) startSecondInnings(m);
+    const i2 = m.innings[1], target = i0.runs + 1;
+    const chaser = teamName(m, i2.battingTeam);
+    if (i2.target !== target){
+      notes.push(`${chaser} now need ${target} to win.`);
+      if (scores[1] || !i2.log){
+        i2.target = target;
+        if (i2.logBase) i2.logBase.target = target;
+        // only reaching the target depends on it
+        if (!i2.complete || i2.completeReason === "target"){ i2.complete = false; i2.completeReason = null; checkInningsComplete(i2); }
+      } else {
+        i2.logBase.target = target;
+        const res = replayInnings(i2, i2.log, { batters: [], bowlers: [] }, !!m.anonymous);
+        if (!res.inn) return { error: `${chaser}'s chase can't be worked out against the new target. Set their score too.` };
+        m.innings[1] = res.inn;
+        notes.push(...res.notes);
+      }
+    }
+    if (scores[1]) changed = applyScoreByHand(m.innings[1], scores[1]) || changed;
+  }
+  settleMatchStatus(m);
+  if (match.status === "complete" && m.status !== "complete"){
+    return { error: `With that score ${teamName(m, m.innings[1].battingTeam)}'s chase wouldn't be over. Set their score too.` };
+  }
+  if (changed) m.caughtUp = true;
   return { match: m, notes };
 }
 
@@ -1180,7 +1321,6 @@ function fillAnonymousSlots(match){
   if (!inn.bowler){ setBowler(inn, `Over ${Math.floor(inn.legalBalls / inn.ballsPerOver) + 1}`); changed = true; }
   return changed;
 }
-
 /* --- catching up the score ---
    A scorer who stopped updating the board can jump to where the game is now
    instead of replaying every ball: the totals, every batter who got out (how,
@@ -1534,7 +1674,7 @@ function inningsCommentary(inn, opts){
       Object.keys(g.batters || {}).forEach(n => { batRuns[n] = g.batters[n].runs; batBalls[n] = g.batters[n].balls; });
       Object.keys(g.bowlers || {}).forEach(n => { const b = g.bowlers[n]; figs[n] = { balls: b.balls, maidens: b.maidens, runs: b.runs, wickets: b.wickets }; });
       out.push({ type: "gap", from: `${g.fromRuns}-${g.fromWickets} (${oversDisplay(g.fromBalls, bpo)})`, to: `${g.toRuns}-${g.toWickets} (${oversDisplay(g.toBalls, bpo)})`,
-        runs: g.toRuns - g.fromRuns, wickets: g.toWickets - g.fromWickets });
+        runs: g.toRuns - g.fromRuns, wickets: g.toWickets - g.fromWickets, byHand: !!g.byHand });
       return;
     }
     // Over number and ball count from the legal balls before it, not the

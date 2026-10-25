@@ -1492,6 +1492,92 @@ async function main(){
     win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); save(); render();`);
   }
 
+  // --- before/after a ball, "?" while a name is needed, the final score by hand ---
+  {
+    const setup = (opts) => {
+      const m = createMatch(Object.assign({ teamA: "Lions", teamB: "Tigers", oversLimit: 2, playersPerSide: 4, battingFirst: "A" }, opts || {}));
+      win.openInnings(currentInnings(m), "A1", "A2", "B1"); m.status = "live";
+      return m;
+    };
+    const play = (m, ev) => { recordBall(currentInnings(m), ev); afterBall(m); };
+    const seqOf = (inn, n) => inn.log.filter(a => a.t === "ball")[n].ev.seq;
+
+    let m = setup();
+    play(m, { kind: "run", runs: 1 }); play(m, { kind: "wide", runs: 0 }); play(m, { kind: "run", runs: 4 });
+    let inn = currentInnings(m);
+    let c = win.ballContext(inn, seqOf(inn, 2));
+    assert(c && c.label === "0.2" && c.before.runs === 2 && c.before.balls === 1 && c.after.runs === 6 && c.after.balls === 2 && c.over.number === 1 && c.over.at === 2, "ballContext: 0.2 (after a wide) is 2-0 before, 6-0 after, third ball of over 1");
+    c = win.ballContext(inn, seqOf(inn, 1));
+    assert(c.label === "0.2" && c.after.balls === 1, "a wide carries the number of the ball still to come and adds no ball");
+
+    // a new wicket that needs a name: the partial match comes back, with the balls still unknown
+    play(m, { kind: "run", runs: 0 }); play(m, { kind: "wicket", wicketType: "bowled" });
+    win.sendInBatter(inn, "A3"); play(m, { kind: "run", runs: 2 });
+    let r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 0), ev: { kind: "wicket", wicketType: "bowled" } });
+    assert(r.need && r.partial && r.left === 1 && win.ballContext(r.partial.innings[0], seqOf(inn, 0)).after.wickets === 1, "replay that needs a name returns how far it got and how many balls are left as ?");
+
+    // the final score by hand: a finished first innings changed mid-chase
+    m = setup({ oversLimit: 1 });
+    for (let i = 0; i < 6; i++) play(m, { kind: "run", runs: 1 });
+    startSecondInnings(m); win.openInnings(currentInnings(m), "B1", "B2", "A1"); m.status = "live";
+    play(m, { kind: "run", runs: 4 });
+    const before = JSON.stringify(m);
+    r = win.setScoresByHand(m, [{ runs: 3, wickets: 1, balls: 6 }, null]);
+    assert(JSON.stringify(m) === before, "setScoresByHand never touches the match it's given");
+    assert(r.match.innings[0].runs === 3 && r.match.innings[0].wickets === 1 && r.match.innings[1].target === 4 && r.match.status === "complete" && /Tigers won/.test(r.match.result) && r.match.caughtUp, "first innings set to 3: target 4, the chase's 4 off one ball now wins it (and player stats leave the match)");
+    assert(r.match.innings[1].legalBalls === 1 && r.match.innings[0].overs.some(o => o.gap && o.gap.byHand) && !r.match.innings[0].log, "the chase is replayed and stops at the winning ball; the first innings has a by-hand gap and no log");
+    // the chase set too, the match finishes with that result
+    r = win.setScoresByHand(m, [null, { runs: 5, wickets: 2, balls: 6 }]);
+    assert(r.match.status === "complete" && r.match.result === "Lions won by 1 run" && r.match.innings[1].completeReason === "overs", "chase set to 5-2 off 6: Lions won by 1 run");
+    // a first innings still being scored ends there; the same score keeps its balls editable
+    m = setup();
+    play(m, { kind: "run", runs: 2 });
+    r = win.setScoresByHand(m, [{ runs: 2, wickets: 0, balls: 1 }, null]);
+    assert(r.match.status === "innings_break" && r.match.innings[0].log && !r.match.caughtUp, "the same score just ends the innings (log kept, stats kept)");
+    r = win.setScoresByHand(m, [{ runs: 150, wickets: 2, balls: 12 }, { runs: 151, wickets: 2, balls: 11 }]);
+    assert(r.match.status === "complete" && /Tigers won by 1 wicket/.test(r.match.result) && r.match.innings[1].completeReason === "target", "both innings from the first innings in progress: the chase starts and is won");
+    assert(win.setScoresByHand(m, [{ runs: 10, wickets: 4, balls: 6 }, null]).error && win.setScoresByHand(m, [{ runs: 10, wickets: 0, balls: 13 }, null]).error, "more wickets or overs than the match allows is refused");
+    assert(/can't end past/.test(win.setScoresByHand(m, [{ runs: 10, wickets: 0, balls: 6 }, { runs: 20, wickets: 0, balls: 6 }]).error), "a chase past target + 5 is refused");
+    assert(/first/.test(win.setScoresByHand(m, [null, { runs: 1, wickets: 0, balls: 1 }]).error), "a chase can't be set while the first innings isn't over");
+    assert(/all out/.test(win.setScoresByHand(m, [{ runs: 10, wickets: 0, balls: 6 }, { runs: 11, wickets: 3, balls: 6 }]).error), "a chase can't reach the target and be all out");
+  }
+
+  // --- UI: the edit sheet's before/after panel and "?", and Set the final score ---
+  {
+    const doc = win.document;
+    win.eval(`
+      ui = defaultUi(); state.snapshots = [];
+      state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+      openInnings(currentInnings(state.match), "Kusal", "Pathum", "Wanindu");
+      state.match.status = "live";
+      handleBallClick(1); handleBallClick(4); handleBallClick(0);
+      ui.liveScorecard = "live"; ui.scorecard = { inn: null, mode: "balls" }; render();`);
+    doc.querySelector('#modal-root [data-action="edit-ball"][data-label="0.2"]').click();
+    const panel = () => doc.querySelector("#modal-root .ball-edit-context");
+    assert(/Before this ball\s*1-0/.test(panel().textContent) && /After this ball\s*5-0/.test(panel().textContent), "the edit sheet shows the score before (1-0) and after (5-0) the ball");
+    doc.querySelector('#modal-root [data-field="runs"][data-value="6"]').click();
+    assert(/After this ball\s*7-0/.test(panel().textContent) && /5-0 \(0\.3\) → 7-0 \(0\.3\)/.test(panel().textContent), "picking 6 previews 7-0 after the ball and the innings total 5-0 → 7-0");
+    doc.querySelector('#modal-root [data-field="kind"][data-value="wicket"]').click();
+    doc.querySelector('#modal-root [data-field="wicketType"][data-value="bowled"]').click();
+    assert(doc.querySelector('#modal-root .ball-edit-need input[name="newName"]') && /→ \?/.test(panel().textContent) && /later ball/.test(panel().textContent), "a new wicket asks at once who came in, and what can't be worked out yet shows as ?");
+    doc.querySelector('#modal-root [data-action="close-ball-edit"]').click();
+    win.eval(`ui.liveScorecard = false; ui.matchMenu = "menu"; render();`);
+    doc.querySelector('#modal-root [data-action="open-score-set"]').click();
+    const form = doc.getElementById("score-set-form");
+    const f = n => form.elements.namedItem(n);
+    assert(form && f("runs0").value === "5" && f("overs0").value === "0.3" && f("runs1").value === "", "Match options → Set the final score: the sheet is filled with the score so far, the chase blank");
+    f("runs0").value = "120"; f("wkts0").value = "4"; f("overs0").value = "5";
+    f("runs1").value = "100"; f("wkts1").value = "10"; f("overs1").value = "4.2";
+    form.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    const confirm = doc.querySelector("#confirm-root");
+    assert(/Lions won by 20 runs/.test(confirm.textContent) && /5-0 \(0\.3\) → 120-4 \(5\.0\)/.test(confirm.textContent), "review shows the scores and the result");
+    confirm.querySelector('[data-action="confirm-ok"]').click();
+    assert(win.eval("state.match.status") === "complete" && win.eval("state.match.archivedId") && win.eval("state.match.caughtUp") === true, "saved: the match is finished and archived, out of player stats");
+    win.eval(`handleUndo()`);
+    assert(win.eval("state.match.status") === "live" && win.eval("currentInnings(state.match).runs") === 5, "Undo brings the ball-by-ball score back");
+    win.eval(`state.match = null; state.snapshots = []; state.matchHistory = {}; ui = defaultUi(); save(); render();`);
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }

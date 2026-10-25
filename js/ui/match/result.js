@@ -47,7 +47,8 @@ function renderCatchUpNote(inn){
   if (un.batRuns > 0) parts.push(`${un.batRuns} run${un.batRuns === 1 ? "" : "s"} not credited to a batter`);
   if (un.bowlBalls > 0) parts.push(`${oversDisplay(un.bowlBalls, bpo)} overs and ${Math.max(un.bowlRuns, 0)} runs not credited to a bowler`);
   else if (un.bowlRuns > 0) parts.push(`${un.bowlRuns} run${un.bowlRuns === 1 ? "" : "s"} not credited to a bowler`);
-  return `<div class="catch-up-note">Score caught up at ${at} ov${parts.length ? ` · ${parts.join(" · ")}` : ""}.</div>`;
+  const how = inn.overs.some(o => o.gap && o.gap.byHand) ? "Score set by hand" : "Score caught up";
+  return `<div class="catch-up-note">${how} at ${at} ov${parts.length ? ` · ${parts.join(" · ")}` : ""}.</div>`;
 }
 
 /* The tabbed scorecard: one tab per innings, then Scorecard / Ball by ball.
@@ -84,8 +85,8 @@ function renderCommentary(match, inn){
   const rows = lines.slice().reverse().map(l => {
     if (l.type === "gap") return `
       <div class="comm-over comm-gap">
-        <div class="comm-over-top"><span>Score caught up</span><span class="n">${team} ${escapeHtml(l.to)}</span></div>
-        <div class="comm-over-sub n">From ${escapeHtml(l.from)} · ${l.runs} run${l.runs === 1 ? "" : "s"}${l.wickets ? ` · ${l.wickets} wkt${l.wickets === 1 ? "" : "s"}` : ""} not scored ball by ball</div>
+        <div class="comm-over-top"><span>${l.byHand ? "Score set by hand" : "Score caught up"}</span><span class="n">${team} ${escapeHtml(l.to)}</span></div>
+        <div class="comm-over-sub n">${l.byHand ? `Was ${escapeHtml(l.from)} · typed in, not scored ball by ball` : `From ${escapeHtml(l.from)} · ${l.runs} run${l.runs === 1 ? "" : "s"}${l.wickets ? ` · ${l.wickets} wkt${l.wickets === 1 ? "" : "s"}` : ""} not scored ball by ball`}</div>
       </div>`;
     if (l.type === "over") return `
       <div class="comm-over">
@@ -131,13 +132,17 @@ function renderBallByBall(match, inn){
       const g = o.gap;
       score = g.toRuns; wkts = g.toWickets; balls = g.toBalls;
       const r = g.toRuns - g.fromRuns, w = g.toWickets - g.fromWickets;
+      // A score set by hand can go down as well as up: show from -> to.
+      const sum = g.byHand
+        ? `${g.fromRuns}-${g.fromWickets} (${oversDisplay(g.fromBalls, bpo)}) → ${g.toRuns}-${g.toWickets} (${oversDisplay(g.toBalls, bpo)})`
+        : `${oversDisplay(g.fromBalls, bpo)} → ${oversDisplay(g.toBalls, bpo)} ov · ${r} run${r === 1 ? "" : "s"}${w ? ` · ${w} wkt${w === 1 ? "" : "s"}` : ""}`;
       return `
       <div class="bbb-over bbb-gap">
         <div class="bbb-head">
-          <span class="bbb-num">Score caught up</span>
-          <span class="n bbb-sum">${oversDisplay(g.fromBalls, bpo)} → ${oversDisplay(g.toBalls, bpo)} ov · ${r} run${r === 1 ? "" : "s"}${w ? ` · ${w} wkt${w === 1 ? "" : "s"}` : ""}</span>
+          <span class="bbb-num">${g.byHand ? "Score set by hand" : "Score caught up"}</span>
+          <span class="n bbb-sum">${sum}</span>
         </div>
-        <p class="hint" style="margin:2px 0 0;">Not scored ball by ball.</p>
+        <p class="hint" style="margin:2px 0 0;">${g.byHand ? "The final score was typed in, not scored ball by ball." : "Not scored ball by ball."}</p>
         <div class="n bbb-score">${escapeHtml(teamName(match, inn.battingTeam))} ${score}-${wkts}</div>
       </div>`;
     }
@@ -159,10 +164,12 @@ function renderBallByBall(match, inn){
       const isLegal = !/^(Wd|Nb)/.test(ev.display);
       if (isLegal) inOver += 1;
       const label = `${i}.${isLegal ? inOver : inOver + 1}`;
+      // Each ball sits over its number ("4.3"), so an over reads as one group.
+      const ball = chip => `<span class="bbb-ball">${chip}<span class="bbb-ball-no n">${label}</span></span>`;
       if (editable && ev.seq != null && editableBall(match, idx, ev.seq)){
-        return `<button type="button" data-action="edit-ball" data-inn="${idx}" data-seq="${ev.seq}" data-label="${label}" class="${cls} chip-edit" aria-label="Edit ball ${label}: ${escapeHtml(ev.display)}">${escapeHtml(ev.display)}</button>`;
+        return ball(`<button type="button" data-action="edit-ball" data-inn="${idx}" data-seq="${ev.seq}" data-label="${label}" class="${cls} chip-edit" aria-label="Edit ball ${label}: ${escapeHtml(ev.display)}">${escapeHtml(ev.display)}</button>`);
       }
-      return `<span class="${cls}">${escapeHtml(ev.display)}</span>`;
+      return ball(`<span class="${cls}">${escapeHtml(ev.display)}</span>`);
     }).join("");
     return `
       <div class="bbb-over">
@@ -179,7 +186,8 @@ function renderBallByBall(match, inn){
     <div class="ball-by-ball">
       <h3>${escapeHtml(teamName(match, inn.battingTeam))} ${inn.runs}/${inn.wickets} <span class="ov">(${oversDisplay(inn.legalBalls, bpo)} ov)</span></h3>
       ${rows.reverse().join("")}
-      ${editable ? `<p class="hint bbb-edit-hint">Tap a ball to change or remove it.</p>` : ""}
+      ${editable ? `<p class="hint bbb-edit-hint">Tap a ball to change or remove it: every later ball is worked out again.</p>` : ""}
+      ${ballEditAllowed(match) ? `<button type="button" data-action="open-score-set" class="ghost bbb-score-set">Set the final score instead</button>` : ""}
       <p class="hint">Newest over first. W wicket · Wd wide · Nb no-ball · B bye · Lb leg bye · Ro run out.</p>
     </div>`;
 }

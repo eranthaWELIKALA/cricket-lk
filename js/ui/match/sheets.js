@@ -143,6 +143,7 @@ function renderMatchMenuModal(match){
         : `Nothing bowled yet: ${escapeHtml(teamName(match, otherFirst))} bats first instead`)}
       ${match.status === "live" && canSwapStrike(cur) ? row("swap-strike", "⇅", "Swap strike", `Put ${escapeHtml(liveName(cur.nonStriker))} on strike instead of ${escapeHtml(liveName(cur.striker))}`) : ""}
       ${match.innings.some(i => i.log && i.log.some(x => x.t === "ball")) ? row("open-edit-balls", "✎", "Edit an earlier ball", "Wrong runs, a missed wide or wicket? Fix it from ball by ball") : ""}
+      ${ballEditAllowed(match) ? row("open-score-set", "#", "Set the final score", "Skip ball by ball: type each side's runs, wickets and overs") : ""}
       ${!cur.complete ? row("open-catch-up", "⏩", "Catch up the score", "Missed some balls? Enter the score as it is now and carry on") : ""}
       ${match.squads ? row("match-menu-view", "👥", "Switch players between sides", "Move a player to the other team, or add a late arrival", `data-view="squads"`) : ""}
       ${matchHasNicknames() ? `

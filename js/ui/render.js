@@ -186,6 +186,8 @@ function render(){
   // Editing a ball belongs to the match on screen (live, the break, or its Result).
   const ballEditOpen = !!(ui.ballEdit && m && !away && ballEditAllowed(m) && editableBall(m, ui.ballEdit.inn, ui.ballEdit.seq));
   if (ui.ballEdit && !ballEditOpen) ui.ballEdit = null;
+  const scoreSetOpen = !!(ui.scoreSet && m && !away && ballEditAllowed(m));
+  if (ui.scoreSet && !scoreSetOpen) ui.scoreSet = null;
   if (ui.catchUp && !(m && (m.status === "opening" || m.status === "live"))) ui.catchUp = null;
   if (ui.sharePreview && ui.sharePreview.view !== navKey()) ui.sharePreview = null;
   if (ui.sharePreview){
@@ -204,6 +206,9 @@ function render(){
     modalHtml = renderResultEntryModal();
   } else if (ballEditOpen){
     modalHtml = renderBallEditModal(m);
+  } else if (scoreSetOpen){
+    modalKey = "score-set";   // keep typed scores across background re-renders
+    modalHtml = renderScoreSetModal(m);
   } else if (away){
     modalHtml = "";
   } else if (m && (m.status === "opening" || m.status === "live") && ui.catchUp){

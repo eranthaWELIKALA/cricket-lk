@@ -1216,3 +1216,34 @@ button.ghost.danger-text{ color:var(--danger); border-color:rgba(255,93,112,.5);
 .ball-edit-diff .arrow{ color:var(--muted); font-weight:800; }
 .ball-edit-notes{ margin:6px 0; padding-left:18px; font-size:.86rem; line-height:1.45; }
 @media print{ .bbb-edit-hint{ display:none !important; } }
+
+/* ball by ball: each ball over its number; edit sheet context panel; set the final score */
+.bbb-chips{ align-items:flex-start; }
+.bbb-ball{ display:inline-flex; flex-direction:column; align-items:center; gap:2px; }
+.bbb-ball-no{ font-size:.6rem; color:var(--muted); font-weight:700; }
+.bbb-score-set{ width:100%; margin:4px 0 8px; }
+.ball-edit-context{ border:2px solid var(--line-strong); border-radius:var(--radius-md); background:var(--panel); padding:10px 12px; margin:0 0 6px; }
+.bec-over{ margin-bottom:8px; }
+.bec-over .chips{ display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+.bec-over .chip{ animation:none; display:inline-flex; }
+.chip.this{ outline:2px solid var(--accent-2); outline-offset:2px; }
+.bec-k{ display:block; font-size:.66rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+.bec-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; text-align:center; padding:8px 0; border-top:2px solid var(--line-strong); border-bottom:2px solid var(--line-strong); }
+.bec-grid > div{ display:flex; flex-direction:column; align-items:center; gap:3px; min-width:0; }
+.bec-v{ font-size:1.15rem; font-weight:800; }
+.bec-v .chip{ animation:none; display:inline-flex; }
+.bec-s{ font-size:.7rem; color:var(--muted); }
+.bec-total{ margin:8px 0 0; }
+.bec-same{ margin:8px 0 0; font-size:.85rem; color:var(--muted); }
+.bec-unknown, .bec-check{ color:var(--accent); font-weight:700; }
+.bec-unknown{ margin:6px 0 0; font-size:.82rem; display:flex; align-items:center; gap:6px; }
+.bec-unknown .chip, .ball-edit-need .section-label .chip, .bec-check .chip{ animation:none; display:inline-flex; }
+.score-set-inn{ border:2px solid var(--line-strong); border-radius:var(--radius-md); padding:8px 12px 10px; margin:0 0 10px; }
+.score-set-inn legend{ padding:0 4px; font-size:.9rem; }
+.score-set-fields{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.score-set-fields label{ display:flex; flex-direction:column; gap:4px; font-size:.72rem; font-weight:700; color:var(--muted); }
+.score-set-fields input{ width:100%; min-width:0; }
+.score-set-inn .check-row{ margin-top:8px; font-size:.82rem; }
+@media print{ .bbb-score-set{ display:none !important; } }
+.score-set-inn .check-row{ flex-wrap:nowrap; }
+.score-set-inn .check-row input{ width:auto; flex-shrink:0; margin:0; }

@@ -78,6 +78,10 @@ function ballEditSet(field, value){
     if (d.wicketType !== "runout") d.runs = 0;
   }
   be.need = null; be.supply = { batters: [], bowlers: [] }; be.supplied = []; be.error = null;
+  // A change the log can't follow (one more wicket, an over ending at
+  // another ball) is asked about at once, as a "?" in the sheet.
+  const pv = ballEditPreview(state.match, be);
+  if (pv.need){ be.need = pv.need; be.needFor = "edit"; }
   render();
 }
 
@@ -94,8 +98,9 @@ function sameBallEvent(a, b){
   return norm(a) === norm(b);
 }
 
-// The draft as a recordBall event, or { error }.
-function ballEditToEvent(match, be){
+// The draft as a recordBall event, or { error }. `preview`: only what
+// changes the score -- the fielder is checked when it's saved.
+function ballEditToEvent(match, be, preview){
   const d = be.d;
   const inn = match.innings[be.inn];
   if (d.kind !== "wicket") return { ev: { kind: d.kind, runs: d.runs } };
@@ -107,7 +112,7 @@ function ballEditToEvent(match, be){
     if (!act[d.endComingIn]) return { error: "Nobody was batting at that end on this ball." };
     Object.assign(ev, { runs: d.runs, endComingIn: d.endComingIn, outEnd: d.outEnd || d.endComingIn });
   }
-  if (d.wicketType === "caught" || d.wicketType === "runout"){
+  if (!preview && (d.wicketType === "caught" || d.wicketType === "runout")){
     const fielder = match.anonymous ? "" : resolveTypedName(d.fielder);
     const required = d.wicketType === "runout" ? match.requireFielderOnRunout : match.requireFielderOnCatch;
     if (required && !fielder) return { error: `This match needs the ${d.wicketType === "runout" ? "run-out taker" : "catch taker"} named.` };
@@ -172,13 +177,8 @@ function askBallEditConfirm(m, res, remove, ev){
   const nm = res.match;
   const oldEv = ballEditEvent(m, be.inn, be.seq);
   const newEv = remove ? null : ballEditEvent(nm, be.inn, be.seq);
-  const chip = e => e ? `<span class="chip${e.isWicket ? " wicket" : /^(Wd|Nb)/.test(e.display) ? " extra" : ""}">${escapeHtml(e.display)}</span>` : "";
-  const score = i => i ? `${i.runs}-${i.wickets} (${oversDisplay(i.legalBalls, i.ballsPerOver)})` : "—";
-  const lines = m.innings.map((i, n) => {
-    const after = nm.innings[n];
-    if (score(i) === score(after) && !!i.complete === !!(after && after.complete)) return "";
-    return `<li><b>${escapeHtml(teamName(m, i.battingTeam))}</b> <span class="n">${score(i)} → ${score(after)}</span></li>`;
-  }).join("");
+  const chip = e => e ? ballChipHtml(e) : "";
+  const lines = scoreChangeLines(m, nm);
   const result = m.result !== nm.result && nm.result ? `<li>Result: <b>${escapeHtml(nm.result)}</b></li>` : "";
   const supplied = be.supplied.slice();
   askConfirm({
@@ -195,6 +195,85 @@ function askBallEditConfirm(m, res, remove, ev){
       supplied.forEach(p => registerMatchPlayer(p.name, p.team));
     }
   });
+}
+
+function ballChipHtml(e, extraCls){
+  const cls = e.isWicket ? " wicket" : /^(Wd|Nb)/.test(e.display) ? " extra" : "";
+  return `<span class="chip${cls}${extraCls ? " " + extraCls : ""}">${escapeHtml(e.display)}</span>`;
+}
+function inningsScoreText(i){
+  return i ? `${i.runs}-${i.wickets} (${oversDisplay(i.legalBalls || 0, i.ballsPerOver)})` : "—";
+}
+// "<li>Lions 45-2 (6.3) → 49-2 (6.3)</li>" for each innings the change moves.
+function scoreChangeLines(m, nm){
+  const inns = nm.innings.length > m.innings.length ? nm.innings : m.innings;
+  return inns.map((x, n) => {
+    const before = m.innings[n], after = nm.innings[n];
+    const was = before ? inningsScoreText(before) : "yet to bat";
+    if (before && after && was === inningsScoreText(after) && !!before.complete === !!after.complete) return "";
+    const now = after ? inningsScoreText(after) + (after.complete && !(before && before.complete) ? ", innings over" : "") : "—";
+    return `<li><b>${escapeHtml(teamName(m, x.battingTeam))}</b> <span class="n">${was} → ${now}</span></li>`;
+  }).join("");
+}
+
+/* What the draft would do, worked out on a copy on every render (cheap: one
+   replay). { pending } while the draft is incomplete (no dismissal picked),
+   { error }, or { match (the replayed match, or as far as it got), need,
+   left (later balls that can't be worked out until `need` is answered),
+   notes }. */
+function ballEditPreview(m, be){
+  const r = ballEditToEvent(m, be, true);
+  if (r.error) return { pending: r.error };
+  const res = replayMatch(m, { inn: be.inn, seq: be.seq, ev: r.ev }, be.supply);
+  if (res.error) return { error: res.error };
+  return { match: res.match || res.partial, need: res.need || null, left: res.left || 0, notes: res.notes || [] };
+}
+
+/* The panel at the top of the edit sheet: the over as it was recorded (this
+   ball ringed), the score before this ball, the ball as it now reads, the
+   score after it, and the innings total before -> after the change. Anything
+   the change leaves unknown until the scorer answers below is a "?". */
+function renderBallEditContext(m, be){
+  const inn = m.innings[be.inn];
+  const ctx = ballContext(inn, be.seq);
+  if (!ctx) return "";
+  const bpo = inn.ballsPerOver;
+  const pv = ballEditPreview(m, be);
+  const nInn = pv.match ? pv.match.innings[be.inn] : null;
+  const nCtx = nInn ? ballContext(nInn, be.seq) : null;
+  const q = `<span class="chip unknown">?</span>`;
+  const sc = x => `${x.runs}-${x.wickets}`;
+  const changed = !!nCtx && !sameBallEvent(ctx.over.events[ctx.over.at], nCtx.over.events[nCtx.over.at]);
+  const overChips = (events, at, unknown) => events.map((e, k) => ballChipHtml(e, k === at ? "this" : "")).join("")
+    + (unknown ? q.repeat(Math.min(unknown, bpo)) : "");
+  // The edited over, worked out again (cut short where a name is needed).
+  const after = nCtx && changed ? (() => {
+    const unknown = pv.need ? Math.max(0, ctx.over.events.length - nCtx.over.events.length) || (pv.left ? 1 : 0) : 0;
+    return `<div class="bec-over"><span class="bec-k">With this change</span><div class="chips">${overChips(nCtx.over.events, nCtx.over.at, unknown)}</div></div>`;
+  })() : "";
+  const total = (() => {
+    if (!pv.match || !changed) return "";
+    if (pv.need) return `<li><b>${escapeHtml(teamName(m, inn.battingTeam))}</b> <span class="n">${inningsScoreText(inn)} → ?</span> <span class="hint">(answer below)</span></li>`;
+    return scoreChangeLines(m, pv.match);
+  })();
+  const result = pv.match && !pv.need && changed && pv.match.result !== m.result
+    ? `<li>Result: <b>${pv.match.result ? escapeHtml(pv.match.result) : "not decided yet"}</b></li>` : "";
+  const later = pv.need && pv.left ? `<p class="bec-unknown">${q} ${pv.left} later ball${pv.left === 1 ? "" : "s"}, from ${escapeHtml(pv.need.label)}, can't be worked out until you say who ${pv.need.kind === "batter" ? "came in" : "bowled"}.</p>` : "";
+  const notes = pv.match && changed && pv.notes.length
+    ? `<ul class="ball-edit-notes">${pv.notes.map(t => `<li${/Check it/.test(t) ? ` class="bec-check"` : ""}>${/Check it/.test(t) ? `${q} ` : ""}${escapeHtml(t)}</li>`).join("")}</ul>` : "";
+  return `
+    <div class="ball-edit-context">
+      <div class="bec-over"><span class="bec-k">Over ${ctx.over.number}${ctx.over.bowler && !m.anonymous ? ` · ${escapeHtml(liveName(ctx.over.bowler))}` : ""} · as recorded</span><div class="chips">${overChips(ctx.over.events, ctx.over.at, 0)}</div></div>
+      ${after}
+      <div class="bec-grid">
+        <div><span class="bec-k">Before this ball</span><span class="bec-v n">${sc(ctx.before)}</span><span class="bec-s n">${oversDisplay(ctx.before.balls, bpo)} ov</span></div>
+        <div><span class="bec-k">This ball</span><span class="bec-v">${nCtx ? ballChipHtml(nCtx.over.events[nCtx.over.at]) : q}</span><span class="bec-s n">${nCtx ? `+${nCtx.after.runs - nCtx.before.runs}${nCtx.after.wickets > nCtx.before.wickets ? " · wkt" : ""}` : escapeHtml(pv.pending || pv.error || "")}</span></div>
+        <div><span class="bec-k">After this ball</span><span class="bec-v n">${nCtx ? sc(nCtx.after) : "?"}</span><span class="bec-s n">${nCtx ? `${oversDisplay(nCtx.after.balls, bpo)} ov` : ""}${changed && nCtx && sc(nCtx.after) !== sc(ctx.after) ? ` · was ${sc(ctx.after)}` : ""}</span></div>
+      </div>
+      ${total || result ? `<ul class="ball-edit-notes bec-total">${total}${result}</ul>` : `<p class="bec-same">Innings total <b class="n">${inningsScoreText(inn)}</b>${changed ? " · stays the same" : ""}</p>`}
+      ${later}
+      ${notes}
+    </div>`;
 }
 
 /* Swap in the replayed match. A finished match was archived (and maybe
@@ -216,7 +295,7 @@ function applyBallEdit(old, next){
     state.match = next;
     maybeArchiveCompletedMatch(next);
   }
-  ui.ballEdit = null; ui.pickDismissed = null; ui.pendingExtra = null; resetWicketUi();
+  ui.ballEdit = null; ui.scoreSet = null; ui.pickDismissed = null; ui.pendingExtra = null; resetWicketUi();
   save();
 }
 
@@ -257,6 +336,7 @@ function renderBallEditModal(m){
           <button type="button" data-action="close-ball-edit" class="sheet-close" aria-label="Close">✕</button>
         </div>
         <p class="ball-edit-who">${m.anonymous ? "" : `${name(act.bowler)} to ${name(act.striker)} · `}recorded as <span class="chip${orig.isWicket ? " wicket" : /^(Wd|Nb)/.test(orig.display) ? " extra" : ""}">${escapeHtml(orig.display)}</span>${fh ? ` <span class="freehit-badge">FREE HIT</span>` : ""}</p>
+        ${renderBallEditContext(m, be)}
         <form id="ball-edit-form" data-nav-ignore>
           <div class="section-label">What happened?</div>
           <div class="ball-edit-kinds">${kinds.map(([k, label]) => tile("kind", k, label, d.kind === k)).join("")}</div>
@@ -297,7 +377,7 @@ function renderBallEditModal(m){
           `}
           ${be.need ? `
             <div class="ball-edit-need">
-              <div class="section-label">${be.need.kind === "batter"
+              <div class="section-label"><span class="chip unknown">?</span> ${be.need.kind === "batter"
                 ? `Who came in${be.need.out ? ` after ${name(be.need.out)} was out` : ""}?`
                 : `Who bowled the over from ball ${escapeHtml(be.need.label)}?`}</div>
               <p class="hint">${be.need.kind === "batter"
@@ -312,6 +392,111 @@ function renderBallEditModal(m){
           </div>
         </form>
         <button type="button" data-action="close-ball-edit" class="ghost" style="width:100%;margin-top:6px;">Cancel</button>
+      </div>
+    </div>`;
+}
+
+/* --- set the final score by hand ---
+   For a scorer who'd rather not fix the score ball by ball: one sheet with
+   each innings' runs, wickets and overs (a chase not started yet can be
+   filled in too). ui.scoreSet = { error }. A finished innings counts only if
+   its numbers changed; one still in progress ends at what's entered, unless
+   "carry on scoring" is ticked (then it's left alone -- Catch up the score
+   is the way to carry on from a new score). setScoresByHand (ENGINE) does
+   the work on a copy, the shared confirmation shows old -> new, and it's
+   swapped in like a ball edit (snapshot first, archive replaced in place). */
+function openScoreSet(){
+  if (!ballEditAllowed(state.match)) return;
+  ui.matchMenu = null;
+  ui.scoreSet = { error: null };
+  render();
+}
+function closeScoreSet(){
+  ui.scoreSet = null;
+  render();
+}
+
+function readScoreSetForm(m, form){
+  const fd = new FormData(form);
+  const bpo = m.ballsPerOver || m.innings[0].ballsPerOver;
+  const scores = [];
+  for (let i = 0; i < 2; i++){
+    const inn = m.innings[i];
+    const raw = k => String(fd.get(`${k}${i}`) || "").trim();
+    if (!inn && !raw("runs") && !raw("wkts") && !raw("overs")){ scores.push(null); continue; }
+    if (inn && !inn.complete && fd.get(`goon${i}`)){
+      const same = raw("runs") === String(inn.runs) && raw("wkts") === String(inn.wickets) && parseOversInput(raw("overs"), bpo) === inn.legalBalls;
+      if (!same) return { error: `To carry on scoring ${teamName(m, inn.battingTeam)}'s innings from a new score, use ⋯ Match options → Catch up the score.` };
+      scores.push(null); continue;
+    }
+    const num = v => /^\d+$/.test(v) ? parseInt(v, 10) : NaN;
+    const s = { runs: num(raw("runs")), wickets: num(raw("wkts")), balls: parseOversInput(raw("overs"), bpo) };
+    if (s.balls === null) s.balls = NaN;
+    const same = inn && inn.complete && s.runs === inn.runs && s.wickets === inn.wickets && s.balls === inn.legalBalls;
+    scores.push(same ? null : s);
+  }
+  return { scores };
+}
+
+function scoreSetSave(){
+  const m = state.match;
+  const form = document.getElementById("score-set-form");
+  if (!ui.scoreSet || !ballEditAllowed(m) || !form) return;
+  const r = readScoreSetForm(m, form);
+  const res = r.error ? r : setScoresByHand(m, r.scores);
+  if (res.error){ ui.scoreSet.error = res.error; render(); return; }
+  const nm = res.match;
+  const lines = scoreChangeLines(m, nm);
+  const result = nm.result && nm.result !== m.result ? `<li>Result: <b>${escapeHtml(nm.result)}</b></li>` : "";
+  const status = !nm.result && nm.status !== m.status
+    ? `<li>${nm.status === "innings_break" ? "Innings break: the chase is next." : "Scoring carries on."}</li>` : "";
+  askConfirm({
+    title: "Set the score?", icon: "✎", tone: "primary",
+    body: `
+      ${lines || result || status ? `<ul class="ball-edit-notes">${lines}${result}${status}</ul>` : `<p>The score stays the same.</p>`}
+      ${res.notes.length ? `<ul class="ball-edit-notes">${res.notes.map(t => `<li>${escapeHtml(t)}</li>`).join("")}</ul>` : ""}
+      ${nm.caughtUp && !m.caughtUp ? `<p class="hint">Runs and wickets set by hand aren't credited to any player, so this match leaves the player stats and MVP (team totals and standings still count). Balls already scored can't be edited afterwards.</p>` : ""}
+      <p class="hint">Undo brings the old score back.</p>`,
+    confirmLabel: "Set score",
+    onConfirm: () => { applyBallEdit(m, nm); }
+  });
+}
+
+function renderScoreSetModal(m){
+  const ss = ui.scoreSet;
+  const i0 = m.innings[0];
+  const bpo = m.ballsPerOver || i0.ballsPerOver;
+  const rows = [0, 1].map(i => {
+    const inn = m.innings[i];
+    const team = teamName(m, i === 0 ? i0.battingTeam : i0.bowlingTeam);
+    const val = (v) => inn ? `value="${v}"` : "";
+    const status = !inn ? "Yet to bat" : inn.complete ? "Innings over" : "Batting now";
+    return `
+      <fieldset class="score-set-inn">
+        <legend><b>${escapeHtml(team)}</b> <span class="hint">${status}${inn ? ` · now <span class="n">${inningsScoreText(inn)}</span>` : ""}${i === 1 && inn && inn.target != null ? ` · target ${inn.target}` : ""}</span></legend>
+        <div class="score-set-fields">
+          <label>Runs<input name="runs${i}" inputmode="numeric" pattern="[0-9]*" maxlength="4" ${val(inn ? inn.runs : "")}></label>
+          <label>Wickets<input name="wkts${i}" inputmode="numeric" pattern="[0-9]*" maxlength="2" ${val(inn ? inn.wickets : "")}></label>
+          <label>Overs<input name="overs${i}" inputmode="decimal" maxlength="5" placeholder="19.4" ${val(inn ? oversDisplay(inn.legalBalls || 0, bpo) : "")}></label>
+        </div>
+        ${inn && !inn.complete ? `<label class="check-row"><input type="checkbox" name="goon${i}"> Not over yet: carry on scoring this innings</label>` : ""}
+        ${!inn ? `<p class="hint">Leave blank if they haven't batted yet.</p>` : ""}
+      </fieldset>`;
+  }).join("");
+  return `
+    <div class="modal-backdrop">
+      <div class="modal score-set-modal" data-keep-scroll="score-set" role="dialog" aria-modal="true" aria-label="Set the final score">
+        <div class="wicket-modal-head">
+          <h2>Set the final score</h2>
+          <button type="button" data-action="close-score-set" class="sheet-close" aria-label="Close">✕</button>
+        </div>
+        <p class="hint">Skip fixing it ball by ball: type each side's final score${m.oversLimit != null ? ` (overs out of ${m.oversLimit})` : ""}. An innings still being scored ends at what you enter.</p>
+        <form id="score-set-form" data-nav-ignore>
+          ${rows}
+          <div class="form-error">${ss.error ? escapeHtml(ss.error) : ""}</div>
+          <button type="submit" class="primary" style="width:100%;">Review</button>
+        </form>
+        <button type="button" data-action="close-score-set" class="ghost" style="width:100%;margin-top:6px;">Cancel</button>
       </div>
     </div>`;
 }
