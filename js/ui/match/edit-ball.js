@@ -438,10 +438,35 @@ function renderBallEditContext(m, be){
 function replaceArchivedMatch(id, next){
   const prev = state.matchHistory[id];
   const archived = Object.assign(archivedCopy(next), { id, completedAt: prev.completedAt });
-  delete archived.reopenedFrom;
   state.matchHistory[id] = archived;
+  keepMatchLogs(id, next);
   if (next.clubId) syncMatchToCloud(next, archived);
   return archived;
+}
+
+/* --- editing a finished match from history ---
+   A finished match's scorecard sheet (ui.matchDetail) offers "Edit match"
+   for a match archived on this device: it comes back as the match on
+   screen, on its Result screen with ball by ball open and its logs put back
+   (matchWithLogs), so everything above works on it -- edit, add or remove a
+   ball, set the final score, reopen an innings, Undo -- and each change
+   replaces its archive entry in place (`archivedId`). `editingFromHistory`
+   makes Result say so and its exit button read "Done". Not while another
+   match is going: there's only one match on screen. */
+function historyEditBlocked(m){
+  if (!m || !m.id || !state.matchHistory[m.id] || m.resultOnly || m.forfeited) return "none";
+  if (state.match) return "Finish or leave the match on screen first, then come back to edit this one.";
+  return null;
+}
+function openMatchFromHistory(id){
+  if (historyEditBlocked(state.matchHistory[id])) return;
+  const m = matchWithLogs(id);
+  delete m.id; delete m.completedAt;
+  m.archivedId = id; m.editingFromHistory = true;
+  state.match = m; state.snapshots = [];
+  ui = defaultUi();
+  ui.showFullScorecard = true; ui.scorecard = { inn: null, mode: "balls" };
+  save(); render();
 }
 
 /* Swap in the replayed match. A finished match was archived (and maybe

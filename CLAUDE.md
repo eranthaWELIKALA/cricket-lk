@@ -232,8 +232,11 @@ it). **Don't set `inn.striker`/`bowler` or call `ensureBatsman` directly for
 a match in progress** — an unlogged change is lost the next time a ball is
 edited. `fillAnonymousSlots` uses the same functions. `applyCatchUp` drops the
 log (balls before a catch-up can't be edited; the next action re-bases it).
-The archive and the cloud copy leave the logs out (`archivedCopy`); only
-`state.match` is editable. Undo still uses snapshots — the log isn't undo.
+The archive and the cloud copy leave the logs out (`archivedCopy`): they're
+kept apart in the match log store (`keepMatchLogs`, see "Editing a finished
+match from history" below), and only `state.match` is edited — a finished
+match is brought back into it to be edited. Undo still uses snapshots — the
+log isn't undo.
 
 `replayMatch(match, changes, supply)` (ENGINE, tested) takes one change or a
 list, all in one innings: `{ inn, seq, ev }` replaces ball `seq`, `ev: null`
@@ -323,6 +326,24 @@ adding a second one. Undo back to a finished version writes that version into
 the entry (`keepArchiveInStep`). Cancelling a reopened match leaves the old
 result in history (its cancel sheet says so). `reopenedFrom` is in
 `MATCH_CARRY_FIELDS`.
+
+**Editing a finished match from history.** The completed-match sheet has
+**✎ Edit match** for a match archived on this device (not result-only or
+forfeited; `historyEditBlocked` — with another match on screen it says to
+finish that first). `openMatchFromHistory(id)` puts it back as `state.match`
+(`archivedId` = its id, `editingFromHistory: true`) on its Result screen with
+ball by ball open, logs restored by `matchWithLogs`, so every tool above works
+on it and each change replaces its archive entry in place (and re-syncs a club
+match). Result then says it's editing history, shows no confetti, and its exit
+reads **Done** (`leaveMatch`; back works too). The logs live in their own
+storage key, `cricket.lk.matchlogs.v1` (`matchLogStore`, state.js), written by
+`archiveMatch`/`replaceArchivedMatch`: they double a match's size and `state`
+is saved on every ball, so they're not in the archive, and only the newest
+`MATCH_LOGS_KEEP` (30) matches keep theirs. A match without its log (older, or
+archived before this) can still be reopened or have its final score set by
+hand; ball by ball says why its balls can't be changed. A club match that was
+scored on another device isn't in this device's archive, so it isn't editable
+here.
 
 **Set the final score by hand** (⋯ Match options, or "Set the final score
 instead" on Ball by ball; `ui.scoreSet`, `renderScoreSetModal`, same file)
@@ -461,7 +482,8 @@ an all-time/tournament leaderboard. A completed match is archived into
 `state.matchHistory` exactly once (`maybeArchiveCompletedMatch`, guarded
 by `match.archivedId`) right after `afterBall()` flips its status to
 `"complete"` — that archive is the only source of truth stats/standings
-read from; nothing recomputes retroactively if you edit an old match.
+read from. Editing a finished match (on Result, or later from history)
+replaces its archive entry in place, so stats and standings follow it.
 `computeStandings`' NRR follows the standard convention that an
 all-out innings counts its full overs quota (not the fewer overs it
 actually took) — this is a simplification, not a bug, consistent with
@@ -825,7 +847,9 @@ and the tabbed scorecard, over any screen. `open-match-detail` (data-id)
 finds the match with `findCompletedMatch` — local archive, then the loaded
 club tournament / club / Premier / profile match lists. It belongs to the
 view it was opened on, is an overlay (back closes it), and is opened from
-tournament fixtures, Home's Recent matches and club Stats' match list.
+tournament fixtures, Home's Recent matches and club Stats' match list. For a
+match archived on this device it also offers **✎ Edit match** (see "Editing a
+finished match from history").
 
 ## Catch up the score (`js/ui/match/catch-up.js`)
 

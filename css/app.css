@@ -1427,3 +1427,4 @@ button.chip.chip-add:hover, button.chip.chip-add:focus-visible{ outline:2px soli
 @media print{ .go-back-row, button.chip.chip-add{ display:none !important; } }
 .ball-edit-kinds.fill-choices button{ padding:8px 12px; }
 .ball-edit-kinds.fill-choices button .sub{ display:block; font-size:.72rem; font-weight:600; color:var(--muted); margin-top:2px; }
+.edit-match-btn{ width:100%; margin-bottom:8px; font-weight:800; }

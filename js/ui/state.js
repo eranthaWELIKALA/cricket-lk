@@ -252,11 +252,13 @@ function createTournament({ name, tournamentPresetId, teamIds }){
   return tournament;
 }
 
-/* The archive (and the cloud copy) leaves out the innings' action logs:
-   only the match in progress (state.match) is edited ball by ball. */
+/* The archive (and the cloud copy) leaves out the innings' action logs --
+   they're kept apart, in the match log store below -- and the flags that only
+   mean something on screen. */
 function archivedCopy(match){
   const copy = JSON.parse(JSON.stringify(match));
   copy.innings.forEach(inn => { delete inn.log; delete inn.logBase; });
+  delete copy.editingFromHistory; delete copy.reopenedFrom;
   return copy;
 }
 function archiveMatch(match){
@@ -267,5 +269,41 @@ function archiveMatch(match){
   if (match.tournamentId && state.tournaments[match.tournamentId]){
     state.tournaments[match.tournamentId].matchIds.push(archived.id);
   }
+  keepMatchLogs(archived.id, match);
   return archived;
+}
+
+/* Each archived match's action logs ({ at, innings: [{ log, logBase } |
+   null] } by archive id), so a finished match can still be edited ball by
+   ball (Edit match on its scorecard sheet, matchWithLogs). They double a
+   match's size, so they aren't in the archive -- `state` is saved on every
+   ball -- and only the newest MATCH_LOGS_KEEP matches keep theirs; an older
+   one can still have its final score set by hand. Its own storage key, like
+   the cloud cache: running out of room there never costs the scorer's state. */
+const MATCH_LOGS_KEY = "cricket.lk.matchlogs.v1";
+const MATCH_LOGS_KEEP = 30;
+let matchLogs = null;
+function matchLogStore(){
+  if (!matchLogs) matchLogs = DB.load(MATCH_LOGS_KEY) || {};
+  return matchLogs;
+}
+function keepMatchLogs(id, match){
+  const store = matchLogStore();
+  const innings = match.innings.map(inn => inn.log ? { log: inn.log, logBase: inn.logBase } : null);
+  if (innings.some(Boolean)) store[id] = { at: Date.now(), innings };
+  else delete store[id];
+  Object.keys(store).filter(k => !state.matchHistory[k]).forEach(k => delete store[k]);
+  Object.keys(store).sort((a, b) => store[b].at - store[a].at).slice(MATCH_LOGS_KEEP).forEach(k => delete store[k]);
+  DB.save(MATCH_LOGS_KEY, store);
+}
+// An archived match with its logs put back (a copy), or null.
+function matchWithLogs(id){
+  const archived = state.matchHistory[id];
+  if (!archived) return null;
+  const m = JSON.parse(JSON.stringify(archived));
+  const kept = matchLogStore()[id];
+  if (kept) kept.innings.forEach((l, i) => {
+    if (l && m.innings[i]){ m.innings[i].log = JSON.parse(JSON.stringify(l.log)); m.innings[i].logBase = JSON.parse(JSON.stringify(l.logBase)); }
+  });
+  return m;
 }

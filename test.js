@@ -1862,6 +1862,56 @@ async function main(){
     win.eval(`state.match = null; state.snapshots = []; state.matchHistory = {}; ui = defaultUi(); save(); render();`);
   }
 
+  // --- UI: a finished match can be edited later, from its scorecard sheet in match history ---
+  {
+    const doc = win.document;
+    const submit = id => doc.getElementById(id).dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    const ok = () => doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    win.eval(`
+      ui = defaultUi(); state.snapshots = []; state.matchHistory = {};
+      state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 1, playersPerSide: 11, battingFirst: "A" });
+      { const m = state.match;
+        openInnings(currentInnings(m), "Kusal", "Pathum", "Wanindu"); m.status = "live";
+        for (let i = 0; i < 6; i++) handleBallClick(1);
+        startSecondInnings(m); openInnings(currentInnings(m), "Babar", "Rizwan", "Dushmantha"); m.status = "live";
+        for (let i = 0; i < 6; i++) handleBallClick(i === 5 ? 0 : 1);
+      }
+      render();`);
+    const id = win.eval("state.match.archivedId");
+    doc.querySelector('#app [data-action="finish-match"]').click();
+    assert(!win.eval("state.match") && !win.eval(`state.matchHistory["${id}"].innings[0].log`) && win.eval(`!!matchLogStore()["${id}"]`), "(setup) Lions won by 1 run and the match was left; the archive has no log, the log store keeps it");
+    win.eval(`openMatchDetail("${id}")`);
+    const edit = doc.querySelector('#modal-root [data-action="edit-archived-match"]');
+    assert(edit, "its scorecard sheet in match history offers Edit match");
+    edit.click();
+    assert(win.eval("state.match.editingFromHistory") === true && win.eval("state.match.archivedId") === id && !doc.querySelector("#modal-root .scorecard-modal"), "Edit match brings it back as the match on screen, tied to its archive entry");
+    assert(doc.querySelectorAll('#app [data-action="edit-ball"]').length === 6 && /Editing from match history/.test(doc.getElementById("app").textContent) && /Done/.test(doc.querySelector('#app [data-action="finish-match"]').textContent) && !doc.querySelector("#app .confetti"), "Result opens on ball by ball with every ball editable, says it's editing history, exit reads Done, no confetti");
+    doc.querySelector('#app [data-action="edit-ball"][data-label="0.6"]').click();
+    doc.querySelector('#modal-root [data-field="runs"][data-value="2"]').click();
+    submit("ball-edit-form"); ok();
+    assert(win.eval(`state.matchHistory["${id}"].innings[1].runs`) === 7 && /Tigers won/.test(win.eval(`state.matchHistory["${id}"].result`)) && win.eval("Object.keys(state.matchHistory).length") === 1 && !win.eval(`state.matchHistory["${id}"].editingFromHistory`), "a ball changed: the archive entry (same id, no second copy) has the new score and result");
+    win.eval(`handleUndo()`);
+    assert(win.eval(`state.matchHistory["${id}"].innings[1].runs`) === 5 && /Lions won by 1 run/.test(win.eval(`state.matchHistory["${id}"].result`)), "Undo puts the archive entry back too");
+    doc.querySelector('#app [data-action="finish-match"]').click();
+    assert(!win.eval("state.match") && win.eval("state.view") === "home", "Done leaves it");
+
+    // an older match whose log wasn't kept: no ball edits, but the final score can still be set
+    win.eval(`delete matchLogStore()["${id}"]; openMatchDetail("${id}");`);
+    doc.querySelector('#modal-root [data-action="edit-archived-match"]').click();
+    assert(!doc.querySelector('#app [data-action="edit-ball"]') && /can't be changed one by one any more/.test(doc.getElementById("app").textContent) && doc.querySelector('#app [data-action="open-score-set"]'), "without its log: no ball edits, a note says why, Set the final score is there");
+    doc.querySelector('#app [data-action="finish-match"]').click();
+
+    // not while another match is on screen
+    win.eval(`state.match = createMatch({ teamA: "A", teamB: "B", oversLimit: 2, playersPerSide: 11, battingFirst: "A" }); ui.awayFromMatch = true; openMatchDetail("${id}");`);
+    assert(!doc.querySelector('#modal-root [data-action="edit-archived-match"]') && /Finish or leave the match on screen first/.test(doc.getElementById("modal-root").textContent), "with a match going, the sheet says to finish it first");
+    win.eval(`state.match = null; ui = defaultUi();`);
+
+    // only the newest matches keep their logs
+    win.eval(`for (let i = 0; i < MATCH_LOGS_KEEP + 3; i++){ const mm = createMatch({ teamA: "X", teamB: "Y", oversLimit: 1, playersPerSide: 11, battingFirst: "A" }); openInnings(currentInnings(mm), "a", "b", "c"); mm.status = "complete"; archiveMatch(mm); }`);
+    assert(win.eval("Object.keys(matchLogStore()).length") === win.eval("MATCH_LOGS_KEEP"), "only MATCH_LOGS_KEEP matches keep their logs");
+    win.eval(`state.match = null; state.snapshots = []; state.matchHistory = {}; ui = defaultUi(); save(); render();`);
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }

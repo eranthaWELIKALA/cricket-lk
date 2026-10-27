@@ -197,6 +197,7 @@ function renderBallByBall(match, inn){
       <h3>${escapeHtml(teamName(match, inn.battingTeam))} ${inn.runs}/${inn.wickets} <span class="ov">(${oversDisplay(inn.legalBalls, bpo)} ov)</span></h3>
       ${rows.reverse().join("")}
       ${editable ? `<p class="hint bbb-edit-hint">Tap a ball to change it, remove it or add a missed ball next to it: every later ball is worked out again.</p>` : ""}
+      ${ballEditAllowed(match) && !inn.log && inn.complete && !inn.overs.some(o => o.gap) ? `<p class="hint">This innings' balls can't be changed one by one any more: only the most recent matches keep what's needed for that. You can still set the final score.</p>` : ""}
       ${ballEditAllowed(match) ? `<button type="button" data-action="open-score-set" class="ghost bbb-score-set">Set the final score instead</button>` : ""}
       <p class="hint">Newest over first. W wicket · Wd wide · Nb no-ball · B bye · Lb leg bye · Ro run out.</p>
     </div>`;
@@ -244,6 +245,13 @@ function renderMatchDetailModal(){
           <button type="button" data-action="share-match-detail" class="ghost" style="font-weight:800;letter-spacing:.04em;">Share image</button>
           <button type="button" data-action="export-pdf-detail" class="ghost" style="font-weight:800;letter-spacing:.04em;">Export PDF</button>
         </div>
+        ${(() => {
+          // A match finished on this device can still be put right (see openMatchFromHistory).
+          const blocked = historyEditBlocked(m);
+          if (blocked === "none") return "";
+          return blocked ? `<p class="hint">${escapeHtml(blocked)}</p>`
+            : `<button type="button" data-action="edit-archived-match" data-id="${escapeHtml(m.id)}" class="ghost edit-match-btn">✎ Edit match</button>`;
+        })()}
         <button type="button" data-action="close-match-detail" class="primary" style="width:100%;">Close</button>
       </div>
     </div>`;
@@ -420,7 +428,7 @@ function renderResult(match){
   const motmName = match.motm || pickMatchMOTM(match);
   const motmTotal = motmName ? aggregatePlayerStats([match]).find(t => t.name === motmName) : null;
   const detail = renderResultDetail(match);
-  const won = !match.forfeited && / won by /.test(match.result || "");
+  const won = !match.forfeited && !match.editingFromHistory && / won by /.test(match.result || "");
   return `
     <div class="screen result">
       <div class="result-hero">
@@ -454,13 +462,15 @@ function renderResult(match){
         ${renderResultInningsCard(match, match.innings[0])}
         ${match.innings[1] ? renderResultInningsCard(match, match.innings[1]) : ""}
       `}
-      <p class="hint">Archived to match history — this is what stats, MVP and the points table read from.</p>
+      <p class="hint">${match.editingFromHistory
+        ? "Editing from match history: each change is saved to it straight away, and stats, MVP and the points table follow."
+        : "Archived to match history — this is what stats, MVP and the points table read from."}</p>
       <div class="share-row">
         <button data-action="share-image" class="ghost" style="font-weight:800;letter-spacing:.04em;">Share image</button>
         <button data-action="export-pdf" class="ghost" style="font-weight:800;letter-spacing:.04em;">Export PDF</button>
       </div>
       ${renderGoBackRow(match)}
-      <button data-action="finish-match" class="primary">${match.tournamentId ? "Back to tournament" : match.clubId ? "Back to club" : "New match"}</button>
+      <button data-action="finish-match" class="primary">${match.editingFromHistory ? "Done" : match.tournamentId ? "Back to tournament" : match.clubId ? "Back to club" : "New match"}</button>
     </div>
   `;
 }
