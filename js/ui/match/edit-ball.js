@@ -452,14 +452,51 @@ function replaceArchivedMatch(id, next){
    ball, set the final score, reopen an innings, Undo -- and each change
    replaces its archive entry in place (`archivedId`). `editingFromHistory`
    makes Result say so and its exit button read "Done". Not while another
-   match is going: there's only one match on screen. */
+   match is going: there's only one match on screen. A club match is first
+   checked against its cloud copy (takeNewerCloudCopy). */
 function historyEditBlocked(m){
   if (!m || !m.id || !state.matchHistory[m.id] || m.resultOnly || m.forfeited) return "none";
   if (state.match) return "Finish or leave the match on screen first, then come back to edit this one.";
   return null;
 }
+/* A club match can be put right in the cloud after this device archived it
+   (a player's name fixed, say). Editing the old local copy would sync it back
+   over that, so -- online, with no upload of this match still queued here --
+   the cloud's version replaces the local one first when its scorecard
+   differs. The kept log described the old version, so it goes too, and the
+   innings are rebuilt from the cloud scorecard instead (matchWithLogs).
+   Offline, or with no cloud copy, the local copy is used as it is. */
+function cloudCopyWorthChecking(id){
+  const local = state.matchHistory[id];
+  return !!(local && local.clubId && supabaseClient && session && !session.offline
+    && !outbox.some(op => op.kind === "match" && op.args && op.args.id === id));
+}
+async function takeNewerCloudCopy(id){
+  if (!cloudCopyWorthChecking(id)) return false;
+  const local = state.matchHistory[id];
+  let cloud = null;
+  try {
+    const { data, error } = await supabaseClient.from("matches").select("data").eq("id", id).maybeSingle();
+    if (error) return false;
+    cloud = data && data.data;
+  } catch (_){ return false; }
+  if (!cloud || !Array.isArray(cloud.innings)) return false;
+  const card = x => canonicalJson([x.teamA, x.teamB, x.result, x.motm || null, x.innings]);
+  if (card(cloud) === card(local)) return false;
+  state.matchHistory[id] = Object.assign({}, local, { teamA: cloud.teamA, teamB: cloud.teamB, result: cloud.result, motm: cloud.motm, innings: cloud.innings });
+  const store = matchLogStore();
+  delete store[id];
+  DB.save(MATCH_LOGS_KEY, store);
+  save();
+  return true;
+}
 function openMatchFromHistory(id){
   if (historyEditBlocked(state.matchHistory[id])) return;
+  if (cloudCopyWorthChecking(id)) return takeNewerCloudCopy(id).then(() => showMatchFromHistory(id));
+  showMatchFromHistory(id);
+}
+function showMatchFromHistory(id){
+  if (historyEditBlocked(state.matchHistory[id])) return; // a match was started meanwhile
   const m = matchWithLogs(id);
   delete m.id; delete m.completedAt;
   m.archivedId = id; m.editingFromHistory = true;

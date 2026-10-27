@@ -106,9 +106,10 @@ gh api repos/<owner>/<name>/pages -X POST -f "source[branch]=master" -f "source[
   whether one was missed instead, and adds it in the same change to keep the
   overs lined up. Balls before a "catch up the score" can't be edited.
 - **A finished match can be edited later only on the device that scored
-  it**, and ball by ball only for the 30 most recent matches (older ones keep
-  just their scorecard, so only their final score can be set). Open it from
-  match history and tap Edit match.
+  it.** Open it from match history and tap Edit match. Balls are edited one
+  by one from what was kept, or from the scorecard rebuilt ball by ball;
+  matches from much older app versions, whose balls don't say who faced, can
+  only have their final score set.
 - **Only an innings ended by hand can be reopened.** End innings (or a score
   set by hand) can be taken back at the break, during the chase (which is
   cleared) or on Result; an innings that was all out, ran out of overs or

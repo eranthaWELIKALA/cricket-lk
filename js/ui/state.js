@@ -296,7 +296,9 @@ function keepMatchLogs(id, match){
   Object.keys(store).sort((a, b) => store[b].at - store[a].at).slice(MATCH_LOGS_KEEP).forEach(k => delete store[k]);
   DB.save(MATCH_LOGS_KEY, store);
 }
-// An archived match with its logs put back (a copy), or null.
+// An archived match with its logs put back (a copy), or null. An innings
+// whose log wasn't kept is rebuilt from its scorecard where that's exact
+// (rebuildInningsFromScorecard, ENGINE).
 function matchWithLogs(id){
   const archived = state.matchHistory[id];
   if (!archived) return null;
@@ -304,6 +306,11 @@ function matchWithLogs(id){
   const kept = matchLogStore()[id];
   if (kept) kept.innings.forEach((l, i) => {
     if (l && m.innings[i]){ m.innings[i].log = JSON.parse(JSON.stringify(l.log)); m.innings[i].logBase = JSON.parse(JSON.stringify(l.logBase)); }
+  });
+  m.innings.forEach((inn, i) => {
+    if (inn.log || m.resultOnly) return;
+    const rebuilt = rebuildInningsFromScorecard(m, i);
+    if (rebuilt) m.innings[i] = rebuilt;
   });
   return m;
 }

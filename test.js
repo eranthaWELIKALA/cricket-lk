@@ -1862,6 +1862,46 @@ async function main(){
     win.eval(`state.match = null; state.snapshots = []; state.matchHistory = {}; ui = defaultUi(); save(); render();`);
   }
 
+  // --- rebuilding an innings' log from its scorecard (a match archived without its log) ---
+  {
+    const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 3, playersPerSide: 6, battingFirst: "A" });
+    const inn = currentInnings(m);
+    win.openInnings(inn, "A1", "A2", "B1"); m.status = "live";
+    const play = ev => { recordBall(currentInnings(m), ev); afterBall(m); };
+    play({ kind: "run", runs: 1 }); play({ kind: "wide", runs: 2 }); play({ kind: "noball", runs: 4 });
+    play({ kind: "bye", runs: 1 }); win.swapStrikeByHand(inn);
+    play({ kind: "wicket", wicketType: "caught", fielder: "B7" }); win.sendInBatter(inn, "A3");
+    play({ kind: "legbye", runs: 2 }); play({ kind: "run", runs: 0 }); play({ kind: "run", runs: 0 });
+    win.setBowler(inn, "B2");
+    play({ kind: "wicket", wicketType: "runout", runs: 1, endComingIn: "nonStriker", outEnd: "striker", fielder: "B8" }); win.sendInBatter(inn, "A4");
+    play({ kind: "wicket", wicketType: "stumped", extra: "wide" }); win.sendInBatter(inn, "A5");
+    play({ kind: "run", runs: 6 }); play({ kind: "wicket", wicketType: "runout", runs: 0, endComingIn: "striker", outEnd: "striker" }); win.sendInBatter(inn, "A6");
+    play({ kind: "run", runs: 3 });
+    win.endInnings(m);
+    assert(m.status === "innings_break" && inn.wickets === 4, "(setup) every kind of ball, two run-outs, a hand swap, ended by hand");
+    const archived = win.archivedCopy(m);
+    const rebuilt = win.rebuildInningsFromScorecard(archived, 0);
+    assert(rebuilt && win.inningsScorecardKey(rebuilt) === win.inningsScorecardKey(inn) && rebuilt.log && rebuilt.logBase, "the rebuilt innings has exactly the same scorecard, with a log");
+    const editOf = (mm, n, ev) => win.replayMatch(mm, { inn: 0, seq: mm.innings[0].log.filter(a => a.t === "ball")[n].ev.seq, ev });
+    const fromRebuilt = JSON.parse(JSON.stringify(archived)); fromRebuilt.innings[0] = rebuilt;
+    [[0, { kind: "run", runs: 4 }], [5, { kind: "run", runs: 2 }], [8, null], [2, { kind: "wicket", wicketType: "bowled" }]].forEach(([n, ev]) => {
+      const a = editOf(m, n, ev), b = editOf(fromRebuilt, n, ev);
+      const key = r => r.match ? win.inningsScorecardKey(r.match.innings[0]) : JSON.stringify(r.need || r.error);
+      assert(key(a) === key(b), `an edit of ball ${n + 1} gives the same innings from the rebuilt log as from the original`);
+    });
+    // a cloud copy: Postgres jsonb keeps object keys in its own order (shorter first)
+    const jsonbOrder = v => Array.isArray(v) ? v.map(jsonbOrder) : v && typeof v === "object"
+      ? Object.keys(v).sort((a, b) => a.length - b.length || (a < b ? -1 : 1)).reduce((o, k) => { o[k] = jsonbOrder(v[k]); return o; }, {}) : v;
+    const fromCloud = jsonbOrder(archived);
+    assert(Object.keys(fromCloud.innings[0].extras).join() !== Object.keys(archived.innings[0].extras).join(), "(setup) the cloud copy's keys are in another order");
+    const rebuiltCloud = win.rebuildInningsFromScorecard(fromCloud, 0);
+    assert(rebuiltCloud && win.inningsScorecardKey(rebuiltCloud) === win.inningsScorecardKey(inn), "a cloud copy (keys in jsonb order) rebuilds too");
+    assert(win.canonicalJson(fromCloud) === win.canonicalJson(archived), "canonicalJson ignores key order");
+    const old = JSON.parse(JSON.stringify(archived));
+    old.innings[0].overs[0].events.forEach(ev => { delete ev.batter; });
+    assert(win.rebuildInningsFromScorecard(old, 0) === null, "balls that don't say who faced can't be rebuilt");
+  }
+
   // --- UI: a finished match can be edited later, from its scorecard sheet in match history ---
   {
     const doc = win.document;
@@ -1895,10 +1935,39 @@ async function main(){
     doc.querySelector('#app [data-action="finish-match"]').click();
     assert(!win.eval("state.match") && win.eval("state.view") === "home", "Done leaves it");
 
-    // an older match whose log wasn't kept: no ball edits, but the final score can still be set
+    // a match whose log wasn't kept is rebuilt from its scorecard, so its balls can still be edited
     win.eval(`delete matchLogStore()["${id}"]; openMatchDetail("${id}");`);
     doc.querySelector('#modal-root [data-action="edit-archived-match"]').click();
-    assert(!doc.querySelector('#app [data-action="edit-ball"]') && /can't be changed one by one any more/.test(doc.getElementById("app").textContent) && doc.querySelector('#app [data-action="open-score-set"]'), "without its log: no ball edits, a note says why, Set the final score is there");
+    assert(doc.querySelectorAll('#app [data-action="edit-ball"]').length === 6 && win.eval("!!state.match.innings[0].log && !!state.match.innings[1].log"), "without its kept log: both innings are rebuilt from the scorecard and every ball is editable");
+    doc.querySelector('#app [data-action="finish-match"]').click();
+    // a club match fixed in the cloud since (a name changed): the cloud copy is the one edited
+    win.eval(`state.matchHistory["${id}"].clubId = "club1";
+      window.__cloudCopy = JSON.parse(JSON.stringify(state.matchHistory["${id}"]).split("Kusal").join("Kusal Mendis"));
+      window.__prevClient = supabaseClient; window.__prevSession = session;
+      supabaseClient = { from: () => ({ select(){ return this; }, eq(){ return this; }, maybeSingle: async () => ({ data: { data: __cloudCopy }, error: null }) }) };
+      session = { user: { id: "u1" } };
+      outbox = [{ id: "q1", kind: "match", args: { id: "${id}" }, userId: "u1" }];`);
+    await win.eval(`openMatchFromHistory("${id}")`);
+    assert(win.eval("state.match.innings[0].batting.order.includes('Kusal')"), "with this match's own upload still queued, the local copy is edited");
+    doc.querySelector('#app [data-action="finish-match"]').click();
+    win.eval(`outbox = [];
+      window.__cloudCopy = (function order(v){ return Array.isArray(v) ? v.map(order) : v && typeof v === "object"
+        ? Object.keys(v).sort((a, b) => a.length - b.length || (a < b ? -1 : 1)).reduce((o, k) => { o[k] = order(v[k]); return o; }, {}) : v; })(JSON.parse(JSON.stringify(state.matchHistory["${id}"])));
+      keepMatchLogs("${id}", matchWithLogs("${id}"));`);
+    await win.eval(`openMatchFromHistory("${id}")`);
+    assert(win.eval(`!!matchLogStore()["${id}"]`) && win.eval("state.match.innings[0].batting.order.includes('Kusal')"), "the same match from the cloud, keys in another order: the local copy and its kept log stay");
+    doc.querySelector('#app [data-action="finish-match"]').click();
+    win.eval(`window.__cloudCopy = JSON.parse(JSON.stringify(state.matchHistory["${id}"]).split("Kusal").join("Kusal Mendis"));`);
+    await win.eval(`openMatchFromHistory("${id}")`);
+    assert(win.eval("state.match.innings[0].batting.order.includes('Kusal Mendis') && !state.match.innings[0].batting.order.includes('Kusal')") && win.eval(`state.matchHistory["${id}"].innings[0].batting.order[0]`) === "Kusal Mendis" && win.eval("!!state.match.innings[0].log") && doc.querySelectorAll('#app [data-action="edit-ball"]').length === 6, "otherwise the cloud's newer copy replaces the local one, and it's rebuilt for ball edits");
+    doc.querySelector('#app [data-action="finish-match"]').click();
+    win.eval(`supabaseClient = window.__prevClient; session = window.__prevSession; delete state.matchHistory["${id}"].clubId;`);
+
+    // one from an older app version (its balls don't say who faced): no ball edits, but the final score can still be set
+    win.eval(`state.matchHistory["${id}"].innings.forEach(i => [...i.overs.flatMap(o => o.events), ...i.currentOverEvents].forEach(ev => { delete ev.kind; delete ev.batter; }));
+      delete matchLogStore()["${id}"]; openMatchDetail("${id}");`);
+    doc.querySelector('#modal-root [data-action="edit-archived-match"]').click();
+    assert(!doc.querySelector('#app [data-action="edit-ball"]') && /scored with an older version of the app/.test(doc.getElementById("app").textContent) && doc.querySelector('#app [data-action="open-score-set"]'), "an older match: no ball edits, a note says why, Set the final score is there");
     doc.querySelector('#app [data-action="finish-match"]').click();
 
     // not while another match is on screen

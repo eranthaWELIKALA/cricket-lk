@@ -339,11 +339,25 @@ reads **Done** (`leaveMatch`; back works too). The logs live in their own
 storage key, `cricket.lk.matchlogs.v1` (`matchLogStore`, state.js), written by
 `archiveMatch`/`replaceArchivedMatch`: they double a match's size and `state`
 is saved on every ball, so they're not in the archive, and only the newest
-`MATCH_LOGS_KEEP` (30) matches keep theirs. A match without its log (older, or
-archived before this) can still be reopened or have its final score set by
-hand; ball by ball says why its balls can't be changed. A club match that was
-scored on another device isn't in this device's archive, so it isn't editable
-here.
+`MATCH_LOGS_KEEP` (30) matches keep theirs. An innings without a kept log is
+**rebuilt from its scorecard** (`rebuildInningsFromScorecard`, ENGINE, tested):
+it's scored again through the logging functions from the over events —
+openers/incoming batters from `batting.order`, each over's bowler, a hand swap
+where the recorded striker differs, a run-out's end picked so the next ball's
+striker is right — and used only if `inningsScorecardKey` (score, extras, every
+player's line, fall of wickets, every ball) matches exactly. **Compare stored
+match data by value, never as raw JSON**: Postgres jsonb keeps object keys in
+its own order, so a cloud copy's `extras` etc. come back reordered — the key
+lists extras as an array, and the cloud check below uses `canonicalJson`. Balls from app
+versions whose over events don't say who faced (`kind`/`batter`) can't be
+rebuilt, nor can an innings with a catch-up/by-hand gap: those can still be
+reopened or have their final score set, and ball by ball says why. **A club
+match is checked against its cloud copy first** (`takeNewerCloudCopy`, only
+online and when this device has no `match` upload of its own queued for it):
+if the cloud's scorecard differs (`canonicalJson`; names fixed there, say), it replaces the
+local copy and the kept log is dropped, so an edit can't sync the old version
+back over the fix. A club match scored on another device isn't in this
+device's archive, so it isn't editable here.
 
 **Set the final score by hand** (⋯ Match options, or "Set the final score
 instead" on Ball by ball; `ui.scoreSet`, `renderScoreSetModal`, same file)

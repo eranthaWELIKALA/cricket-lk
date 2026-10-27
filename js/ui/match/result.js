@@ -197,7 +197,7 @@ function renderBallByBall(match, inn){
       <h3>${escapeHtml(teamName(match, inn.battingTeam))} ${inn.runs}/${inn.wickets} <span class="ov">(${oversDisplay(inn.legalBalls, bpo)} ov)</span></h3>
       ${rows.reverse().join("")}
       ${editable ? `<p class="hint bbb-edit-hint">Tap a ball to change it, remove it or add a missed ball next to it: every later ball is worked out again.</p>` : ""}
-      ${ballEditAllowed(match) && !inn.log && inn.complete && !inn.overs.some(o => o.gap) ? `<p class="hint">This innings' balls can't be changed one by one any more: only the most recent matches keep what's needed for that. You can still set the final score.</p>` : ""}
+      ${ballEditAllowed(match) && !inn.log && inn.complete && !inn.overs.some(o => o.gap) ? `<p class="hint">This innings' balls can't be changed one by one: it was scored with an older version of the app, which didn't keep enough about each ball. You can still set the final score.</p>` : ""}
       ${ballEditAllowed(match) ? `<button type="button" data-action="open-score-set" class="ghost bbb-score-set">Set the final score instead</button>` : ""}
       <p class="hint">Newest over first. W wicket · Wd wide · Nb no-ball · B bye · Lb leg bye · Ro run out.</p>
     </div>`;

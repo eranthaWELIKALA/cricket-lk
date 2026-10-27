@@ -607,6 +607,112 @@ function ballContext(inn, seq){
   return inningsBalls(inn).find(b => b.seq === seq) || null;
 }
 
+/* --- rebuilding an innings' log from its scorecard ---
+   A match archived without its log (finished before logs were kept, or
+   older than the newest ones that keep theirs) still has every ball's over
+   event: kind, runs, who faced, the dismissal. That's enough to score the
+   innings again through the logging functions -- openers and incoming
+   batters from batting.order, each over's bowler from inn.overs, a hand
+   swap wherever the recorded striker differs, a run-out's end chosen so the
+   next ball's striker is right -- and so get back an innings replayMatch can
+   edit. The rebuilt innings is used only if its scorecard is the same in
+   every detail (score, extras, every batter's/bowler's/fielder's line, the
+   fall of wickets, every ball); otherwise null, as for an innings with a
+   catch-up/by-hand gap or balls from before over events said who faced. */
+// JSON with every object's keys sorted: the same data compares equal whatever
+// order its keys are in (Postgres jsonb stores them in its own order).
+function canonicalJson(x){
+  return JSON.stringify(x, (k, v) => v && typeof v === "object" && !Array.isArray(v)
+    ? Object.keys(v).sort().reduce((o, key) => { o[key] = v[key]; return o; }, {}) : v);
+}
+function inningsScorecardKey(inn){
+  const lines = (side, keys) => side.order.map(n => [n, ...keys.map(k => side.stats[n][k])]);
+  const x = inn.extras || {};
+  return JSON.stringify({
+    runs: inn.runs, wickets: inn.wickets, balls: inn.legalBalls, extras: [x.wides, x.noBalls, x.byes, x.legByes],
+    complete: !!inn.complete, reason: inn.completeReason || null, target: inn.target,
+    bat: lines(inn.batting, ["runs", "balls", "fours", "sixes", "out", "howOut"]),
+    bowl: lines(inn.bowling, ["legalBalls", "runs", "wickets", "maidens"]),
+    field: lines(inn.fielding, ["catches", "runouts"]),
+    fow: inn.fallOfWickets.map(f => [f.score, f.wicket, f.batsman]),
+    ballList: inningsBalls(inn).map(b => [b.label, b.ev.display, b.bowler])
+  });
+}
+function rebuildInningsFromScorecard(match, idx){
+  const inn = match.innings[idx];
+  if (!inn || inn.overs.some(o => o.gap || o.partial)) return null;
+  const overs = inn.overs.map(o => ({ bowler: o.bowler, events: o.events }));
+  if (inn.currentOverEvents.length) overs.push({ bowler: inn.bowler, events: inn.currentOverEvents });
+  const events = overs.flatMap(o => o.events);
+  if (!events.length || events.some(ev => !ev.kind || !ev.batter)) return null;
+  const order = inn.batting.order;
+  const r = createInnings(inn.battingTeam, inn.bowlingTeam, inn.target, match.playersPerSide, inn.oversLimit, {
+    ballsPerOver: inn.ballsPerOver, wideRuns: inn.wideBaseRuns, noBallRuns: inn.noBallBaseRuns,
+    freeHitOnNoBall: inn.freeHitOnNoBall, lastManStands: inn.lastManStands });
+  r.maxWickets = inn.maxWickets; r.lastManStands = inn.lastManStands;
+  const first = events[0].batter;
+  if (order.length < 2 || (first !== order[0] && first !== order[1]) || !overs[0].bowler) return null;
+  openInnings(r, first, first === order[0] ? order[1] : order[0], overs[0].bowler);
+  const sendIn = x => {
+    while (pendingBatsmanSlot(x)){
+      const name = order[x.batting.order.length];
+      if (!name) return false;
+      sendInBatter(x, name);
+    }
+    return true;
+  };
+  // The recordBall event a stored over event came from.
+  const eventOf = (ev, endComingIn, outEnd) => {
+    if (ev.kind === "run" || ev.kind === "bye" || ev.kind === "legbye") return { kind: ev.kind, runs: ev.runs, seq: ev.seq };
+    if (ev.kind === "wide") return { kind: "wide", runs: ev.runs - r.wideBaseRuns, seq: ev.seq };
+    if (ev.kind === "noball") return { kind: "noball", runs: ev.runs - r.noBallBaseRuns, seq: ev.seq };
+    const e = { kind: "wicket", wicketType: ev.wicketType, seq: ev.seq };
+    if (ev.extra) e.extra = ev.extra;
+    if (ev.fielder) e.fielder = ev.fielder;
+    if (ev.wicketType === "runout"){
+      const base = ev.extra === "wide" ? r.wideBaseRuns : ev.extra === "noball" ? r.noBallBaseRuns : 0;
+      Object.assign(e, { runs: ev.runs - base, endComingIn, outEnd });
+    }
+    return e;
+  };
+  for (let o = 0; o < overs.length; o++){
+    for (let k = 0; k < overs[o].events.length; k++){
+      const ev = overs[o].events[k];
+      if (!sendIn(r)) return null;
+      if (!r.bowler){
+        if (!overs[o].bowler || (r.lastOverBowler && r.lastOverBowler === overs[o].bowler)) return null;
+        setBowler(r, overs[o].bowler);
+      }
+      if (r.striker !== ev.batter){
+        if (r.nonStriker !== ev.batter || !canSwapStrike(r)) return null;
+        swapStrikeByHand(r);
+      }
+      let e;
+      if (ev.kind === "wicket" && ev.wicketType === "runout"){
+        const out = ev.outName === r.striker ? "striker" : ev.outName === r.nonStriker ? "nonStriker" : null;
+        if (!out) return null;
+        // Which end the new batter came in at: the one that puts the right
+        // batter on strike for the next ball (no hand swap needed).
+        const next = overs[o].events[k + 1] || (overs[o + 1] && overs[o + 1].events[0]);
+        const other = out === "striker" ? "nonStriker" : "striker";
+        const fits = end => {
+          if (!next) return true;
+          const t = JSON.parse(JSON.stringify(r));
+          recordBall(t, eventOf(ev, out, end));
+          return !sendIn(t) || t.striker === next.batter;
+        };
+        e = eventOf(ev, out, fits(out) || !fits(other) ? out : other);
+      } else e = eventOf(ev);
+      recordBall(r, e);
+    }
+  }
+  if (inn.completeReason === "closed" && !r.complete){
+    sendIn(r);
+    logAction(r, { t: "end" }); r.complete = true; r.completeReason = "closed";
+  }
+  return inningsScorecardKey(r) === inningsScorecardKey(inn) ? r : null;
+}
+
 /* --- reopening an innings ended by hand ---
    End innings (rain, time, a declaration -- or a mistaken tap) is the one way
    an innings ends with balls still to bowl (completeReason "closed"; a score
