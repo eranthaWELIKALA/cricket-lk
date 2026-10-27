@@ -197,6 +197,7 @@ function renderBallByBall(match, inn){
       <h3>${escapeHtml(teamName(match, inn.battingTeam))} ${inn.runs}/${inn.wickets} <span class="ov">(${oversDisplay(inn.legalBalls, bpo)} ov)</span></h3>
       ${rows.reverse().join("")}
       ${editable ? `<p class="hint bbb-edit-hint">Tap a ball to change it, remove it or add a missed ball next to it: every later ball is worked out again.</p>` : ""}
+      ${ballEditAllowed(match) && inn.overs.some(o => o.gap) ? `<p class="hint">Balls before the score was ${inn.overs.some(o => o.gap && o.gap.byHand) ? "set by hand" : "caught up"} can't be changed one by one${inn.log ? " (the ones after it can)" : ""}. You can still set the final score.</p>` : ""}
       ${ballEditAllowed(match) && !inn.log && inn.complete && !inn.overs.some(o => o.gap) ? `<p class="hint">This innings' balls can't be changed one by one: it was scored with an older version of the app, which didn't keep enough about each ball. You can still set the final score.</p>` : ""}
       ${ballEditAllowed(match) ? `<button type="button" data-action="open-score-set" class="ghost bbb-score-set">Set the final score instead</button>` : ""}
       <p class="hint">Newest over first. W wicket · Wd wide · Nb no-ball · B bye · Lb leg bye · Ro run out.</p>
@@ -209,7 +210,13 @@ function renderBallByBall(match, inn){
 function findCompletedMatch(id){
   const hit = x => x && ((x.data && x.data.id === id) || x.id === id);
   const fromRows = rows => { const r = (rows || []).find(hit); return r ? (r.data || r) : null; };
-  return state.matchHistory[id]
+  // A club match can be put right in the cloud after this phone archived it:
+  // show the cloud's copy, unless this phone's own change is still waiting to go up.
+  const local = state.matchHistory[id];
+  const cloud = local && local.clubId && !outbox.some(op => op.kind === "match" && op.args && op.args.id === id)
+    ? fromRows(ui.clubTournament && ui.clubTournament.matches) || fromRows(ui.club && ui.club.matches) : null;
+  return (cloud && cloud.innings ? Object.assign({}, local, cloud, { id }) : null)
+    || local
     || fromRows(ui.clubTournament && ui.clubTournament.matches)
     || fromRows(ui.club && ui.club.matches)
     || fromRows(ui.premier && ui.premier.premierMatches)

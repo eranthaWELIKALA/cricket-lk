@@ -863,7 +863,10 @@ club tournament / club / Premier / profile match lists. It belongs to the
 view it was opened on, is an overlay (back closes it), and is opened from
 tournament fixtures, Home's Recent matches and club Stats' match list. For a
 match archived on this device it also offers **✎ Edit match** (see "Editing a
-finished match from history").
+finished match from history"), and otherwise says why not (`historyEditBlocked`:
+another phone, result only, forfeited, a match on screen). For a club match it
+shows the loaded cloud copy over this device's archive (a fix made in the cloud
+since), unless this device still has its own `match` upload queued for it.
 
 ## Catch up the score (`js/ui/match/catch-up.js`)
 

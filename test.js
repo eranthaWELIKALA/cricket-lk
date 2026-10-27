@@ -1963,6 +1963,16 @@ async function main(){
     doc.querySelector('#app [data-action="finish-match"]').click();
     win.eval(`supabaseClient = window.__prevClient; session = window.__prevSession; delete state.matchHistory["${id}"].clubId;`);
 
+    // the sheet says why when it can't offer Edit match; a newer cloud copy is the one shown
+    assert(/scored on another phone/.test(win.eval(`historyEditBlocked({ id: "elsewhere", innings: [] })`)) && /entered by hand/.test(win.eval(`historyEditBlocked({ id: "${id}", resultOnly: true })`)), "no Edit match: the sheet says why (another phone, result only)");
+    const localName = win.eval(`state.matchHistory["${id}"].innings[0].batting.order[0]`);
+    win.eval(`state.matchHistory["${id}"].clubId = "club1";
+      ui.club = { id: "club1", matches: [{ id: "${id}", data: JSON.parse(JSON.stringify(state.matchHistory["${id}"]).split(${JSON.stringify(localName)}).join("Renamed In Cloud")) }] };`);
+    assert(win.eval(`findCompletedMatch("${id}").innings[0].batting.order[0]`) === "Renamed In Cloud", "a club match's scorecard sheet shows the cloud copy when it differs");
+    win.eval(`outbox = [{ id: "q2", kind: "match", args: { id: "${id}" }, userId: "u1" }];`);
+    assert(win.eval(`findCompletedMatch("${id}").innings[0].batting.order[0]`) === localName, "...but this phone's own copy while its change is still waiting to upload");
+    win.eval(`outbox = []; ui.club = null; delete state.matchHistory["${id}"].clubId;`);
+
     // one from an older app version (its balls don't say who faced): no ball edits, but the final score can still be set
     win.eval(`state.matchHistory["${id}"].innings.forEach(i => [...i.overs.flatMap(o => o.events), ...i.currentOverEvents].forEach(ev => { delete ev.kind; delete ev.batter; }));
       delete matchLogStore()["${id}"]; openMatchDetail("${id}");`);
@@ -1974,6 +1984,13 @@ async function main(){
     win.eval(`state.match = createMatch({ teamA: "A", teamB: "B", oversLimit: 2, playersPerSide: 11, battingFirst: "A" }); ui.awayFromMatch = true; openMatchDetail("${id}");`);
     assert(!doc.querySelector('#modal-root [data-action="edit-archived-match"]') && /Finish or leave the match on screen first/.test(doc.getElementById("modal-root").textContent), "with a match going, the sheet says to finish it first");
     win.eval(`state.match = null; ui = defaultUi();`);
+
+    // an innings with a score set by hand: ball by ball says the balls before it can't be changed one by one
+    win.eval(`{ const mm = matchWithLogs("${id}"); delete mm.id; delete mm.completedAt;
+      state.match = setScoresByHand(mm, [{ runs: 20, wickets: 1, balls: 6 }, null]).match;
+      ui = defaultUi(); ui.showFullScorecard = true; ui.scorecard = { inn: 0, mode: "balls" }; render(); }`);
+    assert(/Balls before the score was set by hand can't be changed one by one/.test(doc.getElementById("app").textContent), "a hand-set innings: ball by ball says why its balls can't be edited");
+    win.eval(`state.match = null; ui = defaultUi(); render();`);
 
     // only the newest matches keep their logs
     win.eval(`for (let i = 0; i < MATCH_LOGS_KEEP + 3; i++){ const mm = createMatch({ teamA: "X", teamB: "Y", oversLimit: 1, playersPerSide: 11, battingFirst: "A" }); openInnings(currentInnings(mm), "a", "b", "c"); mm.status = "complete"; archiveMatch(mm); }`);

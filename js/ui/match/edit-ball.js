@@ -455,7 +455,10 @@ function replaceArchivedMatch(id, next){
    match is going: there's only one match on screen. A club match is first
    checked against its cloud copy (takeNewerCloudCopy). */
 function historyEditBlocked(m){
-  if (!m || !m.id || !state.matchHistory[m.id] || m.resultOnly || m.forfeited) return "none";
+  if (!m || !m.id) return "none";
+  if (m.resultOnly) return "This result was entered by hand, so there are no balls to edit.";
+  if (m.forfeited) return "A forfeited match can't be edited.";
+  if (!state.matchHistory[m.id]) return "This match was scored on another phone, so it can only be edited on that one.";
   if (state.match) return "Finish or leave the match on screen first, then come back to edit this one.";
   return null;
 }
