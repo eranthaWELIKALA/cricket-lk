@@ -651,7 +651,7 @@ function scoreSetSave(){
     body: `
       ${lines || result || status ? `<ul class="ball-edit-notes">${lines}${result}${status}</ul>` : `<p>The score stays the same.</p>`}
       ${res.notes.length ? `<ul class="ball-edit-notes">${res.notes.map(t => `<li>${escapeHtml(t)}</li>`).join("")}</ul>` : ""}
-      ${nm.caughtUp && !m.caughtUp ? `<p class="hint">Runs and wickets set by hand aren't credited to any player, so this match leaves the player stats and MVP (team totals and standings still count). Balls already scored can't be edited afterwards.</p>` : ""}
+      ${nm.caughtUp && !m.caughtUp ? `<p class="hint">Runs and wickets set by hand aren't credited to any player: player stats and MVP keep only what each player was credited with (team totals and standings count the new score). Balls already scored can't be edited afterwards.</p>` : ""}
       <p class="hint">Undo brings the old score back.</p>`,
     confirmLabel: "Set score",
     onConfirm: () => { applyBallEdit(m, nm); }

@@ -335,7 +335,8 @@ mid-innings is Catch up's job). The same score just ends it (logged `end`,
 balls stay editable). A different one keeps the balls already scored and adds
 a gap with `gap.byHand` ("Score set by hand", may go *down*), drops that
 innings' log, trims `fallOfWickets` to the new wicket count and sets
-`match.caughtUp` (out of player stats, like a catch-up). The chase's target
+`match.caughtUp` (like a catch-up: players keep what they were credited
+with, the runs set by hand go to nobody). The chase's target
 follows the first innings; a chase left alone is replayed against it (and a
 finished match that would no longer be finished is refused). It's applied
 through `applyBallEdit`, so it snapshots, archives or replaces the archive the
@@ -862,9 +863,14 @@ What it leaves behind, if you touch the scorecard or commentary:
   ball count ≥ recorded that fits their spot in the over, unless figures were
   entered, which must fit.
 - Anything not credited to a player shows as "not attributed"
-  (`catchUpUnattributed`, `renderCatchUpNote`), and `match.caughtUp` puts the
-  match in `playerStatsExcluded` (with `anonymous`): out of leaderboards, MVP,
-  MOTM, profiles and tournament bests; team totals and standings still count.
+  (`catchUpUnattributed`, `renderCatchUpNote`) and isn't in anyone's stats.
+  `match.caughtUp` does **not** take the match out of player stats: the
+  leaderboards, MVP, MOTM, profiles and tournament bests count every
+  scorecard line it has, so a tournament's stats are always the sum of its
+  scorecards. (They used to drop the whole match, which lost real figures —
+  a 4-for was missing from an ended tournament's best bowling and a batter's
+  runs didn't add up. Only "no names" matches are left out,
+  `playerStatsExcluded`.)
 - A "no names" match takes the totals only: the batters at the crease go out
   first, then placeholders, and `fillAnonymousSlots` refills the slots.
 - A missed whole first innings: catch it up with "innings is over", start the
@@ -908,8 +914,8 @@ over, so no figures are invented and the consecutive-overs rule can't trip) —
 so no name sheet ever opens. No squads, no fielder box, nothing registered to
 guest players or a club roster, and these matches are skipped by
 `aggregatePlayerStats`, `pickMatchMOTM` and `playerCareer` (placeholders
-aren't people — `playerStatsExcluded`, shared with caught-up matches); team
-totals and standings count as usual.
+aren't people — `playerStatsExcluded`); team totals and standings count as
+usual, and so do their sixes in a tournament summary.
 
 ## Tournament dashboards, leaderboards, profiles: tabs
 

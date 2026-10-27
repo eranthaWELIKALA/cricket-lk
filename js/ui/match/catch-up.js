@@ -199,7 +199,7 @@ function renderCatchUpModal(match){
           ${d.bowlers.map(bowlRow).join("")}
           <button type="button" data-action="catch-up-add" data-kind="bowl" class="ghost small cu-add">+ Add bowler figures</button>`}
           <label class="cu-check"><input type="checkbox" name="finished" ${d.finished ? "checked" : ""}> This innings is already over</label>
-          <p class="hint">Players' runs, balls and overs are optional; anything left blank shows as "not attributed". A caught-up match doesn't count towards player stats or MVP.</p>
+          <p class="hint">Players' runs, balls and overs are optional; anything left blank shows as "not attributed" and isn't in anyone's player stats or MVP.</p>
           <div class="form-error" role="alert"></div>
           <div class="cu-actions">
             <button type="button" data-action="close-catch-up" class="ghost">Cancel</button>
@@ -253,7 +253,7 @@ function askCatchUpConfirm(m, data){
       ${newOut.length ? `<p class="hint" style="margin-bottom:2px;">Out since then:</p><ul class="cu-list">${newOut.join("")}</ul>` : ""}
       ${ends}
       ${notes.length ? `<p class="hint">Not attributed: ${notes.map(esc).join("; ")}.</p>` : ""}
-      <p class="hint">This match won't count towards player stats or MVP. Undo puts the score back.</p>`,
+      <p class="hint">Player stats and MVP count only what each player is credited with. Undo puts the score back.</p>`,
     confirmLabel: "Update score", cancelLabel: "Back to edit",
     onConfirm: () => applyCatchUpNow(data)
   });

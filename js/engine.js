@@ -651,8 +651,9 @@ function reopenInnings(match, idx){
    already scored stay and a "set by hand" gap (the same shape as a
    catch-up's, `gap.byHand`) takes it to the new total, and its log goes. The
    chase's target follows the first innings, and a chase left alone is
-   replayed against the new one. A changed total isn't credited to anyone,
-   so like a catch-up the match leaves player stats (match.caughtUp). Returns
+   replayed against the new one. A changed total isn't credited to anyone
+   (players keep only what they were credited with), and like a catch-up the
+   match is marked match.caughtUp. Returns
    { match, notes } -- a copy, the input isn't touched -- or { error }. */
 function scoreByHandError(match, scores){
   if (match.forfeited || match.resultOnly) return "This match's score can't be set here.";
@@ -1253,11 +1254,13 @@ function matchPlayerNames(match){
 
 /* Matches left out of every player figure (leaderboards, MVP, MOTM,
    profiles, tournament bests) -- team totals and standings still count:
-   - a "no names" match: its Batter 1 / Over 3 aren't people (fillAnonymousSlots);
-   - a caught-up match: part of it was entered as totals (applyCatchUp), so
-     players' lines are incomplete. */
+   a "no names" match, whose Batter 1 / Over 3 aren't people
+   (fillAnonymousSlots). A caught-up match or one whose score was set by hand
+   (match.caughtUp) still counts: its scorecard lines are what each player
+   was credited with, and only the runs nobody was credited with ("not
+   attributed") are missing -- so player stats stay the sum of the scorecards. */
 function playerStatsExcluded(match){
-  return !!(match && (match.anonymous || match.caughtUp));
+  return !!(match && match.anonymous);
 }
 
 function aggregatePlayerStats(matches){
@@ -1535,8 +1538,8 @@ function nameUnnamedPlayer(match, from, to){
    inn.overs ({ gap: { from/to balls, runs, wickets, and every batter's and
    bowler's figures at that point } }) so ball by ball and commentary can say
    where the score was caught up. Whatever isn't credited to a player shows
-   as "not attributed" (catchUpUnattributed), and the match is left out of
-   player stats (playerStatsExcluded). Gap wickets go into fallOfWickets with
+   as "not attributed" (catchUpUnattributed) and isn't in anyone's player
+   stats (match.caughtUp; see playerStatsExcluded). Gap wickets go into fallOfWickets with
    `catchUp: true` and the score/balls of the catch-up (the real moment isn't
    known), so the partnership counter restarts from there.
 
@@ -1987,10 +1990,11 @@ function tournamentSummary(matches, preset){
     runs += inn.runs; wickets += inn.wickets;
     const team = teamName(m, inn.battingTeam);
     if (!highestTotal || inn.runs > highestTotal.runs) highestTotal = { team, runs: inn.runs, wickets: inn.wickets, against: teamName(m, inn.bowlingTeam) };
+    // Sixes are a team total, like runs: a "no names" match's sixes count too.
+    inn.batting.order.forEach(n => { sixes += inn.batting.stats[n].sixes; });
     if (playerStatsExcluded(m)) return;
     inn.batting.order.forEach(n => {
       const b = inn.batting.stats[n];
-      sixes += b.sixes;
       if (isUnnamedPlayer(n)) return;
       if (!bestInnings || b.runs > bestInnings.runs || (b.runs === bestInnings.runs && b.balls < bestInnings.balls)) bestInnings = { name: n, team, runs: b.runs, balls: b.balls, notOut: !b.out };
     });

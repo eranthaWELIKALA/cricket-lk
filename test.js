@@ -1212,7 +1212,8 @@ async function main(){
     const un = win.catchUpUnattributed(inn);
     assert(inn.bowling.stats.B3.legalBalls === 1, "the bowler of the over in progress is credited with its ball so far (B3 0.1)");
     assert(un.batRuns === 4 && un.bowlBalls === 12 && un.bowlRuns === 24, "runs/balls nobody was credited with are reported");
-    assert(m.caughtUp && win.aggregatePlayerStats([m]).length === 0 && win.pickMatchMOTM(m) === null, "a caught-up match stays out of player stats and MVP");
+    const cuTotals = Object.fromEntries(win.aggregatePlayerStats([m]).map(t => [t.name, t]));
+    assert(m.caughtUp && cuTotals.B3.wickets === 1 && cuTotals.B4.catches === 1 && win.pickMatchMOTM(m) !== null, "a caught-up match still counts what each player was credited with (stats and MVP)");
     for (let b = 0; b < 5; b++) win.recordBall(inn, { kind: "run", runs: 0 });
     assert(inn.legalBalls === 42 && inn.bowler === null && inn.lastOverBowler === "B3" && inn.bowling.stats.B3.maidens === 0 && !inn.partOverUnknown,
       "scoring carries on: the over ends after the 5 remaining balls, and a part-unknown over is never a maiden");
@@ -1295,6 +1296,22 @@ async function main(){
     const s2 = win.tournamentSummary([m1, m2], { pointsForWin: 2, pointsForTie: 1, pointsForLoss: 0, useNRR: false });
     assert(s2.shared, "without NRR, two teams level on points share the top");
     assert(s.mvp === null && s.topBat === null && s.bestInnings === null, "no player highlights from result-only matches");
+    // A match whose score was set by hand afterwards still counts each
+    // player's figures (a 4-for there is the best bowling); a "no names" copy
+    // counts for team totals, sixes too, but not for players.
+    const play = (m, ev) => { recordBall(currentInnings(m), ev); afterBall(m); };
+    const h = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 2, playersPerSide: 6, battingFirst: "A" });
+    win.openInnings(currentInnings(h), "A1", "A2", "B1"); h.status = "live";
+    play(h, { kind: "run", runs: 6 });
+    ["A3", "A4", "A5", "A6"].forEach(n => { play(h, { kind: "wicket", wicketType: "bowled" }); win.sendInBatter(currentInnings(h), n); });
+    play(h, { kind: "run", runs: 0 });
+    const byHand = win.setScoresByHand(h, [{ runs: 20, wickets: 4, balls: 12 }, { runs: 10, wickets: 1, balls: 12 }]).match;
+    const noNames = Object.assign(JSON.parse(JSON.stringify(byHand)), { anonymous: true, caughtUp: false });
+    const hs = win.tournamentSummary([byHand, noNames], { pointsForWin: 2, pointsForTie: 1, pointsForLoss: 0, useNRR: true });
+    assert(byHand.caughtUp && byHand.status === "complete" && hs.bestBowling && hs.bestBowling.name === "B1" && hs.bestBowling.wickets === 4 && hs.bestBowling.runs === 6 && hs.topBowl.wickets === 4,
+      "a match set by hand still counts its players' figures (best bowling 4/6); the no-names copy doesn't: " + JSON.stringify(hs.bestBowling));
+    assert(hs.sixes === 2 && hs.runs === 60, "sixes and runs are team totals: every match counts, no-names too");
+    assert(win.pickMatchMOTM(byHand) === "B1" && win.pickMatchMOTM(noNames) === null, "a match set by hand still gets a player of the match; a no-names one doesn't");
     win.eval(`state.match = null; ui = defaultUi();
       const a = createTeam("Lions"), b = createTeam("Tigers");
       const t = createTournament({ name: "Summer Cup", tournamentPresetId: Object.keys(state.tournamentPresets)[0], teamIds: [a.id, b.id] });
@@ -1603,7 +1620,7 @@ async function main(){
     const before = JSON.stringify(m);
     r = win.setScoresByHand(m, [{ runs: 3, wickets: 1, balls: 6 }, null]);
     assert(JSON.stringify(m) === before, "setScoresByHand never touches the match it's given");
-    assert(r.match.innings[0].runs === 3 && r.match.innings[0].wickets === 1 && r.match.innings[1].target === 4 && r.match.status === "complete" && /Tigers won/.test(r.match.result) && r.match.caughtUp, "first innings set to 3: target 4, the chase's 4 off one ball now wins it (and player stats leave the match)");
+    assert(r.match.innings[0].runs === 3 && r.match.innings[0].wickets === 1 && r.match.innings[1].target === 4 && r.match.status === "complete" && /Tigers won/.test(r.match.result) && r.match.caughtUp, "first innings set to 3: target 4, the chase's 4 off one ball now wins it (marked caught up)");
     assert(r.match.innings[1].legalBalls === 1 && r.match.innings[0].overs.some(o => o.gap && o.gap.byHand) && !r.match.innings[0].log, "the chase is replayed and stops at the winning ball; the first innings has a by-hand gap and no log");
     // the chase set too, the match finishes with that result
     r = win.setScoresByHand(m, [null, { runs: 5, wickets: 2, balls: 6 }]);
@@ -1651,7 +1668,7 @@ async function main(){
     const confirm = doc.querySelector("#confirm-root");
     assert(/Lions won by 20 runs/.test(confirm.textContent) && /5-0 \(0\.3\) → 120-4 \(5\.0\)/.test(confirm.textContent), "review shows the scores and the result");
     confirm.querySelector('[data-action="confirm-ok"]').click();
-    assert(win.eval("state.match.status") === "complete" && win.eval("state.match.archivedId") && win.eval("state.match.caughtUp") === true, "saved: the match is finished and archived, out of player stats");
+    assert(win.eval("state.match.status") === "complete" && win.eval("state.match.archivedId") && win.eval("state.match.caughtUp") === true, "saved: the match is finished and archived, marked caught up");
     win.eval(`handleUndo()`);
     assert(win.eval("state.match.status") === "live" && win.eval("currentInnings(state.match).runs") === 5, "Undo brings the ball-by-ball score back");
     win.eval(`state.match = null; state.snapshots = []; state.matchHistory = {}; ui = defaultUi(); save(); render();`);
