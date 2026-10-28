@@ -29,7 +29,10 @@ final result. Beyond a single match, it also supports:
   innings, at the break) and declare the other team the winner. Counts
   toward tournament standings (points, not NRR) and archived stats.
 - **Stats & MVP** — all-time and per-tournament batting/bowling/fielding
-  leaderboards listing every player, sortable by any column, plus an
+  leaderboards listing every player, sortable by any column, a **Records**
+  tab (most runs/fours/sixes/ducks/wickets/maidens/wides/no-balls/catches/
+  run-outs/stumpings, highest score, best bowling, most runs hit or
+  conceded in one over, highest/lowest team totals), plus an
   auto-computed Man-of-the-Match (per match, overridable on the result
   screen) and MVP (per tournament). MVP points come from a **points
   preset** a guest or club can edit (built-ins: Club, Classic, Fantasy T20,

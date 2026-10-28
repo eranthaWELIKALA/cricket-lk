@@ -566,6 +566,21 @@ by `match.archivedId`) right after `afterBall()` flips its status to
 `"complete"` — that archive is the only source of truth stats/standings
 read from. Editing a finished match (on Result, or later from history)
 replaces its archive entry in place, so stats and standings follow it.
+**Records** (`computeRecords`, ENGINE, tested; the Records tab, `renderRecords`
+in stats.js) are worked out from the same matches as the leaderboards, which pass
+them in as `renderLeaderboards(totals, { …, matches })` — every caller does, so
+the tab is on guest, club, tournament and Premier Stats. Five groups: career
+tallies for Batting/Bowling/Fielding (from `aggregatePlayerStats`, plus wides and
+no-balls per bowler counted as *deliveries* from ball by ball, like dots, so a
+catch-up gap adds none), "In one match" (highest score, best bowling, most sixes
+in an innings, most runs hit in an over — `eventBatRuns`, shared with the
+commentary — and conceded in an over, byes/leg byes not the bowler's) and team
+totals (highest; lowest = all out or out of overs, not a won chase or forfeit).
+Each keeps its top `RECORDS_TOP` (3) places, equal values sharing a place;
+an empty record is left out. Player records skip "no names" matches and
+placeholders, team totals count every match (result-only too). Career tallies
+render as two-up tiles, one-match records as rows that open their scorecard
+(`open-match-detail`, so the id must be findable by `findCompletedMatch`).
 `computeStandings`' NRR follows the standard convention that an
 all-out innings counts its full overs quota (not the fewer overs it
 actually took) — this is a simplification, not a bug, consistent with
@@ -1037,10 +1052,11 @@ table, latest 3 results, start button), **Teams** (`teamCardHtml`: cards
 collapsed to name + count, tap to show players — `ui.expandedTeamId`; club
 edit/delete buttons stay on the card), **Fixtures** (start a match + every
 completed match via `renderFixtureList`, tap → scorecard sheet) and
-**Stats**. `renderLeaderboards(totals, { points, where })` shows one table
-at a time behind its own MVP / Batting / Bowling / Fielding sub-tabs
-(`ui.statsTab`) — everywhere it's used; with `points: null` (Premier) the
-MVP tab isn't there. Every player is listed (Batting: everyone who batted,
+**Stats**. `renderLeaderboards(totals, { points, where, matches })` shows one table
+at a time behind its own MVP / Batting / Bowling / Fielding / Records sub-tabs
+(`ui.statsTab`, one row that shares the width) — everywhere it's used; with
+`points: null` (Premier) the MVP tab isn't there, and Records needs `matches`
+(see "Stats & MVP"). Every player is listed (Batting: everyone who batted,
 Bowling: everyone who bowled) with a column per stat (`LEADERBOARD_COLUMNS`,
 stats.js; the table's key number — Pts / R / W / Total — comes right after
 the player, so a phone shows it without swiping). Tapping a column head

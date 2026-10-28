@@ -510,7 +510,7 @@ function renderClubStats(){
     const points = clubPointsPreset(club.id);
     // The full match list lives here (Home shows the latest 3).
     return matches.length
-      ? renderLeaderboards(aggregatePlayerStats(matches, points), { points, where: "the club's Presets" }) + `<p class="hint">Read from ${matches.length} archived club match${matches.length === 1 ? "" : "es"} only.</p>`
+      ? renderLeaderboards(aggregatePlayerStats(matches, points), { points, where: "the club's Presets", matches }) + `<p class="hint">Read from ${matches.length} archived club match${matches.length === 1 ? "" : "es"} only.</p>`
         + renderRecentMatches("Matches", recentMatchesFor(matches, matches.length))
       : `<p class="hint">Play and finish a club match to see stats here.</p>`;
   });

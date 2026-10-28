@@ -1351,6 +1351,81 @@ async function main(){
     win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); state.view = "home"; save(); render();`);
   }
 
+  // --- records: career tallies, one-match bests, overs, team totals; the Records tab ---
+  {
+    const play = (m, ev) => { recordBall(currentInnings(m), ev); afterBall(m); };
+    const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 2, playersPerSide: 6, battingFirst: "A" });
+    m.id = "rec1";
+    win.openInnings(currentInnings(m), "A1", "A2", "B1"); m.status = "live";
+    // Over 1 (B1): 6 6 Wd 4 1 Nb+2 0 W -- 21 off the over, 17 of them A1's.
+    [{ kind: "run", runs: 6 }, { kind: "run", runs: 6 }, { kind: "wide", runs: 0 }, { kind: "run", runs: 4 }, { kind: "run", runs: 1 },
+      { kind: "noball", runs: 2 }, { kind: "run", runs: 0 }, { kind: "wicket", wicketType: "bowled" }].forEach(ev => play(m, ev));
+    win.sendInBatter(currentInnings(m), "A3"); win.setBowler(currentInnings(m), "B2");
+    // Over 2 (B2): a leg bye and five dots -- a maiden; 22-1 off 2 overs.
+    [{ kind: "legbye", runs: 1 }, ...Array(5).fill({ kind: "run", runs: 0 })].forEach(ev => play(m, ev));
+    startSecondInnings(m);
+    win.openInnings(currentInnings(m), "B1", "B2", "A1"); m.status = "live";
+    // A1: W, W (c A2), 4, run out (A3), W lbw, W -- Tigers 4 all out, A1 4/4.
+    play(m, { kind: "wicket", wicketType: "bowled" }); win.sendInBatter(currentInnings(m), "B3");
+    play(m, { kind: "wicket", wicketType: "caught", fielder: "A2" }); win.sendInBatter(currentInnings(m), "B4");
+    play(m, { kind: "run", runs: 4 });
+    play(m, { kind: "wicket", wicketType: "runout", endComingIn: "striker", runs: 0, fielder: "A3" }); win.sendInBatter(currentInnings(m), "B5");
+    play(m, { kind: "wicket", wicketType: "lbw" }); win.sendInBatter(currentInnings(m), "B6");
+    play(m, { kind: "wicket", wicketType: "bowled" });
+    assert(m.status === "complete" && currentInnings(m).runs === 4 && currentInnings(m).completeReason === "allout", "the records match is played out: " + m.result);
+
+    const recs = win.computeRecords([m]);
+    const rec = key => { for (const g of recs) for (const r of g.records) if (r.key === key) return r.entries; return null; };
+    const top = key => rec(key).map(e => `${e.place}.${e.name}:${e.text != null ? e.text : e.value}`).join(" ");
+    assert(recs.map(g => g.key).join() === "bat,bowl,field,match,team", "records come in five groups");
+    assert(top("runs") === "1.A1:17 2.B4:4 3.A2:2" && rec("runs")[0].detail === "1 innings", "most runs, top three: " + top("runs"));
+    assert(top("sixes") === "1.A1:2" && top("fours") === "1.A1:1 1.B4:1", "most sixes; equal fours share first place: " + top("fours"));
+    assert(top("ducks") === "1.B1:1 1.B3:1 1.B5:1 1.B6:1", "most ducks: everyone out for 0 (not A2, out for 2): " + top("ducks"));
+    assert(rec("fifties").length === 0 && rec("hundreds").length === 0, "a record nobody has yet has no entries");
+    assert(top("wickets") === "1.A1:4 2.B1:1" && top("maidens") === "1.B2:1", "most wickets (a run-out isn't the bowler's) and maidens");
+    assert(top("wides") === "1.B1:1" && top("noBalls") === "1.B1:1", "wides and no-balls are counted as deliveries, per bowler");
+    assert(top("catches") === "1.A2:1" && top("runouts") === "1.A3:1" && rec("stumpings").length === 0, "fielding tallies");
+    assert(top("highScore") === "1.A1:17* 2.B4:4 3.A2:2" && rec("highScore")[0].detail === "5 balls · v Tigers" && rec("highScore")[0].matchId === "rec1",
+      "highest score, not out, with the match to open: " + JSON.stringify(rec("highScore")[0]));
+    assert(top("bestBowling") === "1.A1:4/4 2.B1:1/21" && top("inningsSixes") === "1.A1:2", "best bowling and most sixes in an innings: " + top("bestBowling"));
+    const hitOver = rec("overHit")[0];
+    assert(top("overHit") === "1.A1:17 2.B4:4 3.A2:2", "most runs hit in an over, per batter: " + top("overHit"));
+    assert(hitOver.name === "A1" && hitOver.value === 17 && hitOver.detail === "off B1, v Tigers · over 1" && hitOver.balls.map(b => b.display).join(" ") === "6 6 Wd 4 1 Nb+2 0 W",
+      "most runs hit in an over: A1's 17 off B1, with the over's balls: " + JSON.stringify(hitOver));
+    assert(top("overConceded") === "1.B1:21 2.A1:4" && rec("overConceded")[0].detail === "v Lions · over 1",
+      "most runs conceded in an over: wides and no-balls count, the leg bye and B2's maiden don't: " + top("overConceded"));
+    assert(top("highTotal") === "1.Lions:22-1 2.Tigers:4-5" && top("lowTotal") === "1.Tigers:4-5 2.Lions:22-1" && rec("lowTotal")[0].detail === "v Lions · 1.0 ov · all out",
+      "team totals: highest, and lowest (all out or out of overs): " + top("lowTotal"));
+    // A "no names" copy counts for team totals only; a result-only match's totals count too.
+    const noNames = Object.assign(JSON.parse(JSON.stringify(m)), { id: "rec2", anonymous: true });
+    const ro = win.createResultOnlyMatch({ teamA: "Eagles", teamB: "Hawks", battingFirst: "A", oversLimit: 20, playersPerSide: 11 }, [{ runs: 150, wickets: 5, balls: 120 }, { runs: 151, wickets: 3, balls: null }]);
+    const recs2 = win.computeRecords([m, noNames, ro]);
+    const rec2 = key => recs2.flatMap(g => g.records).find(r => r.key === key).entries;
+    assert(rec2("runs")[0].value === 17 && rec2("overConceded").length === 2, "a no-names match adds nothing to player records");
+    assert(rec2("highTotal").map(e => `${e.place}.${e.name}:${e.value}`).join(" ") === "1.Hawks:151 2.Eagles:150 3.Lions:22 3.Lions:22",
+      "team totals count every match, and equal totals share a place: " + JSON.stringify(rec2("highTotal")));
+    assert(rec2("lowTotal").map(e => `${e.place}.${e.name}`).join(" ") === "1.Tigers 1.Tigers 3.Lions 3.Lions" && !rec2("lowTotal").some(e => e.name === "Hawks"),
+      "a chase that got there isn't a lowest total: " + JSON.stringify(rec2("lowTotal").map(e => e.name)));
+
+    // The Records tab: tiles for the career tallies, rows for one-match records.
+    const keptHistory = win.eval("JSON.stringify(state.matchHistory)");
+    win.eval(`state.match = null; ui = defaultUi(); state.matchHistory = {}; state.view = "home";`);
+    win.archiveMatch(m);
+    win.eval(`state.view = "stats"; ui.statsTab = "records"; render();`);
+    const tabs = [...doc.querySelectorAll('#app [data-action="stats-tab"]')].map(b => b.dataset.tab).join();
+    assert(tabs === "mvp,bat,bowl,field,records" && doc.querySelector('#app [data-action="stats-tab"][data-tab="records"]').classList.contains("active"), "Stats has a Records tab: " + tabs);
+    const labels = [...doc.querySelectorAll("#app .records-group .section-label")].map(h => h.textContent).join();
+    assert(labels === "Batting,Bowling,Fielding,In one match,Team totals", "the five groups show: " + labels);
+    const ducks = [...doc.querySelectorAll("#app .record-tile")].find(t => /Most ducks/.test(t.textContent));
+    assert(ducks && ducks.querySelectorAll(".record-rest li").length === 2 && /\+1 more level/.test(ducks.textContent), "four players level on ducks: the first three and \"+1 more\"");
+    assert(![...doc.querySelectorAll("#app .record-label")].some(l => /fifties|stumpings/i.test(l.textContent)), "records nobody has yet are left out");
+    const overCard = [...doc.querySelectorAll("#app .record-card")].find(c => /hit in an over/.test(c.textContent));
+    assert(overCard && overCard.querySelectorAll(".record-row.lead .record-balls .chip").length === 8 && overCard.querySelector(".record-balls .chip.six"), "the over's balls show under its leader");
+    overCard.querySelector('[data-action="open-match-detail"]').click();
+    assert(doc.querySelector("#modal-root .scorecard-modal"), "tapping a one-match record opens that match's scorecard");
+    win.eval(`ui = defaultUi(); state.matchHistory = ${keptHistory}; state.view = "home"; save(); render();`);
+  }
+
   // --- ended tournaments: summary, Summary tab, guest end/reopen ---
   {
     const cfg = { teamA: "Lions", teamB: "Tigers", battingFirst: "A", oversLimit: 20, playersPerSide: 11 };

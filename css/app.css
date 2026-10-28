@@ -1166,6 +1166,9 @@ button.fixture-row{ width:100%; text-align:left; color:var(--text); align-items:
 .tab-row.sc-inn-tabs{ flex-wrap:nowrap; margin-bottom:8px; }
 .tab-row.sc-inn-tabs .tab-btn{ flex:1 1 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tab-row.sc-mode-tabs .tab-btn, .tab-row.stats-tabs .tab-btn{ padding:6px 12px; font-size:.78rem; }
+/* The leaderboard's sub-tabs (up to five, with Records) stay one row and share the width. */
+.tab-row.stats-tabs{ flex-wrap:nowrap; gap:6px; }
+.tab-row.stats-tabs .tab-btn{ flex:1 1 auto; min-width:0; padding:6px 4px; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sc-pane[hidden]{ display:none; }
 
 /* Ball by ball: one card per over, newest first. */
@@ -1281,6 +1284,40 @@ button.fixture-row{ width:100%; text-align:left; color:var(--text); align-items:
 .sort-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
 .sort-arrow{ font-size:.6rem; }
 .points-using{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+/* Records tab (renderRecords): career tallies as two-up tiles (the leader's
+   number large, the next places a line each); single-match records as
+   full-width rows that open their scorecard. */
+.records > .hint{ margin-top:14px; }
+.records-group .section-label{ margin-top:16px; }
+.records-group:first-child .section-label{ margin-top:2px; }
+.records-tiles{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+.records-cards{ display:grid; gap:8px; }
+.record-tile, .record-card{ min-width:0; background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-md); box-shadow:var(--shadow-card); padding:10px 12px; }
+.record-label{ font-size:.64rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+.record-lead{ display:flex; flex-direction:column; }
+.record-lead .record-val{ font-size:1.75rem; font-weight:800; line-height:1; color:var(--accent); font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+.record-lead .record-name{ font-weight:700; font-size:.92rem; line-height:1.2; margin-top:5px; overflow-wrap:anywhere; }
+.record-detail{ font-size:.68rem; color:var(--muted); line-height:1.3; }
+.record-place{ flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:50%; border:2px solid var(--line-strong); color:var(--muted); font-size:.62rem; font-weight:800; font-variant-numeric:tabular-nums; }
+.record-rest, .record-rows{ list-style:none; margin:0; padding:0; }
+.record-rest{ margin-top:8px; }
+.record-rest li{ display:flex; align-items:center; gap:7px; padding:5px 0 0; margin-top:5px; border-top:1px solid var(--line); font-size:.78rem; }
+.record-rest .record-name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.record-rest .record-val{ font-weight:700; color:var(--muted); font-variant-numeric:tabular-nums; }
+.record-more{ font-size:.66rem; color:var(--muted); margin:5px 0 0; }
+.record-rows > li + li{ border-top:1px solid var(--line); }
+.record-row{ display:flex; align-items:center; gap:10px; width:100%; padding:7px 0; color:var(--text); font-size:.85rem; }
+button.record-row{ margin:0; background:none; border:0; border-radius:0; box-shadow:none; text-align:left; font-weight:400; text-transform:none; letter-spacing:0; }
+.record-row .record-who{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.record-row .record-name{ font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.record-row .record-detail{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.record-row .record-val{ flex-shrink:0; font-weight:800; font-variant-numeric:tabular-nums; color:var(--muted); }
+.record-row .chevron{ flex-shrink:0; color:var(--muted); font-size:1.05rem; }
+.record-row.lead .record-name{ font-weight:800; font-size:.95rem; }
+.record-row.lead .record-val{ font-size:1.35rem; color:var(--accent); letter-spacing:-.02em; }
+.record-row.lead .record-place{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+.record-balls{ display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
+.record-balls .chip{ min-width:24px; height:24px; padding:0 4px; border-radius:6px; font-size:.68rem; }
 @media print{
   .lb-table th .sort-btn{ display:inline-flex !important; }
   .table-scroll{ overflow:visible; }

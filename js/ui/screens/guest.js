@@ -584,7 +584,7 @@ function renderTournamentStats(matches){
   const mvp = totals[0].points > 0 ? totals[0] : null;
   return `
     ${mvp ? `<div class="mvp-callout"><span class="mvp-label">Tournament MVP</span><span class="mvp-name">${escapeHtml(mvp.name)}</span><span class="mvp-points">${pointsNum(mvp.points)} pts</span></div>` : ""}
-    ${renderLeaderboards(totals, { points, where: "Presets → MVP points" })}
+    ${renderLeaderboards(totals, { points, where: "Presets → MVP points", matches })}
   `;
 }
 

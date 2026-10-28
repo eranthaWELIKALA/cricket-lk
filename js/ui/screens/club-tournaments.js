@@ -137,7 +137,7 @@ function renderClubTournamentDashboard(){
         ${ended ? ENDED_NOTE : tournamentActionsHtml(startBtn, matches.length, true)}` : ""}
       ${tab === "teams" ? renderTournamentTeams(t) : ""}
       ${tab === "fixtures" ? `${ended ? ENDED_NOTE : tournamentActionsHtml(startBtn, 0, false)}<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches, "No matches yet — start one above.")}` : ""}
-      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, clubPointsPreset(t.organizer_club_id)), { points: clubPointsPreset(t.organizer_club_id), where: "the club's Presets" }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
+      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, clubPointsPreset(t.organizer_club_id)), { points: clubPointsPreset(t.organizer_club_id), where: "the club's Presets", matches }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
     </div>
   `;
 }
@@ -732,7 +732,7 @@ function renderPublicTournament(){
         ? `${renderStandingsTable(computeStandings(matches, p), p.useNRR)}<h3 class="section-label">Latest results</h3>${renderFixtureList(latest)}`
         : `<p class="hint">No matches yet. The points table fills in as results come in.</p>`) : ""}
       ${tab === "fixtures" ? `<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches)}` : ""}
-      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, pt.points), { points: pt.points }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
+      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, pt.points), { points: pt.points, matches }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
       <p class="hint public-note">${pt.refreshError ? escapeHtml(pt.refreshError) : `Read only · updated ${escapeHtml(updated)}`}</p>
     </div>`;
 }

@@ -2201,6 +2201,14 @@ function commentaryEvent(ev){
   if (/^B/.test(d)) return { kind: "bye", off: 0 };
   return { kind: "run", off: 0 };
 }
+// The runs one ball put on the striker's score (off the bat, or run on a run-out that isn't off a wide).
+function eventBatRuns(ev){
+  const c = commentaryEvent(ev);
+  if (c.kind === "run") return ev.runs || 0;
+  if (c.kind === "noball") return c.off;
+  if (c.kind === "wicket" && c.wicketType === "runout" && c.extra !== "wide") return c.extra ? c.off : ev.runs || 0;
+  return 0;
+}
 function runsWord(n, unit){
   if (unit) return `${n === 4 ? "FOUR" : n} ${unit}${n === 1 ? "" : "s"}`;
   return n === 0 ? "no run" : n === 4 ? "FOUR" : n === 6 ? "SIX" : `${n} run${n === 1 ? "" : "s"}`;
@@ -2257,7 +2265,7 @@ function inningsCommentary(inn, opts){
       let milestone = "";
       if (ev.batter){
         const before = batRuns[ev.batter] || 0;
-        const add = c.kind === "run" || (c.kind === "wicket" && c.wicketType === "runout" && c.extra !== "wide") ? (c.extra ? c.off : runs) : c.kind === "noball" ? c.off : 0;
+        const add = eventBatRuns(ev);
         batRuns[ev.batter] = before + add;
         if (c.kind !== "wide" && c.extra !== "wide") batBalls[ev.batter] = (batBalls[ev.batter] || 0) + 1;
         const m = [100, 50].find(x => before < x && before + add >= x);
@@ -2358,4 +2366,116 @@ function tournamentSummary(matches, preset, pointsPreset){
     mvp: totals[0] && totals[0].points > 0 ? totals[0] : null,
     topBat: top("runs"), topBowl: top("wickets"), topField: [...totals].sort((a, b) => fieldDismissals(b) - fieldDismissals(a)).find(t => fieldDismissals(t) > 0) || null
   };
+}
+
+/* --- records ---
+   The Records tab (renderLeaderboards), over a set of completed matches: who
+   has the most of each thing (aggregatePlayerStats' totals, plus wides and
+   no-balls bowled -- deliveries, not runs -- read from ball by ball like dot
+   balls, so a catch-up gap adds none), the best single innings and over
+   (runs hit by one batter, runs conceded by the bowler: byes and leg byes
+   aren't his), and the highest/lowest team totals. Player records skip
+   "no names" matches and placeholders, like every other player figure; team
+   totals count every match, result-only ones too. A lowest total is an
+   innings that was all out or ran out of overs (not a chase won, or one cut
+   short). Each record keeps its top RECORDS_TOP places: equal values share a
+   place (1, 1, 3), so a tie for third keeps them all, and a record nobody
+   has yet has no entries. A single-match entry carries `matchId` (its
+   scorecard opens from it); an over's also carries its `balls`. */
+const RECORDS_TOP = 3;
+function recordPlaces(entries, dir){
+  const sorted = entries.sort((a, b) => (dir === "asc" ? a.value - b.value : b.value - a.value)
+    || (b.sub || 0) - (a.sub || 0) || a.name.localeCompare(b.name));
+  sorted.forEach((e, i) => { e.place = i && sorted[i - 1].value === e.value ? sorted[i - 1].place : i + 1; });
+  return sorted.filter(e => e.place <= RECORDS_TOP);
+}
+function computeRecords(matches){
+  const totals = aggregatePlayerStats(matches);
+  const byName = {};
+  totals.forEach(t => { byName[t.name] = t; });
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  // A career tally; `over` says what it was made in, [count, words] (fewer ranks first among equals).
+  const most = (value, over) => recordPlaces(totals.map(t => { const [n, detail] = over(t); return { name: t.name, value: value(t), sub: -n, detail }; })
+    .filter(e => e.value > 0));
+  const batInns = t => [t.innings, `${t.innings} innings`];
+  const bowlInns = t => [t.bowlInnings, `${t.bowlInnings} innings`];
+  const played = t => [t.matches, `${t.matches} match${t.matches === 1 ? "" : "es"}`];
+  const bowled = {}, high = [], low = [], hs = [], bb = [], sixes = [], hit = [], conceded = [];
+  matches.forEach(m => m.innings.forEach(inn => {
+    const team = teamName(m, inn.battingTeam), opp = teamName(m, inn.bowlingTeam), bpo = inn.ballsPerOver || 6;
+    const matchId = m.id || null;
+    const ov = inn.legalBalls != null ? ` · ${oversDisplay(inn.legalBalls, bpo)} ov` : "";
+    const total = { name: team, value: inn.runs, text: `${inn.runs}-${inn.wickets}`, detail: `v ${opp}${ov}${inn.completeReason === "allout" ? " · all out" : ""}`, matchId };
+    if (inn.runs > 0) high.push(Object.assign({}, total, { sub: -(inn.legalBalls || 0) }));
+    if (!m.forfeited && inn.complete && (inn.completeReason === "allout" || inn.completeReason === "overs")) low.push(Object.assign({}, total, { sub: -(inn.legalBalls || 0) }));
+    if (playerStatsExcluded(m)) return;
+    inn.batting.order.forEach(n => {
+      const b = inn.batting.stats[n];
+      if (isUnnamedPlayer(n)) return;
+      if (b.runs > 0) hs.push({ name: n, value: b.runs, sub: (b.out ? 0 : 1000) - b.balls, text: `${b.runs}${b.out ? "" : "*"}`, detail: `${plural(b.balls, "ball")} · v ${opp}`, matchId });
+      if (b.sixes > 0) sixes.push({ name: n, value: b.sixes, sub: -b.balls, detail: `${b.runs}${b.out ? "" : "*"} (${b.balls}) · v ${opp}`, matchId });
+    });
+    inn.bowling.order.forEach(n => {
+      const b = inn.bowling.stats[n];
+      if (isUnnamedPlayer(n) || !b.wickets) return;
+      bb.push({ name: n, value: b.wickets * 1000 - b.runs, sub: -b.legalBalls, text: `${b.wickets}/${b.runs}`, detail: `${oversDisplay(b.legalBalls, bpo)} ov · v ${team}`, matchId });
+    });
+    // Over by over, numbered from the legal balls before it (as in inningsCommentary).
+    let balls = 0;
+    [...inn.overs, { bowler: inn.bowler, events: inn.currentOverEvents || [] }].forEach(o => {
+      if (o.gap){ balls = o.gap.toBalls; return; }
+      const evs = o.events || [];
+      if (!evs.length) return;
+      const over = Math.floor(balls / bpo) + 1;
+      const bowler = o.bowler && !isUnnamedPlayer(o.bowler) ? o.bowler : null;
+      const bump = k => { const x = bowled[bowler] || (bowled[bowler] = { wides: 0, noBalls: 0 }); x[k] += 1; };
+      let runs = 0;
+      const byBatter = {};
+      evs.forEach(ev => {
+        const c = commentaryEvent(ev);
+        if (c.kind !== "wide" && c.kind !== "noball" && !c.extra) balls += 1;
+        if (c.kind !== "bye" && c.kind !== "legbye") runs += ev.runs || 0;
+        if (ev.batter && !isUnnamedPlayer(ev.batter)) byBatter[ev.batter] = (byBatter[ev.batter] || 0) + eventBatRuns(ev);
+        if (bowler && (c.kind === "wide" || c.extra === "wide")) bump("wides");
+        if (bowler && (c.kind === "noball" || c.extra === "noball")) bump("noBalls");
+      });
+      const chips = evs.map(e => ({ display: e.display, runs: e.runs || 0, isWicket: !!e.isWicket }));
+      if (bowler && runs > 0) conceded.push({ name: bowler, value: runs, detail: `v ${team} · over ${over}`, matchId, balls: chips });
+      Object.keys(byBatter).forEach(n => {
+        if (byBatter[n] > 0) hit.push({ name: n, value: byBatter[n], detail: `${bowler ? `off ${bowler}, ` : ""}v ${opp} · over ${over}`, matchId, balls: chips });
+      });
+    });
+  }));
+  const bowledMost = k => recordPlaces(Object.keys(bowled).filter(n => bowled[n][k] > 0).map(n => {
+    const inns = byName[n] ? byName[n].bowlInnings : 0;
+    return { name: n, value: bowled[n][k], sub: -inns, detail: `${inns} innings` };
+  }));
+  return [
+    { key: "bat", title: "Batting", records: [
+      { key: "runs", label: "Most runs", entries: most(t => t.runs, batInns) },
+      { key: "fours", label: "Most fours", entries: most(t => t.fours, batInns) },
+      { key: "sixes", label: "Most sixes", entries: most(t => t.sixes, batInns) },
+      { key: "fifties", label: "Most fifties", entries: most(t => t.fifties, batInns) },
+      { key: "hundreds", label: "Most hundreds", entries: most(t => t.hundreds, batInns) },
+      { key: "ducks", label: "Most ducks", entries: most(t => t.ducks, batInns) }] },
+    { key: "bowl", title: "Bowling", records: [
+      { key: "wickets", label: "Most wickets", entries: most(t => t.wickets, bowlInns) },
+      { key: "maidens", label: "Most maidens", entries: most(t => t.maidens, bowlInns) },
+      { key: "dots", label: "Most dot balls", entries: most(t => t.dots, bowlInns) },
+      { key: "wides", label: "Most wides", entries: bowledMost("wides") },
+      { key: "noBalls", label: "Most no-balls", entries: bowledMost("noBalls") }] },
+    { key: "field", title: "Fielding", records: [
+      { key: "catches", label: "Most catches", entries: most(t => t.catches, played) },
+      { key: "runouts", label: "Most run-outs", entries: most(t => t.runouts, played) },
+      { key: "stumpings", label: "Most stumpings", entries: most(t => t.stumpings || 0, played) }] },
+    { key: "match", title: "In one match", records: [
+      { key: "highScore", label: "Highest score", entries: recordPlaces(hs) },
+      { key: "bestBowling", label: "Best bowling", entries: recordPlaces(bb) },
+      { key: "inningsSixes", label: "Most sixes in an innings", entries: recordPlaces(sixes) },
+      { key: "overHit", label: "Most runs hit in an over", entries: recordPlaces(hit) },
+      { key: "overConceded", label: "Most runs conceded in an over", entries: recordPlaces(conceded) }] },
+    { key: "team", title: "Team totals", records: [
+      { key: "highTotal", label: "Highest total", entries: recordPlaces(high) },
+      { key: "lowTotal", label: "Lowest total", entries: recordPlaces(low, "asc") }] }
+  ];
 }

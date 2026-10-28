@@ -108,7 +108,7 @@ function renderPremierStats(){
       ${!p ? `${loadingHtml()}` : (
         p.premierMatches.length
           // Premier is stats only: no MVP points (renderLeaderboards leaves the table out).
-          ? renderLeaderboards(aggregatePlayerStats(p.premierMatches.map(m => m.data)), { points: null })
+          ? renderLeaderboards(aggregatePlayerStats(p.premierMatches.map(m => m.data)), { points: null, matches: p.premierMatches.map(m => m.data) })
           : `<p class="hint">No Premier matches yet.</p>`
       )}
     </div>

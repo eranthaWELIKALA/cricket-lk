@@ -95,13 +95,80 @@ function leaderboardTable(table, totals){
     <p class="hint">${rows.length} player${rows.length === 1 ? "" : "s"} · tap a column to sort${cols.length > 6 ? " · swipe the table for more" : ""}</p>`;
 }
 
+/* --- records (computeRecords) ---
+   Career tallies (Batting/Bowling/Fielding) are two-up tiles: the leader's
+   number large, the next places a line each. Single-match records (one
+   innings, one over, team totals) are full-width rows that open that
+   match's scorecard; an over shows its balls. A record nobody has yet is
+   left out. */
+const RECORDS_SHOWN = 3;
+const RECORD_TILE_GROUPS = ["bat", "bowl", "field"];
+function recordValue(e){ return escapeHtml(e.text != null ? e.text : String(e.value)); }
+function recordMoreHtml(r){
+  const more = r.entries.length - RECORDS_SHOWN;
+  return more > 0 ? `<p class="record-more">+${more} more level</p>` : "";
+}
+function recordTileHtml(r){
+  const [lead, ...rest] = r.entries.slice(0, RECORDS_SHOWN);
+  return `<div class="record-tile">
+    <div class="record-label">${r.label}</div>
+    <div class="record-lead">
+      <span class="record-val">${recordValue(lead)}</span>
+      <span class="record-name">${escapeHtml(lead.name)}</span>
+      <span class="record-detail">${escapeHtml(lead.detail)}</span>
+    </div>
+    ${rest.length ? `<ol class="record-rest">${rest.map(e => `<li><span class="record-place">${e.place}</span><span class="record-name">${escapeHtml(e.name)}</span><span class="record-val">${recordValue(e)}</span></li>`).join("")}</ol>` : ""}
+    ${recordMoreHtml(r)}
+  </div>`;
+}
+function recordBallsHtml(balls){
+  return `<span class="record-balls">${balls.map(e => {
+    const cls = e.isWicket ? " wicket" : e.runs === 4 ? " four" : e.runs === 6 ? " six" : /^(Wd|Nb)/.test(e.display) ? " extra" : "";
+    return `<span class="chip${cls}">${escapeHtml(e.display)}</span>`;
+  }).join("")}</span>`;
+}
+function recordRowHtml(e){
+  const lead = e.place === 1;
+  const inner = `<span class="record-place">${e.place}</span>
+    <span class="record-who"><span class="record-name">${escapeHtml(e.name)}</span><span class="record-detail">${escapeHtml(e.detail)}</span>${lead && e.balls ? recordBallsHtml(e.balls) : ""}</span>
+    <span class="record-val">${recordValue(e)}</span>`;
+  return e.matchId
+    ? `<li><button type="button" data-action="open-match-detail" data-id="${escapeHtml(e.matchId)}" class="record-row record-open${lead ? " lead" : ""}">${inner}<span class="chevron" aria-hidden="true">›</span></button></li>`
+    : `<li class="record-row${lead ? " lead" : ""}">${inner}</li>`;
+}
+function recordCardHtml(r){
+  return `<div class="record-card">
+    <div class="record-label">${r.label}</div>
+    <ol class="record-rows">${r.entries.slice(0, RECORDS_SHOWN).map(recordRowHtml).join("")}</ol>
+    ${recordMoreHtml(r)}
+  </div>`;
+}
+function renderRecords(matches){
+  const groups = computeRecords(matches)
+    .map(g => Object.assign({}, g, { records: g.records.filter(r => r.entries.length) }))
+    .filter(g => g.records.length);
+  if (!groups.length) return `<p class="hint">No records yet — they appear once a finished match has some runs on the board.</p>`;
+  return `<div class="records">
+    ${groups.map(g => {
+      const tiles = RECORD_TILE_GROUPS.includes(g.key);
+      return `<section class="records-group">
+        <h3 class="section-label">${g.title}</h3>
+        <div class="${tiles ? "records-tiles" : "records-cards"}">${g.records.map(tiles ? recordTileHtml : recordCardHtml).join("")}</div>
+      </section>`;
+    }).join("")}
+    <p class="hint">Top ${RECORDS_SHOWN} of each, from ${matches.length} match${matches.length === 1 ? "" : "es"}. Wides and no-balls count deliveries. Tap a match record to open its scorecard.</p>
+  </div>`;
+}
+
 /* `opts.points`: the points preset `totals` were counted with -- null
-   (Premier) leaves the MVP table out; `opts.where` says where it's changed. */
+   (Premier) leaves the MVP table out; `opts.where` says where it's changed.
+   `opts.matches` (the matches `totals` came from) adds the Records tab. */
 function renderLeaderboards(totals, opts){
   const o = opts || {};
   const points = o.points || null;
-  const tabs = [...(points ? [["mvp", "MVP"]] : []), ["bat", "Batting"], ["bowl", "Bowling"], ["field", "Fielding"]];
+  const tabs = [...(points ? [["mvp", "MVP"]] : []), ["bat", "Batting"], ["bowl", "Bowling"], ["field", "Fielding"], ...(o.matches ? [["records", "Records"]] : [])];
   const tab = tabs.some(([k]) => k === ui.statsTab) ? ui.statsTab : tabs[0][0];
+  if (tab === "records") return `${tabsHtml("stats-tab", tabs, tab, "stats-tabs")}${renderRecords(o.matches)}`;
   return `
     ${tabsHtml("stats-tab", tabs, tab, "stats-tabs")}
     <div class="leaderboard${tab === "mvp" ? " mvp" : ""}">
@@ -121,7 +188,7 @@ function renderStatsScreen(){
     <div class="screen stats">
       ${renderBackBar("Home", "home")}
       <h1>📊 All-time stats</h1>
-      ${matches.length ? renderLeaderboards(aggregatePlayerStats(matches, points), { points, where: "Presets → MVP points" }) : `<p class="hint">Play and finish a match to see stats here.</p>`}
+      ${matches.length ? renderLeaderboards(aggregatePlayerStats(matches, points), { points, where: "Presets → MVP points", matches }) : `<p class="hint">Play and finish a match to see stats here.</p>`}
       ${matches.length ? `<p class="hint">Read from archived matches only — ${matches.length} of them.</p>` : ""}
     </div>
   `;
