@@ -1228,6 +1228,15 @@ component rules. `THEME_PRESETS` (REFERENCE DATA) only overrides the
 why a redesign of the shape language doesn't need to touch
 `THEME_PRESETS` at all.
 
+**The default theme is Sri Lanka** (royal-blue kit, lion-gold `accent`, a
+bright blue `accent-2`): it's `THEME_PRESETS[0]` (the fallback for an
+unknown id) and `defaultState().themeId`. Its colours are also written out
+in `css/app.css`'s `:root` (the first paint, before `applyTheme()`; the
+derived `-rgb`/`-light`/`-dim`/`-ink` values are `applyAccentVars`' own),
+`index.html`'s `theme-color` and the manifest's `theme_color`/
+`background_color` — change them together. Saves from before it became the
+default carry `themeId: "midnight"` and stay on Midnight.
+
 **The page background is a fixed layer, `body::before`**, behind the app, with
 `html` filled with the solid `--bg`. Don't move it back onto `body` with
 `background-attachment: fixed`: phones repaint a fixed background on every

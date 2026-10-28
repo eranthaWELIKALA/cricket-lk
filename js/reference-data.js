@@ -75,10 +75,19 @@ const DEFAULT_TOURNAMENT_PRESETS = [
    derivation (rgb/dim/light/ink), same as a custom branding color does.
    A pre-existing custom branding accent (legacy state.branding data —
    no longer editable in the UI) always wins over a theme's own accent
-   -- see applyTheme(). "midnight" matches the
-   original hardcoded :root defaults exactly, so existing installs see
-   no visual change until someone picks a different theme. */
+   -- see applyTheme(). The first one is the default (defaultState's
+   themeId, and the fallback for an unknown id), and css/app.css's :root
+   holds its colours, so the page paints in it before applyTheme() runs.
+   A save from before it became the default keeps "midnight". */
 const THEME_PRESETS = [
+  // The national side's colours: royal-blue kit and lion gold.
+  { id: "srilanka", name: "Sri Lanka", accent: "#FFC20E", accent2: "#4A9BFF", vars: {
+    "--bg": "#030B22", "--bg-2": "#0A1B4A",
+    "--panel": "rgba(255,255,255,.05)", "--panel-2": "rgba(255,255,255,.07)", "--panel-solid": "#10235C",
+    "--line": "rgba(255,255,255,.10)", "--line-strong": "rgba(255,255,255,.20)",
+    "--text": "#F2F5FF", "--muted": "#97A6D0",
+    "--danger": "#FF5D70", "--wicket": "#FF4D63", "--info": "#6CCBFF"
+  } },
   { id: "midnight", name: "Midnight", accent: "#FFC247", accent2: "#33E29B", vars: {
     "--bg": "#050B0A", "--bg-2": "#0A1613",
     "--panel": "rgba(255,255,255,.05)", "--panel-2": "rgba(255,255,255,.07)", "--panel-solid": "#101E1B",

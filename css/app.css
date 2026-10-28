@@ -1,12 +1,13 @@
-/* Cricket.lk styles. Theme tokens are the :root custom properties at the top (see CLAUDE.md "Theme & sound"). */
+/* Cricket.lk styles. Theme tokens are the :root custom properties at the top (see CLAUDE.md "Theme & sound");
+   they hold the default theme's colours (THEME_PRESETS[0], Sri Lanka) for the first paint. */
 :root{
-  --bg:#050B0A; --bg-2:#0A1613;
+  --bg:#030B22; --bg-2:#0A1B4A;
   --panel:rgba(255,255,255,.05); --panel-2:rgba(255,255,255,.07);
-  --panel-solid:#101E1B; --line:rgba(255,255,255,.10); --line-strong:rgba(255,255,255,.20);
-  --text:#F4F8F6; --muted:#8FA9A0;
-  --accent:#FFC247; --accent-rgb:255,194,71; --accent-light:#FFD873; --accent-dim:#B4791C; --accent-ink:#231200;
-  --accent-2:#33E29B; --accent-2-rgb:51,226,155; --accent-2-light:#5FF0AE; --accent-2-dim:#1C8F63; --accent-2-ink:#022417;
-  --danger:#FF5D70; --wicket:#FF4D63; --info:#5FC7FF;
+  --panel-solid:#10235C; --line:rgba(255,255,255,.10); --line-strong:rgba(255,255,255,.20);
+  --text:#F2F5FF; --muted:#97A6D0;
+  --accent:#FFC20E; --accent-rgb:255,194,14; --accent-light:#FFD762; --accent-dim:#A67E09; --accent-ink:#1F1702;
+  --accent-2:#4A9BFF; --accent-2-rgb:74,155,255; --accent-2-light:#89BEFF; --accent-2-dim:#3065A6; --accent-2-ink:#09131F;
+  --danger:#FF5D70; --wicket:#FF4D63; --info:#6CCBFF;
   --radius-lg:14px; --radius-md:10px; --radius-sm:7px;
   --shadow-card:3px 3px 0 rgba(0,0,0,.35);
   --shadow-btn:3px 3px 0 rgba(0,0,0,.4);
