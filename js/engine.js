@@ -293,11 +293,13 @@ function wicketTypesFor(freeHit, extra){
    ({t:"open"}), each ball ({t:"ball", ev, striker, nonStriker, bowler}: the
    event recordBall got, with its `seq` id, and who was where), each new
    batter ({t:"bat", name}) and bowler ({t:"bowl", name}), a strike swap by
-   hand ({t:"swap"}) and closing the innings ({t:"end"}). `inn.logBase` is
-   the innings as it was before the first logged action: a fresh innings,
-   or wherever an older match / a catch-up left it (balls before that can't
-   be edited). replayMatch rebuilds an innings from its base by running the
-   log again with one ball changed or removed. Undo still uses snapshots. */
+   hand ({t:"swap"}), closing the innings ({t:"end"}) and a score typed in
+   part way ({t:"score"} set by hand, {t:"catchup"} caught up; see
+   setScoreStep). `inn.logBase` is the innings as it was before the first
+   logged action: a fresh innings, or wherever an older match left it (balls
+   before that can't be edited). replayMatch rebuilds an innings from its
+   base by running the log again with one ball changed or removed. Undo
+   still uses snapshots. */
 function logAction(inn, a){
   if (!inn.log){
     const base = Object.assign({}, inn);
@@ -347,8 +349,8 @@ function isLegalEvent(ev){
 }
 
 /* Is ball `seq` of innings `idx` editable? Only balls in the log (not ones
-   from before a catch-up or from an app version without the log), only in
-   a match that wasn't forfeited or entered as a result only. */
+   from an app version without the log, or from before a score it typed in),
+   only in a match that wasn't forfeited or entered as a result only. */
 function editableBall(match, idx, seq){
   const inn = match && !match.forfeited && !match.resultOnly && match.innings[idx];
   if (!inn || !inn.log) return null;
@@ -361,9 +363,13 @@ function editableBall(match, idx, seq){
    asked for), and if it removes one, that batter comes in at the next
    wicket instead. Who was on strike for each later ball stays as it was
    recorded. A wide/no-ball that becomes a legal ball (or back) moves every
-   later over by one ball. Returns { inn, notes } or { need } (a name that
-   isn't in the log: `supply` gives them; with `partial` and `left`, see
-   stop()) or { error }. */
+   later over by one ball. A score typed in part way (set by hand, caught
+   up) stays what it was: the balls before it are replayed, then it takes
+   the innings to that score again, its gap being whatever they don't cover
+   -- so until then the overs or the target can't end the innings early, and
+   no name is pulled forward past it. Returns { inn, notes } or { need } (a
+   name that isn't in the log: `supply` gives them; with `partial` and
+   `left`, see stop()) or { error }. */
 function replayInnings(inn, actions, supply, anonymous){
   const r = JSON.parse(JSON.stringify(inn.logBase));
   r.logBase = inn.logBase; r.log = [];
@@ -372,8 +378,12 @@ function replayInnings(inn, actions, supply, anonymous){
   const batQ = [], bowlQ = [], used = new Set(), skippedBatters = [];
   let droppedBalls = 0;
   const lc = n => (n || "").toLowerCase();
+  const lastStep = actions.reduce((at, a, j) => isScoreStep(a) ? j : at, -1);
+  const limits = { target: r.target, oversLimit: r.oversLimit };
+  const unlimit = () => { r.target = null; r.oversLimit = null; };
+  if (lastStep >= 0) unlimit();
   const ahead = (i, t) => {
-    for (let j = i + 1; j < actions.length; j++){
+    for (let j = i + 1; j < actions.length && !isScoreStep(actions[j]); j++){
       if (!used.has(j) && actions[j].t === t){ used.add(j); return actions[j].name; }
     }
     return null;
@@ -407,12 +417,23 @@ function replayInnings(inn, actions, supply, anonymous){
   };
   // Stopped for a name: `partial` is the innings up to the ball that needs
   // it, `left` how many logged balls are still to come (shown as "?").
-  const stop = (i, need) => ({ need, partial: r,
+  const stop = (i, need) => ({ need, partial: Object.assign(r, limits),
     left: actions.filter((a, j) => j >= i && a.t === "ball" && !used.has(j)).length });
   for (let i = 0; i < actions.length; i++){
     if (used.has(i)) continue;
     const a = actions[i];
-    if (a.t === "open"){
+    if (isScoreStep(a)){
+      // Whoever was still waiting to come in doesn't any more: the step says
+      // who's in, and the names after it fill the slots it leaves empty.
+      skippedBatters.push(...batQ.splice(0)); bowlQ.length = 0;
+      Object.assign(r, limits);
+      if (a.t === "score") setScoreStep(r, a);
+      else {
+        const err = catchUpStep(r, a.data, anonymous);
+        if (err) return { error: err };
+      }
+      if (i < lastStep && !r.complete) unlimit();
+    } else if (a.t === "open"){
       openInnings(r, a.striker, a.nonStriker, a.bowler);
     } else if (a.t === "bat"){
       if (anonymous) continue;
@@ -452,7 +473,9 @@ function replayInnings(inn, actions, supply, anonymous){
   skippedBatters.push(...batQ);
   r.nextSeq = Math.max(inn.nextSeq || 0, r.nextSeq || 0);
   if (droppedBalls) notes.push(`The innings now ends earlier: ${droppedBalls} later ball${droppedBalls === 1 ? " is" : "s are"} removed.`);
-  if (skippedBatters.length) notes.push(`${skippedBatters.join(", ")} no longer come${skippedBatters.length === 1 ? "s" : ""} in to bat.`);
+  // (a batter named again after a score typed in did bat)
+  const skipped = skippedBatters.filter(n => !r.batting.order.some(x => lc(x) === lc(n)));
+  if (skipped.length) notes.push(`${skipped.join(", ")} no longer come${skipped.length === 1 ? "s" : ""} in to bat.`);
   return { inn: r, notes };
 }
 
@@ -502,7 +525,7 @@ function replayMatch(match, change, supply){
     if (idx === first){
       const there = new Set(inningsBalls(res.inn).map(b => b.seq));
       if (added.some(q => !there.has(q))) return { error: "The innings is already over before that point, so a ball can't be added there." };
-      notes.push(...ballShiftNotes(inn, res.inn, !!m.anonymous));
+      notes.push(...ballShiftNotes(inn, res.inn, !!m.anonymous), ...scoreGapNotes(inn, res.inn));
     }
     m.innings[idx] = res.inn;
     notes.push(...res.notes);
@@ -517,6 +540,7 @@ function replayMatch(match, change, supply){
     }
   }
   settleMatchStatus(m);
+  markCaughtUp(m);
   return { match: m, notes, added };
 }
 
@@ -625,8 +649,10 @@ function ballContext(inn, seq){
    next ball's striker is right -- and so get back an innings replayMatch can
    edit. The rebuilt innings is used only if its scorecard is the same in
    every detail (score, extras, every batter's/bowler's/fielder's line, the
-   fall of wickets, every ball); otherwise null, as for an innings with a
-   catch-up/by-hand gap or balls from before over events said who faced. */
+   fall of wickets, every ball); otherwise null, as for balls from before over
+   events said who faced. A score set by hand with nothing scored after it is
+   put back as its step (setScoreStep); a catch-up, or balls after a score
+   typed in, can't be worked out this way. */
 // JSON with every object's keys sorted: the same data compares equal whatever
 // order its keys are in (Postgres jsonb stores them in its own order).
 function canonicalJson(x){
@@ -649,8 +675,13 @@ function inningsScorecardKey(inn){
 }
 function rebuildInningsFromScorecard(match, idx){
   const inn = match.innings[idx];
-  if (!inn || inn.overs.some(o => o.gap || o.partial)) return null;
-  const overs = inn.overs.map(o => ({ bowler: o.bowler, events: o.events }));
+  if (!inn) return null;
+  const at = inn.overs.findIndex(o => o.gap);
+  const balls = at < 0 ? inn.overs : inn.overs.slice(0, at), tail = at < 0 ? [] : inn.overs.slice(at);
+  // only a part over just before a score set by hand, and nothing after it
+  if (balls.some((o, k) => o.partial && !(tail.length && k === balls.length - 1))) return null;
+  if (tail.some(o => !o.gap || !o.gap.byHand) || (tail.length && inn.currentOverEvents.length)) return null;
+  const overs = balls.map(o => ({ bowler: o.bowler, events: o.events }));
   if (inn.currentOverEvents.length) overs.push({ bowler: inn.bowler, events: inn.currentOverEvents });
   const events = overs.flatMap(o => o.events);
   if (!events.length || events.some(ev => !ev.kind || !ev.batter)) return null;
@@ -715,6 +746,11 @@ function rebuildInningsFromScorecard(match, idx){
       recordBall(r, e);
     }
   }
+  const g0 = tail.length && tail[0].gap;
+  if (g0 && (r.runs !== g0.fromRuns || r.wickets !== g0.fromWickets || (r.legalBalls || 0) !== g0.fromBalls)) return null;
+  // a batter who came in after the last ball, before the score was set
+  if (g0) sendIn(r);
+  tail.forEach(o => setScoreStep(r, { runs: o.gap.toRuns, wickets: o.gap.toWickets, balls: o.gap.toBalls }));
   if (inn.completeReason === "closed" && !r.complete){
     sendIn(r);
     logAction(r, { t: "end" }); r.complete = true; r.completeReason = "closed";
@@ -762,14 +798,14 @@ function reopenInnings(match, idx){
    scores[i] = { runs, wickets, balls } for innings i, or null to leave it;
    scores[1] for a chase that hasn't started starts it. An innings given a
    score is over at that score. If the score is what it already was, it just
-   ends there (like End innings, its balls stay editable); otherwise the balls
-   already scored stay and a "set by hand" gap (the same shape as a
-   catch-up's, `gap.byHand`) takes it to the new total, and its log goes. The
-   chase's target follows the first innings, and a chase left alone is
-   replayed against the new one. A changed total isn't credited to anyone
-   (players keep only what they were credited with), and like a catch-up the
-   match is marked match.caughtUp. Returns
-   { match, notes } -- a copy, the input isn't touched -- or { error }. */
+   ends there (like End innings); otherwise the balls already scored stay and
+   a "set by hand" step (setScoreStep: a gap the same shape as a catch-up's,
+   `gap.byHand`) takes it to the new total. Either way its balls stay
+   editable, and as they're fixed the gap shrinks. The chase's target follows
+   the first innings, and a chase left alone is replayed against the new one.
+   A changed total isn't credited to anyone (players keep only what they were
+   credited with), and like a catch-up the match is marked match.caughtUp.
+   Returns { match, notes } -- a copy, the input isn't touched -- or { error }. */
 function scoreByHandError(match, scores){
   if (match.forfeited || match.resultOnly) return "This match's score can't be set here.";
   const i0 = match.innings[0];
@@ -794,27 +830,94 @@ function scoreByHandError(match, scores){
 }
 function applyScoreByHand(inn, s){
   const same = inn.runs === s.runs && inn.wickets === s.wickets && inn.legalBalls === s.balls;
-  if (same){
-    if (!inn.complete){ logAction(inn, { t: "end" }); inn.complete = true; inn.completeReason = "closed"; }
-    return false;
-  }
-  if (inn.currentOverEvents.length) inn.overs.push({ bowler: inn.bowler, events: inn.currentOverEvents, partial: true });
-  inn.currentOverEvents = [];
+  if (!same) setScoreStep(inn, s);
+  if (!inn.complete){ logAction(inn, { t: "end" }); inn.complete = true; inn.completeReason = "closed"; }
+}
+
+/* --- a score typed in part way: set by hand, or caught up ---
+   Both are steps in the innings log ({t:"score", runs, wickets, balls} and
+   {t:"catchup", data}), so the balls scored before them stay editable. The
+   score typed in is the scorer's word for where the innings stood: a replay
+   puts the balls before it back, then the step takes the innings to that
+   score again, and the gap it leaves in inn.overs is whatever those balls
+   don't cover (it can be less, too). Fixing or adding balls before it
+   shrinks the gap; once they add up, there's no gap at all. */
+function isScoreStep(a){ return !!a && (a.t === "score" || a.t === "catchup"); }
+// Every batter's and bowler's figures as they are now, for a gap entry.
+function gapFigures(inn){
   const batters = {}, bowlers = {};
   inn.batting.order.forEach(n => { const b = inn.batting.stats[n]; batters[n] = { runs: b.runs, balls: b.balls }; });
   inn.bowling.order.forEach(n => { const b = inn.bowling.stats[n]; bowlers[n] = { balls: b.legalBalls, runs: b.runs, wickets: b.wickets, maidens: b.maidens }; });
-  inn.overs.push({ bowler: null, events: [], gap: {
-    fromBalls: inn.legalBalls || 0, fromRuns: inn.runs, fromWickets: inn.wickets,
-    toBalls: s.balls, toRuns: s.runs, toWickets: s.wickets, byHand: true, batters, bowlers } });
+  return { batters, bowlers };
+}
+/* The score set by hand at this point: s = { runs, wickets, balls }. The
+   crease and the bowler are left empty for the scorer to name again (a new
+   score can hide wickets and overs), and the innings ends if that score ends
+   it. Set again with no ball in between, it moves the same gap. */
+function setScoreStep(inn, s){
+  logAction(inn, { t: "score", runs: s.runs, wickets: s.wickets, balls: s.balls });
+  const bpo = inn.ballsPerOver || 6;
+  const last = inn.overs[inn.overs.length - 1];
+  const prev = last && last.gap && last.gap.byHand && !inn.currentOverEvents.length ? last.gap : null;
+  const from = prev ? { balls: prev.fromBalls, runs: prev.fromRuns, wickets: prev.fromWickets }
+    : { balls: inn.legalBalls || 0, runs: inn.runs, wickets: inn.wickets };
+  const covered = from.balls === s.balls && from.runs === s.runs && from.wickets === s.wickets;
+  if (prev) inn.overs.pop();
+  // The over going on keeps its balls, and its bowler, as a part over (the
+  // crease and the bowler are named again after this).
+  if (inn.currentOverEvents.length) inn.overs.push({ bowler: inn.bowler, events: inn.currentOverEvents, partial: true });
+  inn.currentOverEvents = [];
+  if (!covered){
+    inn.overs.push({ bowler: null, events: [], gap: Object.assign({
+      fromBalls: from.balls, fromRuns: from.runs, fromWickets: from.wickets,
+      toBalls: s.balls, toRuns: s.runs, toWickets: s.wickets, byHand: true }, gapFigures(inn)) });
+    // the over now going on wasn't seen ball by ball
+    if (!prev) inn.bowling.order.forEach(n => { inn.bowling.stats[n].curOverRuns = 0; inn.bowling.stats[n].curOverLegal = 0; });
+  }
+  if (prev || !covered){ if (s.balls % bpo) inn.partOverUnknown = true; else delete inn.partOverUnknown; }
   inn.runs = s.runs; inn.wickets = s.wickets; inn.legalBalls = s.balls;
   if (inn.fallOfWickets.length > s.wickets) inn.fallOfWickets.length = s.wickets;
   inn.striker = null; inn.nonStriker = null; inn.bowler = null; inn.freeHit = false;
-  delete inn.partOverUnknown;
   inn.complete = false; inn.completeReason = null;
   checkInningsComplete(inn);
-  if (!inn.complete){ inn.complete = true; inn.completeReason = "closed"; }
-  delete inn.log; delete inn.logBase;
-  return true;
+}
+// The figures a catch-up could change, to tell whether it changed any.
+function inningsFiguresKey(x){
+  const e = x.extras;
+  return canonicalJson([x.runs, x.wickets, x.legalBalls || 0, [e.wides, e.noBalls, e.byes, e.legByes],
+    x.batting.order.map(n => { const b = x.batting.stats[n]; return [n, b.runs, b.balls, !!b.out]; }),
+    x.bowling.order.map(n => { const b = x.bowling.stats[n]; return [n, b.legalBalls, b.runs, b.wickets]; }),
+    x.fielding.order.map(n => { const f = x.fielding.stats[n]; return [n, f.catches, f.runouts, f.stumpings || 0]; })]);
+}
+// match.caughtUp: some innings has a score typed in that its balls don't cover.
+function markCaughtUp(m){
+  if (m.innings.some(i => i.overs.some(o => o.gap))) m.caughtUp = true;
+  else delete m.caughtUp;
+}
+// How far the balls before a gap are from the score typed in: "6 runs and 1 wicket short".
+function gapShortText(g){
+  const d = [[g.toRuns - g.fromRuns, "run"], [g.toWickets - g.fromWickets, "wicket"], [g.toBalls - g.fromBalls, "ball"]];
+  const list = xs => xs.map(([n, w]) => `${Math.abs(n)} ${w}${Math.abs(n) === 1 ? "" : "s"}`).join(", ").replace(/, ([^,]*)$/, " and $1");
+  const short = d.filter(x => x[0] > 0), over = d.filter(x => x[0] < 0);
+  if (!short.length && !over.length) return "level on runs, wickets and balls, but some players' figures differ";
+  return [short.length ? `${list(short)} short` : "", over.length ? `${list(over)} over` : ""].filter(Boolean).join(" and ");
+}
+function gapName(g, bpo){
+  return `score ${g.byHand ? "set by hand" : "caught up"} (${g.toRuns}-${g.toWickets}, ${oversDisplay(g.toBalls, bpo)} ov)`;
+}
+/* What a change did to a score typed in part way: how far the balls before
+   it are from it now, or that they now add up to it. */
+function scoreGapNotes(oldInn, newInn){
+  const bpo = newInn.ballsPerOver || 6;
+  const gaps = x => x.overs.filter(o => o.gap).map(o => o.gap);
+  const key = g => [g.fromRuns, g.fromWickets, g.fromBalls, g.toRuns, g.toWickets, g.toBalls, g.byHand ? 1 : 0].join();
+  const at = g => [g.toRuns, g.toWickets, g.toBalls, g.byHand ? 1 : 0].join();
+  const was = gaps(oldInn), now = gaps(newInn);
+  const notes = now.filter(g => !was.some(w => key(w) === key(g)))
+    .map(g => `The balls before the ${gapName(g, bpo)} are now ${gapShortText(g)}.`);
+  was.filter(w => !now.some(g => at(g) === at(w)))
+    .forEach(w => notes.push(`The balls now add up to the ${gapName(w, bpo)}, so nothing is left to fill in.`));
+  return notes;
 }
 function setScoresByHand(match, scores){
   const err = scoreByHandError(match, scores);
@@ -822,8 +925,7 @@ function setScoresByHand(match, scores){
   const m = JSON.parse(JSON.stringify(match));
   const notes = [];
   const i0 = m.innings[0];
-  let changed = false;
-  if (scores[0]) changed = applyScoreByHand(i0, scores[0]) || changed;
+  if (scores[0]) applyScoreByHand(i0, scores[0]);
   if (scores[1] || m.innings[1]){
     if (!m.innings[1]) startSecondInnings(m);
     const i2 = m.innings[1], target = i0.runs + 1;
@@ -843,13 +945,13 @@ function setScoresByHand(match, scores){
         notes.push(...res.notes);
       }
     }
-    if (scores[1]) changed = applyScoreByHand(m.innings[1], scores[1]) || changed;
+    if (scores[1]) applyScoreByHand(m.innings[1], scores[1]);
   }
   settleMatchStatus(m);
   if (match.status === "complete" && m.status !== "complete"){
     return { error: `With that score ${teamName(m, m.innings[1].battingTeam)}'s chase wouldn't be over. Set their score too.` };
   }
-  if (changed) m.caughtUp = true;
+  markCaughtUp(m);
   return { match: m, notes };
 }
 
@@ -1961,15 +2063,32 @@ function catchUpUnchanged(match, data){
 // Mutates `match` (check catchUpError first). The UI snapshots before, so Undo walks it back.
 function applyCatchUp(match, data){
   const inn = currentInnings(match);
+  catchUpStep(inn, data, !!match.anonymous);
+  if (!inn.complete && data.finished){ logAction(inn, { t: "end" }); inn.complete = true; inn.completeReason = "closed"; }
+  markCaughtUp(match);
+  if (match.status === "opening") match.status = "live";
+  afterBall(match);
+}
+/* The catch-up itself, as a step in the log (see setScoreStep): replayed
+   after the balls before it are edited, it lays the same score and figures
+   over whatever they now come to. A batter out ball by ball by then isn't
+   out a second time; one it has at the crease who is out by then is an
+   error. If it changes no figure at all (the balls cover it), it only puts
+   the batters and bowler where it says. `data.finished` is applyCatchUp's. */
+function catchUpStep(inn, data, anonymous){
+  logAction(inn, { t: "catchup", data });
+  const { log, logBase, ...rest } = inn;
+  const was = JSON.parse(JSON.stringify(rest));
   const bpo = inn.ballsPerOver;
   const lc = n => (n || "").trim().toLowerCase();
   const from = { balls: inn.legalBalls, runs: inn.runs, wickets: inn.wickets };
   const midOver = data.balls % bpo !== 0;
+  inn.complete = false; inn.completeReason = null;
   // The over in progress keeps the balls it has, as a part over before the gap.
   if (inn.currentOverEvents.length) inn.overs.push({ bowler: inn.bowler, events: inn.currentOverEvents, partial: true });
   inn.currentOverEvents = [];
   const fallen = [];
-  if (match.anonymous){
+  if (anonymous){
     // No names: the batters at the crease go first, then placeholder batters;
     // fillAnonymousSlots sends in the next ones and names the over's bowler.
     let need = data.wickets - inn.wickets;
@@ -1982,13 +2101,18 @@ function applyCatchUp(match, data){
   } else {
     // A typed name in another case is the same person (case-insensitive, like every name check).
     const keyOf = (order, n) => order.find(x => lc(x) === lc(n)) || n.trim();
-    data.batters.forEach(b => {
+    for (const b of data.batters){
       const name = keyOf(inn.batting.order, b.name);
       ensureBatsman(inn, name);
       const s = inn.batting.stats[name];
       if (b.runs != null) s.runs = b.runs;
       if (b.balls != null) s.balls = b.balls;
-      if (b.status !== "out") return;
+      if (b.status !== "out"){
+        if (!s.out) continue;
+        const f = inn.fallOfWickets.find(x => x.batsman === name);
+        return `${name} is out${f ? ` at ${f.over}` : ""} now, but was still batting when the score was caught up (${oversDisplay(data.balls, bpo)} ov).`;
+      }
+      if (s.out) continue;   // out ball by ball now: that's their dismissal
       const bowler = b.wicketType === "runout" ? null : keyOf(inn.bowling.order, b.bowler);
       const fielder = WICKET_FIELDER_TYPES.includes(b.wicketType) && lc(b.fielder)
         ? keyOf([...inn.fielding.order, ...inn.bowling.order], b.fielder) : null;
@@ -1997,7 +2121,7 @@ function applyCatchUp(match, data){
       if (bowler){ ensureBowler(inn, bowler); inn.bowling.stats[bowler].wickets += 1; }
       if (fielder){ ensureFielder(inn, fielder); inn.fielding.stats[fielder][{ caught: "catches", runout: "runouts", stumped: "stumpings" }[b.wicketType]] += 1; }
       fallen.push(name);
-    });
+    }
     (data.bowlers || []).forEach(b => {
       const name = keyOf(inn.bowling.order, b.name);
       ensureBowler(inn, name);
@@ -2030,20 +2154,19 @@ function applyCatchUp(match, data){
   fallen.forEach((n, i) => inn.fallOfWickets.push({ score: data.runs, wicket: from.wickets + i + 1, over: oversDisplay(data.balls, bpo), balls: data.balls, batsman: n, catchUp: true }));
   inn.freeHit = false;
   if (midOver) inn.partOverUnknown = true; else delete inn.partOverUnknown;
-  const batters = {}, bowlers = {};
-  inn.batting.order.forEach(n => { const s = inn.batting.stats[n]; batters[n] = { runs: s.runs, balls: s.balls }; });
-  inn.bowling.order.forEach(n => { const s = inn.bowling.stats[n]; bowlers[n] = { balls: s.legalBalls, runs: s.runs, wickets: s.wickets, maidens: s.maidens }; });
-  inn.overs.push({ bowler: null, events: [], gap: {
+  inn.overs.push({ bowler: null, events: [], gap: Object.assign({
     fromBalls: from.balls, fromRuns: from.runs, fromWickets: from.wickets,
-    toBalls: data.balls, toRuns: data.runs, toWickets: data.wickets, batters, bowlers } });
+    toBalls: data.balls, toRuns: data.runs, toWickets: data.wickets }, gapFigures(inn)) });
   checkInningsComplete(inn);
-  if (!inn.complete && data.finished){ inn.complete = true; inn.completeReason = "closed"; }
   if (!inn.complete && battingAlone(inn)){ inn.striker = inn.striker || inn.nonStriker; inn.nonStriker = null; }
-  match.caughtUp = true;
-  // Balls before a catch-up can't be edited: the log starts again from here.
-  delete inn.log; delete inn.logBase;
-  if (match.status === "opening") match.status = "live";
-  afterBall(match);
+  // Nothing the balls before it don't already say: no gap after all, only
+  // the batters and bowler where the scorer put them.
+  if (inningsFiguresKey(was) === inningsFiguresKey(inn)){
+    const slots = { striker: inn.striker, nonStriker: inn.nonStriker, bowler: inn.bowler || was.bowler };
+    Object.keys(inn).forEach(k => { if (k !== "log" && k !== "logBase") delete inn[k]; });
+    Object.assign(inn, was, slots);
+  }
+  return null;
 }
 /* What a caught-up innings couldn't credit to anyone: runs off the bat no
    batter has, and balls/runs no bowler has. null if it was never caught up. */

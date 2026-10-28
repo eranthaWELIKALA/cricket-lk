@@ -1549,17 +1549,29 @@ async function main(){
     r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 5), ev: { kind: "run", runs: 0 } });
     assert(r.match && r.match.innings[0].bowling.stats.B1.legalBalls === 6 && r.match.innings[0].bowling.stats.B2.legalBalls === 2, "a wide made a dot: B2 starts the next over a ball earlier");
 
-    // catch-up: balls before it can't be edited
+    // catch-up: balls before it stay editable; the caught-up score stays and its gap shrinks
     ({ m, inn } = setup());
     play(m, { kind: "run", runs: 1 });
     const firstSeq = seqOf(inn, 0);
     win.applyCatchUp(m, { runs: 10, wickets: 0, balls: 3, extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0 },
       batters: [{ name: "A1", status: "nonStriker", runs: null, balls: null }, { name: "A2", status: "striker", runs: null, balls: null }],
       bowlers: [], bowlerNow: "B1" });
-    assert(!win.editableBall(m, 0, firstSeq) && win.replayMatch(m, { inn: 0, seq: firstSeq, ev: { kind: "run", runs: 2 } }).error, "balls before a catch-up can't be edited");
+    assert(win.editableBall(m, 0, firstSeq) && m.caughtUp && inn.log.some(a => a.t === "catchup"), "balls before a catch-up stay editable (it's a step in the log; the match is marked caught up)");
+    r = win.replayMatch(m, { inn: 0, seq: firstSeq, ev: { kind: "run", runs: 3 } });
+    let cg = r.match.innings[0].overs.find(o => o.gap).gap;
+    assert(r.match.innings[0].runs === 10 && cg.fromRuns === 3 && r.match.innings[0].batting.stats.A1.runs === 3 && r.notes.some(n => /score caught up \(10-0, 0\.3 ov\) are now 7 runs and 2 balls short/.test(n)),
+      "a ball before it changed: the caught-up score stays 10-0, its gap is now 7 runs and 2 balls: " + JSON.stringify(r.notes));
     play(m, { kind: "run", runs: 2 });
-    r = win.replayMatch(m, { inn: 0, seq: m.innings[0].log.find(a => a.t === "ball").ev.seq, ev: { kind: "run", runs: 4 } });
-    assert(r.match && r.match.innings[0].runs === 14, "balls after it can (from the caught-up score)");
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 1), ev: { kind: "run", runs: 4 } });
+    assert(r.match && r.match.innings[0].runs === 14, "balls after it can be edited too (counted from the caught-up score)");
+    // the two balls it skipped filled in (1 + 4 + 5 = 10 in 0.3): nothing left to catch up
+    r = win.replayMatch(m, [{ inn: 0, seq: firstSeq, ev: { kind: "run", runs: 4 }, insert: "after" }, { inn: 0, seq: firstSeq, ev: { kind: "run", runs: 5 }, insert: "after" }]);
+    let ri = r.match && r.match.innings[0];
+    assert(ri && !ri.overs.some(o => o.gap) && ri.runs === 12 && ri.legalBalls === 4 && ri.batting.stats.A2.runs === 11 && !r.match.caughtUp && r.notes.some(n => /now add up to the score caught up/.test(n)),
+      "the skipped balls added: no gap left, not caught up any more, the ball after it still counts (12-0): " + JSON.stringify(r.notes));
+    // a batter the catch-up has at the crease, out by then after an edit, is refused
+    r = win.replayMatch(m, { inn: 0, seq: firstSeq, ev: { kind: "wicket", wicketType: "bowled" } }, { batters: ["A3"], bowlers: [] });
+    assert(r.error && /A1 is out at 0\.1 now, but was still batting when the score was caught up/.test(r.error), "an edit that gets out a batter the catch-up has at the crease says why: " + r.error);
 
     // "no names": placeholders are made up again
     ({ m, inn } = setup({ anonymous: true }));
@@ -1691,7 +1703,7 @@ async function main(){
     r = win.setScoresByHand(m, [{ runs: 3, wickets: 1, balls: 6 }, null]);
     assert(JSON.stringify(m) === before, "setScoresByHand never touches the match it's given");
     assert(r.match.innings[0].runs === 3 && r.match.innings[0].wickets === 1 && r.match.innings[1].target === 4 && r.match.status === "complete" && /Tigers won/.test(r.match.result) && r.match.caughtUp, "first innings set to 3: target 4, the chase's 4 off one ball now wins it (marked caught up)");
-    assert(r.match.innings[1].legalBalls === 1 && r.match.innings[0].overs.some(o => o.gap && o.gap.byHand) && !r.match.innings[0].log, "the chase is replayed and stops at the winning ball; the first innings has a by-hand gap and no log");
+    assert(r.match.innings[1].legalBalls === 1 && r.match.innings[0].overs.some(o => o.gap && o.gap.byHand) && r.match.innings[0].log.some(a => a.t === "score"), "the chase is replayed and stops at the winning ball; the first innings has a by-hand gap, a step in its log");
     // the chase set too, the match finishes with that result
     r = win.setScoresByHand(m, [null, { runs: 5, wickets: 2, balls: 6 }]);
     assert(r.match.status === "complete" && r.match.result === "Lions won by 1 run" && r.match.innings[1].completeReason === "overs", "chase set to 5-2 off 6: Lions won by 1 run");
@@ -1706,6 +1718,55 @@ async function main(){
     assert(/can't end past/.test(win.setScoresByHand(m, [{ runs: 10, wickets: 0, balls: 6 }, { runs: 20, wickets: 0, balls: 6 }]).error), "a chase past target + 5 is refused");
     assert(/first/.test(win.setScoresByHand(m, [null, { runs: 1, wickets: 0, balls: 1 }]).error), "a chase can't be set while the first innings isn't over");
     assert(/all out/.test(win.setScoresByHand(m, [{ runs: 10, wickets: 0, balls: 6 }, { runs: 11, wickets: 3, balls: 6 }]).error), "a chase can't reach the target and be all out");
+
+    // balls before a score set by hand stay editable: the score stays, its gap shrinks, and goes once they add up
+    m = setup();
+    play(m, { kind: "run", runs: 1 }); play(m, { kind: "run", runs: 2 });
+    let hm = win.setScoresByHand(m, [{ runs: 9, wickets: 1, balls: 4 }, null]).match, hi = hm.innings[0];
+    assert(hm.status === "innings_break" && hi.completeReason === "closed" && hm.caughtUp && win.editableBall(hm, 0, seqOf(hi, 1)) && hi.overs.filter(o => o.gap && o.gap.byHand).length === 1,
+      "set by hand at 9-1 (0.4) after 3-0 (0.2): ended there, one by-hand gap, the balls before it still editable");
+    r = win.replayMatch(hm, { inn: 0, seq: seqOf(hi, 1), ev: { kind: "wicket", wicketType: "bowled" }, insert: "after" });
+    let gi = r.match.innings[0];
+    assert(gi.runs === 9 && gi.wickets === 1 && gi.legalBalls === 4 && gi.complete && r.notes.some(n => /set by hand \(9-1, 0\.4 ov\) are now 6 runs and 1 ball short/.test(n)),
+      "a missed wicket added before it: still 9-1 (0.4), now 6 runs and 1 ball short: " + JSON.stringify(r.notes));
+    r = win.replayMatch(r.match, { inn: 0, seq: r.added[0], ev: { kind: "run", runs: 6 }, insert: "after" }, { batters: ["A3"], bowlers: [] });
+    gi = r.match.innings[0];
+    assert(!gi.overs.some(o => o.gap) && gi.runs === 9 && gi.batting.stats.A3.runs === 6 && gi.batting.stats.A2.out && !r.match.caughtUp && r.match.status === "innings_break" && r.notes.some(n => /now add up to the score set by hand/.test(n)),
+      "...and a six after it: the balls make 9-1 (0.4), so the gap goes and the match isn't marked caught up any more: " + JSON.stringify(r.notes));
+    // set again with no ball between: the same gap moves; set back to what the balls say, it goes
+    const again = win.setScoresByHand(hm, [{ runs: 12, wickets: 1, balls: 4 }, null]).match.innings[0];
+    assert(again.overs.filter(o => o.gap).length === 1 && again.overs.find(o => o.gap).gap.fromRuns === 3 && again.runs === 12, "set again straight after: still one gap, from the balls (3-0) to the new score (12-1)");
+    const back = win.setScoresByHand(hm, [{ runs: 3, wickets: 0, balls: 2 }, null]).match;
+    assert(!back.innings[0].overs.some(o => o.gap) && back.innings[0].overs.length === 1 && back.innings[0].overs[0].bowler === "B1" && back.innings[0].overs[0].events.length === 2 && back.innings[0].completeReason === "closed" && !back.caughtUp,
+      "set back to what the balls say (3-0, 0.2): no gap, the part over keeps its 2 balls and its bowler, not caught up");
+
+    // a chase set by hand: a ball before it that would now reach the target doesn't end it there
+    m = setup({ oversLimit: 1 });
+    for (let i = 0; i < 6; i++) play(m, { kind: "run", runs: 1 });
+    startSecondInnings(m); win.openInnings(currentInnings(m), "B1", "B2", "A1"); m.status = "live";
+    play(m, { kind: "run", runs: 1 }); play(m, { kind: "run", runs: 0 });
+    hm = win.setScoresByHand(m, [null, { runs: 7, wickets: 0, balls: 4 }]).match; hi = hm.innings[1];
+    r = win.replayMatch(hm, { inn: 1, seq: seqOf(hi, 1), ev: { kind: "run", runs: 6 } });
+    gi = r.match.innings[1];
+    assert(hm.status === "complete" && r.match.status === "complete" && gi.runs === 7 && gi.legalBalls === 4 && gi.completeReason === "target" && r.match.result === hm.result && r.notes.some(n => /2 balls short/.test(n)),
+      "chase set by hand at 7-0 (0.4): a ball before it that now reaches the target doesn't end it at 0.2; the score set stands: " + JSON.stringify(r.notes));
+
+    // reopened after a score set by hand and scored on; then a ball before it fixed: the balls after it still count from that score
+    m = setup();
+    play(m, { kind: "run", runs: 1 }); play(m, { kind: "run", runs: 0 });
+    hm = win.reopenInnings(win.setScoresByHand(m, [{ runs: 5, wickets: 0, balls: 3 }, null]).match, 0).match; hi = hm.innings[0];
+    win.sendInBatter(hi, "A2"); win.sendInBatter(hi, "A1"); win.setBowler(hi, "B1");
+    recordBall(hi, { kind: "run", runs: 4 }); afterBall(hm);
+    r = win.replayMatch(hm, { inn: 0, seq: seqOf(hi, 1), ev: { kind: "run", runs: 2 } });
+    gi = r.match.innings[0];
+    assert(hi.runs === 9 && gi.runs === 9 && gi.legalBalls === 4 && gi.batting.stats.A2.runs === 6 && gi.striker === "A2" && gi.bowler === "B1" && r.notes.some(n => /set by hand \(5-0, 0\.3 ov\) are now 2 runs and 1 ball short/.test(n)),
+      "reopened and scored on: a ball before the score set by hand changed, the total after it stays 9-0 and A2 has both: " + JSON.stringify(r.notes));
+
+    // an archived innings (no log) with a score set by hand after its last ball is rebuilt from the scorecard, step and all
+    const arch = win.setScoresByHand(m, [{ runs: 5, wickets: 0, balls: 3 }, null]).match;
+    arch.innings.forEach(i => { delete i.log; delete i.logBase; });
+    const rebuilt = win.rebuildInningsFromScorecard(arch, 0);
+    assert(rebuilt && rebuilt.log.some(a => a.t === "score") && win.inningsScorecardKey(rebuilt) === win.inningsScorecardKey(arch.innings[0]), "an archived hand-set innings is rebuilt with its score step, so its balls can be edited");
   }
 
   // --- UI: the edit sheet's before/after panel and "?", and Set the final score ---
@@ -2058,12 +2119,33 @@ async function main(){
     assert(!doc.querySelector('#modal-root [data-action="edit-archived-match"]') && /Finish or leave the match on screen first/.test(doc.getElementById("modal-root").textContent), "with a match going, the sheet says to finish it first");
     win.eval(`state.match = null; ui = defaultUi();`);
 
-    // an innings with a score set by hand: ball by ball says the balls before it can't be changed one by one
+    // that older match with a score set by hand: its balls before it still can't be changed one by one
     win.eval(`{ const mm = matchWithLogs("${id}"); delete mm.id; delete mm.completedAt;
       state.match = setScoresByHand(mm, [{ runs: 20, wickets: 1, balls: 6 }, null]).match;
       ui = defaultUi(); ui.showFullScorecard = true; ui.scorecard = { inn: 0, mode: "balls" }; render(); }`);
-    assert(/Balls before the score was set by hand can't be changed one by one/.test(doc.getElementById("app").textContent), "a hand-set innings: ball by ball says why its balls can't be edited");
+    assert(/Balls before the score was set by hand can't be changed one by one/.test(doc.getElementById("app").textContent) && !doc.querySelector("#app .bbb-gap-add"), "an older hand-set innings: ball by ball says why its balls can't be edited");
     win.eval(`state.match = null; ui = defaultUi(); render();`);
+
+    // a score set by hand now: the balls before it stay tappable, its row says how far they are from it, and a missed ball can be added before it
+    win.eval(`{ ui = defaultUi(); state.snapshots = [];
+      const mm = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+      openInnings(currentInnings(mm), "Kusal", "Pathum", "Wanindu"); mm.status = "live";
+      [1, 2].forEach(n => { recordBall(currentInnings(mm), { kind: "run", runs: n }); afterBall(mm); });
+      state.match = setScoresByHand(mm, [{ runs: 9, wickets: 0, balls: 4 }, null]).match;
+      ui.liveScorecard = "innings_break"; ui.scorecard = { inn: 0, mode: "balls" }; render(); }`);
+    const gapRow = doc.querySelector("#modal-root .bbb-gap");
+    assert(doc.querySelectorAll('#modal-root [data-action="edit-ball"]').length === 2 && gapRow && /balls before it are 6 runs and 2 balls short/.test(gapRow.textContent)
+      && !/can't be changed one by one/.test(doc.getElementById("modal-root").textContent), "hand-set: both balls before it are tappable and the gap row says 6 runs and 2 balls short");
+    gapRow.querySelector('[data-action="add-ball"]').click();
+    assert(/Add a ball after 0\.2/.test(doc.querySelector("#modal-root .modal").textContent), "+ Add a missed ball before it opens the add sheet after its last ball (0.2)");
+    doc.querySelector('#modal-root [data-field="runs"][data-value="6"]').click();
+    assert(/stays the same/.test(doc.querySelector("#modal-root .ball-edit-context").textContent) && /now 1 ball short/.test(doc.querySelector("#modal-root .ball-edit-context").textContent),
+      "adding a six before it: the total stays 9-0, the preview says it's now 1 ball short");
+    doc.getElementById("ball-edit-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    assert(win.eval("state.match.innings[0].runs") === 9 && win.eval("state.match.innings[0].overs.find(o => o.gap).gap.fromRuns") === 9 && /1 ball short/.test(doc.querySelector("#modal-root .bbb-gap").textContent),
+      "saved: still 9-0, the balls now 9-0 in 0.3, one ball short");
+    win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); render();`);
 
     // a club match deleted in the cloud leaves this device when the club loads (supabase/015)
     win.eval(`{ const mk = () => { const mm = createMatch({ teamA: "Team A", teamB: "Team B", oversLimit: 1, playersPerSide: 11, battingFirst: "A" });

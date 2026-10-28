@@ -234,8 +234,10 @@ id that its over event also carries), `sendInBatter` (fills whichever slot
 innings before that action: a fresh innings, or wherever an older match left
 it). **Don't set `inn.striker`/`bowler` or call `ensureBatsman` directly for
 a match in progress** — an unlogged change is lost the next time a ball is
-edited. `fillAnonymousSlots` uses the same functions. `applyCatchUp` drops the
-log (balls before a catch-up can't be edited; the next action re-bases it).
+edited. `fillAnonymousSlots` uses the same functions. A score typed in part
+way is a logged step too (`{t:"score"}` from `setScoreStep`, `{t:"catchup",
+data}` from `catchUpStep`), so the balls before it stay editable — see "A
+score typed in part way" below.
 The archive and the cloud copy leave the logs out (`archivedCopy`): they're
 kept apart in the match log store (`keepMatchLogs`, see "Editing a finished
 match from history" below), and only `state.match` is edited — a finished
@@ -371,15 +373,45 @@ scores)` (ENGINE, tested; checked by `scoreByHandError`) works on a copy: a
 finished innings counts only if changed; an innings in progress ends at what
 was entered (with "carry on scoring" ticked it's left alone — a new score
 mid-innings is Catch up's job). The same score just ends it (logged `end`,
-balls stay editable). A different one keeps the balls already scored and adds
-a gap with `gap.byHand` ("Score set by hand", may go *down*), drops that
-innings' log, trims `fallOfWickets` to the new wicket count and sets
-`match.caughtUp` (like a catch-up: players keep what they were credited
-with, the runs set by hand go to nobody). The chase's target
+balls stay editable). A different one keeps the balls already scored and
+logs a `setScoreStep`: a gap with `gap.byHand` ("Score set by hand", may go
+*down*), `fallOfWickets` trimmed to the new wicket count, the crease and
+bowler emptied, and `match.caughtUp` set (like a catch-up: players keep what
+they were credited with, the runs set by hand go to nobody). The chase's target
 follows the first innings; a chase left alone is replayed against it (and a
 finished match that would no longer be finished is refused). It's applied
 through `applyBallEdit`, so it snapshots, archives or replaces the archive the
 same way.
+
+**A score typed in part way** (set by hand, or caught up) **keeps the balls
+before it editable.** Both are steps in the log, and the score typed in is
+the scorer's word for where the innings stood: `replayInnings` replays the
+balls before it (with the innings' `target`/`oversLimit` lifted until the
+last step, so an edited ball can't end it early there; balls after an all-out
+are still dropped), then the step takes the innings to that score again, and
+its gap is whatever those balls don't cover. So fixing or adding balls before
+it shrinks the gap (`gapShortText`: "6 runs and 1 ball short", or "… over"),
+and once they add up the step leaves no gap at all (`setScoreStep` checks the
+totals, `catchUpStep` every figure via `inningsFiguresKey`; it then only puts
+the batters/bowler where it says). `markCaughtUp` keeps `match.caughtUp` in
+step with whether any gap is left; `scoreGapNotes` tells the edit sheet and
+its review what a change did to the gap. The rest of what a step does:
+- `ahead()` (pulling a later batter/bowler forward) never crosses a step, and
+  batters still queued at a step are dropped ("no longer comes in"), since
+  the step says who's in. After a by-hand step the slots are empty and the
+  `bat`/`bowl` entries after it (from a reopen) fill them, even with a batter
+  who was in before. A catch-up batter it has at the crease who is out by
+  then is an error; one it has out who is out ball by ball isn't out twice.
+- A by-hand step set again with no ball in between moves the same gap
+  (merged), and set back to what the balls say removes it.
+- `applyCatchUp` logs `data.finished` as a separate `end`, so reopening works.
+- An archived innings whose score was set by hand after its last ball (no
+  log) is rebuilt with the step (`rebuildInningsFromScorecard`); a catch-up,
+  or balls after a typed-in score, can't be rebuilt. Matches set by hand or
+  caught up by an older app version have the gap in `logBase`, so their
+  balls before it stay locked (ball by ball says so: `lockedGap`).
+- Ball by ball's gap row says how far the balls before it are from it and
+  offers "+ Add a missed ball before it" (`add-ball` after its last ball).
 
 ## Playing conditions are per-match config, not hardcoded
 
@@ -923,6 +955,9 @@ out, two at the crease (one with last man stands), side checks via
 summarises it on a copy, and `applyCatchUp` (ENGINE) applies it after
 `pushSnapshot()` (Undo walks it back). Names go through `registerMatchPlayer`.
 What it leaves behind, if you touch the scorecard or commentary:
+- **It's a step in the log** (`catchUpStep`, see "A score typed in part way"
+  above): the balls before it stay editable, and its gap shrinks as they're
+  filled in.
 - **A gap entry in `inn.overs`**: `{ bowler: null, events: [], gap: { from/to
   balls, runs, wickets, batters, bowlers } }`, after the over in progress
   (pushed as `{ partial: true }`). `inn.overs` is no longer "completed overs

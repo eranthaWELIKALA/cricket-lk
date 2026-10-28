@@ -86,7 +86,7 @@ function renderCommentary(match, inn){
     if (l.type === "gap") return `
       <div class="comm-over comm-gap">
         <div class="comm-over-top"><span>${l.byHand ? "Score set by hand" : "Score caught up"}</span><span class="n">${team} ${escapeHtml(l.to)}</span></div>
-        <div class="comm-over-sub n">${l.byHand ? `Was ${escapeHtml(l.from)} · typed in, not scored ball by ball` : `From ${escapeHtml(l.from)} · ${l.runs} run${l.runs === 1 ? "" : "s"}${l.wickets ? ` · ${l.wickets} wkt${l.wickets === 1 ? "" : "s"}` : ""} not scored ball by ball`}</div>
+        <div class="comm-over-sub n">${l.byHand || l.runs < 0 || l.wickets < 0 ? `Was ${escapeHtml(l.from)} · typed in, not scored ball by ball` : `From ${escapeHtml(l.from)} · ${l.runs} run${l.runs === 1 ? "" : "s"}${l.wickets ? ` · ${l.wickets} wkt${l.wickets === 1 ? "" : "s"}` : ""} not scored ball by ball`}</div>
       </div>`;
     if (l.type === "over") return `
       <div class="comm-over">
@@ -127,13 +127,20 @@ function renderBallByBall(match, inn){
   // Over numbers come from the legal balls before each over: after a catch-up
   // gap the next over can start part way through (it shows as "part").
   let score = 0, wkts = 0, balls = 0;
+  // A score typed in (set by hand, caught up) after balls that can be edited:
+  // fixing or adding them shrinks its gap. (An older app version dropped the
+  // balls before it from the log; those can't be changed.)
+  let lastBall = null, lockedGap = false;
   const rows = overs.map(o => {
     if (o.gap){
       const g = o.gap;
+      const before = lastBall;
+      const open = !!before && before.editable;
+      if (before && !open) lockedGap = true;
       score = g.toRuns; wkts = g.toWickets; balls = g.toBalls;
       const r = g.toRuns - g.fromRuns, w = g.toWickets - g.fromWickets;
-      // A score set by hand can go down as well as up: show from -> to.
-      const sum = g.byHand
+      // A score set by hand (or one the balls before it now pass) can go down as well as up: show from -> to.
+      const sum = g.byHand || r < 0 || w < 0
         ? `${g.fromRuns}-${g.fromWickets} (${oversDisplay(g.fromBalls, bpo)}) → ${g.toRuns}-${g.toWickets} (${oversDisplay(g.toBalls, bpo)})`
         : `${oversDisplay(g.fromBalls, bpo)} → ${oversDisplay(g.toBalls, bpo)} ov · ${r} run${r === 1 ? "" : "s"}${w ? ` · ${w} wkt${w === 1 ? "" : "s"}` : ""}`;
       return `
@@ -142,7 +149,10 @@ function renderBallByBall(match, inn){
           <span class="bbb-num">${g.byHand ? "Score set by hand" : "Score caught up"}</span>
           <span class="n bbb-sum">${sum}</span>
         </div>
-        <p class="hint" style="margin:2px 0 0;">${g.byHand ? "The final score was typed in, not scored ball by ball." : "Not scored ball by ball."}</p>
+        <p class="hint" style="margin:2px 0 0;">${open
+          ? `${g.byHand ? "Typed in" : "Not scored ball by ball"}: the balls before it are ${escapeHtml(gapShortText(g))}. Fix or add them and this shrinks, until they add up and it goes.`
+          : g.byHand ? "The final score was typed in, not scored ball by ball." : "Not scored ball by ball."}</p>
+        ${open ? `<button type="button" data-action="add-ball" data-inn="${idx}" data-seq="${before.seq}" data-where="after" data-label="${before.label}" class="ghost small bbb-gap-add">+ Add a missed ball before it</button>` : ""}
         <div class="n bbb-score">${escapeHtml(teamName(match, inn.battingTeam))} ${score}-${wkts}</div>
       </div>`;
     }
@@ -179,6 +189,7 @@ function renderBallByBall(match, inn){
     // ball elsewhere is added from its neighbour's sheet (+ Ball before/after).
     const last = o.events[o.events.length - 1];
     const short = !o.live && inOver < bpo && (!inn.complete || inn.completeReason === "closed");
+    if (last) lastBall = { seq: last.seq, label: lastLabel, editable: editable && last.seq != null && !!editableBall(match, idx, last.seq) };
     const addBall = editable && short && last && last.seq != null && editableBall(match, idx, last.seq)
       ? `<span class="bbb-ball"><button type="button" data-action="add-ball" data-inn="${idx}" data-seq="${last.seq}" data-where="after" data-label="${lastLabel}" class="chip chip-add" aria-label="Add a ball after ${lastLabel}">+</button><span class="bbb-ball-no n">add</span></span>` : "";
     return `
@@ -197,7 +208,7 @@ function renderBallByBall(match, inn){
       <h3>${escapeHtml(teamName(match, inn.battingTeam))} ${inn.runs}/${inn.wickets} <span class="ov">(${oversDisplay(inn.legalBalls, bpo)} ov)</span></h3>
       ${rows.reverse().join("")}
       ${editable ? `<p class="hint bbb-edit-hint">Tap a ball to change it, remove it or add a missed ball next to it: every later ball is worked out again.</p>` : ""}
-      ${ballEditAllowed(match) && inn.overs.some(o => o.gap) ? `<p class="hint">Balls before the score was ${inn.overs.some(o => o.gap && o.gap.byHand) ? "set by hand" : "caught up"} can't be changed one by one${inn.log ? " (the ones after it can)" : ""}. You can still set the final score.</p>` : ""}
+      ${ballEditAllowed(match) && lockedGap ? `<p class="hint">Balls before the score was ${inn.overs.some(o => o.gap && o.gap.byHand) ? "set by hand" : "caught up"} can't be changed one by one${inn.log ? " (the ones after it can)" : ""}. You can still set the final score.</p>` : ""}
       ${ballEditAllowed(match) && !inn.log && inn.complete && !inn.overs.some(o => o.gap) ? `<p class="hint">This innings' balls can't be changed one by one: it was scored with an older version of the app, which didn't keep enough about each ball. You can still set the final score.</p>` : ""}
       ${ballEditAllowed(match) ? `<button type="button" data-action="open-score-set" class="ghost bbb-score-set">Set the final score instead</button>` : ""}
       <p class="hint">Newest over first. W wicket · Wd wide · Nb no-ball · B bye · Lb leg bye · Ro run out.</p>

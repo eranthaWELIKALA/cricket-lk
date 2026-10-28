@@ -110,7 +110,9 @@ gh api repos/<owner>/<name>/pages -X POST -f "source[branch]=master" -f "source[
   back), or a legal ball is added or taken out, every later over shifts by a
   ball, since the app counts overs from legal balls — so removing a ball asks
   whether one was missed instead, and adds it in the same change to keep the
-  overs lined up. Balls before a "catch up the score" can't be edited.
+  overs lined up. A score caught up or set by hand part way stays what was
+  typed in when a ball before it is edited: the difference just shrinks (or
+  grows), and goes once the balls add up to it.
 - **A finished match can be edited later only on the device that scored
   it.** Open it from match history and tap Edit match. Balls are edited one
   by one from what was kept, or from the scorecard rebuilt ball by ball;
