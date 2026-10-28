@@ -1212,6 +1212,14 @@ component rules. `THEME_PRESETS` (REFERENCE DATA) only overrides the
 why a redesign of the shape language doesn't need to touch
 `THEME_PRESETS` at all.
 
+**The page background is a fixed layer, `body::before`**, behind the app, with
+`html` filled with the solid `--bg`. Don't move it back onto `body` with
+`background-attachment: fixed`: phones repaint a fixed background on every
+scroll frame, fall behind on a fling, and showed a white layer until the
+scroll stopped. The solid `html` colour is what shows anywhere not painted yet
+(and the strip a hiding URL bar leaves, and iOS overscroll) — without it
+that's white. Print hides the layer.
+
 The current visual language is flat, not glass: panels are a solid/
 translucent fill with **no `backdrop-filter`**, 2px borders, and hard,
 unblurred offset shadows (`--shadow-card`/`--shadow-btn`, e.g.

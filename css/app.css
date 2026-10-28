@@ -15,14 +15,23 @@
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;}
-body{
+/* The page background is its own fixed layer behind the app, not the body's
+   background with background-attachment:fixed: phones repaint a fixed
+   background on every scroll frame, fall behind on a fling, and showed white
+   until the scroll stopped. html's solid --bg is what shows anywhere not
+   painted yet (and in the strip the URL bar leaves, and iOS's overscroll), so
+   that's never white either. 100lvh: still covers with the URL bar hidden. */
+html{background:var(--bg);}
+body::before{
+  content:""; position:fixed; top:0; left:0; right:0; height:100vh; height:100lvh; z-index:-1; pointer-events:none;
   background:
     radial-gradient(circle at 1px 1px, rgba(255,255,255,.07) 1px, transparent 0) 0 0/24px 24px,
     radial-gradient(900px 480px at 12% -8%, rgba(var(--accent-2-rgb),.22), transparent 60%),
     radial-gradient(760px 420px at 108% 6%, rgba(var(--accent-rgb),.18), transparent 58%),
     radial-gradient(820px 560px at 50% 115%, rgba(95,199,255,.09), transparent 62%),
     linear-gradient(180deg, var(--bg-2), var(--bg) 45%);
-  background-attachment:fixed;
+}
+body{
   color:var(--text);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   -webkit-tap-highlight-color:transparent;
@@ -1333,7 +1342,8 @@ button.primary.small{ width:auto; }
 /* --- print: "Export PDF" is window.print() on the result screen --- */
 @media print{
   @page{ margin:14mm 12mm; }
-  body{ background:#fff !important; color:#111; }
+  html, body{ background:#fff !important; color:#111; }
+  body::before{ display:none !important; }
   #app{ padding:0 !important; max-width:none; }
   #modal-root, #confirm-root, .share-row, .summary-actions, .motm-card form, button, .topbar, .tab-row, .back-bar, .result .hint, .standings-table + .hint{ display:none !important; }
   .sc-pane[hidden]{ display:block !important; }
