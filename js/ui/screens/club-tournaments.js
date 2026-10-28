@@ -61,8 +61,8 @@ function handleClubTournamentSetupSubmit(e){
    (leaderboards, with their own sub-tabs). ui.tournamentTab picks the tab;
    opening a tournament resets it to "overview". */
 const TOURNAMENT_TABS = [["overview", "Overview"], ["teams", "Teams"], ["fixtures", "Fixtures"], ["stats", "Stats"]];
-function tournamentTab(ended){
-  const tabs = tournamentTabs(ended);
+function tournamentTab(ended, list){
+  const tabs = tournamentTabs(ended, list);
   return tabs.some(([id]) => id === ui.tournamentTab) ? ui.tournamentTab : tabs[0][0];
 }
 /* The Overview/Fixtures actions: start a scored match, record a result only,
@@ -119,13 +119,16 @@ function renderClubTournamentDashboard(){
   const p = t.tournament_preset || {};
   const ended = !!p.endedAt;
   const tab = tournamentTab(ended);
-  const matches = t.matches.map(m => m.data ? Object.assign({ id: m.id }, m.data) : null).filter(Boolean);
+  const matches = tournamentRowMatches(t.matches);
   const startBtn = `<button data-action="go-club-tournament-match-setup" class="primary">Start match</button>`;
   return `
     <div class="screen tournament">
       ${renderBackBar(escapeHtml(clubName) || "Home", "home")}
       <h1>🏆 ${escapeHtml(t.name)}</h1>
-      <p class="tagline">${p.pointsForWin ?? 2}/${p.pointsForTie ?? 1}/${p.pointsForLoss ?? 0} pts${p.useNRR ? " · NRR" : ""} · ${matches.length} match${matches.length === 1 ? "" : "es"} played</p>
+      <p class="tagline">${clubTournamentTagline(p, matches.length)}</p>
+      <div class="tournament-links">
+        <button type="button" data-action="share-tournament-link" class="ghost small">${ICON_LINK} Share link</button>
+      </div>
       ${tabsHtml("switch-tournament-tab", tournamentTabs(ended), tab, ended ? "main-tabs many" : "main-tabs")}
       ${tab === "summary" ? renderTournamentSummary(tournamentContext()) : ""}
       ${tab === "overview" ? `
@@ -137,6 +140,13 @@ function renderClubTournamentDashboard(){
       ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, clubPointsPreset(t.organizer_club_id)), { points: clubPointsPreset(t.organizer_club_id), where: "the club's Presets" }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
     </div>
   `;
+}
+/* A club tournament's matches rows ({ id, data }) as match objects. */
+function tournamentRowMatches(rows){
+  return rows.map(m => m.data ? Object.assign({ id: m.id }, m.data) : null).filter(Boolean);
+}
+function clubTournamentTagline(p, played){
+  return `${p.pointsForWin ?? 2}/${p.pointsForTie ?? 1}/${p.pointsForLoss ?? 0} pts${p.useNRR ? " · NRR" : ""} · ${played} match${played === 1 ? "" : "es"} played`;
 }
 
 /* Tournament teams (supabase/012). A team is a name + players picked from
@@ -452,19 +462,24 @@ async function quickSplitTeams(){
    tab first: champion, final table and the top performers
    (tournamentSummary, ENGINE), shareable as an image. Reopening clears it. */
 const ICON_SHARE = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>`;
-function tournamentTabs(ended){ return ended ? [["summary", `${ICON_SHARE} Summary`], ...TOURNAMENT_TABS] : TOURNAMENT_TABS; }
+const ICON_LINK = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>`;
+function tournamentTabs(ended, list){ const tabs = list || TOURNAMENT_TABS; return ended ? [["summary", `${ICON_SHARE} Summary`], ...tabs] : tabs; }
 
 /* Who's viewing: guest tournaments live in state.tournaments, club ones in
-   ui.clubTournament. Returns what the summary/result sheet need. */
+   ui.clubTournament, a shared link's in ui.publicTournament. Returns what the
+   summary/result sheet need. */
 function tournamentContext(){
-  if (state.view === "clubTournamentDashboard" && ui.clubTournament){
-    const t = ui.clubTournament, p = t.tournament_preset || {};
+  const club = state.view === "clubTournamentDashboard" && ui.clubTournament;
+  const pub = state.view === "publicTournament" && ui.publicTournament && ui.publicTournament.matches && ui.publicTournament;
+  if (club || pub){
+    const p = (club ? club.tournament_preset : pub.preset) || {};
     return {
-      kind: "club", id: t.id, name: t.name, endedAt: p.endedAt || null,
+      kind: club ? "club" : "public", id: (club || pub).id, name: (club || pub).name, endedAt: p.endedAt || null,
       preset: { pointsForWin: p.pointsForWin ?? 2, pointsForTie: p.pointsForTie ?? 1, pointsForLoss: p.pointsForLoss ?? 0, useNRR: !!p.useNRR },
-      matches: t.matches.map(m => m.data ? Object.assign({ id: m.id }, m.data) : null).filter(Boolean),
-      teamNames: (t.teams || []).map(x => x.name),
-      pointsPreset: clubPointsPreset(t.organizer_club_id)
+      matches: tournamentRowMatches((club || pub).matches),
+      teamNames: club ? (club.teams || []).map(x => x.name) : [],
+      // null on a public page whose server lacks supabase/017: no MVP anywhere.
+      pointsPreset: club ? clubPointsPreset(club.organizer_club_id) : pub.points
     };
   }
   const t = activeTournament();
@@ -513,8 +528,16 @@ async function setTournamentEnded(c, endedAt){
   return fetchClubTournamentDetail(t.id);
 }
 
-function renderTournamentSummary(c){
+/* tournamentSummary for a context: with no points preset (a public page
+   without supabase/017) there's no MVP, rather than one counted with points
+   the club doesn't use. */
+function tournamentSummaryOf(c){
   const s = tournamentSummary(c.matches, c.preset, c.pointsPreset);
+  if (!c.pointsPreset) s.mvp = null;
+  return s;
+}
+function renderTournamentSummary(c){
+  const s = tournamentSummaryOf(c);
   const when = c.endedAt ? new Date(c.endedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
   const tile = (label, value) => `<div class="stat-tile"><span class="stat-num">${value}</span><span class="stat-label">${label}</span></div>`;
   const row = (label, who, val) => who ? `<div class="summary-row"><span class="summary-label">${label}</span><span class="summary-who">${who}</span><span class="summary-val n">${val}</span></div>` : "";
@@ -540,14 +563,14 @@ function renderTournamentSummary(c){
       ${row("Highest total", s.highestTotal && `${escapeHtml(s.highestTotal.team)} <span class="muted">v ${escapeHtml(s.highestTotal.against)}</span>`, s.highestTotal && `${s.highestTotal.runs}-${s.highestTotal.wickets}`)}
     </div>
     ${renderStandingsTable(s.standings, c.preset.useNRR)}
-    <button type="button" data-action="reopen-tournament" class="ghost" style="width:100%;">Reopen tournament</button>`;
+    ${c.kind === "public" ? "" : `<button type="button" data-action="reopen-tournament" class="ghost" style="width:100%;">Reopen tournament</button>`}`;
 }
 
 /* The share image: drawn with the share kit in result.js (logo, theme,
    "by Erantha Welikala" footer), previewed in the share sheet first. */
 function renderTournamentCanvas(c, themeKey, logo){
   const th = SHARE_THEMES[themeKey] || SHARE_THEMES.night;
-  const s = tournamentSummary(c.matches, c.preset, c.pointsPreset);
+  const s = tournamentSummaryOf(c);
   const when = c.endedAt ? new Date(c.endedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
   return composeShareImage(th, ctx => {
     const X = SHARE_PAD, W = SHARE_W - SHARE_PAD * 2;
@@ -614,6 +637,105 @@ function renderTournamentCanvas(c, themeKey, logo){
   });
 }
 function shareTournamentResults(){ openSharePreview("tournament"); }
+
+/* --- a tournament's public page (#/t/<id>) ---
+   "Share link" on a club tournament gives a link anyone can open, signed in
+   or not: the points table, results, scorecards and player stats, read only.
+   render() loads it with fetchPublicTournament (straight from the server)
+   into ui.publicTournament. Same tabs as the dashboard minus Teams (team lists
+   are members-only, 012) and every button that changes something; a member
+   of the club also gets Manage, into the club's own dashboard. Guest
+   tournaments live on one phone, so they have no link. */
+const PUBLIC_TOURNAMENT_TABS = TOURNAMENT_TABS.filter(([id]) => id !== "teams");
+function publicTournamentUrl(id){
+  return location.origin + location.pathname + "#/t/" + encodeURIComponent(id);
+}
+function openPublicTournament(id){
+  if (ui.publicTournamentId === id) return;
+  ui.publicTournamentId = id; ui.publicTournament = null; ui.tournamentTab = null;
+}
+function loadPublicTournament(id){
+  ui.publicTournamentLoading = id;
+  return fetchPublicTournament(id).then(t => {
+    if (ui.publicTournamentLoading === id) ui.publicTournamentLoading = null;
+    if (ui.publicTournamentId !== id) return;
+    // A refresh that fails keeps what's on screen and says so.
+    const shown = ui.publicTournament && ui.publicTournament.id === id && ui.publicTournament.matches ? ui.publicTournament : null;
+    if (t.error && shown) shown.refreshError = t.error;
+    else ui.publicTournament = t;
+    render();
+  });
+}
+function openPublicInClub(){
+  const pt = ui.publicTournament;
+  if (!pt || !pt.clubId) return;
+  ui.currentClubId = pt.clubId; ui.currentTournamentId = pt.id;
+  ui.clubTournament = null; ui.tournamentTeamEdit = null; ui.tournamentTeamError = null; ui.tournamentTab = null; ui.expandedTeamId = null;
+  state.view = "clubTournamentDashboard"; render(); // render() loads it
+}
+function askShareTournamentLink(){
+  const club = state.view === "clubTournamentDashboard" ? ui.clubTournament : null;
+  const t = club || (state.view === "publicTournament" ? ui.publicTournament : null);
+  if (!t || !t.name) return;
+  const url = publicTournamentUrl(t.id);
+  const unsynced = club ? club.matches.filter(m => m.local).length : 0;
+  const canShare = typeof navigator.share === "function";
+  askConfirm({
+    title: "Share this tournament", icon: "🔗", tone: "primary",
+    body: `
+      <p>Anyone with this link can see the <b>points table, results, scorecards and player stats</b>, with no sign-in. It's read only: nothing can be changed from it${club ? ", and team lists stay private" : ""}.</p>
+      <input type="text" class="share-link-input" readonly value="${escapeHtml(url)}" aria-label="Link to this tournament">
+      ${club && club.pending ? `<p>This tournament hasn't synced yet, so the link won't open until it has.</p>`
+        : unsynced ? `<p>${unsynced === 1 ? "1 match on this phone hasn't" : `${unsynced} matches on this phone haven't`} synced yet. ${unsynced === 1 ? "It shows" : "They show"} on the link once synced.</p>` : ""}
+      ${club && !club.pending ? `<button type="button" data-action="open-public-tournament" data-id="${escapeHtml(t.id)}" class="link-btn">See what they'll see</button>` : ""}`,
+    confirmLabel: canShare ? "Share link" : "Copy link",
+    busyLabel: canShare ? "Sharing…" : "Copied ✓",
+    cancelLabel: "Close",
+    // Cancelling the phone's share sheet closes this one too. A copy holds
+    // "Copied ✓" on the button for a moment before closing.
+    onConfirm: () => canShare
+      ? navigator.share({ title: t.name, text: `${t.name}: points table, results and stats`, url }).catch(() => {})
+      : (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
+          .then(() => new Promise(done => setTimeout(done, 900)), () => ({ error: "Couldn't copy it here. Select the link above and copy it." }))
+  });
+}
+function renderPublicTournament(){
+  const pt = ui.publicTournament;
+  const back = renderBackBar("Home", "home");
+  if (!pt || pt.id !== ui.publicTournamentId) return `<div class="screen tournament">${back}${loadingHtml("Loading tournament…")}</div>`;
+  if (pt.missing || pt.error) return `
+    <div class="screen tournament">
+      ${back}
+      <h1>🏆 ${pt.missing ? "Tournament not found" : "Can't load this tournament"}</h1>
+      <p class="hint">${pt.missing ? "This link doesn't lead to a tournament. Part of it may be missing, or the tournament was removed. Ask whoever sent it for the link again." : escapeHtml(pt.error)}</p>
+      ${pt.error ? `<button type="button" data-action="refresh-public-tournament" class="primary">Try again</button>` : ""}
+    </div>`;
+  const p = pt.preset, ended = !!p.endedAt;
+  const tabs = tournamentTabs(ended, PUBLIC_TOURNAMENT_TABS), tab = tournamentTab(ended, PUBLIC_TOURNAMENT_TABS);
+  const matches = tournamentRowMatches(pt.matches);
+  const latest = [...matches].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)).slice(0, 3);
+  const member = (ui.myClubs || []).some(c => c.id === pt.clubId);
+  const updated = new Date(pt.loadedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return `
+    <div class="screen tournament">
+      ${back}
+      <h1>🏆 ${escapeHtml(pt.name)}</h1>
+      <p class="tagline">${pt.clubName ? `${escapeHtml(pt.clubName)} · ` : ""}${clubTournamentTagline(p, matches.length)}</p>
+      <div class="tournament-links">
+        <button type="button" data-action="share-tournament-link" class="ghost small">${ICON_LINK} Share link</button>
+        <button type="button" data-action="refresh-public-tournament" class="ghost small">↻ Refresh</button>
+        ${member ? `<button type="button" data-action="manage-public-tournament" class="ghost small">Manage</button>` : ""}
+      </div>
+      ${tabsHtml("switch-tournament-tab", tabs, tab, ended ? "main-tabs many" : "main-tabs")}
+      ${tab === "summary" ? renderTournamentSummary(tournamentContext()) : ""}
+      ${tab === "overview" ? (matches.length
+        ? `${renderStandingsTable(computeStandings(matches, p), p.useNRR)}<h3 class="section-label">Latest results</h3>${renderFixtureList(latest)}`
+        : `<p class="hint">No matches yet. The points table fills in as results come in.</p>`) : ""}
+      ${tab === "fixtures" ? `<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches)}` : ""}
+      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, pt.points), { points: pt.points }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
+      <p class="hint public-note">${pt.refreshError ? escapeHtml(pt.refreshError) : `Read only · updated ${escapeHtml(updated)}`}</p>
+    </div>`;
+}
 
 /* --- result-only fixtures ---
    "Enter result" on a tournament's Overview/Fixtures opens a sheet that

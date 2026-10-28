@@ -10,6 +10,8 @@ function defaultUi(){
     matchSetupPresetId: null, presetInfo: null,
     tournamentSetupPresetId: null, tournamentSetupTeamIds: [],
     tournamentTab: null, resultEntry: null, sharePreview: null,
+    // A club tournament's public page (#/t/<id>): which one, what loaded, the fetch in flight.
+    publicTournamentId: null, publicTournament: null, publicTournamentLoading: null,
     selectedTeamId: null,
     presetsTab: "match", editingMatchPreset: null, editingTournamentPreset: null,
     editingPointsPreset: null, editingClubPointsPreset: null, clubPresetMessage: null,

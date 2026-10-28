@@ -213,6 +213,9 @@ function findCompletedMatch(id){
   // A club match can be put right in the cloud after this phone archived it:
   // show the cloud's copy, unless this phone's own change is still waiting to go up.
   const local = state.matchHistory[id];
+  // A tournament's public page shows the server's copy, the one anyone with the link sees.
+  const shared = state.view === "publicTournament" && ui.publicTournament ? fromRows(ui.publicTournament.matches) : null;
+  if (shared) return Object.assign({ id }, shared);
   const cloud = local && local.clubId && !outbox.some(op => op.kind === "match" && op.args && op.args.id === id)
     ? fromRows(ui.clubTournament && ui.clubTournament.matches) || fromRows(ui.club && ui.club.matches) : null;
   return (cloud && cloud.innings ? Object.assign({}, local, cloud, { id }) : null)
@@ -254,7 +257,8 @@ function renderMatchDetailModal(){
         </div>
         ${(() => {
           // A match finished on this device can still be put right (see openMatchFromHistory).
-          const blocked = historyEditBlocked(m);
+          // Not from a tournament's public page: that's read only.
+          const blocked = ui.matchDetail.view === "publicTournament" ? "none" : historyEditBlocked(m);
           if (blocked === "none") return "";
           return blocked ? `<p class="hint">${escapeHtml(blocked)}</p>`
             : `<button type="button" data-action="edit-archived-match" data-id="${escapeHtml(m.id)}" class="ghost edit-match-btn">✎ Edit match</button>`;
@@ -690,7 +694,7 @@ function renderScorecardCanvas(match, themeKey, logo){
 function exportPdf(detailMatch){
   const m = detailMatch || state.match;
   const onResult = !!detailMatch || (navKey() === "result" && m);
-  const c = !onResult && /ournamentDashboard$/.test(state.view) ? tournamentContext() : null;
+  const c = !onResult && /ournamentDashboard$|^publicTournament$/.test(state.view) ? tournamentContext() : null;
   // A match (Result, or the completed-match sheet) always prints from
   // #print-root, which replaces #app in print -- so nothing on screen has to
   // change for the print and nothing has to be put back afterwards. That

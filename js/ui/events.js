@@ -283,6 +283,11 @@ document.addEventListener("click", (e) => {
   else if (action === "end-tournament") askEndTournament();
   else if (action === "reopen-tournament") askReopenTournament();
   else if (action === "share-tournament") shareTournamentResults();
+  else if (action === "share-tournament-link") askShareTournamentLink();
+  // From the share sheet: the public page as anyone with the link sees it, loaded fresh.
+  else if (action === "open-public-tournament"){ ui.confirm = null; openPublicTournament(btn.dataset.id); ui.publicTournament = null; state.view = "publicTournament"; render(); }
+  else if (action === "refresh-public-tournament" && ui.publicTournamentId) loadPublicTournament(ui.publicTournamentId);
+  else if (action === "manage-public-tournament") openPublicInClub();
   else if (action === "select-team"){ ui.selectedTeamId = btn.dataset.id; render(); }
   else if (action === "delete-team"){
     const id = btn.dataset.id, team = state.teams[id];

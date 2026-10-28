@@ -2014,7 +2014,10 @@ async function main(){
     win.eval(`state.matchHistory["${id}"].clubId = "club1";
       window.__cloudCopy = JSON.parse(JSON.stringify(state.matchHistory["${id}"]).split("Kusal").join("Kusal Mendis"));
       window.__prevClient = supabaseClient; window.__prevSession = session;
-      supabaseClient = { from: () => ({ select(){ return this; }, eq(){ return this; }, maybeSingle: async () => ({ data: { data: __cloudCopy }, error: null }) }) };
+      // A list query (Home loading this user's clubs after finish-match) gets an empty list:
+      // without a then, fetchMyClubs threw, unnoticed until a later test waited on a timer.
+      supabaseClient = { from: () => ({ select(){ return this; }, eq(){ return this; }, maybeSingle: async () => ({ data: { data: __cloudCopy }, error: null }),
+        then: (ok, no) => Promise.resolve({ data: [], error: null }).then(ok, no) }) };
       session = { user: { id: "u1" } };
       outbox = [{ id: "q1", kind: "match", args: { id: "${id}" }, userId: "u1" }];`);
     await win.eval(`openMatchFromHistory("${id}")`);
@@ -2149,6 +2152,47 @@ async function main(){
     const ov = win.overlayClubData({ id: "c1", presets: { match: [], tournament: [] } }, [{ kind: "preset.save", args: { id: "p9", clubId: "c1", kind: "points", preset: { name: "Ours", perRun: 2 } } }]);
     assert(ov.presets.points.length === 1 && ov.presets.points[0].pending && ov.presets.points[0].perRun === 2, "overlay: a points preset saved offline shows (cache from before points presets)");
     win.eval(`ui = defaultUi(); state.matchHistory = {}; state.view = "home"; save(); render();`);
+  }
+
+  // --- a club tournament's public page (#/t/<id>, "Share link") ---
+  {
+    const doc = win.document;
+    assert(win.eval(`JSON.stringify(parseRoute("/t/abc-1"))`) === JSON.stringify({ view: "publicTournament", params: { pt: "abc-1" } })
+      && win.eval(`buildRoute("publicTournament", { pt: "abc-1" })`) === "/t/abc-1", "#/t/<id> is the public page's route, both ways");
+    win.eval(`{ const mm = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 1, playersPerSide: 11, battingFirst: "A" });
+        openInnings(currentInnings(mm), "a", "b", "c"); mm.status = "complete"; mm.result = "Lions won"; mm.clubId = "c1"; mm.id = "pm1";
+      window.__pub = { tournaments: { id: "t1", name: "Sunday Cup", organizer_club_id: "c1", tournament_preset: { pointsForWin: 2, endedAt: 1 }, clubs: { name: "KICC" } },
+        matches: [{ id: "pm1", data: JSON.parse(JSON.stringify(mm)) }] };
+      window.__rpc = { data: { id: "pp1", name: "Ours", perRun: 2 }, error: null };
+      window.__prevClient = supabaseClient; window.__prevSession = session; session = null;
+      const chain = table => { const c = { then: (ok, no) => Promise.resolve({ data: __pub[table], error: null }).then(ok, no) };
+        ["select", "eq", "order", "maybeSingle"].forEach(f => { c[f] = () => c; }); return c; };
+      supabaseClient = { from: chain, rpc: async () => __rpc }; }`);
+    let pt = await win.eval(`fetchPublicTournament("t1")`);
+    assert(pt.name === "Sunday Cup" && pt.clubName === "KICC" && pt.matches.length === 1 && pt.points.id === "pp1", "signed out, it loads the tournament, its club's name, matches and points preset");
+    win.eval(`__rpc = { data: null, error: null };`);
+    pt = await win.eval(`fetchPublicTournament("t1")`);
+    assert(pt.points.id === "points-club", "a club with no points preset of its own: the built-in default, as for members");
+    win.eval(`__rpc = { data: null, error: { code: "PGRST202" } };`);
+    pt = await win.eval(`fetchPublicTournament("t1")`);
+    assert(pt.points === null, "supabase/017 not run: no points preset (so no MVP)");
+    win.eval(`__pub.tournaments = null;`);
+    assert((await win.eval(`fetchPublicTournament("nope")`)).missing === true, "a wrong id: not found");
+    win.eval(`__pub.tournaments = { id: "t1", name: "Sunday Cup", organizer_club_id: "c1", tournament_preset: { endedAt: 1 }, clubs: { name: "KICC" } }; __rpc = { data: null, error: null };`);
+
+    win.eval(`ui = defaultUi(); applyRoute("/t/t1"); render();`);
+    await wait(20);
+    assert(win.eval("state.view") === "publicTournament" && /Sunday Cup/.test(doc.querySelector("#app h1").textContent)
+      && [...doc.querySelectorAll('#app [data-action="switch-tournament-tab"]')].map(b => b.dataset.tab).join() === "summary,overview,fixtures,stats",
+      "the link opens the page: Summary (it ended), Overview, Fixtures, Stats — no Teams");
+    assert(!doc.querySelector('#app [data-action="reopen-tournament"]') && !doc.querySelector('#app [data-action="manage-public-tournament"]'), "read only: no Reopen, and no Manage for a visitor");
+    win.eval(`openMatchDetail("pm1");`);
+    assert(doc.querySelector("#modal-root .scorecard-modal") && !/another phone/.test(doc.querySelector("#modal-root .scorecard-modal").textContent), "a result opens its scorecard, with no edit note");
+    win.eval(`ui.matchDetail = null; askShareTournamentLink();`);
+    assert(doc.querySelector("#confirm-root .share-link-input").value.endsWith("#/t/t1"), "Share link shows the page's own link");
+    win.eval(`ui.confirm = null; ui.myClubs = [{ id: "c1", name: "KICC" }]; render();`);
+    assert(doc.querySelector('#app [data-action="manage-public-tournament"]'), "a member of the club gets Manage");
+    win.eval(`supabaseClient = window.__prevClient; session = window.__prevSession; ui = defaultUi(); state.view = "home"; save(); render();`);
   }
 
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);

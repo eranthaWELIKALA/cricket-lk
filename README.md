@@ -37,6 +37,10 @@ final result. Beyond a single match, it also supports:
 - **Share & export** — save/share the scorecard as a PNG image, or
   export it as a PDF via the browser's print dialog. Both are
   dependency-free (no external libraries).
+- **Tournament links** — a club tournament's **Share link** gives a
+  read-only page (`#/t/<id>`) anyone can open without signing in: points
+  table, results, scorecards and player stats. Needs
+  `supabase/017_public_tournament_points.sql` for its MVP table.
 - **Sound effects** — short synthesized tones (no audio files) for
   runs, boundaries, wickets, and match completion, via the Web Audio
   API. On by default; mute anytime with the speaker icon in the corner.

@@ -527,6 +527,11 @@ button.primary.danger-confirm.is-loading::after{ border-color:rgba(0,0,0,.2); bo
 .tournament-actions button:only-child{ grid-column:1 / -1; }
 .end-tournament-btn{ width:100%; margin-top:10px; }
 .tab-btn svg{ vertical-align:-3px; margin-right:2px; }
+/* Share link / Refresh / Manage under a tournament's title, and the public page (#/t/<id>). */
+.tournament-links{ display:flex; flex-wrap:wrap; gap:8px; margin:2px 0 12px; }
+.tournament-links button{ display:inline-flex; align-items:center; gap:6px; margin:0; font-weight:700; }
+.share-link-input{ margin:4px 0 6px; font-size:.82rem; color:var(--text); }
+.public-note{ margin-top:16px; text-align:center; }
 .result-team{ background:var(--panel); border:2px solid var(--line-strong); border-radius:var(--radius-md); padding:10px 12px 4px; margin-bottom:10px; }
 .result-team-name{ font-weight:800; }
 .field-row.three{ grid-template-columns:1fr 1fr 1.2fr; gap:8px; }

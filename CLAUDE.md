@@ -30,7 +30,7 @@ of `index.html`:
 | `js/ui/chrome.js` | top bar, loading indicators, shared confirmation sheet |
 | `js/ui/router.js` | page navigation (routes, history, back interception, unsaved-input checks) |
 | `js/ui/menus.js` | sync pill/sheet, side menu |
-| `js/ui/screens/*.js` | `home-account`, `clubs` (+ profiles, player modals), `club-tournaments` (+ team builder), `premier`, `guest` (teams/players/presets/tournaments), `stats` |
+| `js/ui/screens/*.js` | `home-account`, `clubs` (+ profiles, player modals), `club-tournaments` (+ team builder, the public link page), `premier`, `guest` (teams/players/presets/tournaments), `stats` |
 | `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `catch-up` (catch up the score), `edit-ball` (edit/add/remove a ball, set the final score by hand), `name-later` (name an unnamed batter/bowler), `live`, `result` (+ scorecards, share/export) |
 | `js/ui/render.js` | `render()` |
 | `js/ui/events.js` | the delegated listeners |
@@ -1015,6 +1015,42 @@ sideways inside their card (`.table-scroll`, never the page) with the player
 column pinned, and keep their scroll across the re-sort. The player profile has **Profile / Stats** tabs (`ui.profile.tab`, so
 it resets with each profile). All of them use `tabsHtml(action, tabs,
 active, cls)` (common.js); `main-tabs` makes a top-level row equal-width.
+
+## Public tournament links (`supabase/017_public_tournament_points.sql`)
+
+A club tournament's dashboard has **Share link** (`share-tournament-link` →
+`askShareTournamentLink`, the shared confirmation sheet: what the link shows,
+the link itself, unsynced matches / an unsynced tournament noted, "See what
+they'll see", then the phone's share sheet or a copy). The link is
+`#/t/<tournament id>` (`publicTournamentUrl`, view `publicTournament`), a
+read-only page anyone can open, **signed in or not**: `renderPublicTournament`
+(club-tournaments.js) with the dashboard's tabs minus Teams
+(`PUBLIC_TOURNAMENT_TABS`; Summary first once ended, without Reopen), every
+result opening its scorecard sheet (no Edit match there), Refresh, and
+**Manage** for a member of the club (`openPublicInClub`, into the dashboard).
+It works as a guarded lazy load like the others: `applyRoute` sets
+`ui.publicTournamentId` (`openPublicTournament`), `render()` calls
+`loadPublicTournament` → `fetchPublicTournament` (cloud.js) into
+`ui.publicTournament` — `{ name, clubName, preset, matches, points,
+loadedAt }`, or `{ missing }` / `{ error }`; a failed refresh keeps the page
+and sets `refreshError`. Without a URL behind it (relaunched at `#/`) the
+view goes Home. `tournamentContext()` has a `kind: "public"` branch, so the
+Summary, its share image and Export PDF work unchanged.
+
+**It reads only what the database already serves everyone**: the tournament
+row (with `clubs(name)`) and its matches — both public read since 002/003 —
+**straight from the server, never the read cache or the outbox**, so it shows
+what the people the link was sent to see (a scorer's unsynced match isn't on
+it). Team lists stay members-only (012), so there's no Teams tab. The one
+extra is the club's MVP points preset: `club_presets` is members-only, so
+017 adds `tournament_points_preset(_tournament_id)` (SECURITY DEFINER, anon +
+authenticated) returning just the preset that counts — `inUse`, else the
+first by `created_at`, with its row id merged in (the same pick as
+`clubPointsPreset`), or null (the app then uses the built-in default, as for
+members). If 017 isn't run the RPC errors and `points` is null: **no MVP
+anywhere on the page** (`tournamentSummaryOf` drops it from the Summary and
+its image) rather than points the club doesn't use. Guest tournaments live on
+one phone, so they have no link (their ended Summary still shares an image).
 
 ## Innings break screen
 

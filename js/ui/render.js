@@ -8,7 +8,8 @@ function render(){
   if (m && fillAnonymousSlots(m)) save();
   // Home's club switcher needs ui.myClubs; fetch it once, lazily, rather
   // than on every screen -- guarded so a pending fetch never re-fires.
-  if (!m && (state.view === "home" || state.view === "myClubs") && session && ui.myClubs === null && !ui.myClubsLoading){
+  // (A tournament's public page needs it too: a member gets a way into the club's own dashboard.)
+  if (!m && (state.view === "home" || state.view === "myClubs" || state.view === "publicTournament") && session && ui.myClubs === null && !ui.myClubsLoading){
     ui.myClubsLoading = true;
     fetchMyClubs().then(() => { ui.myClubsLoading = false; render(); });
   }
@@ -19,6 +20,11 @@ function render(){
   // after a reload) -- unless cloud isn't configured at all.
   const cloudReady = !!supabaseClient || !SUPABASE_URL;
   if (state.view === "playerProfile" && ui.profile.pending && cloudReady) loadPlayerProfile();
+  // A tournament's public page: its id comes from the URL (applyRoute), so a
+  // saved view with no URL behind it (the app relaunched at #/) goes Home.
+  if (state.view === "publicTournament" && !ui.publicTournamentId) state.view = "home";
+  if (state.view === "publicTournament" && cloudReady && (!ui.publicTournament || ui.publicTournament.id !== ui.publicTournamentId)
+    && ui.publicTournamentLoading !== ui.publicTournamentId) loadPublicTournament(ui.publicTournamentId);
   // Premier screens and profiles (both tiers) need ui.premier; load it once.
   if ((state.view.startsWith("premier") || state.view === "playerProfile") && cloudReady && !ui.premier && !ui.premierLoading){
     ui.premierLoading = true;
@@ -112,6 +118,8 @@ function render(){
     html = renderClubTournamentSetup();
   } else if (state.view === "clubTournamentDashboard"){
     html = renderClubTournamentDashboard();
+  } else if (state.view === "publicTournament"){
+    html = renderPublicTournament();
   } else if (state.view === "premier"){
     html = renderPremierScreen();
   } else if (["premierPlayers", "premierTeams", "premierStats"].includes(state.view) && !ui.premier){

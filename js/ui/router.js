@@ -34,6 +34,7 @@ const ROUTES = [
   ["/clubs/:c/tournaments/:ct/new-match", "matchSetup", { type: "tournament" }],
   ["/premier", "premier"], ["/premier/players", "premierPlayers"], ["/premier/players/:p", "playerProfile", { scope: "premier" }],
   ["/premier/teams", "premierTeams"], ["/premier/stats", "premierStats"],
+  ["/t/:pt", "publicTournament"], // a club tournament's shared link (renderPublicTournament)
   ["/live", "match"], ["/result", "result"]
 ];
 // Screens you never go back to: setup forms (consumed by starting the match /
@@ -80,7 +81,7 @@ function routeFor(){
   if (key === "result") return "/result";
   const pr = ui.profile;
   return buildRoute(key, {
-    c: ui.currentClubId, ct: ui.currentTournamentId, t: state.activeTournamentId,
+    c: ui.currentClubId, ct: ui.currentTournamentId, t: state.activeTournamentId, pt: ui.publicTournamentId,
     p: key === "playerProfile" && pr ? pr.id : null,
     scope: key === "playerProfile" && pr ? (pr.scope === "club" && ui.currentClubId ? "club" : "premier") : null,
     type: key === "matchSetup" && ui.currentClubId ? ui.clubMatchSetupType : null
@@ -173,6 +174,7 @@ function applyRoute(path){
   if (params.c) ui.currentClubId = params.c;
   if (params.ct) ui.currentTournamentId = params.ct;
   if (params.t) state.activeTournamentId = params.t;
+  if (params.pt) openPublicTournament(params.pt);
   if (view === "matchSetup") ui.clubMatchSetupType = params.c ? (params.type || null) : null;
   if (view === "playerProfile" && (!ui.profile || ui.profile.id !== params.p)) openPlayerProfile(params.scope, params.p, "");
   setView(view);

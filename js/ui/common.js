@@ -251,7 +251,8 @@ function presetForInfo(kind, id){
   const lists = kind === "match"
     ? [Object.values(state.matchPresets), (ui.club && ui.club.presets && ui.club.presets.match) || []]
     : kind === "points"
-    ? [Object.values(state.pointsPresets), (ui.club && ui.club.presets && ui.club.presets.points) || [], DEFAULT_POINTS_PRESETS]
+    ? [Object.values(state.pointsPresets), (ui.club && ui.club.presets && ui.club.presets.points) || [], DEFAULT_POINTS_PRESETS,
+      ui.publicTournament && ui.publicTournament.points ? [ui.publicTournament.points] : []]
     : [Object.values(state.tournamentPresets), (ui.club && ui.club.presets && ui.club.presets.tournament) || []];
   for (const list of lists){ const hit = list.find(p => p.id === id); if (hit) return hit; }
   return null;

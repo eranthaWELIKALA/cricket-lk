@@ -690,6 +690,41 @@ async function fetchClubTournamentDetail(tournamentId){
   if (ui.clubTournament) ui.clubTournament.fromCache = server === undefined;
 }
 
+/* A club tournament's public page (#/t/<id>, the dashboard's "Share link"):
+   what anyone with the link sees, signed in or not. It reads only what the
+   database already gives everyone -- the tournament row with its club's name
+   and its matches (public read, 002/003) -- plus the club's MVP points preset
+   through supabase/017 (club_presets itself is members-only). Team lists stay
+   members-only (012). Straight from the server, never the read cache or this
+   device's outbox: it shows what the people the link was sent to see.
+   Returns { id, name, clubId, clubName, preset, matches, points, loadedAt },
+   or { id, missing: true } / { id, error }. */
+async function fetchPublicTournament(id){
+  if (!supabaseClient) return { id, error: "Shared tournaments need the cloud, which isn't set up on this copy of the app." };
+  if (!isOnline()) return { id, error: "You're offline. Connect to the internet to see this tournament." };
+  const unreachable = { id, error: "Couldn't reach the server. Check your connection and try again." };
+  try {
+    const [tRes, mRes, pRes] = await Promise.all([
+      supabaseClient.from("tournaments").select("id, name, organizer_club_id, tournament_preset, clubs(name)").eq("id", id).maybeSingle(),
+      supabaseClient.from("matches").select("id, data, played_at").eq("tournament_id", id).order("played_at", { ascending: false }),
+      supabaseClient.rpc("tournament_points_preset", { _tournament_id: id })
+    ]);
+    if ([tRes, mRes].some(r => isNetworkError(r.error, isOnline()))) return unreachable;
+    // A malformed id is a database error, not a network one: not found either way.
+    const t = tRes.data;
+    if (!t) return { id, missing: true };
+    return {
+      id, name: t.name, clubId: t.organizer_club_id, clubName: (t.clubs && t.clubs.name) || "",
+      preset: t.tournament_preset || {},
+      matches: mRes.data || [],
+      // 017 not run: no MVP table, rather than points the club doesn't use.
+      // No points preset of its own: the built-in default, as for members.
+      points: pRes.error ? null : (pRes.data || DEFAULT_POINTS_PRESETS[0]),
+      loadedAt: Date.now()
+    };
+  } catch (_){ return unreachable; }
+}
+
 /* Tournament teams (supabase/012): a name + roster players, members-only.
    `players` is [{ id, name }] -- the name is a snapshot, see the SQL. */
 async function saveTournamentTeam(tournament, team){
