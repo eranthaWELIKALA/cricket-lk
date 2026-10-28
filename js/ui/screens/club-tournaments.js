@@ -134,7 +134,7 @@ function renderClubTournamentDashboard(){
         ${ended ? ENDED_NOTE : tournamentActionsHtml(startBtn, matches.length, true)}` : ""}
       ${tab === "teams" ? renderTournamentTeams(t) : ""}
       ${tab === "fixtures" ? `${ended ? ENDED_NOTE : tournamentActionsHtml(startBtn, 0, false)}<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches, "No matches yet — start one above.")}` : ""}
-      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches)) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
+      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, clubPointsPreset(t.organizer_club_id)), { points: clubPointsPreset(t.organizer_club_id), where: "the club's Presets" }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
     </div>
   `;
 }
@@ -463,7 +463,8 @@ function tournamentContext(){
       kind: "club", id: t.id, name: t.name, endedAt: p.endedAt || null,
       preset: { pointsForWin: p.pointsForWin ?? 2, pointsForTie: p.pointsForTie ?? 1, pointsForLoss: p.pointsForLoss ?? 0, useNRR: !!p.useNRR },
       matches: t.matches.map(m => m.data ? Object.assign({ id: m.id }, m.data) : null).filter(Boolean),
-      teamNames: (t.teams || []).map(x => x.name)
+      teamNames: (t.teams || []).map(x => x.name),
+      pointsPreset: clubPointsPreset(t.organizer_club_id)
     };
   }
   const t = activeTournament();
@@ -472,7 +473,8 @@ function tournamentContext(){
   return {
     kind: "guest", id: t.id, name: t.name, endedAt: t.endedAt || null, preset,
     matches: t.matchIds.map(id => state.matchHistory[id]).filter(Boolean),
-    teamNames: t.teamIds.map(id => state.teams[id]).filter(Boolean).map(x => x.name)
+    teamNames: t.teamIds.map(id => state.teams[id]).filter(Boolean).map(x => x.name),
+    pointsPreset: guestPointsPreset()
   };
 }
 
@@ -512,7 +514,7 @@ async function setTournamentEnded(c, endedAt){
 }
 
 function renderTournamentSummary(c){
-  const s = tournamentSummary(c.matches, c.preset);
+  const s = tournamentSummary(c.matches, c.preset, c.pointsPreset);
   const when = c.endedAt ? new Date(c.endedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
   const tile = (label, value) => `<div class="stat-tile"><span class="stat-num">${value}</span><span class="stat-label">${label}</span></div>`;
   const row = (label, who, val) => who ? `<div class="summary-row"><span class="summary-label">${label}</span><span class="summary-who">${who}</span><span class="summary-val n">${val}</span></div>` : "";
@@ -529,12 +531,12 @@ function renderTournamentSummary(c){
     </div>
     <div class="stat-grid four">${tile("Matches", s.matches)}${tile("Runs", s.runs)}${tile("Wickets", s.wickets)}${tile("Sixes", s.sixes)}</div>
     <div class="summary-card">
-      ${row("MVP", s.mvp && escapeHtml(s.mvp.name), s.mvp && `${s.mvp.points} pts`)}
+      ${row("MVP", s.mvp && escapeHtml(s.mvp.name), s.mvp && `${pointsNum(s.mvp.points)} pts`)}
       ${row("Most runs", s.topBat && escapeHtml(s.topBat.name), s.topBat && `${s.topBat.runs}`)}
       ${row("Most wickets", s.topBowl && escapeHtml(s.topBowl.name), s.topBowl && `${s.topBowl.wickets}`)}
       ${row("Best innings", s.bestInnings && escapeHtml(s.bestInnings.name), s.bestInnings && `${s.bestInnings.runs}${s.bestInnings.notOut ? "*" : ""} (${s.bestInnings.balls})`)}
       ${row("Best bowling", s.bestBowling && escapeHtml(s.bestBowling.name), s.bestBowling && `${s.bestBowling.wickets}/${s.bestBowling.runs}`)}
-      ${row("Most dismissals", s.topField && escapeHtml(s.topField.name), s.topField && `${s.topField.catches + s.topField.runouts}`)}
+      ${row("Most dismissals", s.topField && escapeHtml(s.topField.name), s.topField && `${fieldDismissals(s.topField)}`)}
       ${row("Highest total", s.highestTotal && `${escapeHtml(s.highestTotal.team)} <span class="muted">v ${escapeHtml(s.highestTotal.against)}</span>`, s.highestTotal && `${s.highestTotal.runs}-${s.highestTotal.wickets}`)}
     </div>
     ${renderStandingsTable(s.standings, c.preset.useNRR)}
@@ -545,7 +547,7 @@ function renderTournamentSummary(c){
    "by Erantha Welikala" footer), previewed in the share sheet first. */
 function renderTournamentCanvas(c, themeKey, logo){
   const th = SHARE_THEMES[themeKey] || SHARE_THEMES.night;
-  const s = tournamentSummary(c.matches, c.preset);
+  const s = tournamentSummary(c.matches, c.preset, c.pointsPreset);
   const when = c.endedAt ? new Date(c.endedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
   return composeShareImage(th, ctx => {
     const X = SHARE_PAD, W = SHARE_W - SHARE_PAD * 2;
@@ -592,7 +594,7 @@ function renderTournamentCanvas(c, themeKey, logo){
     y += th0 + 28;
     // Highlights: two columns of small cards.
     const hl = [
-      ["MVP", s.mvp && s.mvp.name, s.mvp && `${s.mvp.points} pts`],
+      ["MVP", s.mvp && s.mvp.name, s.mvp && `${pointsNum(s.mvp.points)} pts`],
       ["Most runs", s.topBat && s.topBat.name, s.topBat && `${s.topBat.runs} runs`],
       ["Most wickets", s.topBowl && s.topBowl.name, s.topBowl && `${s.topBowl.wickets} wkts`],
       ["Best innings", s.bestInnings && s.bestInnings.name, s.bestInnings && `${s.bestInnings.runs}${s.bestInnings.notOut ? "*" : ""} (${s.bestInnings.balls})`],

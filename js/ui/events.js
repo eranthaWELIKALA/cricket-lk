@@ -82,7 +82,7 @@ document.addEventListener("click", (e) => {
       input.blur();
     }
   }  else if (action === "pick-wicket"){
-    if (btn.dataset.type === "runout" || btn.dataset.type === "caught"){ ui.wicketFlow = btn.dataset.type; render(); }
+    if (WICKET_FIELDER_TYPES.includes(btn.dataset.type)){ ui.wicketFlow = btn.dataset.type; render(); }
     else confirmWicket(btn.dataset.type);
   }
   else if (action === "runout-runs"){ ui.runoutRuns = parseInt(btn.dataset.runs, 10); render(); }
@@ -112,6 +112,17 @@ document.addEventListener("click", (e) => {
   else if (action === "profile-tab" && ui.profile){ ui.profile.tab = btn.dataset.tab; render(); }
   else if (action === "toggle-team-card"){ ui.expandedTeamId = ui.expandedTeamId === btn.dataset.id ? null : btn.dataset.id; render(); }
   else if (action === "stats-tab"){ ui.statsTab = btn.dataset.tab; render(); }
+  // A column head: sort by it, best-first; again flips it. The table keeps
+  // its sideways scroll across the re-render.
+  else if (action === "stats-sort"){
+    const table = btn.dataset.table, key = btn.dataset.key;
+    const col = LEADERBOARD_COLUMNS[table].find(c => c.key === key), cur = leaderboardSort(table);
+    ui.statsSort[table] = { key, dir: cur.key === key ? (cur.dir === "asc" ? "desc" : "asc") : col.best || "desc" };
+    const left = (btn.closest(".table-scroll") || {}).scrollLeft || 0;
+    render();
+    const scroller = document.querySelector(".leaderboard .table-scroll");
+    if (scroller) scroller.scrollLeft = left;
+  }
   else if (action === "open-match-detail") openMatchDetail(btn.dataset.id);
   else if (action === "close-match-detail"){ ui.matchDetail = null; render(); }
   else if (action === "edit-archived-match") openMatchFromHistory(btn.dataset.id);
@@ -298,7 +309,7 @@ document.addEventListener("click", (e) => {
     movePlayerToTeam(btn.dataset.player, btn.dataset.from, toId);
     save(); render();
   }
-  else if (action === "switch-presets-tab"){ ui.presetsTab = btn.dataset.tab; ui.editingMatchPreset = null; ui.editingTournamentPreset = null; render(); }
+  else if (action === "switch-presets-tab"){ ui.presetsTab = btn.dataset.tab; ui.editingMatchPreset = null; ui.editingTournamentPreset = null; ui.editingPointsPreset = null; render(); }
   else if (action === "new-match-preset"){ ui.editingMatchPreset = {}; render(); }
   else if (action === "edit-match-preset"){ ui.editingMatchPreset = Object.assign({}, state.matchPresets[btn.dataset.id]); render(); }
   else if (action === "delete-match-preset"){
@@ -321,15 +332,42 @@ document.addEventListener("click", (e) => {
       onConfirm: () => { deleteTournamentPreset(id); save(); }
     });
   }
-  else if (action === "cancel-preset-edit"){ ui.editingMatchPreset = null; ui.editingTournamentPreset = null; render(); }
+  else if (action === "cancel-preset-edit"){ ui.editingMatchPreset = null; ui.editingTournamentPreset = null; ui.editingPointsPreset = null; render(); }
+  // MVP points presets: a new one starts from the built-in default's numbers.
+  else if (action === "new-points-preset"){ ui.editingPointsPreset = Object.assign({}, DEFAULT_POINTS_PRESETS[0], { id: null, name: "" }); render(); }
+  else if (action === "edit-points-preset"){ ui.editingPointsPreset = JSON.parse(JSON.stringify(state.pointsPresets[btn.dataset.id])); render(); }
+  else if (action === "use-points-preset"){ state.pointsPresetId = btn.dataset.id; save(); render(); }
+  else if (action === "delete-points-preset"){
+    const id = btn.dataset.id, pr = state.pointsPresets[id];
+    const inUse = guestPointsPreset().id === id;
+    askConfirm({
+      title: pr ? `Delete the ${pr.name} points?` : "Delete this preset?", icon: "🗑",
+      body: `<p>${inUse ? "It's the one in use: stats will be counted with another preset. " : ""}Players of the match already given stay.</p>`,
+      confirmLabel: "Delete preset",
+      onConfirm: () => { deletePointsPreset(id); save(); }
+    });
+  }
+  // "Fill in from" a built-in: its numbers into the open editor (guest or club),
+  // keeping the preset's own id, name (if it has one yet) and in-use flag.
+  else if (action === "points-template"){
+    const key = btn.dataset.club ? "editingClubPointsPreset" : "editingPointsPreset";
+    const cur = ui[key] || {}, tpl = DEFAULT_POINTS_PRESETS.find(t => t.id === btn.dataset.id);
+    const typedName = (document.querySelector(`#${btn.dataset.club ? "club-" : ""}points-preset-form input[name="name"]`) || {}).value;
+    if (tpl) ui[key] = Object.assign(JSON.parse(JSON.stringify(tpl)), { id: cur.id || null, name: (typedName || "").trim() || cur.name || tpl.name, inUse: cur.inUse });
+    render();
+  }
   else if (action === "club-new-match-preset"){ ui.editingClubMatchPreset = {}; render(); }
   else if (action === "club-edit-match-preset"){ ui.editingClubMatchPreset = Object.assign({}, clubPresetList("match", ui.currentClubId).find(p => p.id === btn.dataset.id)); render(); }
-  else if (action === "club-delete-match-preset" || action === "club-delete-tournament-preset"){
+  else if (action === "club-delete-match-preset" || action === "club-delete-tournament-preset" || action === "club-delete-points-preset"){
     const clubId = ui.currentClubId, id = btn.dataset.id;
-    const pr = clubPresetList(action === "club-delete-match-preset" ? "match" : "tournament", clubId).find(p => p.id === id);
+    const kind = action === "club-delete-match-preset" ? "match" : action === "club-delete-points-preset" ? "points" : "tournament";
+    const pr = clubPresetList(kind, clubId).find(p => p.id === id);
+    const inUse = kind === "points" && clubPointsPreset(clubId).id === id;
     askConfirm({
       title: pr ? `Delete the ${pr.name} preset?` : "Delete this preset?", icon: "🗑",
-      body: `<p>It's removed for everyone in ${escapeHtml(currentClubName() || "this club")}. Matches already played keep their conditions.</p>`,
+      body: kind === "points"
+        ? `<p>It's removed for everyone in ${escapeHtml(currentClubName() || "this club")}. ${inUse ? "It's the one in use: club stats will be counted with another preset. " : ""}Players of the match already given stay.</p>`
+        : `<p>It's removed for everyone in ${escapeHtml(currentClubName() || "this club")}. Matches already played keep their conditions.</p>`,
       confirmLabel: "Delete preset", busyLabel: "Deleting…",
       onConfirm: () => deleteClubPreset(clubId, id).then(r => {
         if (r && r.error) return r;
@@ -339,7 +377,17 @@ document.addEventListener("click", (e) => {
   }
   else if (action === "club-new-tournament-preset"){ ui.editingClubTournamentPreset = {}; render(); }
   else if (action === "club-edit-tournament-preset"){ ui.editingClubTournamentPreset = Object.assign({}, clubPresetList("tournament", ui.currentClubId).find(p => p.id === btn.dataset.id)); render(); }
-  else if (action === "club-cancel-preset-edit"){ ui.editingClubMatchPreset = null; ui.editingClubTournamentPreset = null; render(); }
+  else if (action === "club-cancel-preset-edit"){ ui.editingClubMatchPreset = null; ui.editingClubTournamentPreset = null; ui.editingClubPointsPreset = null; render(); }
+  else if (action === "club-new-points-preset"){ ui.editingClubPointsPreset = Object.assign({}, DEFAULT_POINTS_PRESETS[0], { id: null, name: "" }); render(); }
+  else if (action === "club-edit-points-preset"){ ui.editingClubPointsPreset = JSON.parse(JSON.stringify(clubPresetList("points", ui.currentClubId).find(p => p.id === btn.dataset.id) || {})); render(); }
+  else if (action === "club-use-points-preset"){
+    const clubId = ui.currentClubId;
+    useClubPointsPreset(clubId, btn.dataset.id).then(r => {
+      if (r && r.error){ ui.clubPresetMessage = r.error; render(); return; }
+      ui.clubPresetMessage = null;
+      fetchClubDetail(clubId).then(render);
+    });
+  }
 });
 
 document.addEventListener("submit", (e) => {
@@ -370,6 +418,8 @@ document.addEventListener("submit", (e) => {
   else if (id === "club-match-preset-form") handleClubMatchPresetSubmit(e);
   else if (id === "player-profile-form") handlePlayerProfileSubmit(e);
   else if (id === "club-tournament-preset-form") handleClubTournamentPresetSubmit(e);
+  else if (id === "points-preset-form") handlePointsPresetSubmit(e);
+  else if (id === "club-points-preset-form") handleClubPointsPresetSubmit(e);
   else if (id === "sign-in-form") handleSignInSubmit(e);
   else if (id === "sign-up-form") handleSignUpSubmit(e);
   else if (id === "create-club-form") handleCreateClubSubmit(e);

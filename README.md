@@ -29,9 +29,11 @@ final result. Beyond a single match, it also supports:
   innings, at the break) and declare the other team the winner. Counts
   toward tournament standings (points, not NRR) and archived stats.
 - **Stats & MVP** — all-time and per-tournament batting/bowling/fielding
-  leaderboards, plus an auto-computed Man-of-the-Match (per match) and
-  MVP (per tournament) from a fixed point formula, overridable on the
-  result screen.
+  leaderboards listing every player, sortable by any column, plus an
+  auto-computed Man-of-the-Match (per match, overridable on the result
+  screen) and MVP (per tournament). MVP points come from a **points
+  preset** a guest or club can edit (built-ins: Club, Classic, Fantasy T20,
+  IPL MVP); Premier shows stats only.
 - **Share & export** — save/share the scorecard as a PNG image, or
   export it as a PDF via the browser's print dialog. Both are
   dependency-free (no external libraries).
@@ -121,10 +123,13 @@ gh api repos/<owner>/<name>/pages -X POST -f "source[branch]=master" -f "source[
 - **Runs on a run-out are credited to whoever was on strike**, not
   apportioned between the batsmen actually seen running. Fine for a
   personal scorer, not fine for an official one.
-- **The MVP/Man-of-the-Match point formula is fixed**, not user-tunable
-  — runs/boundaries/milestones, wickets/maidens, catches/run-outs each
-  have a set weight. You can always override the pick by hand on the
-  result screen.
+- **MVP points are a simple weighted sum per innings** (runs, boundaries,
+  milestones, wickets, maidens, dots, fielding, optional economy/strike-rate
+  bands), not a context-aware rating like the PCA/CricHQ formula (no
+  par score, no comparison with the team's own rate). A player of the
+  match is picked once, when the match finishes; changing the points
+  preset later recounts the leaderboards but doesn't move it. You can
+  always override the pick by hand on the result screen.
 - **Net run rate follows the standard convention** that a team bowled
   all out counts its full overs quota (not the fewer overs it actually
   faced) — the usual real-world rule, applied without exception.

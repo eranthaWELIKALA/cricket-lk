@@ -213,9 +213,9 @@ function ballEditToEvent(match, be, preview){
     if (act && !act[d.endComingIn]) return { error: "Nobody was batting at that end on this ball." };
     Object.assign(ev, { runs: d.runs, endComingIn: d.endComingIn, outEnd: d.outEnd || d.endComingIn });
   }
-  if (!preview && (d.wicketType === "caught" || d.wicketType === "runout")){
+  if (!preview && WICKET_FIELDER_TYPES.includes(d.wicketType)){
     const fielder = match.anonymous ? "" : resolveTypedName(d.fielder);
-    const required = d.wicketType === "runout" ? match.requireFielderOnRunout : match.requireFielderOnCatch;
+    const required = d.wicketType === "runout" ? match.requireFielderOnRunout : d.wicketType === "caught" ? match.requireFielderOnCatch : false;
     if (required && !fielder) return { error: `This match needs the ${d.wicketType === "runout" ? "run-out taker" : "catch taker"} named.` };
     if (fielder){
       const conflict = playerSideConflict(match, fielder, inn.bowlingTeam);
@@ -516,9 +516,10 @@ function showMatchFromHistory(id){
 function applyBallEdit(old, next){
   pushSnapshot();
   if (old.archivedId && state.matchHistory[old.archivedId]){
-    const auto = pickMatchMOTM(old);
+    const points = pointsPresetFor(old);
+    const auto = pickMatchMOTM(old, points);
     const kept = old.motm && old.motm !== auto && Array.from(matchPlayerNames(next)).includes(old.motm);
-    next.motm = kept ? old.motm : pickMatchMOTM(next);
+    next.motm = kept ? old.motm : pickMatchMOTM(next, points);
     state.match = next;
     replaceArchivedMatch(old.archivedId, next);
   } else {
@@ -553,7 +554,7 @@ function renderBallEditModal(m){
   const runsAsk = { run: "Runs off the bat", wide: "Runs on top of the wide", noball: "Runs off the bat (or run) on top of the no-ball", bye: "Byes", legbye: "Leg byes" }[d.kind];
   const types = wicketTypesFor(fh, d.extra);
   const isRunout = d.kind === "wicket" && d.wicketType === "runout";
-  const needsFielder = d.kind === "wicket" && (d.wicketType === "caught" || d.wicketType === "runout") && !m.anonymous;
+  const needsFielder = d.kind === "wicket" && WICKET_FIELDER_TYPES.includes(d.wicketType) && !m.anonymous;
   const outAt = d.outEnd || d.endComingIn;
   const fielderPool = pickPool(inn.bowlingTeam).filter(n => !playerSideConflict(m, n, inn.bowlingTeam));
   const needInn = be.need ? m.innings[be.need.inn] : null;
@@ -597,7 +598,7 @@ function renderBallEditModal(m){
       ` : ""}
       ${needsFielder ? `
         <div class="fielder-box">
-          <div class="fielder-box-head"><label for="ball-edit-fielder">FIELDER</label></div>
+          <div class="fielder-box-head"><label for="ball-edit-fielder">${d.wicketType === "stumped" ? "KEEPER" : "FIELDER"}</label></div>
           ${renderNameCombo("", `id="ball-edit-fielder" name="fielder" maxlength="24" placeholder="Search players" value="${escapeHtml(d.fielder || "")}"`, fielderPool)}
         </div>` : ""}
     `}`;

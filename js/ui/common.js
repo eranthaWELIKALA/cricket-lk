@@ -250,6 +250,8 @@ function presetInfoOpen(slot, id){
 function presetForInfo(kind, id){
   const lists = kind === "match"
     ? [Object.values(state.matchPresets), (ui.club && ui.club.presets && ui.club.presets.match) || []]
+    : kind === "points"
+    ? [Object.values(state.pointsPresets), (ui.club && ui.club.presets && ui.club.presets.points) || [], DEFAULT_POINTS_PRESETS]
     : [Object.values(state.tournamentPresets), (ui.club && ui.club.presets && ui.club.presets.tournament) || []];
   for (const list of lists){ const hit = list.find(p => p.id === id); if (hit) return hit; }
   return null;
@@ -261,6 +263,7 @@ function presetInfoPanelHtml(slot){
   if (!p) return "";
   let rows;
   if (kind === "match") rows = describeMatchPreset(p);
+  else if (kind === "points") rows = describePointsPreset(p);
   else {
     // A club tournament preset's matchPresetId is unused (see "Roles").
     const mp = p.matchPresetId ? state.matchPresets[p.matchPresetId] : null;

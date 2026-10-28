@@ -586,20 +586,21 @@ function friendlyError(msg){
     : "You're offline. This needs an internet connection — try again when you're back online.";
 }
 
-/* --- wicket modal (caught / run-out both capture an optional-or-required fielder) --- */
+/* --- wicket modal (caught / run-out / stumped capture a fielder: optional, or required by the preset) --- */
 /* One sheet for every dismissal type, not a menu screen that swaps to a
-   separate detail screen for caught/run-out. Tapping Bowled/LBW/Stumped/
-   Hit wicket still fires immediately via confirmWicket() (same speed as
-   always -- there's nothing to enter for those, so a second confirm tap
-   would only slow down the common case). Caught/Run out instead select
-   themselves (ui.wicketFlow holds which) and the sheet grows a fielder/
-   end/runs section plus a Confirm button below the same type grid --
-   still exactly two taps total for those two, just no full-screen swap. */
+   separate detail screen for caught/run-out. Tapping Bowled/LBW/Hit wicket
+   still fires immediately via confirmWicket() (same speed as always --
+   there's nothing to enter for those, so a second confirm tap would only
+   slow down the common case). Caught/Run out/Stumped instead select
+   themselves (ui.wicketFlow holds which) and the sheet grows a fielder (the
+   keeper, for a stumping)/end/runs section plus a Confirm button below the
+   same type grid -- still exactly two taps total, just no full-screen swap. */
 function renderWicketModal(inn){
   const match = state.match;
   const selected = ui.wicketFlow;
   const isRunout = selected === "runout";
   const isCaught = selected === "caught";
+  const isStumped = selected === "stumped";
   const strikerStats = inn.striker ? inn.batting.stats[inn.striker] : null;
   // A wicket off a wide / no-ball (ui.wicketExtra, from the extra-runs sheet).
   const extra = ui.wicketExtra;
@@ -621,7 +622,7 @@ function renderWicketModal(inn){
   const runoutAt = ui.runoutAt || ui.runoutEnd;
   const runoutSurvivor = ui.runoutEnd === "striker" ? inn.nonStriker : inn.striker;
 
-  const required = isRunout ? match.requireFielderOnRunout : match.requireFielderOnCatch;
+  const required = isRunout ? match.requireFielderOnRunout : isCaught ? match.requireFielderOnCatch : false;
 
   return `
     <div class="modal-backdrop with-score">
@@ -665,14 +666,14 @@ function renderWicketModal(inn){
             </div>
             <p class="hint">${extra === "wide" ? "They count as wides, against the bowler." : "These runs count against the bowler, unlike byes and leg byes."}</p>
           ` : ""}
-          ${(isRunout || isCaught) ? `
+          ${(isRunout || isCaught || isStumped) ? `
             ${match.anonymous ? "" : `            <div class="fielder-box">
               <div class="fielder-box-head">
-                <label for="wicket-fielder">FIELDER</label>
-                ${required ? `<span class="required-badge">REQUIRED</span>` : ""}
+                <label for="wicket-fielder">${isStumped ? "KEEPER" : "FIELDER"}</label>
+                ${required ? `<span class="required-badge">REQUIRED</span>` : isStumped ? `<span class="muted optional-note">optional</span>` : ""}
               </div>
               ${renderNameCombo("", `id="wicket-fielder" name="fielder" maxlength="24" placeholder="Search players" ${required ? "required" : ""}`, pickCandidates(match, pickPool(inn.bowlingTeam), "fielder"))}
-              ${isCaught ? `<div class="hint">Credits a catch in the fielding stats.</div>` : ""}
+              ${isCaught ? `<div class="hint">Credits a catch in the fielding stats.</div>` : isStumped ? `<div class="hint">Credits the keeper with a stumping.</div>` : ""}
             </div>`}
             <div style="display:flex;gap:10px;margin-top:14px;">
               <button type="button" data-action="close-wicket-modal" class="ghost" style="width:112px;flex-shrink:0;">Cancel</button>
@@ -689,7 +690,7 @@ function renderWicketModal(inn){
 
 function maybeArchiveCompletedMatch(match){
   if (match.status === "complete" && !match.archivedId){
-    match.motm = pickMatchMOTM(match);
+    match.motm = pickMatchMOTM(match, pointsPresetFor(match));
     // A finished match that was reopened (or undone past its end) and has now
     // finished again goes back into its own archive entry, not a second one.
     const prevId = match.reopenedFrom && state.matchHistory[match.reopenedFrom] ? match.reopenedFrom : null;
@@ -744,11 +745,13 @@ function handleWicketFielderSubmit(e){
     SFX.wicket(); liveMoment = wicketMoment(inn);
     resetWicketUi(); ui.pendingExtra = null;
     save(); render();
-  } else if (ui.wicketFlow === "caught"){
-    if (match.requireFielderOnCatch && !fielder){ showFormError(e.target, "This preset requires naming the catch taker."); return; }
-    pushSnapshot();
+  } else if (ui.wicketFlow === "caught" || ui.wicketFlow === "stumped"){
+    const type = ui.wicketFlow;
+    if (type === "caught" && match.requireFielderOnCatch && !fielder){ showFormError(e.target, "This preset requires naming the catch taker."); return; }
     const inn = currentInnings(match);
-    recordBall(inn, { kind: "wicket", wicketType: "caught", fielder: fielder || undefined });
+    if (!wicketTypesFor(inn.freeHit, ui.wicketExtra || undefined).includes(type)) return;
+    pushSnapshot();
+    recordBall(inn, { kind: "wicket", wicketType: type, fielder: fielder || undefined, extra: ui.wicketExtra || undefined });
     if (fielder) registerMatchPlayer(fielder, inn.bowlingTeam);
     afterBall(match);
     maybeArchiveCompletedMatch(match);

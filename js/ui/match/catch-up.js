@@ -269,7 +269,7 @@ function applyCatchUpNow(data){
     const fieldSide = [...data.bowlers.map(b => b.name), data.bowlerNow, data.lastOver];
     data.batters.forEach(b => {
       registerMatchPlayer(b.name, inn.battingTeam);
-      if (b.status === "out"){ if (b.wicketType !== "runout") fieldSide.push(b.bowler); if (b.wicketType === "caught" || b.wicketType === "runout") fieldSide.push(b.fielder); }
+      if (b.status === "out"){ if (b.wicketType !== "runout") fieldSide.push(b.bowler); if (WICKET_FIELDER_TYPES.includes(b.wicketType)) fieldSide.push(b.fielder); }
     });
     fieldSide.filter(n => n && n.trim()).forEach(n => registerMatchPlayer(n, inn.bowlingTeam));
   }

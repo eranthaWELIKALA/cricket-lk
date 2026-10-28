@@ -12,6 +12,9 @@ function defaultUi(){
     tournamentTab: null, resultEntry: null, sharePreview: null,
     selectedTeamId: null,
     presetsTab: "match", editingMatchPreset: null, editingTournamentPreset: null,
+    editingPointsPreset: null, editingClubPointsPreset: null, clubPresetMessage: null,
+    // Leaderboard sort per table: { mvp|bat|bowl|field: { key, dir } } (renderLeaderboards).
+    statsSort: {},
     // cloud clubs (see CLOUD section) -- caches of fetched data, not persisted;
     // re-fetched whenever their screen is opened.
     myClubs: null, myClubsLoading: false, currentClubId: null, club: null, clubBusy: false, clubInviteMessage: null,
@@ -149,7 +152,7 @@ function activeSetupClubId(){ return activeMatchClubId() || (ui.clubMatchSetupTy
    two are never merged -- club setup screens call these instead of reading
    the guest tables. */
 function clubPresetList(kind, clubId){
-  return ui.club && ui.club.id === clubId && ui.club.presets ? ui.club.presets[kind] : [];
+  return ui.club && ui.club.id === clubId && ui.club.presets ? ui.club.presets[kind] || [] : [];
 }
 function clubSetupId(){ return ui.clubMatchSetupType && ui.currentClubId ? ui.currentClubId : null; }
 function matchPresetChoices(){
@@ -245,6 +248,28 @@ function saveTournamentPreset(preset){
 }
 function deleteTournamentPreset(id){ delete state.tournamentPresets[id]; }
 
+/* MVP points presets. Points are counted when stats are read, with the
+   preset in use for that role -- the guest's (state.pointsPresetId) or the
+   club's (the one marked `inUse`, else its first, else the built-in default)
+   -- so changing it recounts every match. A player of the match already
+   awarded keeps match.motm. Premier shows no points at all. */
+function savePointsPreset(preset){
+  const id = preset.id || genId("ppreset");
+  state.pointsPresets[id] = Object.assign({}, preset, { id });
+  return state.pointsPresets[id];
+}
+function deletePointsPreset(id){ delete state.pointsPresets[id]; }
+function guestPointsPreset(){
+  return state.pointsPresets[state.pointsPresetId] || Object.values(state.pointsPresets)[0] || DEFAULT_POINTS_PRESETS[0];
+}
+function clubPointsPreset(clubId){
+  const own = clubPresetList("points", clubId) || [];
+  return own.find(p => p.inUse) || own[0] || DEFAULT_POINTS_PRESETS[0];
+}
+function pointsPresetFor(match){
+  return match && match.clubId ? clubPointsPreset(match.clubId) : guestPointsPreset();
+}
+
 /* --- tournaments & match history --- */
 function createTournament({ name, tournamentPresetId, teamIds }){
   const tournament = { id: genId("tourney"), name: (name || "").trim(), tournamentPresetId, teamIds: (teamIds || []).slice(), matchIds: [] };
@@ -296,6 +321,23 @@ function keepMatchLogs(id, match){
   Object.keys(store).sort((a, b) => store[b].at - store[a].at).slice(MATCH_LOGS_KEEP).forEach(k => delete store[k]);
   DB.save(MATCH_LOGS_KEY, store);
 }
+/* A match deleted in the cloud (its id in supabase/015's deleted_matches,
+   fetched with the club) leaves this device too: its archive entry, its
+   kept log, any upload of it still queued here (the server would skip it
+   anyway) and its place in a tournament's list. True if anything went. */
+function forgetDeletedMatches(ids){
+  const gone = (ids || []).filter(id => state.matchHistory[id]);
+  const queued = outbox.filter(op => op.kind === "match" && op.args && (ids || []).includes(op.args.id));
+  if (!gone.length && !queued.length) return false;
+  gone.forEach(id => { delete state.matchHistory[id]; });
+  Object.values(state.tournaments).forEach(t => { t.matchIds = (t.matchIds || []).filter(id => !gone.includes(id)); });
+  const store = matchLogStore();
+  gone.forEach(id => { delete store[id]; });
+  DB.save(MATCH_LOGS_KEY, store);
+  if (queued.length){ outbox = outbox.filter(op => !queued.includes(op)); saveOutbox(); }
+  return true;
+}
+
 // An archived match with its logs put back (a copy), or null. An innings
 // whose log wasn't kept is rebuilt from its scorecard where that's exact
 // (rebuildInningsFromScorecard, ENGINE).

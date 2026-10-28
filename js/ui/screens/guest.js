@@ -122,10 +122,11 @@ function renderPresetsScreen(){
       ${renderBackBar("Home", "home")}
       <h1>⚙️ Presets</h1>
       <div class="tab-row">
-        <button data-action="switch-presets-tab" data-tab="match" class="tab-btn ${tab === "match" ? "active" : ""}">Match presets</button>
-        <button data-action="switch-presets-tab" data-tab="tournament" class="tab-btn ${tab === "tournament" ? "active" : ""}">Tournament presets</button>
+        <button data-action="switch-presets-tab" data-tab="match" class="tab-btn ${tab === "match" ? "active" : ""}">Match</button>
+        <button data-action="switch-presets-tab" data-tab="tournament" class="tab-btn ${tab === "tournament" ? "active" : ""}">Tournament</button>
+        <button data-action="switch-presets-tab" data-tab="points" class="tab-btn ${tab === "points" ? "active" : ""}">MVP points</button>
       </div>
-      ${tab === "match" ? renderMatchPresetsTab() : renderTournamentPresetsTab()}
+      ${tab === "match" ? renderMatchPresetsTab() : tab === "points" ? renderPointsPresetsTab() : renderTournamentPresetsTab()}
     </div>
   `;
 }
@@ -301,6 +302,140 @@ function handleTournamentPresetSubmit(e){
   save(); render();
 }
 
+/* --- MVP points presets (see calcPlayerPoints). The card and editor are
+   shared by the guest Presets screen (state.pointsPresets) and the club's
+   Presets (club_presets kind 'points'); each passes its own actions. --- */
+const POINTS_FIELD_GROUPS = [
+  ["Batting", [["perRun", "Per run"], ["perFour", "Four (extra)"], ["perSix", "Six (extra)"], ["thirty", "Reaching 30"],
+    ["fifty", "Reaching 50"], ["century", "Reaching 100"], ["notOut", "Not out"], ["duck", "Duck"]]],
+  ["Bowling", [["perWicket", "Per wicket"], ["bowledLbw", "Bowled / lbw (extra)"], ["perMaiden", "Per maiden"], ["perDot", "Per dot ball"],
+    ["threeWickets", "3 wickets"], ["fourWickets", "4 wickets"], ["fiveWickets", "5 wickets"]]],
+  ["Fielding", [["perCatch", "Per catch"], ["perStumping", "Per stumping"], ["perRunOut", "Per run-out"]]]
+];
+// Short card tags for the values a preset actually gives points for; extras
+// on top of something else (a four's runs, a wicket) carry their sign.
+function pointsPresetTags(p){
+  const tags = [["perRun", "run"], ["perFour", "four", 1], ["perSix", "six", 1], ["thirty", "30", 1], ["fifty", "50", 1], ["century", "100", 1],
+    ["notOut", "not out", 1], ["duck", "duck", 1], ["perWicket", "wicket"], ["bowledLbw", "bowled/lbw", 1], ["perMaiden", "maiden"],
+    ["perDot", "dot"], ["threeWickets", "3 wkts", 1], ["fourWickets", "4 wkts", 1], ["fiveWickets", "5 wkts", 1],
+    ["perCatch", "catch"], ["perStumping", "stumping"], ["perRunOut", "run-out"]]
+    .filter(([k]) => Number(p[k])).map(([k, label, extra]) => `${label} ${extra ? pointsSigned(Number(p[k])) : pointsNum(p[k])}`);
+  if (p.economy) tags.push("economy bands");
+  if (p.strikeRate) tags.push("strike-rate bands");
+  return tags;
+}
+function pointsPresetCardHtml(p, { builtIn, inUse, useAction, editAction, deleteAction }){
+  return `
+    <div class="preset-row ${builtIn ? "builtin" : ""} ${inUse ? "in-use" : ""}">
+      <div class="preset-row-head">
+        <b>${escapeHtml(p.name)}</b>
+        ${inUse ? `<span class="required-badge in-use-badge">IN USE</span>` : ""}
+        ${builtIn ? `<span class="required-badge">BUILT IN</span>` : ""}
+        ${editAction ? `<div class="row-actions">
+          ${inUse ? "" : `<button data-action="${useAction}" data-id="${p.id}" class="ghost small">Use</button>`}
+          <button data-action="${editAction}" data-id="${p.id}" class="ghost small">Edit</button>
+          <button data-action="${deleteAction}" data-id="${p.id}" class="ghost small">Delete</button>
+        </div>` : ""}
+      </div>
+      <div class="chips">${pointsPresetTags(p).map(t => `<span class="n tag-pill">${escapeHtml(t)}</span>`).join("")}</div>
+    </div>
+  `;
+}
+
+function renderPointsPresetsTab(){
+  const editing = ui.editingPointsPreset;
+  const builtInIds = new Set(DEFAULT_POINTS_PRESETS.map(p => p.id));
+  const inUse = guestPointsPreset();
+  return `
+    <p class="hint">MVP points and player of the match are counted with the preset in use. Changing it, or its numbers, recounts every match; a player of the match already given stays.</p>
+    <div class="preset-list">
+      ${Object.values(state.pointsPresets).map(p => pointsPresetCardHtml(p, { builtIn: builtInIds.has(p.id), inUse: p.id === inUse.id,
+        useAction: "use-points-preset", editAction: "edit-points-preset", deleteAction: "delete-points-preset" })).join("")
+        || `<p class="hint">No points presets: the built-in ${escapeHtml(DEFAULT_POINTS_PRESETS[0].name)} points are used.</p>`}
+    </div>
+    ${editing ? renderPointsPresetForm(editing) : `<button data-action="new-points-preset" class="link-btn">+ New points preset</button>`}
+  `;
+}
+
+function renderPointsPresetForm(p, clubId){
+  const num = (name, value, extra) => `<input name="${name}" type="number" step="any" inputmode="decimal" value="${value == null ? "" : value}" ${extra || ""}>`;
+  const bandBlock = (key, title, minName, minLabel, minValue, unit) => {
+    const cfg = p[key], bands = (cfg && cfg.bands) || [];
+    const rows = Array.from({ length: POINTS_BAND_ROWS }, (_, i) => {
+      const b = bands[i] || {};
+      return `<div class="band-row">
+        ${num(`${key}From${i}`, b.from, `min="0" placeholder="—" aria-label="${title} band ${i + 1} from"`)}
+        ${num(`${key}Below${i}`, b.below, `min="0" placeholder="—" aria-label="${title} band ${i + 1} below"`)}
+        ${num(`${key}Pts${i}`, b.pts, `placeholder="0" aria-label="${title} band ${i + 1} points"`)}
+      </div>`;
+    }).join("");
+    return `
+      <div class="band-block">
+        <label class="check-row"><input type="checkbox" name="${key}On" ${cfg ? "checked" : ""}> ${title}</label>
+        <div class="band-body">
+          <label class="band-min">${minLabel}<input name="${minName}" type="number" min="0" max="50" value="${minValue}"></label>
+          <div class="band-row band-head"><span>From</span><span>Below</span><span>Points</span></div>
+          ${rows}
+          <p class="hint">${unit} Leave a box blank for no limit; the first band that fits counts. Unused rows stay blank.</p>
+        </div>
+      </div>`;
+  };
+  const target = clubId ? "1" : "";
+  return `
+    <form id="${clubId ? "club-" : ""}points-preset-form" class="preset-form points-form">
+      <input type="hidden" name="id" value="${p.id || ""}">
+      ${clubId ? `<input type="hidden" name="inUse" value="${p.inUse ? "1" : ""}">` : ""}
+      <div class="form-error"></div>
+      <label>Name<input name="name" required maxlength="30" value="${escapeHtml(p.name || "")}"></label>
+      <div class="points-templates">
+        <span class="muted">Fill in from</span>
+        ${DEFAULT_POINTS_PRESETS.map(t => `<button type="button" data-action="points-template" data-id="${t.id}" data-club="${target}" class="preset-chip">${escapeHtml(t.name)}</button>`).join("")}
+      </div>
+      ${POINTS_FIELD_GROUPS.map(([title, fields]) => `
+        <h4 class="stat-sub">${title}</h4>
+        <div class="points-grid">
+          ${fields.map(([k, label]) => `<label>${label}${num(k, p[k] ?? 0, `min="-100" max="100" required`)}</label>`).join("")}
+        </div>`).join("")}
+      <p class="hint">Points are per innings. Milestones and wicket hauls give the highest reached only (a hundred isn't also a fifty). A duck or a band can take points away: use a minus number.</p>
+      <h4 class="stat-sub">Rate bonuses</h4>
+      ${bandBlock("economy", "Economy (runs an over)", "economyMin", "Only after this many overs in an innings", p.economy ? p.economy.minOvers : 2, "Runs per over, the match's own over length.")}
+      ${bandBlock("strikeRate", "Strike rate (runs per 100 balls)", "strikeRateMin", "Only after this many balls faced", p.strikeRate ? p.strikeRate.minBalls : 10, "Runs per 100 balls faced.")}
+      <div class="action-row">
+        <button type="submit" class="primary">Save preset</button>
+        <button type="button" data-action="${clubId ? "club-cancel-preset-edit" : "cancel-preset-edit"}" class="ghost">Cancel</button>
+      </div>
+    </form>
+  `;
+}
+
+function parsePointsPresetForm(f){
+  const opt = k => { const n = parseFloat(f.get(k)); return isNaN(n) ? null : n; };
+  const p = { id: f.get("id") || undefined, name: (f.get("name") || "").trim() || "Untitled preset" };
+  if (f.get("inUse") === "1") p.inUse = true;
+  POINTS_FIELD_GROUPS.forEach(([, fields]) => fields.forEach(([k]) => { p[k] = roundPoints(opt(k) || 0); }));
+  const bands = key => {
+    const out = [];
+    for (let i = 0; i < POINTS_BAND_ROWS; i++){
+      const b = { from: opt(`${key}From${i}`), below: opt(`${key}Below${i}`), pts: roundPoints(opt(`${key}Pts${i}`) || 0) };
+      if (b.from != null || b.below != null || b.pts) out.push(b);
+    }
+    return out;
+  };
+  p.economy = f.get("economyOn") === "on" ? { minOvers: Math.max(0, parseInt(f.get("economyMin"), 10) || 0), bands: bands("economy") } : null;
+  p.strikeRate = f.get("strikeRateOn") === "on" ? { minBalls: Math.max(0, parseInt(f.get("strikeRateMin"), 10) || 0), bands: bands("strikeRate") } : null;
+  return p;
+}
+
+function handlePointsPresetSubmit(e){
+  e.preventDefault();
+  const preset = parsePointsPresetForm(new FormData(e.target));
+  const err = pointsPresetError(preset);
+  if (err){ showFormError(e.target, err); return; }
+  savePointsPreset(preset);
+  ui.editingPointsPreset = null;
+  save(); render();
+}
+
 /* Club variants: same forms, but the preset goes to club_presets in the
    cloud for ui.currentClubId -- never into state.matchPresets/
    tournamentPresets (those are the guest's, on this device). */
@@ -315,6 +450,12 @@ function saveClubPresetFromForm(e, kind, preset, editingKey){
 }
 function handleClubMatchPresetSubmit(e){ saveClubPresetFromForm(e, "match", parseMatchPresetForm(new FormData(e.target)), "editingClubMatchPreset"); }
 function handleClubTournamentPresetSubmit(e){ saveClubPresetFromForm(e, "tournament", parseTournamentPresetForm(new FormData(e.target)), "editingClubTournamentPreset"); }
+function handleClubPointsPresetSubmit(e){
+  const preset = parsePointsPresetForm(new FormData(e.target));
+  const err = pointsPresetError(preset);
+  if (err){ e.preventDefault(); showFormError(e.target, err); return; }
+  saveClubPresetFromForm(e, "points", preset, "editingClubPointsPreset");
+}
 
 /* --- tournament setup & dashboard --- */
 function renderTournamentSetup(){
@@ -437,12 +578,13 @@ function renderTournamentFixtures(matches, teams){
 }
 
 function renderTournamentStats(matches){
-  const totals = aggregatePlayerStats(matches);
+  const points = guestPointsPreset();
+  const totals = aggregatePlayerStats(matches, points);
   if (!totals.length) return `<p class="hint">No stats yet.</p>`;
-  const mvp = totals[0];
+  const mvp = totals[0].points > 0 ? totals[0] : null;
   return `
-    <div class="mvp-callout"><span class="mvp-label">Tournament MVP</span><span class="mvp-name">${escapeHtml(mvp.name)}</span><span class="mvp-points">${mvp.points} pts</span></div>
-    ${renderLeaderboards(totals)}
+    ${mvp ? `<div class="mvp-callout"><span class="mvp-label">Tournament MVP</span><span class="mvp-name">${escapeHtml(mvp.name)}</span><span class="mvp-points">${pointsNum(mvp.points)} pts</span></div>` : ""}
+    ${renderLeaderboards(totals, { points, where: "Presets → MVP points" })}
   `;
 }
 

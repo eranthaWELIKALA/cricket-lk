@@ -62,8 +62,8 @@ that order). Rules that follow from that:
 Sections, in load order:
 
 1. **`REFERENCE DATA`** — `WICKET_LABELS` (dismissal display strings),
-   `MVP_POINTS` (the fixed MOTM/MVP point formula — see "Stats & MVP"
-   below), `DEFAULT_MATCH_PRESETS`/`DEFAULT_TOURNAMENT_PRESETS`, the
+   `DEFAULT_POINTS_PRESETS` (the built-in MVP points presets — see "Stats &
+   MVP" below), `DEFAULT_MATCH_PRESETS`/`DEFAULT_TOURNAMENT_PRESETS`, the
    built-in presets seeded into storage on first run, and `THEME_PRESETS`
    (the Settings screen's theme gallery — see "Theme & sound" below).
 2. **`ENGINE`** — pure functions, zero DOM access: `createInnings`,
@@ -170,11 +170,15 @@ commentary. UI: the Wide/No ball runs sheet has an "Out on this wide?" button
 — use it instead of resetting `runoutEnd` etc. by hand.
 
 **Wicket events carry an optional `fielder` name**, used for
-`wicketType: 'caught'` and `'runout'` only. It changes the persisted
-`howOut` text (`c NAME b BOWLER` / `run out (NAME)`) and credits
-`inn.fielding.stats[NAME]` (mirrors `ensureBowler`'s
-`{order, stats}` shape via `ensureFielder`) — that's the only thing
-feeding catches/run-outs into `calcPlayerPoints`. Whether a fielder is
+`wicketType: 'caught'`, `'runout'` and `'stumped'` (the keeper) only
+(`WICKET_FIELDER_TYPES`). It changes the persisted `howOut` text
+(`c NAME b BOWLER` / `run out (NAME)` / `st NAME b BOWLER`) and credits
+`inn.fielding.stats[NAME]` (`{ catches, runouts, stumpings }`, mirroring
+`ensureBowler`'s `{order, stats}` shape via `ensureFielder`) — that's the
+only thing feeding catches/run-outs/stumpings into `calcPlayerPoints`.
+Fielding lines from before stumpings were counted have no `stumpings`:
+read it as `f.stumpings || 0` (`inningsScorecardKey` does, so old matches
+still rebuild). Whether a fielder is
 *required* is a match-level flag (`match.requireFielderOnCatch` /
 `requireFielderOnRunout`, sourced from whichever preset the match was
 started from) enforced by the UI form, not the engine — `recordBall`
@@ -486,13 +490,45 @@ typing.
 
 ## Stats & MVP
 
-`calcPlayerPoints` is a fixed, documented formula (see `MVP_POINTS`) —
-it is **not** user-configurable in this version; don't wire a settings
-UI for it without discussing scope first. `aggregatePlayerStats` and
-`pickMatchMOTM` both fold innings stats through the same helper
-(`foldInningsIntoTotals`) so a player's batting/bowling/fielding lines
-are summed consistently whether you're looking at one match's MOTM or
-an all-time/tournament leaderboard. A completed match is archived into
+**MVP points come from a points preset**, a third kind of preset next to
+match and tournament presets. `calcPlayerPoints(bat, bowl, field, preset)`
+gives one player's points for one innings: per run / four / six, a 30 / 50
+/ 100 bonus (highest reached only), not out, duck; per wicket, bowled-or-lbw
+extra, per maiden, per dot ball, a 3 / 4 / 5-wicket haul (highest only); per
+catch / stumping / run-out; and optional economy and strike-rate **bands**
+(`{ from, below, pts }`, from <= x < below, open ends `null`, first fit
+wins; only after `minOvers` / `minBalls`; economy in the match's own over
+length). Values may be decimals or negative. Dots and bowled/lbw wickets
+aren't in the bowling line: `inningsBowlerExtras(inn)` reads dots from ball
+by ball (byes/leg byes are dots for the bowler; catch-up gaps have no
+balls) and bowled/lbw from each batter's `howOut`. Built-ins
+(`DEFAULT_POINTS_PRESETS`): **Club** (the default: a wicket is about 15
+runs, and a four +2 / a six +4 on top of their runs, since most club games
+are 4-6 overs), **Classic** (the old fixed formula), **Fantasy
+T20** (bands, hauls, duck) and **IPL MVP**. Described in plain words by
+`describePointsPreset` (the ⓘ), checked by `pointsPresetError` (ENGINE,
+tested).
+
+**Points are counted when stats are read, never stored**, with the preset in
+use for that role: the guest's (`state.pointsPresets`,
+`state.pointsPresetId` → `guestPointsPreset()`; seeded with the built-ins,
+and an old save gets them through `load()`'s merge) or the club's
+(`club_presets` kind `'points'`, `supabase/016_points_presets.sql`; the one
+whose jsonb has `inUse: true` → its first → the built-in default:
+`clubPointsPreset(clubId)`; `useClubPointsPreset` moves the flag). So editing
+or switching a preset recounts every match. `pointsPresetFor(match)` picks
+for one match. Player of the match is still worked out once, at completion,
+and kept in `match.motm` — a preset change doesn't move it. **Premier uses
+no points**: its leaderboards pass `{ points: null }` (no MVP table) and a
+Premier-opened profile shows no MVP points (its club tier mixes clubs whose
+points differ); a club-opened profile's club tier does.
+
+`aggregatePlayerStats(matches, preset)` and `pickMatchMOTM(match, preset)`
+both fold innings stats through the same helper (`foldInningsIntoTotals`) so
+a player's batting/bowling/fielding lines are summed consistently whether
+you're looking at one match's MOTM or an all-time/tournament leaderboard.
+The totals also keep highest score, 50s/100s, ducks, bowling innings, best
+bowling, dots and stumpings for the leaderboard columns. A completed match is archived into
 `state.matchHistory` exactly once (`maybeArchiveCompletedMatch`, guarded
 by `match.archivedId`) right after `afterBall()` flips its status to
 `"complete"` — that archive is the only source of truth stats/standings
@@ -740,7 +776,7 @@ It currently covers: end innings, toss restart, forfeit, cancel match,
 remove club player, delete tournament team, discard unsaved team edits,
 move a player between tournament teams, new club player vs guest in the team builder,
 end/reopen a tournament,
-delete guest team/player, delete match/tournament/club presets, change or
+delete guest team/player, delete match/tournament/points/club presets, change or
 remove an earlier ball, add a ball, set the final score by hand, reopen an
 innings. **Don't add
 `window.confirm()` or "tap again to confirm" buttons** — use `askConfirm`.
@@ -966,9 +1002,17 @@ table, latest 3 results, start button), **Teams** (`teamCardHtml`: cards
 collapsed to name + count, tap to show players — `ui.expandedTeamId`; club
 edit/delete buttons stay on the card), **Fixtures** (start a match + every
 completed match via `renderFixtureList`, tap → scorecard sheet) and
-**Stats**. `renderLeaderboards` shows one table at a time behind its own
-MVP / Batting / Bowling / Fielding sub-tabs (`ui.statsTab`) — everywhere it's
-used. The player profile has **Profile / Stats** tabs (`ui.profile.tab`, so
+**Stats**. `renderLeaderboards(totals, { points, where })` shows one table
+at a time behind its own MVP / Batting / Bowling / Fielding sub-tabs
+(`ui.statsTab`) — everywhere it's used; with `points: null` (Premier) the
+MVP tab isn't there. Every player is listed (Batting: everyone who batted,
+Bowling: everyone who bowled) with a column per stat (`LEADERBOARD_COLUMNS`,
+stats.js; the table's key number — Pts / R / W / Total — comes right after
+the player, so a phone shows it without swiping). Tapping a column head
+sorts by it (`stats-sort` → `ui.statsSort[table]`: best-first, again flips;
+blanks last; ties by `LEADERBOARD_ORDER`, then name). Wide tables scroll
+sideways inside their card (`.table-scroll`, never the page) with the player
+column pinned, and keep their scroll across the re-sort. The player profile has **Profile / Stats** tabs (`ui.profile.tab`, so
 it resets with each profile). All of them use `tabsHtml(action, tabs,
 active, cls)` (common.js); `main-tabs` makes a top-level row equal-width.
 
@@ -1064,7 +1108,8 @@ ad hoc form already lives — it doesn't relocate the form itself.
 Home gained a "Recent matches" section (latest 3 of `state.matchHistory`
 by `completedAt`) and a "stored on this device" footnote — both need
 only existing data. Stats now leads with the MVP leaderboard
-(`.leaderboard.mvp`, gold-tinted, with M/Runs/Wkt/Pts columns) and ends
+(`.leaderboard.mvp`, gold-tinted, with Pts/M/Runs/Wkt/Fld columns and the
+points preset it was counted with, ⓘ) and ends
 with an "archived matches only" footnote. `renderLeaderboards` is shared
 with the tournament Stats tab and club Stats, so they pick this up too.
 
@@ -1080,9 +1125,9 @@ something the app doesn't have (or would remove working behavior):
   and a live search field there would need its own handling — the one
   delegated `input` listener is scoped to the club add-player sheet's name
   field (see "Nickname, jersey no…" below), not a general search hook.
-- Highest-score ("HS") and best-bowling ("BEST") columns, and the
-  All-time/tournament scope chips on Stats — `aggregatePlayerStats`
-  doesn't track per-innings bests, and Stats has no scope state.
+- The All-time/tournament scope chips on Stats — Stats has no scope
+  state. (Highest score and best bowling *are* columns now: the totals
+  track them.)
 
 ## Theme & sound
 
@@ -1233,14 +1278,16 @@ facing batsman) or like a run-out (clears whichever end the UI names).
 a separate detail screen for caught/run-out — `ui.wicketFlow` doubles as
 both "is the modal open" and "which type is currently selected"
 (`"menu"` when open with nothing selected yet, or the type string once
-one is). Tapping Bowled/LBW/Stumped/Hit wicket still calls
+one is). Tapping Bowled/LBW/Hit wicket still calls
 `confirmWicket(type)` immediately, same one-tap speed as always — there
 being nothing to enter for those, a second confirm tap would only slow
-down the common case. Only Caught and Run out set `ui.wicketFlow` to
-themselves and grow the sheet (fielder box, and for run-out the
-`ui.runoutEnd` end-picker + `ui.runoutRuns` picker) below the same type
-grid, ending in a Confirm button — still exactly two taps for those two,
-just without a full-screen swap. If you add a type that needs its own
+down the common case. Only Caught, Run out and Stumped
+(`WICKET_FIELDER_TYPES`) set `ui.wicketFlow` to themselves and grow the
+sheet (fielder box — "Keeper", optional, for a stumping — and for run-out
+the `ui.runoutEnd` end-picker + `ui.runoutRuns` picker) below the same type
+grid, ending in a Confirm button — still exactly two taps for those,
+just without a full-screen swap. The ball edit sheet and Catch up ask for
+the keeper on a stumping too. If you add a type that needs its own
 extra input, follow this pattern (extend the sheet, don't add a new
 screen) and add any new `ui.*` field to `resetWicketUi()` (sheets.js), which
 every close/undo/success path calls, or it'll leak into the next wicket.
@@ -1552,6 +1599,7 @@ only its own:
 | Players | `state.players` | `club_rosters` → `players` (via `addPlayerToClub`) | `players_public` (everyone, incl. friendly visitors) |
 | Teams | `state.teams` | `tournament_teams` per club tournament (012); otherwise names typed at match setup | derived from `level:"premier"` matches |
 | Presets | `state.matchPresets` / `tournamentPresets` | `club_presets` → `ui.club.presets` | none (`PREMIER_STANDINGS_DISPLAY_PRESET` is fixed display config) |
+| MVP points | `state.pointsPresets` + `pointsPresetId` | `club_presets` kind `'points'` (016), the `inUse` one | none — Premier shows stats only |
 | Matches | `matchHistory` where `!clubId` | `matches` where `club_id` (+ local archive with that `clubId`) | `matches` where `level = "premier"` |
 | Tournaments | `state.tournaments` | `tournaments` where `organizer_club_id` | — |
 
@@ -1740,6 +1788,25 @@ so. Once the sign-up goes through, the password is dropped and the job
 becomes a resend. Like `session`, it's a top-level `let`, not a `ui` field.
 Covered in `test.js`. A real fix for volume is custom SMTP in the Supabase
 dashboard, which needs no code change.
+
+## Deleted matches stay deleted (`supabase/015_deleted_matches.sql`)
+
+A match deleted in the cloud (the admin portal's Delete, the SQL editor, or a
+club deleted with its matches) used to live on in the archive of the phone
+that scored it — club lists merge that archive in, so it kept showing and
+counting there, and an edit could upload it again. Now an `after delete`
+trigger on `matches` records every deleted id in `deleted_matches` (id +
+club, public read, no client writes), and a `before insert` trigger skips any
+insert of a deleted id (a stale queued upload "succeeds" without bringing it
+back). `fetchClubDetailFromServer` fetches the club's deleted ids
+(`deletedMatchIds`; an error means 015 isn't run) and `fetchClubDetail` passes
+a fresh server list to `forgetDeletedMatches` (state.js), which drops those
+matches from the archive, the match log store, a guest tournament's
+`matchIds` and the outbox. Only explicit tombstones remove anything: a club
+match this device scored while signed out, which never reached the cloud, is
+left alone. Neither the app nor the admin portal deletes a *tournament*; that's
+SQL (copy the row and its `tournament_teams` into `admin_audit_log` first,
+like `admin_delete_match` does for a match).
 
 ## Renaming a player (`supabase/013_rename_player.sql`)
 

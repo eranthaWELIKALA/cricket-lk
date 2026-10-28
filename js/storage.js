@@ -52,11 +52,15 @@ function genId(prefix){
 function defaultState(){
   const matchPresets = {}; DEFAULT_MATCH_PRESETS.forEach(p => { matchPresets[p.id] = p; });
   const tournamentPresets = {}; DEFAULT_TOURNAMENT_PRESETS.forEach(p => { tournamentPresets[p.id] = p; });
+  const pointsPresets = {}; DEFAULT_POINTS_PRESETS.forEach(p => { pointsPresets[p.id] = p; });
   return {
     match: null, snapshots: [],
     view: "home",
     players: {}, teams: {},
     matchPresets, tournamentPresets,
+    // MVP points presets and the one guest stats use (see guestPointsPreset()).
+    // A save from before points presets gets the built-ins via load()'s merge.
+    pointsPresets, pointsPresetId: DEFAULT_POINTS_PRESET_ID,
     tournaments: {}, matchHistory: {},
     activeTournamentId: null,
     activeClubId: null, // which club (if any) Home's quick-action cards currently target -- see the CLOUD "clubs" section

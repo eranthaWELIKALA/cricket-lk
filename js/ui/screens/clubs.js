@@ -243,7 +243,10 @@ function renderPlayerProfile(){
   // inside each, batting / bowling / fielding are separate sections too.
   const grid = tiles => `<div class="stat-grid">${tiles.join("")}</div>`;
   const hs = c => c.highScore ? `${c.highScore.runs}${c.highScore.out ? "" : "*"}` : "—";
-  const statsBlock = (title, career, emptyHint, note) => {
+  // MVP points only in a club-opened profile's club tier, counted with that
+  // club's points preset: Premier uses no points, and a Premier-opened
+  // profile's club tier mixes clubs whose points differ.
+  const statsBlock = (title, career, emptyHint, note, showPoints) => {
     if (!career) return `<h3 class="section-label">${title}</h3><p class="hint">${emptyHint}</p>`;
     const batting = career.innings > 0
       ? grid([stat("Innings", career.innings), stat("Runs", career.runs), stat("Balls", career.balls),
@@ -256,12 +259,12 @@ function renderPlayerProfile(){
               stat("Runs", career.runsConceded), stat("Wickets", career.wickets), stat("Best", career.best ? `${career.best.wickets}/${career.best.runs}` : "—"),
               stat("Average", f1(career.bowlAverage)), stat("Economy", f1(career.economy)), stat("Strike rate", f1(career.bowlStrikeRate))])
       : `<p class="hint">Hasn't bowled yet.</p>`;
-    const fielding = (career.catches + career.runouts) > 0
-      ? grid([stat("Catches", career.catches), stat("Run-outs", career.runouts), stat("Dismissals", career.fieldDismissals)])
-      : `<p class="hint">No catches or run-outs yet.</p>`;
+    const fielding = career.fieldDismissals > 0
+      ? grid([stat("Catches", career.catches), stat("Stumpings", career.stumpings), stat("Run-outs", career.runouts), stat("Dismissals", career.fieldDismissals)])
+      : `<p class="hint">No catches, stumpings or run-outs yet.</p>`;
     return `
       <h3 class="section-label">${title}</h3>
-      <div class="tier-summary"><span class="tag-pill">${career.matches} match${career.matches === 1 ? "" : "es"}</span><span class="tag-pill gold">${career.points} MVP pts</span></div>
+      <div class="tier-summary"><span class="tag-pill">${career.matches} match${career.matches === 1 ? "" : "es"}</span>${showPoints ? `<span class="tag-pill gold">${pointsNum(career.points)} MVP pts</span>` : ""}</div>
       <h4 class="stat-sub">Batting</h4>${batting}
       <h4 class="stat-sub">Bowling</h4>${bowling}
       <h4 class="stat-sub">Fielding</h4>${fielding}
@@ -271,11 +274,12 @@ function renderPlayerProfile(){
   const clubMatches = isClub ? clubMatchesFor(ui.currentClubId) : (pr.clubMatches || []);
   const clubLabel = isClub ? (currentClubName() || "club") : "your clubs";
   const clubBlock = statsBlock(
-    `Club matches · ${escapeHtml(clubLabel)}`, playerCareer([pr.name, ...(pr.aliases || [])], clubMatches),
+    `Club matches · ${escapeHtml(clubLabel)}`, playerCareer([pr.name, ...(pr.aliases || [])], clubMatches, isClub ? clubPointsPreset(ui.currentClubId) : null),
     isClub ? "No matches for this player in this club yet."
       : pr.clubMatches === undefined ? "Loading…"
       : session ? "No matches for this player in the clubs you belong to yet." : "Sign in to see club stats from your clubs.",
-    isClub ? "From this club's archived matches only." : "From matches of the clubs you belong to only — club stats elsewhere aren't visible from here."
+    isClub ? "From this club's archived matches only." : "From matches of the clubs you belong to only — club stats elsewhere aren't visible from here.",
+    isClub
   );
   const premierBlock = statsBlock(
     "Premier matches", playerCareer([pr.name, ...(pr.aliases || [])], ui.premier ? ui.premier.premierMatches.map(m => m.data).filter(Boolean) : []),
@@ -479,15 +483,34 @@ function renderClubPresets(){
     <h3 class="section-label">Tournament presets</h3>
     ${clubPresetList("tournament", club.id).map(p => tournamentPresetCardHtml(p, "", false, "club-edit-tournament-preset", "club-delete-tournament-preset")).join("") || `<p class="hint">No tournament presets yet.</p>`}
     ${ui.editingClubTournamentPreset ? renderTournamentPresetForm(ui.editingClubTournamentPreset, club.id) : `<button data-action="club-new-tournament-preset" class="link-btn">+ New tournament preset</button>`}
+    ${renderClubPointsPresets(club)}
   `);
+}
+/* The club's MVP points presets. The one in use (clubPointsPreset) counts
+   the club's stats, tournaments, profiles and player of the match; with none
+   of its own, the club uses the built-in default. */
+function renderClubPointsPresets(club){
+  const own = clubPresetList("points", club.id);
+  const inUse = clubPointsPreset(club.id);
+  return `
+    <h3 class="section-label">MVP points</h3>
+    <p class="hint">MVP points and player of the match are counted with the preset in use. Changing it, or its numbers, recounts every club match; a player of the match already given stays.</p>
+    ${ui.clubPresetMessage ? `<p class="hint guest-note">${escapeHtml(ui.clubPresetMessage)}</p>` : ""}
+    ${own.length
+      ? own.map(p => pointsPresetCardHtml(p, { inUse: p.id === inUse.id,
+          useAction: "club-use-points-preset", editAction: "club-edit-points-preset", deleteAction: "club-delete-points-preset" })).join("")
+      : `${pointsPresetCardHtml(inUse, { builtIn: true, inUse: true })}<p class="hint">Built in — add a points preset to set this club's own.</p>`}
+    ${ui.editingClubPointsPreset ? renderPointsPresetForm(ui.editingClubPointsPreset, club.id) : `<button data-action="club-new-points-preset" class="link-btn">+ New points preset</button>`}
+  `;
 }
 
 function renderClubStats(){
   return renderClubScreen("Stats", club => {
     const matches = clubMatchesFor(club.id);
+    const points = clubPointsPreset(club.id);
     // The full match list lives here (Home shows the latest 3).
     return matches.length
-      ? renderLeaderboards(aggregatePlayerStats(matches)) + `<p class="hint">Read from ${matches.length} archived club match${matches.length === 1 ? "" : "es"} only.</p>`
+      ? renderLeaderboards(aggregatePlayerStats(matches, points), { points, where: "the club's Presets" }) + `<p class="hint">Read from ${matches.length} archived club match${matches.length === 1 ? "" : "es"} only.</p>`
         + renderRecentMatches("Matches", recentMatchesFor(matches, matches.length))
       : `<p class="hint">Play and finish a club match to see stats here.</p>`;
   });

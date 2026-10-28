@@ -11,11 +11,45 @@ const WICKET_LABELS = {
 /* Optional player-profile details (supabase/008_player_details.sql). */
 const BOWLING_TYPES = { fast: "Fast", medium: "Medium", "off-spin": "Off spin", "leg-spin": "Leg spin", orthodox: "Orthodox spin" };
 
-/* Fixed MVP/MOTM point formula — not user-tunable in v1 (see README). */
-const MVP_POINTS = {
-  perRun: 1, perFour: 1, perSix: 2, fifty: 8, century: 16, notOut: 4,
-  perWicket: 25, perMaiden: 8, perCatch: 8, perRunOut: 8
+/* Built-in MVP points presets (calcPlayerPoints; see CLAUDE.md "Stats &
+   MVP"). Seeded into a guest's state.pointsPresets on first run; a club with
+   no points presets of its own uses the first one. Milestones and wicket
+   hauls are "highest reached only" (a hundred isn't also a fifty). A rate
+   band is { from, below, pts }: from <= value < below, either end open (null),
+   the first band that fits wins. "Classic" is the formula this app used
+   before points could be set; "Club" weighs runs more for short club games
+   (a wicket is worth about 15 runs, as CricHeroes counts 10-20 over games),
+   and boundaries more still, since most club games are 4-6 overs. */
+const POINTS_ZERO = {
+  perRun: 0, perFour: 0, perSix: 0, thirty: 0, fifty: 0, century: 0, notOut: 0, duck: 0,
+  perWicket: 0, bowledLbw: 0, perMaiden: 0, perDot: 0, threeWickets: 0, fourWickets: 0, fiveWickets: 0,
+  perCatch: 0, perStumping: 0, perRunOut: 0, economy: null, strikeRate: null
 };
+const DEFAULT_POINTS_PRESETS = [
+  Object.assign({}, POINTS_ZERO, { id: "points-club", name: "Club",
+    perRun: 1, perFour: 2, perSix: 4, thirty: 4, fifty: 8, century: 16, notOut: 2,
+    perWicket: 15, perMaiden: 5, perCatch: 5, perStumping: 5, perRunOut: 8 }),
+  Object.assign({}, POINTS_ZERO, { id: "points-classic", name: "Classic",
+    perRun: 1, perFour: 1, perSix: 2, fifty: 8, century: 16, notOut: 4,
+    perWicket: 25, perMaiden: 8, perCatch: 8, perStumping: 8, perRunOut: 8 }),
+  // In the style of the fantasy-cricket apps' T20 scoring.
+  Object.assign({}, POINTS_ZERO, { id: "points-fantasy", name: "Fantasy T20",
+    perRun: 1, perFour: 1, perSix: 2, thirty: 4, fifty: 8, century: 16, duck: -2,
+    perWicket: 25, bowledLbw: 8, perMaiden: 12, threeWickets: 4, fourWickets: 8, fiveWickets: 16,
+    perCatch: 8, perStumping: 12, perRunOut: 12,
+    economy: { minOvers: 2, bands: [
+      { from: null, below: 5, pts: 6 }, { from: 5, below: 6, pts: 4 }, { from: 6, below: 7, pts: 2 },
+      { from: 10, below: 11, pts: -2 }, { from: 11, below: 12, pts: -4 }, { from: 12, below: null, pts: -6 }] },
+    strikeRate: { minBalls: 10, bands: [
+      { from: 170, below: null, pts: 6 }, { from: 150, below: 170, pts: 4 }, { from: 130, below: 150, pts: 2 },
+      { from: 60, below: 70, pts: -2 }, { from: 50, below: 60, pts: -4 }, { from: null, below: 50, pts: -6 }] } }),
+  // The IPL's Most Valuable Player points: boundaries, wickets, dot balls, catches.
+  Object.assign({}, POINTS_ZERO, { id: "points-ipl", name: "IPL MVP",
+    perFour: 2.5, perSix: 3.5, perWicket: 3.5, perDot: 1, perCatch: 2.5, perStumping: 2.5, perRunOut: 2.5 })
+];
+const DEFAULT_POINTS_PRESET_ID = "points-club";
+// Most bands a rate bonus can have (the editor shows this many rows).
+const POINTS_BAND_ROWS = 6;
 
 const DEFAULT_MATCH_PRESETS = [
   { id: "preset-t20", name: "T20 (6-ball overs)", ballsPerOver: 6, oversLimit: 20, playersPerSide: 11,

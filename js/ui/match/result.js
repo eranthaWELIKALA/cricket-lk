@@ -233,7 +233,7 @@ function openMatchDetail(id){
 function renderMatchDetailModal(){
   const m = ui.matchDetail.match;
   const detail = renderResultDetail(m);
-  const motm = m.motm || pickMatchMOTM(m);
+  const motm = m.motm || pickMatchMOTM(m, pointsPresetFor(m));
   const when = m.completedAt ? new Date(m.completedAt).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" }) : "";
   return `
     <div class="modal-backdrop">
@@ -415,6 +415,7 @@ function formatMotmLine(match, t){
   const parts = [];
   if (t.balls > 0) parts.push(`${t.runs}${t.notOuts > 0 ? "*" : ""} (${t.balls})`);
   if (t.catches > 0) parts.push(`${t.catches} ct`);
+  if (t.stumpings > 0) parts.push(`${t.stumpings} st`);
   if (t.runouts > 0) parts.push(`${t.runouts} ro`);
   if (t.balls > 0) parts.push(`SR ${((t.runs / t.balls) * 100).toFixed(1)}`);
   if (t.legalBalls > 0) parts.push(`${oversDisplay(t.legalBalls, match.ballsPerOver)}-${t.maidens}-${t.runsConceded}-${t.wickets}`);
@@ -432,8 +433,8 @@ function confettiHtml(){
 function renderResult(match){
   const allNames = Array.from(matchPlayerNames(match)).filter(n => !isUnnamedPlayer(n));
   const unnamed = ballEditAllowed(match) ? unnamedPlayers(match) : [];
-  const motmName = match.motm || pickMatchMOTM(match);
-  const motmTotal = motmName ? aggregatePlayerStats([match]).find(t => t.name === motmName) : null;
+  const motmName = match.motm || pickMatchMOTM(match, pointsPresetFor(match));
+  const motmTotal = motmName ? aggregatePlayerStats([match], pointsPresetFor(match)).find(t => t.name === motmName) : null;
   const detail = renderResultDetail(match);
   const won = !match.forfeited && !match.editingFromHistory && / won by /.test(match.result || "");
   return `
@@ -619,8 +620,8 @@ function shareTable(ctx, th, x, y, w, cols, head, rows){
 function renderScorecardCanvas(match, themeKey, logo){
   const th = SHARE_THEMES[themeKey] || SHARE_THEMES.night;
   const when = match.completedAt ? new Date(match.completedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
-  const motm = match.motm || pickMatchMOTM(match);
-  const motmTotal = motm ? aggregatePlayerStats([match]).find(t => t.name === motm) : null;
+  const motm = match.motm || pickMatchMOTM(match, pointsPresetFor(match));
+  const motmTotal = motm ? aggregatePlayerStats([match], pointsPresetFor(match)).find(t => t.name === motm) : null;
   return composeShareImage(th, ctx => {
     const X = SHARE_PAD, W = SHARE_W - SHARE_PAD * 2;
     let y = shareHeader(ctx, th, logo, when);
@@ -722,7 +723,7 @@ function exportPdfCleanup(){
    the match and every innings in full. */
 function renderPrintableMatch(m){
   const detail = renderResultDetail(m);
-  const motm = m.motm || pickMatchMOTM(m);
+  const motm = m.motm || pickMatchMOTM(m, pointsPresetFor(m));
   return `
     <div class="result-hero"><div class="eyebrow">RESULT</div><h2>${escapeHtml(m.result || "")}</h2>${detail ? `<div class="n detail">${escapeHtml(detail)}</div>` : ""}</div>
     ${motm ? `<div class="motm-card"><span class="motm-label">Player of the match</span><span class="motm-name">${escapeHtml(motm)}</span></div>` : ""}

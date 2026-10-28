@@ -127,7 +127,7 @@ function coalesceOp(queue, op){
 function overlayClubData(club, ops){
   const c = JSON.parse(JSON.stringify(club));
   c.roster = c.roster || []; c.tournaments = c.tournaments || [];
-  c.presets = c.presets || { match: [], tournament: [] };
+  c.presets = Object.assign({ match: [], tournament: [], points: [] }, c.presets);
   ops.filter(o => !o.failed && o.args && o.args.clubId === c.id).forEach(o => {
     const a = o.args;
     if (o.kind === "tournament.create" && !c.tournaments.some(t => t.id === a.id)){
@@ -136,7 +136,7 @@ function overlayClubData(club, ops){
       const list = c.presets[a.kind] = (c.presets[a.kind] || []).filter(p => p.id !== a.id);
       list.push(Object.assign({}, a.preset, { id: a.id, pending: true }));
     } else if (o.kind === "preset.delete"){
-      ["match", "tournament"].forEach(k => { c.presets[k] = (c.presets[k] || []).filter(p => p.id !== a.id); });
+      ["match", "tournament", "points"].forEach(k => { c.presets[k] = (c.presets[k] || []).filter(p => p.id !== a.id); });
     } else if (o.kind === "roster.add"){
       const key = a.name.trim().toLowerCase();
       if (!c.roster.some(p => p.name && p.name.toLowerCase() === key)){
@@ -358,6 +358,10 @@ const OP_HANDLERS = {
     } else {
       ({ data, error } = await update());
       if (!error && data && !data.length) ({ error } = await insert());
+    }
+    // Points presets need the 'points' kind (supabase/016); before it the check constraint refuses them.
+    if (error && error.code === "23514" && a.kind === "points"){
+      return { error: { message: "Points presets need supabase/016_points_presets.sql — run it in the Supabase SQL editor.", code: error.code } };
     }
     return { error };
   },
@@ -607,12 +611,14 @@ async function fetchClubDetail(clubId){
     cache.clubs[clubId] = Object.assign({}, server, { matches: server.matches.slice(0, 30) });
     saveCloudCache();
   }
+  // Matches deleted in the cloud leave this device's archive too (supabase/015).
+  if (server && forgetDeletedMatches(server.deletedMatchIds)) save();
   const base = server || (cache && cache.clubs[clubId]) || { id: clubId, name: (ui.myClubs || []).find(c => c.id === clubId)?.name || "", members: [], roster: [], matches: [], tournaments: [], invites: [], presets: { match: [], tournament: [] } };
   ui.club = Object.assign(overlayClubData(base, myOps()), { fromCache: !server });
   ui.clubBusy = false;
 }
 async function fetchClubDetailFromServer(clubId){
-  const [clubRes, members, rosterRes, matchesRes, tournamentsRes, presetsRes, invitesRes] = await Promise.all([
+  const [clubRes, members, rosterRes, matchesRes, tournamentsRes, presetsRes, invitesRes, deletedRes] = await Promise.all([
     supabaseClient.from("clubs").select("id, name").eq("id", clubId).single(),
     fetchClubMembers(clubId),
     fetchRosterRows(clubId),
@@ -620,7 +626,9 @@ async function fetchClubDetailFromServer(clubId){
     supabaseClient.from("tournaments").select("id, name, created_at").eq("organizer_club_id", clubId).order("created_at", { ascending: false }),
     supabaseClient.from("club_presets").select("id, kind, preset").eq("club_id", clubId).order("created_at"),
     // Pending admin invites (supabase/014); an error just means it isn't run yet.
-    supabaseClient.from("club_invites").select("id, email, created_at").eq("club_id", clubId).order("created_at")
+    supabaseClient.from("club_invites").select("id, email, created_at").eq("club_id", clubId).order("created_at"),
+    // Ids of this club's matches deleted in the cloud (supabase/015); an error just means it isn't run yet.
+    supabaseClient.from("deleted_matches").select("id").eq("club_id", clubId)
   ]);
   if ([clubRes, rosterRes, matchesRes].some(r => isNetworkError(r.error, isOnline()))) return null;
   const presetRows = presetsRes.data || [];
@@ -632,11 +640,14 @@ async function fetchClubDetailFromServer(clubId){
     matches: matchesRes.data || [],
     tournaments: tournamentsRes.data || [],
     invites: invitesRes.error ? [] : (invitesRes.data || []),
+    deletedMatchIds: deletedRes.error ? [] : (deletedRes.data || []).map(r => r.id),
     // This club's own presets (club_presets), same shape as the guest ones
     // plus the row id -- never mixed with state.matchPresets/tournamentPresets.
     presets: {
       match: presetRows.filter(r => r.kind === "match").map(r => Object.assign({}, r.preset, { id: r.id })),
-      tournament: presetRows.filter(r => r.kind === "tournament").map(r => Object.assign({}, r.preset, { id: r.id }))
+      tournament: presetRows.filter(r => r.kind === "tournament").map(r => Object.assign({}, r.preset, { id: r.id })),
+      // MVP points presets (supabase/016): the one marked inUse counts the club's stats.
+      points: presetRows.filter(r => r.kind === "points").map(r => Object.assign({}, r.preset, { id: r.id }))
     }
   };
 }
@@ -705,8 +716,22 @@ async function saveClubPreset(clubId, kind, preset){
   const res = await submitCloudOp("preset.save", { id: id || newUuid(), isNew: !id, clubId, kind, preset: body });
   return res.error ? { error: res.error } : { ok: true, queued: !!res.queued };
 }
+/* Marks one of the club's points presets as the one in use (`inUse` in its
+   jsonb) and clears the flag on any other -- set first, so a failure part
+   way leaves the new one counting (the first flagged wins). */
+async function useClubPointsPreset(clubId, id){
+  const list = clubPresetList("points", clubId);
+  const order = [...list.filter(p => p.id === id), ...list.filter(p => p.id !== id)];
+  for (const p of order){
+    const want = p.id === id;
+    if (!!p.inUse === want) continue;
+    const res = await saveClubPreset(clubId, "points", Object.assign({}, p, { inUse: want }));
+    if (res.error) return res;
+  }
+  return { ok: true };
+}
 async function deleteClubPreset(clubId, id){
-  const pr = ["match", "tournament"].map(k => clubPresetList(k, clubId)).flat().find(p => p.id === id);
+  const pr = ["match", "tournament", "points"].map(k => clubPresetList(k, clubId)).flat().find(p => p.id === id);
   const res = await submitCloudOp("preset.delete", { id, clubId, name: pr ? pr.name : "" });
   return res.error ? { error: res.error } : { ok: true, queued: !!res.queued };
 }

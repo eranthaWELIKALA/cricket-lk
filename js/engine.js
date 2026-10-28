@@ -48,7 +48,7 @@ function ensureBowler(inn, name){
 
 function ensureFielder(inn, name){
   if (!inn.fielding.stats[name]){
-    inn.fielding.stats[name] = { catches: 0, runouts: 0 };
+    inn.fielding.stats[name] = { catches: 0, runouts: 0, stumpings: 0 };
     inn.fielding.order.push(name);
   }
 }
@@ -117,8 +117,9 @@ function checkInningsComplete(inn){
    go to wides/no-balls (a no-ball's runs run go to the batter, as on any
    no-ball) and against the bowler, a wide isn't a ball faced, and a no-ball
    still brings a free hit.
-   `fielder` is optional on wicketType 'caught'/'runout' and credits a
-   fielding-side player with a catch/run-out for stats/MVP purposes.
+   `fielder` is optional on wicketType 'caught'/'runout'/'stumped' and
+   credits a fielding-side player (the keeper, for a stumping) with a
+   catch/run-out/stumping for stats/MVP purposes.
    Every ball is also written to the innings' action log (logAction) with a
    `seq` id, so an earlier ball can be edited later (replayMatch). */
 function recordBall(inn, event){
@@ -195,11 +196,16 @@ function recordBall(inn, event){
       bat[inn.striker].out = true;
       bat[inn.striker].howOut = (event.wicketType === "caught" && event.fielder)
         ? `c ${event.fielder} b ${inn.bowler}`
+        : (event.wicketType === "stumped" && event.fielder)
+        ? `st ${event.fielder} b ${inn.bowler}`
         : `${WICKET_LABELS[event.wicketType]} b ${inn.bowler}`;
       bwl.wickets += 1;
       inn.wickets += 1;
       inn.striker = null;
-      if (event.wicketType === "caught" && event.fielder){ ensureFielder(inn, event.fielder); inn.fielding.stats[event.fielder].catches += 1; }
+      if ((event.wicketType === "caught" || event.wicketType === "stumped") && event.fielder){
+        ensureFielder(inn, event.fielder);
+        inn.fielding.stats[event.fielder][event.wicketType === "caught" ? "catches" : "stumpings"] += 1;
+      }
       display = tag + "W";
     }
   }
@@ -274,6 +280,8 @@ function endInnings(match){
    striker can't be bowled, caught, lbw, stumped or out hit wicket); off a
    no-ball the same; off a wide, stumped, hit wicket or run out. */
 const WICKET_TYPES = ["bowled", "caught", "lbw", "stumped", "hitwicket", "runout"];
+// The dismissals that can name a fielder (the keeper, for a stumping).
+const WICKET_FIELDER_TYPES = ["caught", "runout", "stumped"];
 function wicketTypesFor(freeHit, extra){
   if (extra === "noball" || freeHit) return ["runout"];
   if (extra === "wide") return ["stumped", "hitwicket", "runout"];
@@ -633,7 +641,8 @@ function inningsScorecardKey(inn){
     complete: !!inn.complete, reason: inn.completeReason || null, target: inn.target,
     bat: lines(inn.batting, ["runs", "balls", "fours", "sixes", "out", "howOut"]),
     bowl: lines(inn.bowling, ["legalBalls", "runs", "wickets", "maidens"]),
-    field: lines(inn.fielding, ["catches", "runouts"]),
+    // Fielding lines from before stumpings were counted have no `stumpings`.
+    field: inn.fielding.order.map(n => { const f = inn.fielding.stats[n]; return [n, f.catches, f.runouts, f.stumpings || 0]; }),
     fow: inn.fallOfWickets.map(f => [f.score, f.wicket, f.batsman]),
     ballList: inningsBalls(inn).map(b => [b.label, b.ev.display, b.bowler])
   });
@@ -1000,6 +1009,58 @@ function describeTournamentPreset(t, matchPresetName){
     ["Level on points", t.useNRR !== false ? "Ranked by net run rate (NRR)." : "Stay level. NRR isn't used."]
   ];
 }
+/* A points preset in plain words: only what it gives points for. */
+function pointsNum(n){ return String(roundPoints(Number(n) || 0)); }
+function pointsSigned(n){ return (n > 0 ? "+" : n < 0 ? "−" : "") + pointsNum(Math.abs(n)); }
+function pointsBandText(b){
+  const range = b.from == null ? `under ${b.below}` : b.below == null ? `${b.from} and over` : `${b.from} to under ${b.below}`;
+  return `${range} ${pointsSigned(b.pts)}`;
+}
+function describePointsPreset(p){
+  const v = k => Number(p[k]) || 0;
+  const list = items => items.filter(([k]) => v(k)).map(([k, text]) => text(v(k)));
+  const each = (n, what) => `${pointsNum(n)} a ${what}`;
+  const tiers = (keys, unit) => {
+    const hit = keys.filter(([k]) => v(k));
+    return hit.length ? [`${hit.map(([k, at]) => `${pointsSigned(v(k))} at ${at}`).join(", ")}${hit.length > 1 ? " (the highest only)" : ""}${unit}`] : [];
+  };
+  const batting = [
+    ...list([["perRun", n => each(n, "run")], ["perFour", n => `${pointsSigned(n)} a four`], ["perSix", n => `${pointsSigned(n)} a six`]]),
+    ...tiers([["thirty", "30"], ["fifty", "50"], ["century", "100"]], " runs"),
+    ...list([["notOut", n => `${pointsSigned(n)} not out`], ["duck", n => `${pointsSigned(n)} for a duck`]])
+  ];
+  const bowling = [
+    ...list([["perWicket", n => each(n, "wicket")], ["bowledLbw", n => `${pointsSigned(n)} if bowled or lbw`],
+             ["perMaiden", n => each(n, "maiden")], ["perDot", n => each(n, "dot ball")]]),
+    ...tiers([["threeWickets", "3"], ["fourWickets", "4"], ["fiveWickets", "5"]], " wickets")
+  ];
+  const fielding = list([["perCatch", n => each(n, "catch")], ["perStumping", n => each(n, "stumping")], ["perRunOut", n => each(n, "run-out")]]);
+  const rows = [
+    ["Batting", batting.length ? batting.join(" · ") : "No points."],
+    ["Bowling", bowling.length ? bowling.join(" · ") : "No points."],
+    ["Fielding", fielding.length ? fielding.join(" · ") : "No points."]
+  ];
+  const ec = p.economy, sr = p.strikeRate;
+  if (ec && (ec.bands || []).length) rows.push(["Economy", `After ${ec.minOvers || 0} over${ec.minOvers == 1 ? "" : "s"} in an innings, runs an over ${ec.bands.map(pointsBandText).join(" · ")}.`]);
+  if (sr && (sr.bands || []).length) rows.push(["Strike rate", `After ${sr.minBalls || 0} ball${sr.minBalls == 1 ? "" : "s"} faced, runs per 100 balls ${sr.bands.map(pointsBandText).join(" · ")}.`]);
+  rows.push(["Counted", "Per innings, then added up. Changing the preset recounts every match."]);
+  return rows;
+}
+/* Why a points preset can't be saved as it is, or null. */
+function pointsPresetError(p){
+  for (const [key, label] of [["economy", "Economy"], ["strikeRate", "Strike rate"]]){
+    const cfg = p[key];
+    if (!cfg) continue;
+    const bands = cfg.bands || [];
+    if (!bands.length) return `${label}: add at least one band, or untick it.`;
+    for (let i = 0; i < bands.length; i++){
+      const b = bands[i];
+      if (b.from == null && b.below == null) return `${label} band ${i + 1}: fill in From, Below or both.`;
+      if (b.from != null && b.below != null && b.from >= b.below) return `${label} band ${i + 1}: From has to be lower than Below.`;
+    }
+  }
+  return null;
+}
 
 /* Escape a user's text for a PostgREST ilike pattern, so a typed % or _
    matches literally instead of acting as a wildcard. */
@@ -1016,8 +1077,8 @@ function playerLabel(p){
    matched by name, case-insensitive, since matches store names not ids.
    `nameOrNames` may be an array: a profile's own name plus the aliases left
    behind by approved merges (supabase/009), so stats recorded under an old
-   spelling still count. */
-function playerCareer(nameOrNames, matches){
+   spelling still count. `preset`: the points preset for `points`. */
+function playerCareer(nameOrNames, matches, preset){
   matches = matches.filter(m => !playerStatsExcluded(m));
   const names = (Array.isArray(nameOrNames) ? nameOrNames : [nameOrNames]);
   const seen = new Set();
@@ -1026,14 +1087,14 @@ function playerCareer(nameOrNames, matches){
     const key = (n || "").trim().toLowerCase();
     if (!key || seen.has(key)) return;
     seen.add(key);
-    const c = singleNameCareer(key, matches);
+    const c = singleNameCareer(key, matches, preset);
     if (c) careers.push(c);
   });
   return careers.length ? mergeCareers(careers) : null;
 }
 
-function singleNameCareer(key, matches){
-  const t = aggregatePlayerStats(matches).find(x => x.name.toLowerCase() === key);
+function singleNameCareer(key, matches, preset){
+  const t = aggregatePlayerStats(matches, preset).find(x => x.name.toLowerCase() === key);
   if (!t) return null;
   // Per-innings extras aggregatePlayerStats doesn't keep: highest score,
   // 50s/100s/ducks, bowling innings and best bowling.
@@ -1060,7 +1121,7 @@ function singleNameCareer(key, matches){
     innings: t.innings, notOuts: t.notOuts, runs: t.runs, balls: t.balls, fours: t.fours, sixes: t.sixes,
     highScore, fifties, hundreds, ducks,
     bowlInnings, wickets: t.wickets, legalBalls: t.legalBalls, runsConceded: t.runsConceded, maidens: t.maidens, best,
-    catches: t.catches, runouts: t.runouts
+    catches: t.catches, runouts: t.runouts, stumpings: t.stumpings
   };
 }
 
@@ -1071,7 +1132,7 @@ function mergeCareers(list){
   const sum = k => list.reduce((a, c) => a + c[k], 0);
   const c = {};
   ["matches", "points", "innings", "notOuts", "runs", "balls", "fours", "sixes", "fifties", "hundreds", "ducks",
-   "bowlInnings", "wickets", "legalBalls", "runsConceded", "maidens", "catches", "runouts"].forEach(k => { c[k] = sum(k); });
+   "bowlInnings", "wickets", "legalBalls", "runsConceded", "maidens", "catches", "runouts", "stumpings"].forEach(k => { c[k] = sum(k); });
   c.highScore = null; c.best = null;
   list.forEach(x => {
     const h = x.highScore;
@@ -1085,7 +1146,8 @@ function mergeCareers(list){
   c.economy = c.legalBalls > 0 ? c.runsConceded / (c.legalBalls / 6) : null;
   c.bowlAverage = c.wickets > 0 ? c.runsConceded / c.wickets : null;
   c.bowlStrikeRate = c.wickets > 0 ? c.legalBalls / c.wickets : null;
-  c.fieldDismissals = c.catches + c.runouts;
+  c.points = roundPoints(c.points);
+  c.fieldDismissals = fieldDismissals(c);
   return c;
 }
 
@@ -1292,37 +1354,79 @@ function canEndInningsByHand(inn){
 
 /* --- cross-match aggregation: MVP/MOTM, leaderboards, standings ---
    Pure functions over one or more completed matches, kept DOM-free like
-   the rest of the engine so they're directly unit-testable. */
-function calcPlayerPoints(bat, bowl, field){
+   the rest of the engine so they're directly unit-testable.
+   MVP points follow a points preset (DEFAULT_POINTS_PRESETS, or a guest's /
+   club's own), applied when the stats are read -- so changing a preset
+   recounts every match. With no preset, the default one. */
+function roundPoints(n){ return Math.round(n * 10) / 10; }
+// The rate band `value` falls in (from <= value < below, open ends null), first fit wins.
+function pointsBand(value, bands){
+  const b = (bands || []).find(x => (x.from == null || value >= x.from) && (x.below == null || value < x.below));
+  return b ? Number(b.pts) || 0 : 0;
+}
+/* One player's points for one innings. `bowl` is that innings' bowling line
+   plus `dots`/`bowledLbw` (inningsBowlerExtras) and `ballsPerOver`. */
+function calcPlayerPoints(bat, bowl, field, preset){
+  const p = preset || DEFAULT_POINTS_PRESETS[0];
+  const v = k => Number(p[k]) || 0;
   let pts = 0;
   if (bat){
-    pts += bat.runs * MVP_POINTS.perRun;
-    pts += bat.fours * MVP_POINTS.perFour;
-    pts += bat.sixes * MVP_POINTS.perSix;
-    if (bat.runs >= 100) pts += MVP_POINTS.century;
-    else if (bat.runs >= 50) pts += MVP_POINTS.fifty;
-    if (bat.balls > 0 && !bat.out) pts += MVP_POINTS.notOut;
+    pts += bat.runs * v("perRun") + bat.fours * v("perFour") + bat.sixes * v("perSix");
+    // Only the highest milestone reached counts (a hundred isn't also a fifty).
+    if (bat.runs >= 100) pts += v("century");
+    else if (bat.runs >= 50) pts += v("fifty");
+    else if (bat.runs >= 30) pts += v("thirty");
+    if (bat.balls > 0 && !bat.out) pts += v("notOut");
+    if (bat.out && bat.runs === 0) pts += v("duck");
+    const sr = p.strikeRate;
+    if (sr && bat.balls > 0 && bat.balls >= (Number(sr.minBalls) || 0)) pts += pointsBand(bat.runs / bat.balls * 100, sr.bands);
   }
   if (bowl){
-    pts += bowl.wickets * MVP_POINTS.perWicket;
-    pts += bowl.maidens * MVP_POINTS.perMaiden;
+    pts += bowl.wickets * v("perWicket") + (bowl.bowledLbw || 0) * v("bowledLbw")
+      + bowl.maidens * v("perMaiden") + (bowl.dots || 0) * v("perDot");
+    if (bowl.wickets >= 5) pts += v("fiveWickets");
+    else if (bowl.wickets >= 4) pts += v("fourWickets");
+    else if (bowl.wickets >= 3) pts += v("threeWickets");
+    const ec = p.economy, bpo = bowl.ballsPerOver || 6, balls = bowl.legalBalls || 0;
+    if (ec && balls > 0 && balls >= (Number(ec.minOvers) || 0) * bpo) pts += pointsBand(bowl.runs / (balls / bpo), ec.bands);
   }
   if (field){
-    pts += field.catches * MVP_POINTS.perCatch;
-    pts += field.runouts * MVP_POINTS.perRunOut;
+    pts += field.catches * v("perCatch") + field.runouts * v("perRunOut") + (field.stumpings || 0) * v("perStumping");
   }
-  return pts;
+  return roundPoints(pts);
 }
+
+/* Per bowler: dot balls, from ball by ball (a legal ball they gave nothing
+   away on -- byes and leg byes don't count against them; balls a catch-up
+   skipped have no events, so they add none), and wickets bowled or lbw, from
+   each batter's "bowled b X" / "lbw b X" (so catch-up wickets count too). */
+function inningsBowlerExtras(inn){
+  const out = {};
+  const bump = (name, k) => { if (!name) return; (out[name] || (out[name] = { dots: 0, bowledLbw: 0 }))[k] += 1; };
+  [...inn.overs, { bowler: inn.bowler, events: inn.currentOverEvents || [] }].forEach(ov => (ov.events || []).forEach(ev => {
+    const c = commentaryEvent(ev);
+    const legal = c.kind !== "wide" && c.kind !== "noball" && !c.extra;
+    if (legal && (c.kind === "bye" || c.kind === "legbye" || !ev.runs)) bump(ov.bowler, "dots");
+  }));
+  inn.batting.order.forEach(n => {
+    const mt = /^(?:bowled|lbw) b (.+)$/.exec(inn.batting.stats[n].howOut || "");
+    if (mt) bump(mt[1], "bowledLbw");
+  });
+  return out;
+}
+function fieldDismissals(t){ return t.catches + t.runouts + (t.stumpings || 0); }
 
 function emptyPlayerTotal(name){
   return {
     name, runs: 0, balls: 0, fours: 0, sixes: 0, notOuts: 0, innings: 0,
-    wickets: 0, legalBalls: 0, runsConceded: 0, maidens: 0,
-    catches: 0, runouts: 0, points: 0, matches: 0
+    highScore: null, fifties: 0, hundreds: 0, ducks: 0,
+    wickets: 0, legalBalls: 0, runsConceded: 0, maidens: 0, dots: 0, bowlInnings: 0, best: null,
+    catches: 0, runouts: 0, stumpings: 0, points: 0, matches: 0
   };
 }
 
-function foldInningsIntoTotals(totals, inn){
+function foldInningsIntoTotals(totals, inn, preset){
+  const extras = inningsBowlerExtras(inn);
   // Placeholders ("Bat ?1") aren't people until they're named.
   inn.batting.order.forEach(name => {
     if (isUnnamedPlayer(name)) return;
@@ -1331,20 +1435,29 @@ function foldInningsIntoTotals(totals, inn){
     t.runs += s.runs; t.balls += s.balls; t.fours += s.fours; t.sixes += s.sixes;
     t.innings += 1;
     if (!s.out) t.notOuts += 1;
-    t.points += calcPlayerPoints(s, null, null);
+    const hs = t.highScore;
+    if (!hs || s.runs > hs.runs || (s.runs === hs.runs && !s.out && hs.out)) t.highScore = { runs: s.runs, out: !!s.out };
+    if (s.runs >= 100) t.hundreds += 1; else if (s.runs >= 50) t.fifties += 1;
+    if (s.out && s.runs === 0) t.ducks += 1;
+    t.points = roundPoints(t.points + calcPlayerPoints(s, null, null, preset));
   });
   inn.bowling.order.forEach(name => {
     if (isUnnamedPlayer(name)) return;
     const b = inn.bowling.stats[name];
+    const x = extras[name] || { dots: 0, bowledLbw: 0 };
     const t = totals[name] || (totals[name] = emptyPlayerTotal(name));
-    t.wickets += b.wickets; t.legalBalls += b.legalBalls; t.runsConceded += b.runs; t.maidens += b.maidens;
-    t.points += calcPlayerPoints(null, b, null);
+    t.wickets += b.wickets; t.legalBalls += b.legalBalls; t.runsConceded += b.runs; t.maidens += b.maidens; t.dots += x.dots;
+    if (b.legalBalls > 0 || b.wickets > 0){
+      t.bowlInnings += 1;
+      if (!t.best || b.wickets > t.best.wickets || (b.wickets === t.best.wickets && b.runs < t.best.runs)) t.best = { wickets: b.wickets, runs: b.runs };
+    }
+    t.points = roundPoints(t.points + calcPlayerPoints(null, Object.assign({}, b, x, { ballsPerOver: inn.ballsPerOver }), null, preset));
   });
   inn.fielding.order.forEach(name => {
     const f = inn.fielding.stats[name];
     const t = totals[name] || (totals[name] = emptyPlayerTotal(name));
-    t.catches += f.catches; t.runouts += f.runouts;
-    t.points += calcPlayerPoints(null, null, f);
+    t.catches += f.catches; t.runouts += f.runouts; t.stumpings += f.stumpings || 0;
+    t.points = roundPoints(t.points + calcPlayerPoints(null, null, f, preset));
   });
 }
 
@@ -1369,19 +1482,19 @@ function playerStatsExcluded(match){
   return !!(match && match.anonymous);
 }
 
-function aggregatePlayerStats(matches){
+function aggregatePlayerStats(matches, preset){
   const totals = {};
   matches.filter(match => !playerStatsExcluded(match)).forEach(match => {
-    match.innings.forEach(inn => foldInningsIntoTotals(totals, inn));
+    match.innings.forEach(inn => foldInningsIntoTotals(totals, inn, preset));
     matchPlayerNames(match).forEach(name => { if (totals[name]) totals[name].matches += 1; });
   });
   return Object.values(totals).sort((a, b) => b.points - a.points);
 }
 
-function pickMatchMOTM(match){
+function pickMatchMOTM(match, preset){
   if (playerStatsExcluded(match)) return null;
   const totals = {};
-  match.innings.forEach(inn => foldInningsIntoTotals(totals, inn));
+  match.innings.forEach(inn => foldInningsIntoTotals(totals, inn, preset));
   const ranked = Object.values(totals).sort((a, b) => {
     if (b.points !== a.points) return b.points - a.points;
     if (b.runs !== a.runs) return b.runs - a.runs;
@@ -1672,6 +1785,7 @@ function catchUpWillFinish(inn, data){
 function catchUpHowOut(wicketType, bowler, fielder){
   if (wicketType === "runout") return fielder ? `run out (${fielder})` : "run out";
   if (wicketType === "caught" && fielder) return `c ${fielder} b ${bowler}`;
+  if (wicketType === "stumped" && fielder) return `st ${fielder} b ${bowler}`;
   return `${WICKET_LABELS[wicketType]} b ${bowler}`;
 }
 /* Who's pinned to a point in an over: mid-over the bowler of the over in
@@ -1756,7 +1870,7 @@ function catchUpError(match, data){
     if (b.wicketType === "caught" && match.requireFielderOnCatch && !lc(b.fielder)) return `Who caught ${b.name}?`;
     if (b.wicketType === "runout" && match.requireFielderOnRunout && !lc(b.fielder)) return `Who ran ${b.name} out?`;
     if (b.wicketType !== "runout") fieldSide.push(b.bowler);
-    if ((b.wicketType === "caught" || b.wicketType === "runout") && lc(b.fielder)) fieldSide.push(b.fielder);
+    if (WICKET_FIELDER_TYPES.includes(b.wicketType) && lc(b.fielder)) fieldSide.push(b.fielder);
   }
   const bowlerSeen = new Set();
   for (const b of bowlers){
@@ -1876,12 +1990,12 @@ function applyCatchUp(match, data){
       if (b.balls != null) s.balls = b.balls;
       if (b.status !== "out") return;
       const bowler = b.wicketType === "runout" ? null : keyOf(inn.bowling.order, b.bowler);
-      const fielder = (b.wicketType === "caught" || b.wicketType === "runout") && lc(b.fielder)
+      const fielder = WICKET_FIELDER_TYPES.includes(b.wicketType) && lc(b.fielder)
         ? keyOf([...inn.fielding.order, ...inn.bowling.order], b.fielder) : null;
       s.out = true;
       s.howOut = catchUpHowOut(b.wicketType, bowler, fielder);
       if (bowler){ ensureBowler(inn, bowler); inn.bowling.stats[bowler].wickets += 1; }
-      if (fielder){ ensureFielder(inn, fielder); inn.fielding.stats[fielder][b.wicketType === "caught" ? "catches" : "runouts"] += 1; }
+      if (fielder){ ensureFielder(inn, fielder); inn.fielding.stats[fielder][{ caught: "catches", runout: "runouts", stumped: "stumpings" }[b.wicketType]] += 1; }
       fallen.push(name);
     });
     (data.bowlers || []).forEach(b => {
@@ -2010,7 +2124,7 @@ function inningsCommentary(inn, opts){
       else if (c.kind === "legbye") text = runsWord(runs, "leg bye");
       else {
         const how = DISMISSAL_WORDS[c.wicketType] || "Wicket";
-        const by = ev.fielder ? (c.wicketType === "caught" ? ` by ${nm(ev.fielder)}` : ` (${nm(ev.fielder)})`) : "";
+        const by = ev.fielder ? (c.wicketType === "runout" ? ` (${nm(ev.fielder)})` : ` by ${nm(ev.fielder)}`) : "";
         const ran = c.extra ? c.off : runs;
         text = `${c.extra === "wide" ? "Wide, and " : c.extra === "noball" ? "No ball, and " : ""}OUT! ${how}${by}${c.wicketType === "runout" && ran ? `, ${runsWord(ran)} completed` : ""}`;
         tone = "wicket";
@@ -2086,10 +2200,11 @@ function commentaryBookends(match, idx){
 
 /* --- tournament summary (ended tournaments) ---
    Everything the Summary tab and its share image show, from the completed
-   matches: final table, champion/runner-up, totals and the top performers. */
-function tournamentSummary(matches, preset){
+   matches: final table, champion/runner-up, totals and the top performers.
+   `pointsPreset` is the MVP points preset (see calcPlayerPoints). */
+function tournamentSummary(matches, preset, pointsPreset){
   const standings = computeStandings(matches, preset);
-  const totals = aggregatePlayerStats(matches);
+  const totals = aggregatePlayerStats(matches, pointsPreset);
   const top = (key, min) => { const t = [...totals].sort((a, b) => b[key] - a[key])[0]; return t && t[key] >= (min || 1) ? t : null; };
   let highestTotal = null, bestInnings = null, bestBowling = null, runs = 0, wickets = 0, sixes = 0;
   matches.forEach(m => m.innings.forEach(inn => {
@@ -2118,6 +2233,6 @@ function tournamentSummary(matches, preset){
     shared: !!(standings[1] && standings[0].points === standings[1].points && (!preset.useNRR || standings[0].nrr === standings[1].nrr)),
     highestTotal, bestInnings: bestInnings && bestInnings.runs > 0 ? bestInnings : null, bestBowling,
     mvp: totals[0] && totals[0].points > 0 ? totals[0] : null,
-    topBat: top("runs"), topBowl: top("wickets"), topField: [...totals].sort((a, b) => (b.catches + b.runouts) - (a.catches + a.runouts)).find(t => t.catches + t.runouts > 0) || null
+    topBat: top("runs"), topBowl: top("wickets"), topField: [...totals].sort((a, b) => fieldDismissals(b) - fieldDismissals(a)).find(t => fieldDismissals(t) > 0) || null
   };
 }

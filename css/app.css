@@ -1220,7 +1220,6 @@ button.fixture-row{ width:100%; text-align:left; color:var(--text); align-items:
 .cu-bat:has(.cu-how option[value="runout"]:checked) .cu-bowler{ display:none; }
 .cu-bat:has(.cu-how option[value="bowled"]:checked) .cu-fielder,
 .cu-bat:has(.cu-how option[value="lbw"]:checked) .cu-fielder,
-.cu-bat:has(.cu-how option[value="stumped"]:checked) .cu-fielder,
 .cu-bat:has(.cu-how option[value="hitwicket"]:checked) .cu-fielder{ display:none; }
 .cu-done{ margin-bottom:8px; }
 .cu-done-row{ display:flex; gap:8px; justify-content:space-between; font-size:.82rem; padding:4px 2px; border-bottom:1px solid var(--line); color:var(--muted); }
@@ -1252,6 +1251,44 @@ button.fixture-row{ width:100%; text-align:left; color:var(--text); align-items:
 .leaderboard.mvp{ background:rgba(var(--accent-rgb),.1); border-color:var(--accent); }
 .leaderboard.mvp h3{ color:var(--accent); }
 .leaderboard .hint{ font-size:.68rem; margin:0 0 8px; line-height:1.5; }
+/* Sortable, every-player tables: wide ones scroll sideways inside the card
+   (never the page) with the player column pinned; a column head is a button. */
+.table-scroll{ overflow-x:auto; margin:0 0 6px; -webkit-overflow-scrolling:touch; scrollbar-width:thin; }
+.lb-table{ margin-bottom:0; width:auto; min-width:100%; }
+.lb-table th, .lb-table td{ white-space:nowrap; text-align:right; padding:7px 7px; }
+.lb-table th.lb-name, .lb-table td.lb-name{ text-align:left; position:sticky; left:0; z-index:1; background:var(--panel-solid); box-shadow:inset -2px 0 0 var(--line-strong); max-width:36vw; overflow:hidden; text-overflow:ellipsis; }
+.leaderboard.mvp .lb-name{ background:linear-gradient(rgba(var(--accent-rgb),.1), rgba(var(--accent-rgb),.1)), var(--panel-solid); }
+.lb-table tbody tr:nth-child(even) td.lb-name{ background-image:linear-gradient(rgba(255,255,255,.03), rgba(255,255,255,.03)); }
+.lb-table td.lb-name{ font-weight:600; }
+.lb-rank{ display:inline-block; min-width:1.6em; color:var(--muted); font-size:.72rem; font-weight:700; }
+.lb-table td.on{ color:var(--text); background:rgba(var(--accent-rgb),.06); }
+.sort-btn{ all:unset; cursor:pointer; color:inherit; font:inherit; letter-spacing:inherit; text-transform:inherit; display:inline-flex; align-items:center; gap:2px; padding:2px 0; }
+.sort-btn.on{ color:var(--accent); }
+.sort-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+.sort-arrow{ font-size:.6rem; }
+.points-using{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+@media print{
+  .lb-table th .sort-btn{ display:inline-flex !important; }
+  .table-scroll{ overflow:visible; }
+  .lb-table .lb-name{ position:static; background:none !important; }
+}
+
+/* MVP points preset editor */
+.points-templates{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:4px 0 2px; font-size:.78rem; }
+.points-templates .preset-chip{ padding:6px 10px; font-size:.78rem; }
+.points-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(96px, 1fr)); gap:8px; }
+.points-grid label{ font-size:.74rem; }
+.points-grid input{ margin-top:4px; padding:8px 10px; }
+.fielder-box-head .optional-note{ font-size:.68rem; font-weight:700; letter-spacing:.04em; }
+.band-block{ border:2px solid var(--line); border-radius:var(--radius-md); padding:10px; margin-bottom:10px; }
+.band-block .band-body{ margin-top:8px; }
+.band-block:has(input[type=checkbox]:not(:checked)) .band-body{ display:none; }
+.band-min{ font-size:.78rem; }
+.band-row{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-top:6px; }
+.band-row input{ margin:0; padding:7px 8px; }
+.band-head{ font-size:.66rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+.preset-row.in-use{ border-color:var(--accent-2); }
+.in-use-badge{ background:rgba(var(--accent-2-rgb),.16); border-color:var(--accent-2); color:var(--accent-2); }
 
 /* --- MVP / MOTM / share --- */
 .mvp-callout{

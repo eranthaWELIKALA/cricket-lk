@@ -459,15 +459,44 @@ async function main(){
     assert(inn.fielding.stats.F2.runouts === 1, "fielder's run-out tally increments");
   }
 
-  // --- 13. calcPlayerPoints computes the documented, fixed MVP formula ---
+  // --- 13. calcPlayerPoints follows a points preset ---
   {
-    const pts = calcPlayerPoints(
-      { runs: 55, fours: 4, sixes: 2, balls: 30, out: false },
-      { wickets: 2, maidens: 1 },
-      { catches: 1, runouts: 0 }
-    );
+    const preset = id => win.eval("DEFAULT_POINTS_PRESETS").find(p => p.id === id);
+    const line = [{ runs: 55, fours: 4, sixes: 2, balls: 30, out: false }, { wickets: 2, maidens: 1 }, { catches: 1, runouts: 0 }];
+    const pts = calcPlayerPoints(...line, preset("points-classic"));
     // batting: 55 + 4 + (2*2) + fifty(8) + notOut(4) = 75; bowling: (2*25) + (1*8) = 58; fielding: 1*8 = 8
-    assert(pts === 141, `calcPlayerPoints matches the documented formula, got ${pts}`);
+    assert(pts === 141, `the Classic preset is the old fixed formula, got ${pts}`);
+    // Club: 55 + (4*2) + (2*4) + 8 + 2 = 81; (2*15) + 5 = 35; 5
+    assert(calcPlayerPoints(...line) === 121 && win.eval("DEFAULT_POINTS_PRESETS[0].id") === win.eval("DEFAULT_POINTS_PRESET_ID"), "with no preset, the default (Club) points");
+
+    const club = preset("points-club"), fantasy = preset("points-fantasy"), ipl = preset("points-ipl");
+    const bat = (runs, balls, out, fours = 0, sixes = 0) => calcPlayerPoints({ runs, balls, out, fours, sixes }, null, null, club);
+    assert(bat(32, 30, true) === 36 && bat(50, 40, true) === 58 && bat(100, 80, true) === 116, "milestones: 30 +4, 50 +8 (not also 30), 100 +16 (highest only)");
+    assert(bat(10, 8, false) === 12 && bat(0, 0, false) === 0, "not out +2 only after facing a ball");
+    assert(calcPlayerPoints({ runs: 0, balls: 3, out: true, fours: 0, sixes: 0 }, null, null, fantasy) === -2, "a duck can take points away");
+    const bowl = (wickets, extra = {}) => calcPlayerPoints(null, Object.assign({ wickets, maidens: 0, runs: 30, legalBalls: 6 }, extra), null, fantasy);
+    assert(bowl(3) === 79 && bowl(4) === 108 && bowl(5) === 141, "wicket hauls: 3 +4, 4 +8, 5 +16 (highest only)");
+    assert(bowl(2, { bowledLbw: 1 }) === 58, "a bowled/lbw wicket gets its bonus");
+    assert(calcPlayerPoints(null, { wickets: 0, maidens: 0, runs: 18, legalBalls: 24, ballsPerOver: 6 }, null, fantasy) === 6
+      && calcPlayerPoints(null, { wickets: 0, maidens: 0, runs: 26, legalBalls: 12, ballsPerOver: 6 }, null, fantasy) === -6
+      && calcPlayerPoints(null, { wickets: 0, maidens: 0, runs: 18, legalBalls: 12, ballsPerOver: 6 }, null, fantasy) === 0
+      && calcPlayerPoints(null, { wickets: 0, maidens: 0, runs: 30, legalBalls: 11, ballsPerOver: 6 }, null, fantasy) === 0,
+      "economy bands: 4.5 an over +6, 13 an over -6, 9 (between bands) and under 2 overs nothing");
+    assert(calcPlayerPoints(null, { wickets: 0, maidens: 0, runs: 21, legalBalls: 10, ballsPerOver: 5 }, null, fantasy) === -2, "economy counts the match's own over length (21 off two 5-ball overs is 10.5 an over)");
+    assert(calcPlayerPoints({ runs: 20, balls: 10, out: true, fours: 0, sixes: 0 }, null, null, fantasy) === 26
+      && calcPlayerPoints({ runs: 20, balls: 9, out: true, fours: 0, sixes: 0 }, null, null, fantasy) === 20,
+      "strike-rate bands only after the minimum balls faced (SR 200 off 10 balls +6, off 9 nothing)");
+    assert(calcPlayerPoints({ runs: 14, balls: 9, out: true, fours: 2, sixes: 1 }, { wickets: 1, maidens: 0, dots: 7, runs: 20, legalBalls: 24 }, { catches: 1, runouts: 0, stumpings: 1 }, ipl) === 24,
+      "IPL MVP: 2.5 a four, 3.5 a six and a wicket, 1 a dot, 2.5 a catch/stumping, no points for runs");
+    assert(win.pointsBand(5, [{ from: null, below: 5, pts: 6 }, { from: 5, below: 6, pts: 4 }]) === 4 && win.pointsBand(9, [{ from: null, below: 5, pts: 6 }]) === 0, "a band is from <= x < below; outside every band is 0");
+
+    const rows = Object.fromEntries(win.describePointsPreset(fantasy));
+    assert(/25 a wicket/.test(rows.Bowling) && /\+4 at 3, \+8 at 4, \+16 at 5 \(the highest only\) wickets/.test(rows.Bowling) && /−2 for a duck/.test(rows.Batting), "describePointsPreset: plain words, only what it gives points for");
+    assert(/After 2 overs/.test(rows.Economy) && /under 5 \+6/.test(rows.Economy) && /170 and over \+6/.test(rows["Strike rate"]), "describePointsPreset: the rate bands");
+    assert(Object.fromEntries(win.describePointsPreset(ipl)).Batting === "+2.5 a four · +3.5 a six" && !win.describePointsPreset(club).some(([k]) => k === "Economy"), "describePointsPreset: no rows for bands it doesn't use");
+    assert(win.pointsPresetError(fantasy) === null && /add at least one band/.test(win.pointsPresetError({ economy: { minOvers: 2, bands: [] } }))
+      && /band 1: From has to be lower/.test(win.pointsPresetError({ strikeRate: { minBalls: 0, bands: [{ from: 50, below: 40, pts: 2 }] } }))
+      && /band 1: fill in/.test(win.pointsPresetError({ economy: { minOvers: 0, bands: [{ from: null, below: null, pts: 2 }] } })), "pointsPresetError: empty or backwards bands are refused");
   }
 
   // --- 14. aggregatePlayerStats / pickMatchMOTM over a completed match ---
@@ -491,6 +520,43 @@ async function main(){
     const totals = aggregatePlayerStats([m]);
     const a1 = totals.find(t => t.name === "A1");
     assert(a1.runs === 3 && a1.matches === 1, "aggregatePlayerStats folds a player's batting figures across the match");
+  }
+
+  // --- 14b. points from a real innings: dots, bowled/lbw, stumpings, per-preset MOTM ---
+  {
+    const preset = id => win.eval("DEFAULT_POINTS_PRESETS").find(p => p.id === id);
+    const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 2, playersPerSide: 11, battingFirst: "A" });
+    const inn = currentInnings(m);
+    win.openInnings(inn, "A1", "A2", "B1");
+    recordBall(inn, { kind: "run", runs: 0 });                       // dot
+    recordBall(inn, { kind: "bye", runs: 1 });                       // dot for the bowler
+    recordBall(inn, { kind: "wide", runs: 0 });                      // not a dot (not legal)
+    recordBall(inn, { kind: "wicket", wicketType: "lbw" });          // dot + lbw
+    win.sendInBatter(inn, "A3");
+    recordBall(inn, { kind: "wicket", wicketType: "stumped", fielder: "K1" });  // dot, stumped by K1
+    win.sendInBatter(inn, "A4");
+    recordBall(inn, { kind: "run", runs: 6 });
+    recordBall(inn, { kind: "wicket", wicketType: "bowled" });       // dot + bowled
+    const x = win.inningsBowlerExtras(inn).B1;
+    assert(x.dots === 5 && x.bowledLbw === 2, `dots and bowled/lbw are read from ball by ball and howOut, got ${JSON.stringify(x)}`);
+    const st = inn.batting.stats.A3;
+    assert(st.howOut === "st K1 b B1" && inn.fielding.stats.K1.stumpings === 1 && inn.bowling.stats.B1.wickets === 3, "a stumping names the keeper and is still the bowler's wicket");
+    assert(/Stumped by K1/.test(win.inningsCommentary(inn).find(c => c.type === "ball" && /Stumped/.test(c.text)).text), "commentary: Stumped by the keeper");
+
+    const totals = Object.fromEntries(win.aggregatePlayerStats([m], preset("points-ipl")).map(t => [t.name, t]));
+    assert(totals.B1.dots === 5 && totals.B1.points === 3 * 3.5 + 5 && totals.K1.stumpings === 1 && totals.K1.points === 2.5, "IPL MVP points from a real innings (wickets + dots; the keeper's stumping)");
+    assert(totals.A1.highScore.runs === 0 && !totals.A1.highScore.out && totals.A1.ducks === 0 && totals.A2.ducks === 1 && totals.B1.best.wickets === 3 && totals.B1.bowlInnings === 1, "totals keep highest score, ducks (out for 0 only), bowling innings and best bowling");
+    assert(win.fieldDismissals(totals.K1) === 1, "fieldDismissals counts stumpings");
+    // A bowler's day vs a batter's: which preset decides player of the match.
+    assert(win.pickMatchMOTM(m, preset("points-classic")) === "B1", "player of the match follows the preset (Classic: the bowler)");
+    const runsOnly = Object.assign({}, preset("points-classic"), { perWicket: 0, perMaiden: 0, perStumping: 0 });
+    assert(win.pickMatchMOTM(m, runsOnly) === "A3" || win.pickMatchMOTM(m, runsOnly) === "A4", "...and a preset with no bowling points picks a batter");
+
+    // An innings from before stumpings were counted still matches its rebuilt scorecard.
+    const now = JSON.parse(JSON.stringify(inn)); now.fielding.stats.K1 = { catches: 1, runouts: 0, stumpings: 0 };
+    const old = JSON.parse(JSON.stringify(now)); delete old.fielding.stats.K1.stumpings;
+    assert(win.inningsScorecardKey(old) === win.inningsScorecardKey(now), "inningsScorecardKey: a fielding line without stumpings equals one with 0");
+    assert(win.catchUpHowOut("stumped", "B1", "K1") === "st K1 b B1" && win.catchUpHowOut("stumped", "B1", null) === "stumped b B1", "catch-up: a stumping can name the keeper");
   }
 
   // --- 15. computeStandings: points, win/loss, and NRR across a mini round-robin ---
@@ -1534,7 +1600,11 @@ async function main(){
     assert(doc.querySelector("#modal-root .extra-runs-modal"), "back goes to the wide's runs sheet");
     doc.querySelector('#modal-root [data-action="wicket-on-extra"]').click();
     doc.querySelector('#modal-root [data-action="pick-wicket"][data-type="stumped"]').click();
+    assert(inn().wickets === 0 && /KEEPER/.test(doc.querySelector("#modal-root .fielder-box").textContent), "Stumped asks for the keeper (optional) before it's recorded");
+    doc.getElementById("wicket-fielder").value = "Keeper K";
+    doc.getElementById("wicket-fielder-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
     assert(inn().extras.wides === 1 && inn().wickets === 1 && inn().legalBalls === 0 && !doc.querySelector("#modal-root .extra-runs-modal") && doc.querySelector("#modal-root form#new-batsman-form"), "stumped off a wide is recorded; the next sheet asks for the new batter");
+    assert(/^st Keeper K b /.test(inn().batting.stats.Kusal.howOut || inn().batting.stats.Pathum.howOut) && inn().fielding.stats["Keeper K"].stumpings === 1, "the keeper is credited with the stumping (st Keeper b Bowler)");
     win.eval(`submitNewBatsman("Charith", null); if (ui.confirm) runConfirm(); for (let i = 0; i < 3; i++) handleBallClick(1);`);
     assert(inn().runs === 4, "(three singles)");
 
@@ -1992,10 +2062,93 @@ async function main(){
     assert(/Balls before the score was set by hand can't be changed one by one/.test(doc.getElementById("app").textContent), "a hand-set innings: ball by ball says why its balls can't be edited");
     win.eval(`state.match = null; ui = defaultUi(); render();`);
 
+    // a club match deleted in the cloud leaves this device when the club loads (supabase/015)
+    win.eval(`{ const mk = () => { const mm = createMatch({ teamA: "Team A", teamB: "Team B", oversLimit: 1, playersPerSide: 11, battingFirst: "A" });
+        openInnings(currentInnings(mm), "a", "b", "c"); mm.status = "complete"; mm.clubId = "club9"; return archiveMatch(mm).id; };
+      window.__gone = mk(); window.__kept = mk();
+      outbox = [{ id: "q9", kind: "match", args: { id: __gone }, userId: "u1" }];
+      window.__prevClient = supabaseClient; window.__prevSession = session;
+      session = { user: { id: "u1" } };
+      const rows = { deleted_matches: [{ id: __gone }], clubs: { id: "club9", name: "KICC" } };
+      const chain = table => { const c = { then: (ok, no) => Promise.resolve({ data: rows[table] || [], error: null }).then(ok, no) };
+        ["select", "eq", "in", "order", "limit", "single"].forEach(f => { c[f] = () => c; }); return c; };
+      supabaseClient = { from: chain }; }`);
+    await win.eval(`fetchClubDetail("club9")`);
+    assert(!win.eval("state.matchHistory[__gone]") && win.eval("!!state.matchHistory[__kept]") && !win.eval("matchLogStore()[__gone]") && win.eval("outbox.length") === 0, "a deleted club match leaves the archive, its kept log and its queued upload; the others stay");
+    win.eval(`supabaseClient = window.__prevClient; session = window.__prevSession; ui.club = null; outbox = [];`);
+
     // only the newest matches keep their logs
     win.eval(`for (let i = 0; i < MATCH_LOGS_KEEP + 3; i++){ const mm = createMatch({ teamA: "X", teamB: "Y", oversLimit: 1, playersPerSide: 11, battingFirst: "A" }); openInnings(currentInnings(mm), "a", "b", "c"); mm.status = "complete"; archiveMatch(mm); }`);
     assert(win.eval("Object.keys(matchLogStore()).length") === win.eval("MATCH_LOGS_KEEP"), "only MATCH_LOGS_KEEP matches keep their logs");
     win.eval(`state.match = null; state.snapshots = []; state.matchHistory = {}; ui = defaultUi(); save(); render();`);
+  }
+
+  // --- MVP points presets on screen; leaderboards list everyone and sort ---
+  {
+    const doc = win.document;
+    // An old save (no pointsPresets) gets the built-ins, with the default in use.
+    win.eval(`{ const d = JSON.parse(JSON.stringify(state)); delete d.pointsPresets; delete d.pointsPresetId; DB.save(STORAGE_KEY, d); load(); }`);
+    assert(win.eval("Object.keys(state.pointsPresets).join()") === "points-club,points-classic,points-fantasy,points-ipl" && win.eval("guestPointsPreset().id") === "points-club", "an old save gets the built-in points presets, Club in use");
+
+    win.eval(`state.match = null; ui = defaultUi(); state.view = "presets"; ui.presetsTab = "points"; render();`);
+    const cards = () => [...doc.querySelectorAll("#app .preset-row")];
+    assert(cards().length === 4 && cards()[0].classList.contains("in-use") && /IN USE/.test(cards()[0].textContent) && !cards()[0].querySelector('[data-action="use-points-preset"]'), "Presets → MVP points: the built-ins, Club marked in use");
+    doc.querySelector('#app [data-action="use-points-preset"][data-id="points-classic"]').click();
+    assert(win.eval("state.pointsPresetId") === "points-classic" && cards()[1].classList.contains("in-use"), "Use switches the preset that counts");
+    doc.querySelector('#app [data-action="new-points-preset"]').click();
+    const form = () => doc.getElementById("points-preset-form");
+    assert(form() && form().querySelector('input[name="perWicket"]').value === "15", "a new points preset starts from the default's numbers");
+    form().querySelector('input[name="name"]').value = "Sunday league";
+    doc.querySelector('#app [data-action="points-template"][data-id="points-ipl"]').click();
+    assert(form().querySelector('input[name="perDot"]').value === "1" && form().querySelector('input[name="name"]').value === "Sunday league", "Fill in from IPL MVP: its numbers, the typed name kept");
+    form().querySelector('input[name="perRun"]').value = "0.5";
+    form().querySelector('input[name="economyOn"]').checked = true;
+    form().querySelector('input[name="economyBelow0"]').value = "6";
+    form().querySelector('input[name="economyPts0"]').value = "3";
+    form().dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    const saved = win.eval(`Object.values(state.pointsPresets).find(p => p.name === "Sunday league")`);
+    assert(saved && saved.perRun === 0.5 && saved.perDot === 1 && saved.economy.minOvers === 2 && saved.economy.bands.length === 1 && saved.economy.bands[0].below === 6 && saved.economy.bands[0].from === null && saved.economy.bands[0].pts === 3 && saved.strikeRate === null && !form(), "the editor saves every value, decimals and bands included");
+    doc.querySelector(`#app [data-action="edit-points-preset"][data-id="${saved.id}"]`).click();
+    form().querySelector('input[name="economyBelow0"]').value = "";
+    form().dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(form() && /fill in From, Below or both/.test(form().querySelector(".form-error").textContent), "a band with no range is refused with a message");
+    win.eval(`ui.editingPointsPreset = null; state.pointsPresetId = "points-club"; render();`);
+
+    // A guest match with 11 batters: everyone is listed, not a top 10.
+    win.eval(`{ const mm = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 1, ballsPerOver: 30, playersPerSide: 11, battingFirst: "A" });
+      const inn = currentInnings(mm); openInnings(inn, "Bat01", "Bat02", "Bowler");
+      for (let i = 3; i <= 11; i++){ recordBall(inn, { kind: "run", runs: i % 4 }); recordBall(inn, { kind: "wicket", wicketType: "bowled" }); sendInBatter(inn, "Bat" + String(i).padStart(2, "0")); }
+      mm.status = "complete"; state.matchHistory = {}; archiveMatch(mm); }
+      ui = defaultUi(); state.view = "stats"; ui.statsTab = "bat"; render();`);
+    const rows = () => [...doc.querySelectorAll("#app .lb-table tbody tr")].map(tr => tr.querySelector(".lb-name").textContent.replace(/^\d+/, ""));
+    assert(rows().length === 11 && doc.querySelectorAll("#app .lb-table thead th").length === 14, "Batting lists all 11 batters with every column (M, Inn, NO, R, B, HS, Avg, SR, 4s, 6s, 50s, 100s, 0s)");
+    const head = key => doc.querySelector(`#app .sort-btn[data-key="${key}"]`);
+    assert(head("runs").classList.contains("on") && head("runs").closest("th").getAttribute("aria-sort") === "descending", "sorted by runs, most first, by default");
+    head("name").click();
+    assert(rows()[0] === "Bat01" && rows()[10] === "Bat11" && head("name").closest("th").getAttribute("aria-sort") === "ascending", "tapping Player sorts A to Z");
+    head("name").click();
+    assert(rows()[0] === "Bat11" && head("name").closest("th").getAttribute("aria-sort") === "descending", "tapping it again flips it");
+    win.eval(`ui.statsTab = "bowl"; render();`);
+    assert(rows().join() === "Bowler" && doc.querySelector('#app .sort-btn[data-key="dots"]'), "Bowling lists everyone who bowled, with dot balls");
+    head("economy").click();
+    assert(head("economy").closest("th").getAttribute("aria-sort") === "ascending", "economy sorts lowest first (best first)");
+    win.eval(`ui.statsTab = "mvp"; render();`);
+    assert(/Counted with the Club points/.test(doc.querySelector("#app .leaderboard.mvp").textContent) && doc.querySelector('#app .preset-info-btn[data-kind="points"]') && rows().length === 12, "the MVP table says which points count it (with an ⓘ) and lists everyone");
+    doc.querySelector('#app .preset-info-btn[data-kind="points"]').click();
+    assert(/15 a wicket/.test(doc.querySelector("#app .preset-info").textContent), "the ⓘ spells the points out");
+    const premierHtml = win.eval(`renderLeaderboards(aggregatePlayerStats(Object.values(state.matchHistory)), { points: null })`);
+    assert(!/data-tab="mvp"/.test(premierHtml) && /data-tab="bat"/.test(premierHtml) && !/Pts/.test(premierHtml), "with no points preset (Premier) there's no MVP table, just stats");
+
+    // A club's points preset: the one marked in use, else its first, else the built-in default.
+    win.eval(`ui.club = { id: "c1", presets: { match: [], tournament: [], points: [{ id: "p1", name: "A" }, { id: "p2", name: "B", inUse: true }] } };`);
+    assert(win.eval(`clubPointsPreset("c1").id`) === "p2" && win.eval(`pointsPresetFor({ clubId: "c1" }).id`) === "p2", "club: the preset marked in use counts");
+    win.eval(`ui.club.presets.points[1].inUse = false;`);
+    assert(win.eval(`clubPointsPreset("c1").id`) === "p1", "club: none marked, its first");
+    win.eval(`ui.club.presets.points = [];`);
+    assert(win.eval(`clubPointsPreset("c1").id`) === "points-club" && win.eval(`clubPointsPreset("other").id`) === "points-club", "club: none of its own, the built-in default");
+    const ov = win.overlayClubData({ id: "c1", presets: { match: [], tournament: [] } }, [{ kind: "preset.save", args: { id: "p9", clubId: "c1", kind: "points", preset: { name: "Ours", perRun: 2 } } }]);
+    assert(ov.presets.points.length === 1 && ov.presets.points[0].pending && ov.presets.points[0].perRun === 2, "overlay: a points preset saved offline shows (cache from before points presets)");
+    win.eval(`ui = defaultUi(); state.matchHistory = {}; state.view = "home"; save(); render();`);
   }
 
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
