@@ -767,7 +767,7 @@ close the menu and open the shared confirmation sheet.
 - **Change who bats first** → `swapToss()` → `restartMatch(match, other)`
   (ENGINE): the same fixture from ball one, every playing condition kept, and
   the UI-only extras in `MATCH_CARRY_FIELDS` (`clubId`, `matchType`,
-  `squads`, `guestNames`, `opponentName`, `anonymous`) copied over — add a field there if you add
+  `squads`, `guestNames`, `visitingSides`, `opponentName`, `anonymous`) copied over — add a field there if you add
   another UI-only match field that must survive a restart. Before anything
   is recorded (`matchHasStarted` false) it flips at once (the opening sheet's
   "Wrong toss?" link); after, the sheet asks first. Either way it
@@ -1439,8 +1439,10 @@ the other two (`updateCombo`). Typing any name still works.
 before anything is recorded, in `handleOpeningSubmit`, `submitNewBatsman`,
 `submitNewBowler` and `saveNameLater`: a name not in `pickPool(teamKey)` (any
 case) and not already playing for that side in this match is listed ("Add
-players" / "Go back"). A side with no list (a friendly's visitors, a guest with
-no saved players) never asks; tapped chips/rows and placeholders never do.
+players" / "Go back"). A side with no list (a guest with no saved players) never
+asks, nor does a visiting side whose list is only the club roster to lend from
+(`lendOnlySide`: a friendly's visitors); tapped chips/rows and placeholders
+never do.
 
 **Other in-match name boxes are a search-select, not a `<datalist>`.** Native
 datalist popups proved unreliable on phones (options showed but couldn't be
@@ -1455,7 +1457,7 @@ fills the input — the form's own button still submits, so every check in
 another combo of the same form isn't offered (`updateCombo`).
 All DOM-only, never `render()`. Options
 come from `pickPool(teamKey)` (the side's squad → else the club roster /
-guest list → nothing for a friendly's visitors) filtered by the pure
+guest list; for a friendly's visitors that's the roster, to lend from) filtered by the pure
 `pickCandidates(match, pool, role)` in ENGINE (tested): batters drop anyone
 out/at the crease, bowlers drop anyone who's already bowled (they keep their
 figure rows) and the last-over bowler, every role drops names already on the
@@ -1701,7 +1703,7 @@ only its own:
 | | Guest (this device) | Club (cloud, per club) | Premier (cloud, global) |
 |---|---|---|---|
 | Players | `state.players` | `club_rosters` → `players` (via `addPlayerToClub`) | `players_public` (everyone, incl. friendly visitors) |
-| Teams | `state.teams` | `tournament_teams` per club tournament (012); otherwise names typed at match setup | derived from `level:"premier"` matches |
+| Teams | `state.teams` | `tournament_teams` per club tournament (012; visiting teams, 018); otherwise names typed at match setup | derived from `level:"premier"` matches |
 | Presets | `state.matchPresets` / `tournamentPresets` | `club_presets` → `ui.club.presets` | none (`PREMIER_STANDINGS_DISPLAY_PRESET` is fixed display config) |
 | MVP points | `state.pointsPresets` + `pointsPresetId` | `club_presets` kind `'points'` (016), the `inUse` one | none — Premier shows stats only |
 | Matches | `matchHistory` where `!clubId` | `matches` where `club_id` (+ local archive with that `clubId`) | `matches` where `level = "premier"` |
@@ -1988,6 +1990,29 @@ matches keep their own names, so editing/deleting a team never changes
 history or standings (which still group by name). If 012 isn't run, the
 dashboard shows a "run 012" hint (`teams_unavailable`) and setup falls back
 to typed names.
+
+**Visiting teams** (`supabase/018_visiting_teams.sql`: `tournament_teams.visiting`).
+A club tournament can host visitors: Teams tab → **＋ Visiting team**, or the
+builder's **Club side / Visiting team** tiles (`teamKind`, `edit.visiting`,
+part of `teamEditDirty`). A visiting team's own players are guests (the same
+`guest:<name>` entries), typed straight in with no club-or-guest question
+(`addBuilderVisitors`: Enter or the add button, several at once with commas,
+the box keeps focus); a roster name is that club player **lent** (a plain
+`{ id, name }` entry, tagged `club` on the card, the builder and Switch
+players); someone on another team is left for the list's "move". Saving a
+donor team passes its own `visiting` along, so lending never flips a team's
+kind. Match setup copies the visiting teams' side keys to
+`match.visitingSides` (carried by `restartMatch`); `isVisitingSide(match,
+key)` (ENGINE, tested) is true for those and for a friendly's team B.
+`registerMatchPlayer` stores nothing for a club player (on either side) or for
+a name typed on a visiting tournament side that isn't in its squad (a guest);
+a friendly's visitors still go to the global table. `lendOnlySide` (a visiting
+side with no squad: a friendly's visitors) makes the pick sheets list the club
+roster as **Lend a club player** and skips `confirmUnlisted`; a visiting side
+with a squad still asks, saying they'll play as visitors. Before 018 is run:
+teams load without the column (`visiting_unavailable`, every team a club
+side), a club side saves without it, and a visiting team can't be saved
+(`VISITING_NEEDS_018`, also shown in the builder).
 
 ## Ownership, claiming & merging (`supabase/009_ownership_claims_merges.sql`)
 

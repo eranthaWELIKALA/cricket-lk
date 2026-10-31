@@ -1349,7 +1349,7 @@ function matchHasStarted(match){
    was scored (the UI warns and snapshots first, so Undo can bring it back).
    UI-only extras that recordBall never reads (club, match type, squads,
    visitor name) are carried over so the restart is the same fixture. */
-const MATCH_CARRY_FIELDS = ["clubId", "matchType", "squads", "guestNames", "opponentName", "anonymous", "reopenedFrom", "editingFromHistory"];
+const MATCH_CARRY_FIELDS = ["clubId", "matchType", "squads", "guestNames", "visitingSides", "opponentName", "anonymous", "reopenedFrom", "editingFromHistory"];
 function restartMatch(match, battingFirst){
   const i1 = match.innings[0];
   const fresh = createMatch({
@@ -1442,6 +1442,16 @@ function isGuestInMatch(match, name){
   const key = (name || "").trim().toLowerCase();
   return !!key && (match.guestNames || []).some(n => n.toLowerCase() === key);
 }
+/* A visiting side: a club friendly's team B, or a club tournament team saved
+   as a visiting team (supabase/018), whose side keys match setup puts in
+   `match.visitingSides`. Its people aren't the club's, but these are
+   friendlies, so club players can be lent to it: the pick lists offer the
+   club roster for a visiting side with no squad of its own. */
+function isVisitingSide(match, teamKey){
+  if (!match || !match.clubId) return false;
+  return (match.matchType === "friendly" && teamKey === "B") || (match.visitingSides || []).includes(teamKey);
+}
+
 /* The team-builder key for a guest: tournament_teams.players entries need an
    id, but a guest has no players row -- so it's derived from the name. */
 function guestPlayerKey(name){ return "guest:" + (name || "").trim().toLowerCase(); }

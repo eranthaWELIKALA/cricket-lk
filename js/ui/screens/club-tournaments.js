@@ -23,7 +23,7 @@ function renderClubTournamentSetup(){
     <div class="screen setup">
       ${renderBackBar(clubName || "Club", "home")}
       <h1>🏆 New tournament</h1>
-      <p class="tagline">Group this club's own matches -- e.g. everything played on one day -- under one tournament with standings.</p>
+      <p class="tagline">Group this club's matches -- everything played on one day, or a few rounds with visiting teams -- under one tournament with standings.</p>
       <form id="club-tournament-setup-form">
         <label>Tournament name<input name="name" required maxlength="40" placeholder="e.g. Sunday 12 Oct" value="${escapeHtml(ui.clubTournamentSetupName ?? defaultClubTournamentName())}"></label>
         <input type="hidden" name="tournamentPresetId" value="${ui.clubTournamentSetupPresetId || ""}">
@@ -91,22 +91,27 @@ function renderFixtureList(matches, empty){
 
 /* One team card, collapsed to its name + count until tapped
    (ui.expandedTeamId). `players` is [{ name, guest? }]; `actions` is the
-   trusted HTML of the head's buttons (edit/delete) or "". */
-function teamCardHtml({ id, name, players, index, actions, pending }){
+   trusted HTML of the head's buttons (edit/delete) or "". A visiting team
+   (club tournaments, supabase/018) is made of guests -- the visitors -- so
+   it's the club players on it, lent, that get the tag instead. */
+function teamCardHtml({ id, name, players, index, actions, pending, visiting }){
   const open = ui.expandedTeamId === id;
   const guests = players.filter(pl => pl.guest).length;
+  const lent = players.length - guests;
+  const tagOf = pl => visiting ? (pl.guest ? "" : `<span class="guest-tag lent">club</span>`) : pl.guest ? `<span class="guest-tag">guest</span>` : "";
+  const extra = visiting ? (lent ? ` · ${lent} from the club` : "") : guests ? ` · ${guests} guest${guests === 1 ? "" : "s"}` : "";
   return `
-    <div class="team-card team-c${index % 4}${open ? " open" : ""}">
+    <div class="team-card team-c${index % 4}${visiting ? " visiting" : ""}${open ? " open" : ""}">
       <div class="team-card-head">
         <button type="button" data-action="toggle-team-card" data-id="${escapeHtml(id)}" class="team-card-toggle" aria-expanded="${open}">
           <span class="team-badge">${escapeHtml(nameInitials(name))}</span>
-          <span class="team-card-title"><b>${escapeHtml(name)}${pending ? `<span class="pending-tag">not synced</span>` : ""}</b><span class="muted">${players.length} player${players.length === 1 ? "" : "s"}${guests ? ` · ${guests} guest${guests === 1 ? "" : "s"}` : ""}</span></span>
+          <span class="team-card-title"><b>${escapeHtml(name)}${pending ? `<span class="pending-tag">not synced</span>` : ""}</b><span class="muted">${visiting ? `<span class="visitors-tag">Visitors</span> ` : ""}${players.length} player${players.length === 1 ? "" : "s"}${extra}</span></span>
           <span class="chevron">${open ? "▾" : "▸"}</span>
         </button>
         ${actions ? `<div class="team-card-actions">${actions}</div>` : ""}
       </div>
       ${open ? (players.length ? `<div class="team-roster">
-        ${players.map(pl => `<span class="player-chip${pl.guest ? " guest" : ""}"><span class="mini-avatar">${escapeHtml(nameInitials(pl.name))}</span>${escapeHtml(pl.name)}${pl.guest ? `<span class="guest-tag">guest</span>` : ""}</span>`).join("")}
+        ${players.map(pl => `<span class="player-chip${pl.guest && !visiting ? " guest" : ""}"><span class="mini-avatar">${escapeHtml(nameInitials(pl.name))}</span>${escapeHtml(pl.name)}${tagOf(pl)}</span>`).join("")}
       </div>` : `<p class="hint">No players picked yet.</p>`) : ""}
     </div>`;
 }
@@ -164,14 +169,15 @@ function renderTournamentTeams(t){
   return `
     ${ui.tournamentTeamError ? `<p class="form-error">${escapeHtml(ui.tournamentTeamError)}</p>` : ""}
     <div class="team-grid">
-      ${t.teams.map((team, i) => teamCardHtml({ id: team.id, name: team.name, players: team.players, index: i, pending: team.pending, actions: `
+      ${t.teams.map((team, i) => teamCardHtml({ id: team.id, name: team.name, players: team.players, index: i, pending: team.pending, visiting: !!team.visiting, actions: `
         <button data-action="edit-tournament-team" data-id="${team.id}" class="icon-btn" aria-label="Edit ${escapeHtml(team.name)}" title="Edit team">${ICON_EDIT}</button>
         <button data-action="delete-tournament-team" data-id="${team.id}" class="icon-btn danger" aria-label="Delete ${escapeHtml(team.name)}" title="Delete team">${ICON_DELETE}</button>` })).join("")}
       <button data-action="new-tournament-team" class="team-card add" ${ui.tournamentTeamBusy ? "disabled" : ""}><span class="plus">＋</span><span>Add team</span></button>
+      <button data-action="new-tournament-team" data-visiting="1" class="team-card add visiting" ${ui.tournamentTeamBusy ? "disabled" : ""}><span class="plus">＋</span><span>Visiting team</span></button>
     </div>
     ${t.teams.length ? `<p class="hint">Tap a team to see its players.</p>` : ""}
     ${!t.teams.length ? `
-      <p class="hint">Most club tournaments are two sides. Build them here, then pick them when you start a match.</p>
+      <p class="hint">Most club tournaments are two sides. Build them here, then pick them when you start a match. Visitors coming to play? Add a visiting team: its players aren't added to the club, and you can lend it club players.</p>
       ${rosterReady && unassigned.length >= 2 ? `<button data-action="quick-split-teams" class="ghost" style="width:100%;" ${ui.tournamentTeamBusy ? "disabled" : ""}>${ui.tournamentTeamBusy ? "Creating…" : `🎲 Split the roster into 2 random teams (${unassigned.length} players)`}</button>` : ""}
     ` : rosterReady && unassigned.length ? `<p class="hint">${unassigned.length} roster player${unassigned.length === 1 ? " isn't" : "s aren't"} on a team yet: ${unassigned.slice(0, 5).map(p => escapeHtml(p.name)).join(", ")}${unassigned.length > 5 ? "…" : ""}</p>` : ""}
   `;
@@ -230,30 +236,13 @@ function renderTournamentTeamForm(t, edit){
   const hit = p => !q || p.label.toLowerCase().includes(q);
   const freeCount = available.filter(p => !takenBy[p.id] && hit(p)).length;
   const moving = picked.filter(p => takenBy[p.id]);
-  return `
-    <form id="tournament-team-form" class="team-builder team-c${idx % 4}">
-      <div class="team-card-head">
-        <span class="team-badge">${escapeHtml(nameInitials(edit.name || "?"))}</span>
-        <div class="team-card-title"><b>${edit.id ? "Edit team" : "New team"}</b><span class="muted">${picked.length} player${picked.length === 1 ? "" : "s"} picked</span></div>
-        ${edit.id ? `<button type="button" data-action="delete-tournament-team" data-id="${escapeHtml(edit.id)}" class="ghost small danger-text" style="margin-left:auto;">Delete</button>` : ""}
-      </div>
-      <div class="form-error"></div>
-      <label>Team name<input name="teamName" required maxlength="24" value="${escapeHtml(edit.name || "")}" placeholder="e.g. Reds" autocomplete="off"></label>
-
-      <div class="section-label">In this team · ${picked.length}</div>
-      ${picked.length ? `<div class="team-roster picked">
-        ${picked.map(p => `<button type="button" data-action="team-builder-toggle" data-id="${escapeHtml(p.id)}" class="player-chip on" aria-label="Take ${escapeHtml(p.name)} off the team"><span class="mini-avatar">${escapeHtml(nameInitials(p.name))}</span>${escapeHtml(p.label)}${p.guest ? `<span class="guest-tag">guest</span>` : ""}<span class="x">×</span></button>`).join("")}
-      </div>` : `<p class="hint">Nobody yet. Tap players below to add them.</p>`}
-      ${moving.length ? `<p class="hint move-note">Moving here on save: ${moving.map(p => `${escapeHtml(p.name)} (from ${escapeHtml(takenBy[p.id])})`).join(", ")}</p>` : ""}
-
-      <div class="section-label">Club roster</div>
-      ${edit.notice ? `<p class="hint builder-notice${edit.notice.error ? " error" : ""}">${escapeHtml(edit.notice.text)}</p>` : ""}
-      ${!rosterReady ? loadingHtml("Loading the club roster…")
-        : `
-        <div class="builder-tools">
-          <input type="text" enterkeyhint="search" name="teamSearch" class="team-builder-search" placeholder="Search, or type a new name" maxlength="24" value="${escapeHtml(edit.search || "")}" autocomplete="off">
-          <button type="button" data-action="team-builder-add-free" class="ghost small" ${freeCount ? "" : "disabled"}>+ All free${freeCount ? ` (${freeCount})` : ""}</button>
-        </div>
+  const visiting = !!edit.visiting;
+  // On a visiting team the visitors are guests, so it's a lent club player that's tagged.
+  const tagOf = p => visiting ? (p.guest ? "" : `<span class="guest-tag lent">club</span>`) : p.guest ? `<span class="guest-tag">guest</span>` : "";
+  const notice = edit.notice ? `<p class="hint builder-notice${edit.notice.error ? " error" : ""}">${escapeHtml(edit.notice.text)}</p>` : "";
+  // The roster (+ other teams' guests) to tap: a club side's players, or
+  // club players to lend a visiting team.
+  const grid = `
         <div class="pick-grid">
           ${available.map(p => `
             <button type="button" data-action="team-builder-toggle" data-id="${escapeHtml(p.id)}" data-label="${escapeHtml(p.label.toLowerCase())}" data-free="${takenBy[p.id] ? "0" : "1"}" class="pick-row${takenBy[p.id] ? " taken" : ""}" ${hit(p) ? "" : "hidden"}>
@@ -261,9 +250,48 @@ function renderTournamentTeamForm(t, edit){
               <span class="name">${escapeHtml(p.label)}${p.guest ? ` <span class="guest-tag">guest</span>` : ""}</span>
               <span class="state">${takenBy[p.id] ? `${escapeHtml(takenBy[p.id])} · move` : "＋"}</span>
             </button>`).join("")}
-          <p class="hint no-results" ${available.some(hit) ? "hidden" : ""}>${!all.length ? "The club roster is empty. Type a name above to add someone." : available.length ? "No players match." : "Everyone on the roster is in this team."}</p>
+          <p class="hint no-results" ${available.some(hit) ? "hidden" : ""}>${!all.length ? (visiting ? "The club roster is empty." : "The club roster is empty. Type a name above to add someone.") : available.length ? "No players match." : "Everyone on the roster is in this team."}</p>
+        </div>`;
+  const search = `<input type="text" enterkeyhint="${visiting ? "done" : "search"}" name="teamSearch" class="team-builder-search" placeholder="${visiting ? "Visitor's name, or search the club" : "Search, or type a new name"}" maxlength="${visiting ? 240 : 24}" value="${escapeHtml(edit.search || "")}" autocomplete="off">`;
+  return `
+    <form id="tournament-team-form" class="team-builder team-c${idx % 4}">
+      <div class="team-card-head">
+        <span class="team-badge">${escapeHtml(nameInitials(edit.name || "?"))}</span>
+        <div class="team-card-title"><b>${edit.id ? (visiting ? "Edit visiting team" : "Edit team") : (visiting ? "New visiting team" : "New team")}</b><span class="muted">${picked.length} player${picked.length === 1 ? "" : "s"} picked</span></div>
+        ${edit.id ? `<button type="button" data-action="delete-tournament-team" data-id="${escapeHtml(edit.id)}" class="ghost small danger-text" style="margin-left:auto;">Delete</button>` : ""}
+      </div>
+      <div class="form-error"></div>
+      <label>Team name<input name="teamName" required maxlength="24" value="${escapeHtml(edit.name || "")}" placeholder="${visiting ? "e.g. Galle Visitors" : "e.g. Reds"}" autocomplete="off"></label>
+      <fieldset class="tile-fieldset team-kind">
+        <legend>Who plays for this team?</legend>
+        <label><input type="radio" name="teamKind" value="club" ${visiting ? "" : "checked"}> Club side</label>
+        <label><input type="radio" name="teamKind" value="visiting" ${visiting ? "checked" : ""} ${t.visiting_unavailable && !visiting ? "disabled" : ""}> Visiting team</label>
+      </fieldset>
+      ${t.visiting_unavailable ? `<p class="hint">${VISITING_NEEDS_018}</p>` : visiting ? `<p class="hint team-kind-hint">Visitors play as guests: they aren't added to the club roster. It's a friendly, so you can lend them club players too.</p>` : ""}
+
+      <div class="section-label">In this team · ${picked.length}</div>
+      ${picked.length ? `<div class="team-roster picked">
+        ${picked.map(p => `<button type="button" data-action="team-builder-toggle" data-id="${escapeHtml(p.id)}" class="player-chip on" aria-label="Take ${escapeHtml(p.name)} off the team"><span class="mini-avatar">${escapeHtml(nameInitials(p.name))}</span>${escapeHtml(p.label)}${tagOf(p)}<span class="x">×</span></button>`).join("")}
+      </div>` : `<p class="hint">${visiting ? "Nobody yet. Type the visitors' names below." : "Nobody yet. Tap players below to add them."}</p>`}
+      ${moving.length ? `<p class="hint move-note">Moving here on save: ${moving.map(p => `${escapeHtml(p.name)} (from ${escapeHtml(takenBy[p.id])})`).join(", ")}</p>` : ""}
+
+      ${visiting ? `
+      <div class="section-label">Add visitors</div>
+      ${notice}
+      ${rosterReady ? `
+        <div class="builder-tools">${search}</div>
+        ${renderBuilderAddCard(edit)}
+        <div class="section-label">Lend a club player</div>
+        ${grid}` : loadingHtml("Loading the club roster…")}` : `
+      <div class="section-label">Club roster</div>
+      ${notice}
+      ${rosterReady ? `
+        <div class="builder-tools">
+          ${search}
+          <button type="button" data-action="team-builder-add-free" class="ghost small" ${freeCount ? "" : "disabled"}>+ All free${freeCount ? ` (${freeCount})` : ""}</button>
         </div>
-        ${renderBuilderAddCard(edit)}`}
+        ${grid}
+        ${renderBuilderAddCard(edit)}` : loadingHtml("Loading the club roster…")}`}
 
       <div class="builder-bar">
         <button type="button" data-action="cancel-tournament-team" class="ghost">Cancel</button>
@@ -277,16 +305,25 @@ function renderTournamentTeamForm(t, edit){
    (the input listener keeps its text/disabled state in step without a
    re-render). Its one button asks, in the shared confirmation sheet, whether
    the name is a new club player (add_player_to_club: roster + platform, same
-   as the Players screen) or a guest (a name on this team only). */
+   as the Players screen) or a guest (a name on this team only). On a
+   visiting team it sits right under the box and asks nothing: a typed name is
+   a visitor (addBuilderVisitors), several at once with commas. */
 function renderBuilderAddCard(edit){
   const q = (edit.search || "").trim();
   return `
-    <div class="builder-add">
-      <div class="builder-add-title">${q ? `Add “<span class="q">${escapeHtml(q)}</span>”` : `Someone new? <span class="muted">Type their name in the search box.</span>`}</div>
+    <div class="builder-add${edit.visiting ? " visiting" : ""}">
+      <div class="builder-add-title">${builderAddTitle(q, edit.visiting)}</div>
       <div class="builder-add-actions">
-        <button type="button" data-action="team-builder-add-new" class="ghost small" ${q && !edit.adding ? "" : "disabled"}>${edit.adding ? "Adding…" : "＋ Add to this team…"}</button>
+        <button type="button" data-action="team-builder-add-new" class="${edit.visiting ? "primary" : "ghost"} small" ${q && !edit.adding ? "" : "disabled"}>${edit.adding ? "Adding…" : edit.visiting ? "＋ Add to this team" : "＋ Add to this team…"}</button>
       </div>
     </div>`;
+}
+/* Trusted HTML (escapes the typed text); the input listener reuses it. */
+function builderAddTitle(q, visiting){
+  if (visiting) return q
+    ? `Add “<span class="q">${escapeHtml(q)}</span>” as ${q.includes(",") ? "visitors" : "a visitor"}`
+    : `Type a visitor's name above. <span class="muted">Separate names with commas to add several.</span>`;
+  return q ? `Add “<span class="q">${escapeHtml(q)}</span>”` : `Someone new? <span class="muted">Type their name in the search box.</span>`;
 }
 
 function builderRosterMatch(name){
@@ -296,16 +333,24 @@ function builderRosterMatch(name){
 function builderSelect(edit, id){ if (!edit.playerIds.includes(id)) edit.playerIds = [...edit.playerIds, id]; }
 
 /* The add button: a typed name that's already on the roster is just picked;
-   anything else asks "new club player or guest?" before adding. */
+   anything else asks "new club player or guest?" before adding -- except on a
+   visiting team, where it's a visitor straight away. */
 function askAddBuilderPlayer(){
   const edit = ui.tournamentTeamEdit;
   const name = (edit && edit.search || "").trim();
   if (!name || edit.adding) return;
+  if (edit.visiting){
+    addBuilderVisitors(edit, name);
+    clearBuilderSearch(); render();
+    const box = document.querySelector("#tournament-team-form .team-builder-search");
+    if (box) box.focus();   // ready for the next visitor
+    return;
+  }
   const onRoster = builderRosterMatch(name);
   if (onRoster){
     builderSelect(edit, onRoster.id);
     edit.notice = { text: `${onRoster.name} is already on the club roster, so they were picked from there.` };
-    edit.search = ""; render(); return;
+    edit.search = ""; clearBuilderSearch(); render(); return;
   }
   askConfirm({
     title: `Add ${name}`, icon: "＋", tone: "primary",
@@ -317,6 +362,45 @@ function askAddBuilderPlayer(){
     confirmLabel: "Add to team", busyLabel: "Adding…",
     onConfirm: choice => choice === "guest" ? addBuilderGuest(edit, name) : addBuilderClubPlayer(edit, name)
   });
+}
+
+/* The box is cleared in the DOM too: render() would otherwise carry the typed
+   text over as an unsaved draft (restoreFormDrafts). */
+function clearBuilderSearch(){
+  const box = document.querySelector("#tournament-team-form .team-builder-search");
+  if (box) box.value = "";
+}
+
+/* A visiting team's add box: each comma-separated name joins as a visitor (a
+   guest, like addBuilderGuest), no questions asked. A name on the club roster
+   is that club player, lent; someone already on another team is left for the
+   scorer to move from the list (askMoveBuilderPlayer asks first). */
+function addBuilderVisitors(edit, text){
+  const t = ui.clubTournament;
+  const names = [];
+  text.split(",").map(n => n.trim().replace(/\s+/g, " ")).filter(Boolean).forEach(n => {
+    if (!names.some(x => x.toLowerCase() === n.toLowerCase())) names.push(n);
+  });
+  const added = [], lent = [], elsewhere = [], tooLong = [];
+  names.forEach(n => {
+    if (n.length > 24){ tooLong.push(n); return; }
+    const club = builderRosterMatch(n);
+    const id = club ? club.id : guestPlayerKey(n);
+    if (edit.playerIds.includes(id)) return;
+    const other = t.teams.find(team => team.id !== edit.id && team.players.some(pl => pl.id === id));
+    if (other){ elsewhere.push(`${club ? club.name : n} (${other.name})`); return; }
+    if (club){ lent.push(club.name); builderSelect(edit, id); return; }
+    const known = t.teams.some(team => team.players.some(pl => pl.id === id));
+    if (!known && !(edit.guests || []).some(g => g.id === id)) edit.guests = [...(edit.guests || []), { id, name: n, guest: true }];
+    builderSelect(edit, id); added.push(n);
+  });
+  const parts = [];
+  if (added.length) parts.push(added.length === 1 ? `${added[0]} added.` : `${added.length} visitors added.`);
+  if (lent.length) parts.push(`${lent.join(", ")} ${lent.length === 1 ? "is" : "are"} on the club roster, so ${lent.length === 1 ? "they were" : "they were all"} lent from there.`);
+  if (elsewhere.length) parts.push(`Already on another team: ${elsewhere.join(", ")}. Tap them in the list below to move them.`);
+  if (tooLong.length) parts.push(`Names can be up to 24 characters: ${tooLong.join(", ")}.`);
+  edit.notice = parts.length ? { text: parts.join(" "), error: !added.length && !lent.length } : null;
+  edit.search = "";
 }
 
 function addBuilderGuest(edit, name){
@@ -370,11 +454,11 @@ function renderTournamentTeamModal(){
       </div>
     </div>`;
 }
-function teamEditState(id, name, playerIds){
-  return { id, name, playerIds: playerIds.slice(), search: "", original: JSON.stringify({ name, ids: playerIds.slice().sort() }) };
+function teamEditState(id, name, playerIds, visiting){
+  return { id, name, playerIds: playerIds.slice(), visiting: !!visiting, search: "", original: JSON.stringify({ name, ids: playerIds.slice().sort(), visiting: !!visiting }) };
 }
 function teamEditDirty(edit){
-  return JSON.stringify({ name: edit.name, ids: edit.playerIds.slice().sort() }) !== edit.original;
+  return JSON.stringify({ name: edit.name, ids: edit.playerIds.slice().sort(), visiting: !!edit.visiting }) !== edit.original;
 }
 /* Closing with unsaved picks asks first (the shared confirmation sheet). */
 function closeTeamEdit(){
@@ -412,6 +496,7 @@ async function handleTournamentTeamSubmit(e){
   if (!t || !edit || ui.tournamentTeamBusy) return;
   const name = (new FormData(form).get("teamName") || "").trim();
   if (!name){ showFormError(form, "Give the team a name."); return; }
+  if (edit.visiting && t.visiting_unavailable){ showFormError(form, VISITING_NEEDS_018); return; }
   const others = t.teams.filter(team => team.id !== edit.id);
   if (others.some(team => team.name.toLowerCase() === name.toLowerCase())){ showFormError(form, "This tournament already has a team with that name."); return; }
   edit.name = name;
@@ -424,10 +509,10 @@ async function handleTournamentTeamSubmit(e){
   ui.tournamentTeamBusy = true; render();
   let result = { ok: true };
   for (const d of donors){
-    result = await saveTournamentTeam(t, { id: d.id, name: d.name, players: d.players.filter(pl => !ids.includes(pl.id)) });
+    result = await saveTournamentTeam(t, { id: d.id, name: d.name, visiting: d.visiting, players: d.players.filter(pl => !ids.includes(pl.id)) });
     if (result.error) break;
   }
-  if (!result.error) result = await saveTournamentTeam(t, { id: edit.id, name, players });
+  if (!result.error) result = await saveTournamentTeam(t, { id: edit.id, name, players, visiting: edit.visiting });
   ui.tournamentTeamBusy = false;
   if (result.error){
     render(); showFormError(document.getElementById("tournament-team-form"), result.error);

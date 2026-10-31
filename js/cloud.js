@@ -167,7 +167,7 @@ function overlayTournamentData(t, ops, localMatches, tournamentId){
   live.filter(o => o.args.tournamentId === out.id).forEach(o => {
     const a = o.args;
     if (o.kind === "team.save"){
-      const row = { id: a.id, name: a.name, players: a.players, pending: true };
+      const row = { id: a.id, name: a.name, players: a.players, visiting: !!a.visiting, pending: true };
       const i = out.teams.findIndex(x => x.id === a.id);
       if (i >= 0) out.teams[i] = row; else out.teams.push(row);
     } else if (o.kind === "team.delete"){
@@ -189,7 +189,7 @@ function describeOp(op){
     case "club.create": return `New club “${a.name}”`;
     case "tournament.create": return `New tournament “${a.name}”`;
     case "tournament.update": return `${a.preset && a.preset.endedAt ? "End" : "Update"} tournament “${a.name || "tournament"}”`;
-    case "team.save": return `Team “${a.name}”`;
+    case "team.save": return `${a.visiting ? "Visiting team" : "Team"} “${a.name}”`;
     case "team.delete": return `Delete team “${a.name || "team"}”`;
     case "preset.save": return `Preset “${(a.preset && a.preset.name) || "preset"}”`;
     case "preset.delete": return `Delete preset “${a.name || "preset"}”`;
@@ -329,17 +329,27 @@ const OP_HANDLERS = {
   "team.save": async (a, op) => {
     const waiting = (a.players || []).find(p => String(p.id).startsWith(TEMP_ID_PREFIX));
     if (waiting) return { error: `Waiting for ${waiting.name} to be added to the club first.` };
-    const row = { name: a.name, players: a.players };
+    const row = { name: a.name, players: a.players, visiting: !!a.visiting };
     const insert = () => supabaseClient.from("tournament_teams").insert({ ...row, id: a.id, tournament_id: a.tournamentId, club_id: a.clubId, created_by: op.userId });
     const update = () => supabaseClient.from("tournament_teams").update(row).eq("id", a.id).eq("tournament_id", a.tournamentId).select("id");
-    let error, data;
-    if (a.isNew){
-      ({ error } = await insert());
-      if (dupId(error)) ({ error } = await update());
-    } else {
-      // An update that matches no row (its create never made it) becomes an insert.
-      ({ data, error } = await update());
-      if (!error && data && !data.length) ({ error } = await insert());
+    const save = async () => {
+      let error, data;
+      if (a.isNew){
+        ({ error } = await insert());
+        if (dupId(error)) ({ error } = await update());
+      } else {
+        // An update that matches no row (its create never made it) becomes an insert.
+        ({ data, error } = await update());
+        if (!error && data && !data.length) ({ error } = await insert());
+      }
+      return error;
+    };
+    let error = await save();
+    // 018 not run: a club side saves as before; a visiting team can't.
+    if (visitingColumnMissing(error)){
+      if (a.visiting) return { error: VISITING_NEEDS_018 };
+      delete row.visiting;
+      error = await save();
     }
     if (error && error.code === "23505") return { error: "This tournament already has a team with that name." };
     return { error: error ? (cloudTableMissing(error, "012_tournament_teams.sql") || error) : null };
@@ -672,15 +682,20 @@ async function fetchClubTournamentDetail(tournamentId){
   let server;   // undefined = couldn't ask; null = asked, not there (yet)
   if (supabaseClient && session && !session.offline && isOnline()){
     try {
-      const [{ data: tournament, error: tErr }, { data: matches }, { data: teams, error: teamsError }] = await Promise.all([
+      const teamsQuery = cols => supabaseClient.from("tournament_teams").select(cols).eq("tournament_id", tournamentId).order("created_at");
+      let [{ data: tournament, error: tErr }, { data: matches }, { data: teams, error: teamsError }] = await Promise.all([
         supabaseClient.from("tournaments").select("id, name, organizer_club_id, tournament_preset").eq("id", tournamentId).maybeSingle(),
         supabaseClient.from("matches").select("id, data, played_at").eq("tournament_id", tournamentId).order("played_at", { ascending: false }),
-        supabaseClient.from("tournament_teams").select("id, name, players").eq("tournament_id", tournamentId).order("created_at")
+        teamsQuery("id, name, players, visiting")
       ]);
+      // visiting_unavailable: 018 hasn't been run -- every team reads as a
+      // club side, and the builder says a visiting team needs 018.
+      const visitingUnavailable = visitingColumnMissing(teamsError);
+      if (visitingUnavailable) ({ data: teams, error: teamsError } = await teamsQuery("id, name, players"));
       if (!isNetworkError(tErr, isOnline())){
         // teams_unavailable: 012 hasn't been run -- the dashboard says so instead
         // of breaking, and match setup falls back to typed team names.
-        server = tournament ? { ...tournament, matches: matches || [], teams: teamsError ? [] : (teams || []), teams_unavailable: !!teamsError } : null;
+        server = tournament ? { ...tournament, matches: matches || [], teams: teamsError ? [] : (teams || []), teams_unavailable: !!teamsError, visiting_unavailable: visitingUnavailable } : null;
       }
     } catch (_){ server = undefined; }
   }
@@ -726,11 +741,12 @@ async function fetchPublicTournament(id){
 }
 
 /* Tournament teams (supabase/012): a name + roster players, members-only.
-   `players` is [{ id, name }] -- the name is a snapshot, see the SQL. */
+   `players` is [{ id, name }] -- the name is a snapshot, see the SQL.
+   `visiting` (018) marks a visiting team: its own players are guests. */
 async function saveTournamentTeam(tournament, team){
   const res = await submitCloudOp("team.save", {
     id: team.id || newUuid(), isNew: !team.id, tournamentId: tournament.id, clubId: tournament.organizer_club_id,
-    name: team.name, players: team.players
+    name: team.name, players: team.players, visiting: !!team.visiting
   });
   return res.error ? { error: res.error } : { ok: true, queued: !!res.queued };
 }
@@ -738,6 +754,11 @@ async function deleteTournamentTeam(tournamentId, teamId){
   const team = ui.clubTournament && ui.clubTournament.teams.find(t => t.id === teamId);
   const res = await submitCloudOp("team.delete", { id: teamId, tournamentId, name: team ? team.name : "" });
   return res.error ? { error: res.error } : { ok: true, queued: !!res.queued };
+}
+const VISITING_NEEDS_018 = "Visiting teams need 018_visiting_teams.sql — run it in the Supabase SQL editor.";
+/* 018's column isn't there: 42703 from a select, PGRST204 from a write. */
+function visitingColumnMissing(error){
+  return !!error && (error.code === "42703" || error.code === "PGRST204") && /visiting/.test(error.message || "");
 }
 function cloudTableMissing(error, file){
   return error && (error.code === "42P01" || error.code === "PGRST205")

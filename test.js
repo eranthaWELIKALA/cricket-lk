@@ -2352,6 +2352,107 @@ async function main(){
     win.eval(`supabaseClient = window.__prevClient; session = window.__prevSession; ui = defaultUi(); state.view = "home"; save(); render();`);
   }
 
+  // --- visiting teams in club tournaments (supabase/018), and lending club players to visitors ---
+  {
+    const doc = win.document;
+    const m = createMatch({ teamA: "Reds", teamB: "Visitors", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+    assert(!win.isVisitingSide(m, "B"), "a guest match has no visiting side");
+    m.clubId = "c1"; m.matchType = "friendly";
+    assert(win.isVisitingSide(m, "B") && !win.isVisitingSide(m, "A"), "a club friendly's team B is the visiting side");
+    m.matchType = "tournament"; m.visitingSides = ["B"];
+    assert(win.isVisitingSide(m, "B") && !win.isVisitingSide(m, "A"), "a tournament side saved as a visiting team is visiting");
+    const r = win.restartMatch(m, "B");
+    assert(r.visitingSides && r.visitingSides[0] === "B" && r.visitingSides !== m.visitingSides, "a restart keeps the visiting sides (copied)");
+
+    const save = { id: "x", kind: "team.save", userId: "u1", createdAt: 1, failed: false, args: { id: "v1", tournamentId: "T", name: "Galle", players: [{ id: "guest:amal", name: "Amal", guest: true }], visiting: true } };
+    const ov = win.overlayTournamentData({ id: "T", name: "Cup", tournament_preset: {}, matches: [], teams: [] }, [save], [], "T");
+    assert(ov.teams[0].visiting === true && ov.teams[0].pending, "overlay: a visiting team saved offline stays a visiting team");
+    assert(/Visiting team “Galle”/.test(win.describeOp(save)), "the sync sheet calls it a visiting team");
+    assert(win.eval(`visitingColumnMissing({ code: "PGRST204", message: "Could not find the 'visiting' column of 'tournament_teams' in the schema cache" })`)
+      && win.eval(`visitingColumnMissing({ code: "42703", message: "column tournament_teams.visiting does not exist" })`)
+      && !win.eval(`visitingColumnMissing({ code: "42703", message: "column players.nickname does not exist" })`) && !win.eval(`visitingColumnMissing(null)`),
+      "018 not run is recognised from a select or a write, and nothing else is");
+
+    // The builder: "＋ Visiting team", visitors typed (several at once), a club player lent.
+    win.eval(`state.match = null; window.__prevSession = session; session = { user: { id: "u1" } };
+      window.__saved = []; window.__prevSave = saveTournamentTeam; window.__prevFetch = fetchClubTournamentDetail;
+      saveTournamentTeam = async (t, team) => { __saved.push(JSON.parse(JSON.stringify(team))); return { ok: true }; };
+      fetchClubTournamentDetail = async () => {};
+      ui = defaultUi(); ui.currentClubId = "c1"; ui.currentTournamentId = "T"; ui.tournamentTab = "teams";
+      ui.club = { id: "c1", name: "KICC", roster: [{ id: "p1", name: "Kusal" }, { id: "p2", name: "Dasun" }, { id: "p3", name: "Pathum" }], members: [], matches: [], tournaments: [], presets: { match: [], tournament: [] } };
+      ui.clubTournament = { id: "T", name: "Cup", organizer_club_id: "c1", tournament_preset: {}, matches: [], teams: [{ id: "t1", name: "Reds", players: [{ id: "p1", name: "Kusal" }] }] };
+      state.view = "clubTournamentDashboard"; render();`);
+    doc.querySelector('#app [data-action="new-tournament-team"][data-visiting="1"]').click();
+    const form = () => doc.getElementById("tournament-team-form");
+    assert(form() && form().querySelector('[name="teamName"]').value === "Visitors" && form().querySelector('[name="teamKind"][value="visiting"]').checked
+      && /Lend a club player/.test(form().textContent) && !form().querySelector('[data-action="team-builder-add-free"]'),
+      "＋ Visiting team opens the builder as a visiting team: named Visitors, a lend list, no '+ All free'");
+    const box = form().querySelector(".team-builder-search");
+    box.value = "Amal, Nimal Silva, dasun, kusal, amal";
+    box.dispatchEvent(new win.Event("input", { bubbles: true }));
+    assert(/as visitors/.test(form().querySelector(".builder-add-title").textContent), "the add card follows the box: several names are visitors");
+    box.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    const edit = win.eval(`JSON.stringify(ui.tournamentTeamEdit)`);
+    const e1 = JSON.parse(edit);
+    assert(JSON.stringify(e1.playerIds) === JSON.stringify(["guest:amal", "guest:nimal silva", "p2"]), "Enter adds each visitor once, and a roster name is that club player, lent");
+    assert(/2 visitors added/.test(e1.notice.text) && /Dasun is on the club roster/.test(e1.notice.text) && /Kusal \(Reds\)/.test(e1.notice.text), "the notice says who was added, lent, or is on another team");
+    assert(form().querySelector(".team-builder-search").value === "" && [...form().querySelectorAll(".team-roster.picked .guest-tag.lent")].length === 1,
+      "the box is cleared for the next name; the lent club player is tagged 'club'");
+    form().querySelector('[name="teamName"]').value = "Galle CC";
+    form().querySelector('[name="teamName"]').dispatchEvent(new win.Event("input", { bubbles: true }));
+    form().dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    await wait(20);
+    const saved = win.__saved[0];
+    assert(saved && saved.visiting === true && saved.name === "Galle CC" && saved.players.length === 3
+      && saved.players[0].guest === true && saved.players[2].id === "p2" && !saved.players[2].guest, "Save stores a visiting team: visitors as guests, the lent player by id");
+
+    // An existing team's kind can be switched; a team giving up a player keeps its own kind.
+    win.eval(`ui.clubTournament.teams.push({ id: "t2", name: "Galle CC", visiting: true, players: [{ id: "guest:amal", name: "Amal", guest: true }, { id: "p3", name: "Pathum" }] });
+      __saved = []; ui.tournamentTeamEdit = teamEditState("t1", "Reds", ["p1", "p3"], false); render();`);
+    await win.eval(`handleTournamentTeamSubmit({ preventDefault(){}, target: document.getElementById("tournament-team-form") })`);
+    assert(win.__saved.length === 2 && win.__saved[0].id === "t2" && win.__saved[0].visiting === true && win.__saved[1].visiting === false,
+      "moving a lent player back saves the visiting team as still visiting");
+    win.eval(`ui.tournamentTeamEdit = teamEditState("t1", "Reds", ["p1"], false); render();`);
+    const kind = form().querySelector('[name="teamKind"][value="visiting"]');
+    kind.checked = true; kind.dispatchEvent(new win.Event("change", { bubbles: true }));
+    assert(win.eval(`ui.tournamentTeamEdit.visiting`) === true && win.eval(`teamEditDirty(ui.tournamentTeamEdit)`) && /Add visitors/.test(form().textContent), "a club side can be made a visiting team (and that's an unsaved change)");
+    win.eval(`ui.clubTournament.visiting_unavailable = true; render();`);
+    form().dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(/018_visiting_teams\.sql/.test(form().querySelector(".form-error").textContent), "018 not run: a visiting team can't be saved, and says why");
+    win.eval(`ui.tournamentTeamEdit = null; render();`);
+    assert(/Visitors/.test(doc.querySelector("#app .team-card.visiting .visitors-tag").textContent), "the Teams tab tags a visiting team");
+
+    // Scoring: a visiting team's people are never stored in the club; lending works both ways.
+    win.eval(`window.__calls = []; window.__prevClient = supabaseClient; supabaseClient = {};
+      window.__prevAdd = addPlayerToClub; window.__prevGlobal = addGlobalPlayer;
+      addPlayerToClub = async (c, n) => { __calls.push(["club", n]); return {}; };
+      addGlobalPlayer = async (n) => { __calls.push(["global", n]); return {}; };
+      state.match = createMatch({ teamA: "Reds", teamB: "Galle CC", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+      Object.assign(state.match, { clubId: "c1", matchType: "tournament", tournamentId: "T", squads: { A: ["Kusal"], B: ["Amal", "Dasun"] }, guestNames: ["Amal"], visitingSides: ["B"] });
+      registerMatchPlayer("Amal", "B"); registerMatchPlayer("Dasun", "B"); registerMatchPlayer("Late Visitor", "B"); registerMatchPlayer("New Clubber", "A");`);
+    assert(JSON.stringify(win.__calls) === JSON.stringify([["club", "New Clubber"]]), "tournament: visitors, lent club players and a visitor typed while scoring aren't stored; a new club-side name joins the roster");
+    assert(win.eval(`unlistedNames(state.match, [{ name: "Late Visitor", teamKey: "B" }]).length`) === 1 && !win.eval(`lendOnlySide(state.match, "B")`),
+      "a visiting team with a squad still asks about a typed name (a typo check)");
+    win.eval(`confirmUnlisted(state.match, [{ name: "Late Visitor", teamKey: "B" }], () => {});`);
+    assert(/as a visitor \(not added to the club\)/.test(doc.querySelector("#confirm-root").textContent), "...and says they'll play as a visitor");
+    win.eval(`ui.confirm = null; __calls = []; ui.club.roster = ui.club.roster.filter(p => p.id);   // drop "New Clubber", queued above
+      state.match = createMatch({ teamA: "KICC", teamB: "Visitors", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+      Object.assign(state.match, { clubId: "c1", matchType: "friendly" });
+      registerMatchPlayer("Visitor X", "B"); registerMatchPlayer("Dasun", "B");`);
+    assert(JSON.stringify(win.__calls) === JSON.stringify([["global", "Visitor X"]]), "friendly: a visitor is recorded on the platform, a lent club player isn't re-added");
+    assert(win.eval(`JSON.stringify(pickCandidates(state.match, pickPool("B"), "bowler"))`) === JSON.stringify(["Kusal", "Dasun", "Pathum"])
+      && win.eval(`lendOnlySide(state.match, "B")`) && win.eval(`unlistedNames(state.match, [{ name: "Visitor Y", teamKey: "B" }]).length`) === 0,
+      "friendly: the visitors can be lent any club player, and typing a visitor's name never asks");
+    win.eval(`{ const inn = currentInnings(state.match); openInnings(inn, "Kusal", "Pathum", "Visitor X"); inn.bowler = null; }
+      state.match.status = "live"; render();`);
+    assert(/Lend a club player/.test(doc.querySelector("#modal-root").textContent) && /Dasun/.test(doc.querySelector("#modal-root").textContent),
+      "the visitors' new-bowler sheet lists club players to lend");
+    assert(win.eval(`JSON.stringify(pickCandidates(state.match, pickPool("B"), "bowler"))`) === JSON.stringify(["Dasun"]), "...minus anyone batting for the club");
+    win.eval(`supabaseClient = window.__prevClient; session = window.__prevSession; addPlayerToClub = __prevAdd; addGlobalPlayer = __prevGlobal;
+      saveTournamentTeam = __prevSave; fetchClubTournamentDetail = __prevFetch;
+      state.match = null; ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }

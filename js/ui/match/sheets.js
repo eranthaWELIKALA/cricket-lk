@@ -106,12 +106,16 @@ function renderMatchMenuModal(match){
     const side = key => {
       const other = key === "A" ? "B" : "A";
       const names = match.squads[key] || [];
+      const visiting = isVisitingSide(match, key);
+      // On a visiting side, guests are the visitors themselves; a club player is lent.
+      const tag = n => isGuestInMatch(match, n) ? (visiting ? "" : "guest") : visiting && rosterEntryFor(n) ? "club" : "";
       return `
         <div class="squad-col">
           <div class="squad-col-head"><span class="team-dot team-dot-${key}"></span><b>${escapeHtml(teamName(match, key))}</b><span class="muted n">${names.length}</span></div>
+          ${visiting ? `<p class="squad-visitors">Visitors</p>` : ""}
           ${names.length ? names.map(n => playerHasPlayed(match, n)
-            ? `<div class="squad-player played"><span class="name">${escapeHtml(n)}<span class="sub">${isGuestInMatch(match, n) ? "guest · " : ""}played</span></span></div>`
-            : `<button type="button" data-action="move-squad-player" data-name="${escapeHtml(n)}" class="squad-player" aria-label="Move ${escapeHtml(n)} to ${escapeHtml(teamName(match, other))}"><span class="name">${escapeHtml(n)}${isGuestInMatch(match, n) ? `<span class="sub guest">guest</span>` : ""}</span><span class="move">${key === "A" ? "→" : "←"}</span></button>`
+            ? `<div class="squad-player played"><span class="name">${escapeHtml(n)}<span class="sub">${tag(n) ? `${tag(n)} · ` : ""}played</span></span></div>`
+            : `<button type="button" data-action="move-squad-player" data-name="${escapeHtml(n)}" class="squad-player" aria-label="Move ${escapeHtml(n)} to ${escapeHtml(teamName(match, other))}"><span class="name">${escapeHtml(n)}${tag(n) ? `<span class="sub guest">${tag(n)}</span>` : ""}</span><span class="move">${key === "A" ? "→" : "←"}</span></button>`
           ).join("") : `<p class="hint">Nobody yet.</p>`}
         </div>`;
     };
@@ -318,13 +322,15 @@ function handleOpeningSubmit(e){
 /* A typed name that isn't on that side's list -- its squad, else the club
    roster / guest players (pickPool) -- and hasn't played for that side in
    this match yet is asked about before it's recorded: a typo would become a
-   new player. A side with no list at all (a friendly's visitors) has nothing
-   to compare against, so it never asks. Placeholders (Bat ?1) never ask. */
+   new player. A side with no list at all has nothing to compare against, and
+   a visiting side's list may be just the club roster to lend from (a
+   friendly's visitors: lendOnlySide), so neither asks. Placeholders (Bat ?1)
+   never ask. */
 function unlistedNames(match, entries){
   const seen = new Set();
   return entries.filter(({ name, teamKey }) => {
     const key = (name || "").trim().toLowerCase();
-    if (!key || seen.has(key) || isUnnamedPlayer(name)) return false;
+    if (!key || seen.has(key) || isUnnamedPlayer(name) || lendOnlySide(match, teamKey)) return false;
     seen.add(key);
     const pool = pickPool(teamKey);
     if (!pool.length || pool.some(n => n.toLowerCase() === key)) return false;
@@ -336,11 +342,13 @@ function confirmUnlisted(match, entries, proceed){
   if (!fresh.length){ proceed(); return; }
   const one = fresh.length === 1;
   const list = match.squads ? "this match's squad" : match.clubId ? "the club roster" : "your players list";
+  // A visiting tournament team's newcomers play as guests (registerMatchPlayer).
+  const visitors = fresh.every(f => isVisitingSide(match, f.teamKey));
   askConfirm({
     title: one ? `Add ${fresh[0].name}?` : "Add new players?", icon: "👤", tone: "primary",
     body: `<p>${one ? "This name isn't" : "These names aren't"} in ${list}:</p>`
       + `<ul class="confirm-names">${fresh.map(f => `<li><b>${escapeHtml(f.name)}</b> · ${escapeHtml(teamName(match, f.teamKey))}</li>`).join("")}</ul>`
-      + `<p class="hint">Add ${one ? "them as a new player" : "them as new players"} and carry on? Check the spelling: a typo becomes a separate player.</p>`,
+      + `<p class="hint">${visitors ? `Add ${one ? "them" : "them all"} as ${one ? "a visitor" : "visitors"} (not added to the club)` : `Add ${one ? "them as a new player" : "them as new players"}`} and carry on? Check the spelling: a typo becomes a separate player.</p>`,
     confirmLabel: one ? "Add player" : "Add players", cancelLabel: "Go back",
     onConfirm: () => { proceed(); }
   });
@@ -375,8 +383,8 @@ function renderNewBatsmanModal(inn, slot){
           <div class="form-error"></div>
           ${renderPickSearch("Send in")}
           ${renderUnnamedButton("batter")}
-          ${renderPickRows(state.match.squads ? "Yet to bat" : "Players", pickCandidates(state.match, pickPool(inn.battingTeam), "batter"), "pick-batter")}
-          <p class="hint">A new name is added to your players list automatically.</p>
+          ${renderPickRows(lendOnlySide(state.match, inn.battingTeam) ? "Lend a club player" : state.match.squads ? "Yet to bat" : "Players", pickCandidates(state.match, pickPool(inn.battingTeam), "batter"), "pick-batter")}
+          <p class="hint">${isVisitingSide(state.match, inn.battingTeam) ? "Type a visitor's name above. Visitors aren't added to the club roster." : "A new name is added to your players list automatically."}</p>
         </form>
         <div class="modal-footer-hint">
           <p class="hint">Scoring is paused until you pick someone or carry on unnamed. Pick later to do something else first.</p>
@@ -460,7 +468,7 @@ function renderNewBowlerModal(inn){
             </div>
             ${inn.lastOverBowler ? `<p class="hint">The previous over's bowler can't bowl two in a row.</p>` : ""}
           ` : ""}
-          ${renderPickRows("Yet to bowl", pickCandidates(state.match, pickPool(inn.bowlingTeam), "bowler"), "pick-bowler")}
+          ${renderPickRows(lendOnlySide(state.match, inn.bowlingTeam) ? "Lend a club player" : "Yet to bowl", pickCandidates(state.match, pickPool(inn.bowlingTeam), "bowler"), "pick-bowler")}
         </form>
         <div class="modal-footer-hint">
           <p class="hint">Strike has already been swapped for the new over.</p>

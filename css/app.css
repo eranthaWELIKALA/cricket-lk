@@ -490,6 +490,14 @@ button.primary.danger-confirm.is-loading::after{ border-color:rgba(0,0,0,.2); bo
 .squad-add{margin-bottom:6px;}
 .guest-tag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:5px;border:1px solid var(--info);color:var(--info);font-size:.58rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;vertical-align:middle;flex-shrink:0;}
 .player-chip.guest{border-style:dashed;}
+/* Visiting teams (club tournaments): the team's tag, and a club player lent to it. */
+.guest-tag.lent{border-color:var(--accent);color:var(--accent);}
+.visitors-tag{display:inline-block;margin-right:2px;padding:1px 6px;border-radius:5px;background:rgba(var(--accent-rgb),.16);border:1px solid var(--accent);color:var(--accent);font-size:.58rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;vertical-align:middle;}
+.squad-visitors{margin:-4px 2px 2px;color:var(--accent);font-size:.62rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;}
+.team-kind{margin-top:4px;}
+.team-kind label:has(input:disabled){opacity:.5;}
+.team-kind-hint{margin-top:-4px;}
+.builder-add.visiting{margin:0 0 12px;border-style:solid;border-color:var(--accent);}
 .builder-add{margin-top:10px;padding:10px 12px;border:2px dashed var(--line-strong);border-radius:var(--radius-md);background:var(--panel);}
 .builder-add-title{font-weight:800;font-size:.88rem;margin-bottom:8px;overflow-wrap:anywhere;}
 .builder-add-title .q{color:var(--accent-2);}
@@ -1052,8 +1060,8 @@ body.has-install-banner:not(.live-scoring) #app{ padding-bottom:calc(96px + env(
   background:var(--team-c-bg, var(--panel-2)); border:2px solid var(--team-c, var(--line-strong)); color:var(--team-c, var(--text));
   font-weight:800; font-size:.85rem; letter-spacing:.02em;
 }
-.team-grid{ display:grid; grid-template-columns:1fr; gap:10px; margin-bottom:10px; }
-@media (min-width:640px){ .team-grid{ grid-template-columns:1fr 1fr; } }
+.team-grid{ display:grid; grid-template-columns:minmax(0,1fr); gap:10px; margin-bottom:10px; }
+@media (min-width:640px){ .team-grid{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); } }
 .team-card{
   background:var(--panel); border:2px solid var(--line-strong); border-left:6px solid var(--team-c, var(--line-strong));
   border-radius:var(--radius-md); padding:12px 14px; box-shadow:var(--shadow-card); display:flex; flex-direction:column; gap:10px;
@@ -1063,6 +1071,7 @@ body.has-install-banner:not(.live-scoring) #app{ padding-bottom:calc(96px + env(
   align-items:center; justify-content:center; flex-direction:row; min-height:64px; font-weight:800; font-size:.95rem;
 }
 .team-card.add .plus{ font-size:1.2rem; }
+.team-card.add.visiting{ color:var(--accent); }
 .team-card-head{ display:flex; align-items:center; gap:10px; }
 .team-card-title{ display:flex; flex-direction:column; min-width:0; }
 .team-card-title b{ font-size:1rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

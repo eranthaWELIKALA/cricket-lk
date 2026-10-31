@@ -48,6 +48,12 @@ const SEED = require('./seed.js');
   await tap('#confirm-root [data-action="confirm-cancel"]');
   await p.fill('.team-builder-search', 'Kusal'); await p.waitForTimeout(200);
   await tap('#modal-root .pick-row[data-id="p1"]'); await shot('54-move-player');
+  // A visiting team: visitors typed in one go, plus a club player lent to them.
+  await run(`ui.confirm = null; ui.tournamentTeamEdit = teamEditState(null, "Galle Eagles", [], true); render();`);
+  await p.fill('.team-builder-search', 'Niroshan Dickwella, Oshada Fernando, Lahiru Thirimanne, Janith Liyanage'); await p.press('.team-builder-search', 'Enter'); await p.waitForTimeout(200);
+  await tap('#modal-root .pick-row[data-free="1"]');
+  await p.evaluate(() => { document.activeElement.blur(); document.querySelector('#modal-root .team-kind').scrollIntoView({ block: 'start' }); });
+  await shot('54b-visiting-team');
   await run(`ui.confirm = null; ui.tournamentTeamEdit = null; render();`);
   await run(`ui.clubMatchSetupType = "tournament"; state.view = "matchSetup"; render();`);
   await p.evaluate(() => document.querySelector('.versus-picker').scrollIntoView({ block: 'start' })); await p.evaluate(() => scrollBy(0, -80));

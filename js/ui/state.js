@@ -190,11 +190,17 @@ function registerMatchPlayer(name, teamKey){
   if (state.match && isGuestInMatch(state.match, trimmed)) return; // guests are never stored
   const clubId = activeMatchClubId();
   if (!clubId){ findOrCreatePlayer(trimmed); return; }
+  const m = state.match;
+  const onRoster = ui.club && ui.club.id === clubId ? ui.club.roster.find(p => p.name.toLowerCase() === trimmed.toLowerCase()) : null;
+  if (onRoster && onRoster.id) return;   // already a club player (lent to visitors or not) -- nothing to store
+  // A visiting tournament team's own people are guests: a name typed for that
+  // side that isn't in its squad is never stored (a squad name that isn't a
+  // guest was added as a club player in Switch players, so it joins below).
+  if (m.matchType !== "friendly" && isVisitingSide(m, teamKey)
+      && !((m.squads && m.squads[teamKey]) || []).some(n => n.toLowerCase() === trimmed.toLowerCase())) return;
   // A friendly's visiting side (team B) isn't the home club's people: they
   // still become global players, but stay off this club's roster.
-  const visitor = state.match.matchType === "friendly" && teamKey === "B";
-  const onRoster = ui.club && ui.club.id === clubId ? ui.club.roster.find(p => p.name.toLowerCase() === trimmed.toLowerCase()) : null;
-  if (!visitor && onRoster && onRoster.id) return;   // already a club player -- nothing to store
+  const visitor = m.matchType === "friendly" && teamKey === "B";
   if (!visitor && ui.club && ui.club.id === clubId && !onRoster){
     ui.club.roster.push({ id: null, name: trimmed });
   }

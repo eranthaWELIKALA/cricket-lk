@@ -220,13 +220,17 @@ document.addEventListener("click", (e) => {
     ui.currentTournamentId = btn.dataset.id; ui.clubTournament = null; ui.tournamentTeamEdit = null; ui.tournamentTeamError = null; ui.tournamentTab = null; ui.expandedTeamId = null; state.view = "clubTournamentDashboard"; render(); // render() loads it
   }
   else if (action === "new-tournament-team" && ui.clubTournament){
-    const n = ui.clubTournament.teams.length;
-    ui.tournamentTeamEdit = teamEditState(null, n < 26 ? `Team ${String.fromCharCode(65 + n)}` : "", []);
+    const teams = ui.clubTournament.teams, n = teams.length;
+    const visiting = btn.dataset.visiting === "1";
+    const taken = name => teams.some(t => t.name.toLowerCase() === name.toLowerCase());
+    let name = n < 26 ? `Team ${String.fromCharCode(65 + n)}` : "";
+    if (visiting){ name = "Visitors"; for (let i = 2; taken(name) && i < 100; i++) name = `Visitors ${i}`; }
+    ui.tournamentTeamEdit = teamEditState(null, name, [], visiting);
     render();
   }
   else if (action === "edit-tournament-team" && ui.clubTournament){
     const team = ui.clubTournament.teams.find(t => t.id === btn.dataset.id);
-    if (team){ ui.tournamentTeamEdit = teamEditState(team.id, team.name, team.players.map(p => p.id)); render(); }
+    if (team){ ui.tournamentTeamEdit = teamEditState(team.id, team.name, team.players.map(p => p.id), team.visiting); render(); }
   }
   else if (action === "cancel-tournament-team") closeTeamEdit();
   else if (action === "team-builder-toggle" && ui.tournamentTeamEdit){
@@ -456,7 +460,11 @@ document.addEventListener("focusout", (e) => {
   }, 200);
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && e.target.classList && e.target.classList.contains("team-builder-search")) e.preventDefault();
+  if (e.key === "Enter" && e.target.classList && e.target.classList.contains("team-builder-search")){
+    e.preventDefault();
+    // A visiting team's box takes visitors' names: Enter adds them.
+    if (ui.tournamentTeamEdit && ui.tournamentTeamEdit.visiting) askAddBuilderPlayer();
+  }
   if (e.key === "Escape"){
     if (ui.confirm) cancelConfirm();
     else if (ui.tournamentTeamEdit && document.querySelector(".team-modal")) closeTeamEdit();
@@ -494,7 +502,7 @@ document.addEventListener("input", (e) => {
       const card = builder.querySelector(".builder-add");
       if (card){
         const typed = e.target.value.trim();
-        card.querySelector(".builder-add-title").innerHTML = typed ? `Add “<span class="q">${escapeHtml(typed)}</span>”` : `Someone new? <span class="muted">Type their name in the search box.</span>`;
+        card.querySelector(".builder-add-title").innerHTML = builderAddTitle(typed, ui.tournamentTeamEdit.visiting);
         card.querySelectorAll(".builder-add-actions button").forEach(b => { b.disabled = !typed || !!ui.tournamentTeamEdit.adding; });
       }
     }
@@ -533,6 +541,8 @@ document.addEventListener("change", (e) => {
   // the roster finishing loading) doesn't drop half-made picks.
   if (e.target.closest && e.target.closest("#tournament-team-form") && ui.tournamentTeamEdit){
     if (e.target.name === "teamName") ui.tournamentTeamEdit.name = e.target.value;
+    // Club side <-> visiting team: the rest of the builder follows.
+    if (e.target.name === "teamKind"){ ui.tournamentTeamEdit.visiting = e.target.value === "visiting"; ui.tournamentTeamEdit.notice = null; render(); }
     return;
   }
   if ((e.target.name === "teamAId" || e.target.name === "teamBId") && e.target.closest("#match-setup-form")){

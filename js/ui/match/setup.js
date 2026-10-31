@@ -53,12 +53,12 @@ function renderMatchSetup(){
                 <label class="team-pick team-c${i % 4}">
                   <input type="radio" name="team${side}Id" value="${t.id}" ${i === s ? "checked" : ""}>
                   <span class="team-badge">${escapeHtml(nameInitials(t.name))}</span>
-                  <span class="team-pick-text"><b>${escapeHtml(t.name)}</b><span class="muted">${t.players.length} player${t.players.length === 1 ? "" : "s"}${t.players.length ? ` · ${escapeHtml(t.players.slice(0, 3).map(p => p.name.split(/\s+/)[0]).join(", "))}${t.players.length > 3 ? "…" : ""}` : ""}</span></span>
+                  <span class="team-pick-text"><b>${escapeHtml(t.name)}</b><span class="muted">${t.visiting ? "Visitors · " : ""}${t.players.length} player${t.players.length === 1 ? "" : "s"}${t.players.length ? ` · ${escapeHtml(t.players.slice(0, 3).map(p => p.name.split(/\s+/)[0]).join(", "))}${t.players.length > 3 ? "…" : ""}` : ""}</span></span>
                 </label>`).join("")}
             </fieldset>
             ${side === "A" ? `<div class="vs-badge">VS</div>` : ""}`).join("")}
         </div>
-        <p class="hint">From this tournament's teams. Only their players are suggested while scoring. Swap players between the sides for this match from ⋯ Match options once it starts.</p>
+        <p class="hint">From this tournament's teams. Only their players are suggested while scoring. Swap players between the sides for this match — lending visitors a club player, say — from ⋯ Match options once it starts.</p>
         ` : `
         <label>${clubMode && ui.clubMatchSetupType === "friendly" ? "Home team name" : "Team A name"}<input name="teamA" required maxlength="24" value="${clubMode && ui.clubMatchSetupType === "friendly" ? escapeHtml(clubName) : ""}" placeholder="e.g. Lions" list="teams-datalist"></label>
         <label>${clubMode && ui.clubMatchSetupType === "friendly" ? "Visiting team name" : "Team B name"}<input name="teamB" required maxlength="24" placeholder="e.g. Tigers" list="teams-datalist"></label>
@@ -112,7 +112,7 @@ function handleMatchSetupSubmit(e){
   const f = new FormData(e.target);
   let teamA = (f.get("teamA") || "").trim() || "Team A";
   let teamB = (f.get("teamB") || "").trim() || "Team B";
-  let squads = null, guestNames = [];
+  let squads = null, guestNames = [], visitingSides = [];
   if (f.get("teamAId")){
     const saved = (ui.clubTournament && ui.clubTournament.teams) || [];
     const ta = saved.find(t => t.id === f.get("teamAId")), tb = saved.find(t => t.id === f.get("teamBId"));
@@ -120,6 +120,7 @@ function handleMatchSetupSubmit(e){
     teamA = ta.name; teamB = tb.name;
     squads = { A: ta.players.map(p => p.name), B: tb.players.map(p => p.name) };
     guestNames = [...ta.players, ...tb.players].filter(p => p.guest).map(p => p.name);
+    visitingSides = [ta.visiting && "A", tb.visiting && "B"].filter(Boolean);
   } else if (!(ui.currentClubId && ui.clubMatchSetupType)){
     // Guest match: a name that matches a saved guest team brings its players
     // along as that side's squad (same as picking a club tournament team).
@@ -159,6 +160,7 @@ function handleMatchSetupSubmit(e){
     // Read by playerTeamInMatch (side checks) and the squad datalists.
     if (squads) state.match.squads = squads;
     if (guestNames.length) state.match.guestNames = guestNames;
+    if (visitingSides.length) state.match.visitingSides = visitingSides;   // isVisitingSide
   } else if (squads) state.match.squads = squads;
   // "No names": render() fills every slot (fillAnonymousSlots), so there are
   // no squads or guests to keep apart.

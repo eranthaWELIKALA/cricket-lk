@@ -124,15 +124,21 @@ function renderPlayersDatalist(){
   return `<datalist id="players-datalist">${suggestionPlayerNames().map(n => `<option value="${escapeHtml(n)}">`).join("")}</datalist>`;
 }
 /* The names a side can be picked from: its squad (saved tournament teams),
-   else the same list the datalist offers -- except a friendly's visitors,
-   who aren't on the home club's roster, so there's nothing to offer them. */
+   else the same list the datalist offers. For a visiting side with no squad
+   (a friendly's visitors) that's the club roster, to lend a player from --
+   the visitors themselves are typed (see lendOnlySide). */
 function pickPool(teamKey){
   const m = state.match;
-  if (m && m.clubId && m.matchType === "friendly" && teamKey === "B") return [];
   // A side with no saved players (e.g. a typed guest team) still gets the
   // usual list; pickCandidates drops anyone who belongs to the other side.
   if (m && m.squads && (m.squads[teamKey] || []).length) return m.squads[teamKey];
   return suggestionPlayerNames();
+}
+/* A visiting side whose list is only the club roster (no squad of its own):
+   its rows read "Lend a club player", and a typed visitor's name is never
+   questioned as "not on the list" (confirmUnlisted). */
+function lendOnlySide(match, teamKey){
+  return isVisitingSide(match, teamKey) && !((match.squads && match.squads[teamKey]) || []).length;
 }
 /* A search-select for the in-match name boxes. Native <datalist> popups are
    unreliable on phones (options show but often can't be tapped inside a
