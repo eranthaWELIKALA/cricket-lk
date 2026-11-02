@@ -348,7 +348,7 @@ button.primary.danger-confirm{background:var(--wicket);color:var(--bg);border-co
   .sheet-score-banner .target-tile .need-n{ font-size:1.3rem; }
 }
 .dismissal-banner{
-  margin-top:12px;background:rgba(255,77,99,.1);border:2px solid rgba(255,77,99,.45);border-radius:var(--radius-md);
+  margin-top:12px;margin-bottom:12px;background:rgba(255,77,99,.1);border:2px solid rgba(255,77,99,.45);border-radius:var(--radius-md);
   padding:9px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
 }
 .dismissal-banner .name{font-size:.85rem;font-weight:700;}
@@ -857,9 +857,6 @@ body.has-install-banner:not(.live-scoring) #app{ padding-bottom:calc(96px + env(
 /* Share preview sheet (renderSharePreviewModal). */
 .share-preview{ display:flex; justify-content:center; background:var(--panel); border:2px solid var(--line-strong); border-radius:var(--radius-md); padding:10px; margin:4px 0 12px; min-height:200px; align-items:center; }
 .share-preview img{ display:block; max-width:100%; max-height:52vh; border-radius:10px; box-shadow:var(--shadow-card); }
-.share-actions{ display:grid; grid-template-columns:1fr 1.4fr; gap:10px; }
-.share-actions button{ margin:0; }
-.share-actions.single{ grid-template-columns:1fr; }
 .share-theme-tabs{ margin-bottom:10px; }
 .summary-actions{ display:grid; grid-template-columns:1.6fr 1fr; gap:8px; margin-top:12px; }
 .summary-actions .summary-share{ margin:0; }
@@ -1492,13 +1489,22 @@ button.ghost.danger-text{ color:var(--danger); border-color:rgba(255,93,112,.5);
 .score-set-inn .check-row{ margin-top:8px; font-size:.82rem; }
 @media print{ .bbb-score-set{ display:none !important; } }
 
-/* Pick sheets: search/type box + one-tap rows + "carry on unnamed"; unnamed placeholders. */
+/* Pick sheets: "Continue without naming" + search/type box + one-tap rows; unnamed placeholders. */
 .pick-search{ display:flex; gap:8px; align-items:stretch; margin-bottom:6px; }
 .pick-search input{ flex:1 1 auto; min-width:0; margin:0; }
 .pick-search button{ flex:0 0 auto; width:auto; padding:0 16px; margin:0; }
 .pick-row-item[hidden], .bowler-pick-list[hidden], .section-label[hidden], .pick-none[hidden]{ display:none; }
 .pick-row-item .pick-jersey{ color:var(--muted); font-size:.78rem; font-variant-numeric:tabular-nums; }
-.unnamed-btn{ width:100%; margin-top:4px; border-style:dashed; }
+.unnamed-btn{
+  width:100%; margin:6px 0 10px; display:flex; align-items:center; gap:10px; text-align:left;
+  padding:8px 12px; border:2px solid rgba(var(--accent-2-rgb),.45); border-radius:var(--radius-sm);
+  background:rgba(var(--accent-2-rgb),.08); color:var(--text); box-shadow:none;
+}
+.unnamed-btn .txt{ display:flex; flex-direction:column; gap:1px; flex:1 1 auto; min-width:0; }
+.unnamed-btn .main{ font-size:.92rem; font-weight:800; }
+.unnamed-btn .sub{ font-size:.74rem; font-weight:600; color:var(--muted); }
+.unnamed-btn .chev{ flex-shrink:0; font-size:1.3rem; line-height:1; color:var(--accent-2); }
+.unnamed-btn:active:not(:disabled){ border-color:var(--accent-2); }
 .unnamed-slot{ font-style:italic; text-align:left; }
 .unnamed-card{ border:2px dashed var(--accent); border-radius:var(--radius-md); padding:12px; margin:12px 0; }
 .unnamed-list{ display:flex; flex-wrap:wrap; gap:8px; }
@@ -1516,7 +1522,7 @@ button.chip.chip-add{ background:none; border-style:dashed; color:var(--accent-2
 button.chip.chip-add:hover, button.chip.chip-add:focus-visible{ outline:2px solid var(--accent-2); outline-offset:1px; }
 .chip.gone{ text-decoration:line-through; opacity:.55; outline:2px dashed var(--wicket); outline-offset:2px; }
 .chip.anchor{ outline:2px dashed var(--muted); outline-offset:2px; }
-.ball-edit-add-row{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
+.ball-edit-add-row{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:12px; }
 .ball-edit-actions.solo{ grid-template-columns:1fr; }
 .ball-edit-kinds.fill-choices{ grid-template-columns:1fr; }
 .ball-edit-kinds.fill-choices button{ text-align:left; }
@@ -1530,3 +1536,66 @@ button.chip.chip-add:hover, button.chip.chip-add:focus-visible{ outline:2px soli
 .ball-edit-kinds.fill-choices button{ padding:8px 12px; }
 .ball-edit-kinds.fill-choices button .sub{ display:block; font-size:.72rem; font-weight:600; color:var(--muted); margin-top:2px; }
 .edit-match-btn{ width:100%; margin-bottom:8px; font-weight:800; }
+
+/* --- retiring a batter (retired hurt / not out): not a wicket, so not red --- */
+.extra-wicket-btn.retire-btn{ border-color:var(--line-strong); background:var(--panel-2); color:var(--text); }
+.retire-sheet .end-tile.active{ background:rgba(var(--accent-2-rgb),.16); border-color:var(--accent-2); }
+.retire-sheet .end-tile.active .role{ color:var(--accent-2); }
+.comm-retire{ border-style:dashed; }
+.retire-sheet .end-tile{ height:auto; min-height:64px; padding:8px 12px; text-align:left; }
+.retire-sheet .end-tile .n{ max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dismissal-banner.retired{ border-color:var(--line-strong); background:var(--panel-2); }
+.comm-retire .comm-over-top .n{ white-space:nowrap; }
+
+/* --- picking players: the opening sheet's slots + one list, fielder chips,
+   last man stands, and a name that opens "Wrong batter/bowler?" --- */
+.opening-slots .end-tile{ height:auto; min-height:58px; padding:8px 12px; text-align:left; width:100%; }
+.opening-slots .end-tile .n{ max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:700; }
+.opening-slots .end-tile:not(.filled) .n{ color:var(--muted); font-weight:600; font-size:.85rem; }
+.opening-slots .end-tile.active{ background:rgba(var(--accent-2-rgb),.16); border-color:var(--accent-2); }
+.opening-slots .end-tile.active .role{ color:var(--accent-2); }
+.opening-slots.solo{ display:grid; grid-template-columns:1fr; margin:8px 0; }
+.opening-list{ margin-top:12px; }
+.opening-list .section-label{ margin-top:0; }
+.fielder-picked{ margin-left:auto; font-size:.78rem; font-weight:800; color:var(--accent-2); max-width:55%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fielder-search{ margin-top:8px; }
+.fielder-list{ gap:6px; margin:6px 0 4px; }
+.fielder-row{ height:44px; box-shadow:none; }
+.fielder-row .name{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fielder-row.active::after{ content:"✓"; font-weight:800; color:var(--accent-2); }
+.bat-alone-btn{ width:100%; margin:4px 0 10px; display:flex; flex-direction:column; align-items:center; gap:2px; padding:10px 12px; }
+.bat-alone-btn .main{ font-size:.92rem; font-weight:800; }
+.bat-alone-btn .sub{ font-size:.72rem; font-weight:600; opacity:.85; }
+.name-btn{
+  background:none; border:none; border-bottom:1px dashed color-mix(in srgb, currentColor 45%, transparent); border-radius:0;
+  box-shadow:none; padding:0 0 1px; margin:0; min-height:0; width:auto; color:inherit; font:inherit; text-align:left;
+  max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom;
+}
+.name-btn:active:not(:disabled){ transform:none; color:var(--accent-2); }
+.over-chips{ display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 10px; }
+.over-chip{ padding:6px 12px; border-radius:999px; border:2px solid var(--line-strong); background:var(--panel-2); color:var(--text); font-size:.82rem; font-weight:700; box-shadow:none; }
+.over-chip.active{ background:rgba(var(--accent-2-rgb),.16); border-color:var(--accent-2); color:var(--accent-2); }
+@media print{
+  /* names that are buttons on screen (to change a pick) print as plain text */
+  .name-btn, .unnamed-slot{ display:inline !important; border:none !important; font-style:normal; }
+}
+
+/* --- a bottom sheet's buttons stay in view ---
+   .sheet-actions sticks to the sheet's bottom edge (the .modal scrolls) and
+   the content above scrolls under it -- a long name list never pushes the
+   buttons off screen. It's the last thing in the sheet (or in a form that is
+   the last thing): its bottom offset and negative margin cancel the sheet's
+   own bottom padding, which sticky would otherwise inset by (as .builder-bar).
+   Sheets where everything has to be read or filled in first (confirmations,
+   catch up, set the score, enter a result) keep their buttons at the end. */
+.modal .sheet-actions{
+  position:sticky; bottom:calc(-20px - env(safe-area-inset-bottom)); z-index:3;
+  display:flex; align-items:stretch; gap:8px;
+  margin:14px -18px calc(-20px - env(safe-area-inset-bottom));
+  padding:10px 18px calc(12px + env(safe-area-inset-bottom));
+  background:var(--panel-solid); border-top:2px solid var(--line-strong);
+}
+.sheet-actions > button{ flex:1 1 0; width:auto; min-width:0; margin:0; padding-left:10px; padding-right:10px; }
+.sheet-actions > button.primary{ flex-grow:2; }
+.sheet-actions > .undo-chip{ flex:0 0 auto; }
+.sheet-actions > .link-btn{ flex:0 0 auto; }

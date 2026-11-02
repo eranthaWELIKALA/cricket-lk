@@ -91,8 +91,7 @@ function leaderboardTable(table, totals){
     const v = c.text ? c.text(t) : c.value(t);
     return `<td class="${c.key === sort.key ? "on" : ""}">${c.strong ? `<b>${v}</b>` : v}</td>`;
   }).join("")}</tr>`).join("");
-  return `<div class="table-scroll"><table class="lb-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
-    <p class="hint">${rows.length} player${rows.length === 1 ? "" : "s"} · tap a column to sort${cols.length > 6 ? " · swipe the table for more" : ""}</p>`;
+  return `<div class="table-scroll"><table class="lb-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 /* --- records (computeRecords) ---
@@ -147,7 +146,7 @@ function renderRecords(matches){
   const groups = computeRecords(matches)
     .map(g => Object.assign({}, g, { records: g.records.filter(r => r.entries.length) }))
     .filter(g => g.records.length);
-  if (!groups.length) return `<p class="hint">No records yet — they appear once a finished match has some runs on the board.</p>`;
+  if (!groups.length) return `<p class="hint">No records yet.</p>`;
   return `<div class="records">
     ${groups.map(g => {
       const tiles = RECORD_TILE_GROUPS.includes(g.key);
@@ -156,7 +155,7 @@ function renderRecords(matches){
         <div class="${tiles ? "records-tiles" : "records-cards"}">${g.records.map(tiles ? recordTileHtml : recordCardHtml).join("")}</div>
       </section>`;
     }).join("")}
-    <p class="hint">Top ${RECORDS_SHOWN} of each, from ${matches.length} match${matches.length === 1 ? "" : "es"}. Wides and no-balls count deliveries. Tap a match record to open its scorecard.</p>
+    
   </div>`;
 }
 
@@ -189,7 +188,6 @@ function renderStatsScreen(){
       ${renderBackBar("Home", "home")}
       <h1>📊 All-time stats</h1>
       ${matches.length ? renderLeaderboards(aggregatePlayerStats(matches, points), { points, where: "Presets → MVP points", matches }) : `<p class="hint">Play and finish a match to see stats here.</p>`}
-      ${matches.length ? `<p class="hint">Read from archived matches only — ${matches.length} of them.</p>` : ""}
     </div>
   `;
 }

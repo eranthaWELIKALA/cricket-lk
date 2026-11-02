@@ -7,13 +7,13 @@ function renderInningsSummary(match, inn){
   const battingRows = inn.batting.order.map(name => {
     const s = inn.batting.stats[name];
     const sr = s.balls ? ((s.runs / s.balls) * 100).toFixed(1) : "0.0";
-    const status = s.out ? s.howOut : "not out";
-    return `<tr><td>${unnamedNameHtml(match, name, liveName(name))}</td><td class="status">${escapeHtml(status)}</td><td>${s.runs}</td><td>${s.balls}</td><td>${s.fours}</td><td>${s.sixes}</td><td>${sr}</td></tr>`;
+    const status = batterStatusText(s);
+    return `<tr><td>${playerNameHtml(match, inn, "batter", name, liveName(name))}</td><td class="status">${escapeHtml(status)}</td><td>${s.runs}</td><td>${s.balls}</td><td>${s.fours}</td><td>${s.sixes}</td><td>${sr}</td></tr>`;
   }).join("");
   const bowlingRows = inn.bowling.order.map(name => {
     const b = inn.bowling.stats[name];
     const econ = b.legalBalls ? (b.runs / (b.legalBalls / bpo)).toFixed(2) : "0.00";
-    return `<tr><td>${unnamedNameHtml(match, name, liveName(name))}</td><td>${oversDisplay(b.legalBalls, bpo)}</td><td>${b.maidens}</td><td>${b.runs}</td><td>${b.wickets}</td><td>${econ}</td></tr>`;
+    return `<tr><td>${playerNameHtml(match, inn, "bowler", name, liveName(name))}</td><td>${oversDisplay(b.legalBalls, bpo)}</td><td>${b.maidens}</td><td>${b.runs}</td><td>${b.wickets}</td><td>${econ}</td></tr>`;
   }).join("");
   const extrasTotal = inn.extras.wides + inn.extras.noBalls + inn.extras.byes + inn.extras.legByes;
   return `
@@ -31,9 +31,24 @@ function renderInningsSummary(match, inn){
       ${inn.fallOfWickets.length ? `<div class="fow">FoW: ${inn.fallOfWickets.map(f => f.catchUp
         ? `${f.wicket} ${escapeHtml(liveName(f.batsman))} (by ${f.over})`
         : `${f.score}/${f.wicket} (${f.over})`).join(", ")}</div>` : ""}
+      ${renderRetirementsLine(inn)}
       ${renderCatchUpNote(inn)}
     </div>
   `;
+}
+
+/* Who retired (hurt / not out) and, if they did, when they came back in:
+   "Retired: Kusal 23 (18) at 45-2, 6.2 ov, back at 80-4". */
+function renderRetirementsLine(inn){
+  const list = inn.retirements || [];
+  if (!list.length) return "";
+  const bpo = inn.ballsPerOver;
+  const parts = list.filter(t => t.type === "retire").map(t => {
+    const i = list.indexOf(t);
+    const back = list.slice(i + 1).find(x => x.type === "back" && x.name === t.name);
+    return `${escapeHtml(liveName(t.name))} ${t.runs} (${t.balls}) ${t.reason === "notout" ? "retired not out" : "retired hurt"} at ${t.score}-${t.wickets}, ${oversDisplay(t.legalBalls, bpo)} ov${back ? `, back in at ${back.score}-${back.wickets}` : ""}`;
+  });
+  return `<div class="fow retired-line">Retired: ${parts.join("; ")}</div>`;
 }
 
 /* A caught-up innings (applyCatchUp) says where, and what it couldn't
@@ -87,6 +102,11 @@ function renderCommentary(match, inn){
       <div class="comm-over comm-gap">
         <div class="comm-over-top"><span>${l.byHand ? "Score set by hand" : "Score caught up"}</span><span class="n">${team} ${escapeHtml(l.to)}</span></div>
         <div class="comm-over-sub n">${l.byHand || l.runs < 0 || l.wickets < 0 ? `Was ${escapeHtml(l.from)} · typed in, not scored ball by ball` : `From ${escapeHtml(l.from)} · ${l.runs} run${l.runs === 1 ? "" : "s"}${l.wickets ? ` · ${l.wickets} wkt${l.wickets === 1 ? "" : "s"}` : ""} not scored ball by ball`}</div>
+      </div>`;
+    if (l.type === "retire") return `
+      <div class="comm-over comm-retire">
+        <div class="comm-over-top"><span>${escapeHtml(l.text)}</span><span class="n">${team} ${escapeHtml(l.score)}</span></div>
+        <div class="comm-over-sub n">${l.back ? `Carries on from ${escapeHtml(l.figures)}` : `Not out, ${escapeHtml(l.figures)} · can bat again later`} · ${escapeHtml(l.overs)} ov</div>
       </div>`;
     if (l.type === "over") return `
       <div class="comm-over">
@@ -150,7 +170,7 @@ function renderBallByBall(match, inn){
           <span class="n bbb-sum">${sum}</span>
         </div>
         <p class="hint" style="margin:2px 0 0;">${open
-          ? `${g.byHand ? "Typed in" : "Not scored ball by ball"}: the balls before it are ${escapeHtml(gapShortText(g))}. Fix or add them and this shrinks, until they add up and it goes.`
+          ? `The balls before it are ${escapeHtml(gapShortText(g))}.`
           : g.byHand ? "The final score was typed in, not scored ball by ball." : "Not scored ball by ball."}</p>
         ${open ? `<button type="button" data-action="add-ball" data-inn="${idx}" data-seq="${before.seq}" data-where="after" data-label="${before.label}" class="ghost small bbb-gap-add">+ Add a missed ball before it</button>` : ""}
         <div class="n bbb-score">${escapeHtml(teamName(match, inn.battingTeam))} ${score}-${wkts}</div>
@@ -207,11 +227,10 @@ function renderBallByBall(match, inn){
     <div class="ball-by-ball">
       <h3>${escapeHtml(teamName(match, inn.battingTeam))} ${inn.runs}/${inn.wickets} <span class="ov">(${oversDisplay(inn.legalBalls, bpo)} ov)</span></h3>
       ${rows.reverse().join("")}
-      ${editable ? `<p class="hint bbb-edit-hint">Tap a ball to change it, remove it or add a missed ball next to it: every later ball is worked out again.</p>` : ""}
-      ${ballEditAllowed(match) && lockedGap ? `<p class="hint">Balls before the score was ${inn.overs.some(o => o.gap && o.gap.byHand) ? "set by hand" : "caught up"} can't be changed one by one${inn.log ? " (the ones after it can)" : ""}. You can still set the final score.</p>` : ""}
-      ${ballEditAllowed(match) && !inn.log && inn.complete && !inn.overs.some(o => o.gap) ? `<p class="hint">This innings' balls can't be changed one by one: it was scored with an older version of the app, which didn't keep enough about each ball. You can still set the final score.</p>` : ""}
+      ${editable ? `<p class="hint bbb-edit-hint">Tap a ball to change it.</p>` : ""}
+      ${ballEditAllowed(match) && lockedGap ? `<p class="hint">Balls before the score was ${inn.overs.some(o => o.gap && o.gap.byHand) ? "set by hand" : "caught up"} can't be changed one by one${inn.log ? " (the ones after it can)" : ""}.</p>` : ""}
+      ${ballEditAllowed(match) && !inn.log && inn.complete && !inn.overs.some(o => o.gap) ? `<p class="hint">Scored with an older version of the app: these balls can't be changed one by one.</p>` : ""}
       ${ballEditAllowed(match) ? `<button type="button" data-action="open-score-set" class="ghost bbb-score-set">Set the final score instead</button>` : ""}
-      <p class="hint">Newest over first. W wicket · Wd wide · Nb no-ball · B bye · Lb leg bye · Ro run out.</p>
     </div>`;
 }
 
@@ -274,7 +293,7 @@ function renderMatchDetailModal(){
           return blocked ? `<p class="hint">${escapeHtml(blocked)}</p>`
             : `<button type="button" data-action="edit-archived-match" data-id="${escapeHtml(m.id)}" class="ghost edit-match-btn">✎ Edit match</button>`;
         })()}
-        <button type="button" data-action="close-match-detail" class="primary" style="width:100%;">Close</button>
+        <div class="sheet-actions"><button type="button" data-action="close-match-detail" class="ghost">Close</button></div>
       </div>
     </div>`;
 }
@@ -284,7 +303,7 @@ function renderResultOnlyCard(m){
   return `
     <div class="innings-summary">
       ${m.innings.map(inn => `<h3>${escapeHtml(teamName(m, inn.battingTeam))} ${inn.runs}/${inn.wickets}${inn.legalBalls != null ? ` <span class="ov">(${oversDisplay(inn.legalBalls, inn.ballsPerOver)} ov)</span>` : ""}</h3>`).join("")}
-      <p class="hint" style="margin:6px 0 0;">Result entered by hand — no ball-by-ball scorecard.</p>
+      <p class="hint" style="margin:6px 0 0;">Result only: no scorecard.</p>
     </div>`;
 }
 
@@ -360,7 +379,6 @@ function renderInningsBreak(match){
         ${conditionTags.map(t => `<span class="n tag-pill">${escapeHtml(t)}</span>`).join("")}
         <span class="n tag-pill${i1.freeHitOnNoBall ? " gold" : ""}">free hit ${i1.freeHitOnNoBall ? "on" : "off"}</span>
       </div>
-      ${match.presetName ? `<p class="hint">Playing conditions came from the <b style="color:var(--text);">${escapeHtml(match.presetName)}</b> preset and are fixed for the whole match.</p>` : ""}
       <button type="button" data-action="open-edit-balls" class="link-btn">Full scorecard · fix a ball</button>
       ${renderGoBackRow(match)}
       <button data-action="start-second-innings" class="primary">Start 2nd innings</button>
@@ -477,7 +495,6 @@ function renderResult(match){
       ${unnamed.length ? `
         <div class="unnamed-card">
           <div class="section-label">Still unnamed</div>
-          <p class="hint" style="margin-top:0;">They're left out of stats until you say who they were.</p>
           <div class="unnamed-list">${unnamed.map(u => unnamedNameHtml(match, u.name)).join("")}</div>
         </div>` : ""}
       <button data-action="toggle-scorecard" class="link-btn">${ui.showFullScorecard ? "Show condensed summary" : "Show full scorecard"}</button>
@@ -485,9 +502,7 @@ function renderResult(match){
         ${renderResultInningsCard(match, match.innings[0])}
         ${match.innings[1] ? renderResultInningsCard(match, match.innings[1]) : ""}
       `}
-      <p class="hint">${match.editingFromHistory
-        ? "Editing from match history: each change is saved to it straight away, and stats, MVP and the points table follow."
-        : "Archived to match history — this is what stats, MVP and the points table read from."}</p>
+      ${match.editingFromHistory ? `<p class="hint">Editing from match history: each change saves straight away.</p>` : ""}
       <div class="share-row">
         <button data-action="share-image" class="ghost" style="font-weight:800;letter-spacing:.04em;">Share image</button>
         <button data-action="export-pdf" class="ghost" style="font-weight:800;letter-spacing:.04em;">Export PDF</button>
@@ -656,7 +671,7 @@ function renderScorecardCanvas(match, themeKey, logo){
       const ext = inn.extras, extras = ext.wides + ext.noBalls + ext.byes + ext.legByes;
       const cardTop = y, inner = X + 32, iw = W - 64;
       // Measure: header 104 + batting (18 + rows) + extras 44 + bowling (18 + rows) + padding.
-      const h = 112 + (bat.length ? 24 + bat.reduce((s, r) => s + (r.s.out || r.s.balls ? 66 : 48), 0) : 0)
+      const h = 112 + (bat.length ? 24 + bat.reduce((s, r) => s + (r.s.out || r.s.retired || r.s.balls ? 66 : 48), 0) : 0)
         + 46 + (bowl.length ? 46 + bowl.length * 48 : 0) + 24;
       shareCard(ctx, X, cardTop, W, h, th.panel, th.line);
       shareText(ctx, teamName(match, inn.battingTeam), inner, cardTop + 62, { size: 34, weight: 800, color: th.text, maxW: iw - 360 });
@@ -669,7 +684,7 @@ function renderScorecardCanvas(match, themeKey, logo){
         yy = shareTable(ctx, th, inner, yy, iw, [{}, { w: 80 }, { w: 70 }, { w: 60 }, { w: 60 }, { w: 100 }], ["BATTER", "R", "B", "4S", "6S", "SR"],
           bat.map(({ n, s }) => ({
             cells: [n, `${s.runs}${s.out ? "" : "*"}`, s.balls, s.fours, s.sixes, s.balls ? ((s.runs / s.balls) * 100).toFixed(1) : "–"],
-            sub: s.out ? s.howOut : (s.balls ? "not out" : null),
+            sub: s.out || s.retired ? batterStatusText(s) : (s.balls ? "not out" : null),
             strong: s.runs === topRuns && topRuns > 0, color: s.runs === topRuns && topRuns > 0 ? th.gold : null
           })));
       }
@@ -817,7 +832,7 @@ function renderSharePreviewModal(){
         </div>
         ${tabsHtml("share-theme", Object.entries(SHARE_THEMES).map(([k, t]) => [k, t.label]), sp.theme, "share-theme-tabs")}
         <div class="share-preview">${sp.url ? `<img src="${sp.url}" alt="Share image preview">` : loadingHtml("Drawing the image…")}</div>
-        <div class="share-actions${canFiles ? "" : " single"}">
+        <div class="sheet-actions">
           ${canFiles ? `<button type="button" data-action="share-save" class="ghost" ${sp.url ? "" : "disabled"}>Save image</button>` : ""}
           <button type="button" data-action="${canFiles ? "share-send" : "share-save"}" class="primary" ${sp.url ? "" : "disabled"}>${canFiles ? "Share" : "Save image"}</button>
         </div>

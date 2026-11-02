@@ -30,7 +30,6 @@ function renderMyClubs(){
           <span>${escapeHtml(c.name)}<br><span class="muted">${escapeHtml(c.role)}</span></span><span class="chevron">›</span>
         </button>
       `).join("") : `<p class="hint">No clubs yet — create one above.</p>`}
-      ${ui.myClubs && ui.myClubs.length ? `<p class="hint">Tapping a club opens Home acting as that club.</p>` : ""}
     </div>
   `;
 }
@@ -63,7 +62,7 @@ function renderClubScreen(title, bodyFn, note){
     <div class="screen">
       ${renderBackBar("Home", "home")}
       <h1>${escapeHtml(currentClubName() || "Club")} · ${title}</h1>
-      <p class="hint guest-note">${note || `Club ${title.toLowerCase()} — stored in the cloud for this club only. Guest data on this device is never shown here.`}</p>
+      ${note ? `<p class="hint guest-note">${note}</p>` : ""}
       ${!club || ui.clubBusy ? `${loadingHtml()}` : bodyFn(club)}
     </div>
   `;
@@ -104,7 +103,6 @@ function photoFieldHtml(photo, initial){
         <input type="hidden" name="photo" value="${photo}">
         <label class="ghost small file-btn">Choose photo<input class="photo-file-input" type="file" accept="image/*" hidden></label>
         <button type="button" data-action="clear-photo" class="ghost small">Remove</button>
-        <p class="hint" style="margin:6px 0 0;">Shrunk to a small square before saving.</p>
       </div>
     </div>`;
 }
@@ -268,7 +266,7 @@ function renderPlayerProfile(){
       <h4 class="stat-sub">Batting</h4>${batting}
       <h4 class="stat-sub">Bowling</h4>${bowling}
       <h4 class="stat-sub">Fielding</h4>${fielding}
-      <p class="hint">${note}</p>
+      ${note ? `<p class="hint">${note}</p>` : ""}
     `;
   };
   const clubMatches = isClub ? clubMatchesFor(ui.currentClubId) : (pr.clubMatches || []);
@@ -278,12 +276,12 @@ function renderPlayerProfile(){
     isClub ? "No matches for this player in this club yet."
       : pr.clubMatches === undefined ? "Loading…"
       : session ? "No matches for this player in the clubs you belong to yet." : "Sign in to see club stats from your clubs.",
-    isClub ? "From this club's archived matches only." : "From matches of the clubs you belong to only — club stats elsewhere aren't visible from here.",
+    "",
     isClub
   );
   const premierBlock = statsBlock(
     "Premier matches", playerCareer([pr.name, ...(pr.aliases || [])], ui.premier ? ui.premier.premierMatches.map(m => m.data).filter(Boolean) : []),
-    ui.premier ? "No Premier matches yet for this player." : "Loading…", "From Premier archived matches only."
+    ui.premier ? "No Premier matches yet for this player." : "Loading…", ""
   );
   const sections = isClub ? [clubBlock, premierBlock] : [premierBlock, clubBlock];
   const initial = (pr.name || "?").trim().charAt(0).toUpperCase();
@@ -319,7 +317,7 @@ function renderPlayerProfile(){
         ` : `
           <div class="profile-row"><span class="profile-key">Contact no</span><span class="muted">Private</span></div>
           <div class="profile-row"><span class="profile-key">NIC</span><span class="muted">Private</span></div>
-          <p class="hint" style="margin-top:8px;">Contact number and NIC are visible only to this player and admins — or, until the player claims the profile, the club that added them.</p>
+          <p class="hint" style="margin-top:8px;">Private: only this player, admins and (until it's claimed) the club that added them see these.</p>
         `}
         ${pr.message ? `<p class="hint">${escapeHtml(pr.message)}</p>` : ""}
       </div>
@@ -403,11 +401,9 @@ function platformSuggestHtml(query, players){
             : `<button type="button" data-action="add-existing-club-player" data-id="${escapeHtml(p.id)}" data-name="${escapeHtml(p.name)}" class="ghost small">Add to club</button>`}
         </div>`;
     }).join("")}
-    <p class="hint" style="margin:4px 0 10px;">${exact && rosterIds.has(exact.id)
-      ? `“${escapeHtml(exact.name)}” is already in your club. Add someone else, or pick another player above.`
-      : exact
-      ? `“${escapeHtml(exact.name)}” already exists — submitting this name adds that player rather than creating a new one, and the details below won't be applied. Use “Add to club” to pick the right person.`
-      : "Pick one to add them as they are, or keep typing to create a new player."}</p>`;
+    ${exact ? `<p class="hint" style="margin:4px 0 10px;">${rosterIds.has(exact.id)
+      ? `“${escapeHtml(exact.name)}” is already in your club.`
+      : `“${escapeHtml(exact.name)}” already exists: saving this name adds that player (the details below aren't applied).`}</p>` : ""}`;
 }
 
 function renderClubAddPlayerModal(){
@@ -425,10 +421,10 @@ function renderClubAddPlayerModal(){
           </div>
           ${playerDetailFieldsHtml({})}
           ${photoFieldHtml("", "?")}
-          <p class="hint">Everything except the name is optional. If they're already on the platform they just join your roster — their profile is then edited by the club that first added them until they claim it, and by the player after that. Contact number and NIC are never shown to other clubs.</p>
-          <div style="display:flex;gap:10px;">
-            <button type="button" data-action="close-player-modal" class="ghost" style="width:112px;flex-shrink:0;">Cancel</button>
-            <button type="submit" class="primary" style="flex-grow:1;margin-top:0;">Add player</button>
+          <p class="hint">Only the name is needed. Contact number and NIC are never shown to other clubs.</p>
+          <div class="sheet-actions">
+            <button type="button" data-action="close-player-modal" class="ghost">Cancel</button>
+            <button type="submit" class="primary">Add player</button>
           </div>
         </form>
       </div>
@@ -445,14 +441,13 @@ function renderPlayerEditModal(){
           <div class="form-error"></div>
           ${photoFieldHtml(safePhoto(d.photo), initial)}
           <label>Name<input name="playerName" value="${escapeHtml(d.name || pr.name || "")}" required maxlength="24" autocomplete="off"></label>
-          <p class="hint" style="margin-top:-6px;">Renaming keeps the old name as an alias, so past scorecards still count for this player.</p>
           ${d.can_see_contact ? `
             <label>Contact no<input name="phone" type="tel" value="${escapeHtml(d.phone || "")}" placeholder="07x xxx xxxx" maxlength="16" autocomplete="off"></label>
             <label>NIC<input name="nic" value="${escapeHtml(d.nic || "")}" placeholder="901234567V" maxlength="14" autocomplete="off"></label>` : ""}
           ${playerDetailFieldsHtml(d)}
-          <div style="display:flex;gap:10px;">
-            <button type="button" data-action="close-player-modal" class="ghost" style="width:112px;flex-shrink:0;">Cancel</button>
-            <button type="submit" class="primary" style="flex-grow:1;margin-top:0;">Save</button>
+          <div class="sheet-actions">
+            <button type="button" data-action="close-player-modal" class="ghost">Cancel</button>
+            <button type="submit" class="primary">Save</button>
           </div>
         </form>
       </div>
@@ -494,7 +489,6 @@ function renderClubPointsPresets(club){
   const inUse = clubPointsPreset(club.id);
   return `
     <h3 class="section-label">MVP points</h3>
-    <p class="hint">MVP points and player of the match are counted with the preset in use. Changing it, or its numbers, recounts every club match; a player of the match already given stays.</p>
     ${ui.clubPresetMessage ? `<p class="hint guest-note">${escapeHtml(ui.clubPresetMessage)}</p>` : ""}
     ${own.length
       ? own.map(p => pointsPresetCardHtml(p, { inUse: p.id === inUse.id,
@@ -510,7 +504,7 @@ function renderClubStats(){
     const points = clubPointsPreset(club.id);
     // The full match list lives here (Home shows the latest 3).
     return matches.length
-      ? renderLeaderboards(aggregatePlayerStats(matches, points), { points, where: "the club's Presets", matches }) + `<p class="hint">Read from ${matches.length} archived club match${matches.length === 1 ? "" : "es"} only.</p>`
+      ? renderLeaderboards(aggregatePlayerStats(matches, points), { points, where: "the club's Presets", matches })
         + renderRecentMatches("Matches", recentMatchesFor(matches, matches.length))
       : `<p class="hint">Play and finish a club match to see stats here.</p>`;
   });

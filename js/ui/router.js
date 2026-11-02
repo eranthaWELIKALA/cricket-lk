@@ -102,8 +102,8 @@ function overlayOpen(){
     || (ui.matchDetail && ui.matchDetail.view === state.view)
     || (ui.resultEntry && ui.resultEntry.view === state.view)
     || (ui.sharePreview && ui.sharePreview.view === navKey())
-    || (onMatch && (ui.matchMenu || ui.catchUp || ui.wicketFlow || ui.pendingExtra || ui.liveScorecard))
-    || (m && (ui.ballEdit || ui.scoreSet || ui.nameLater) && !ui.awayFromMatch));
+    || (onMatch && (ui.matchMenu || ui.catchUp || ui.wicketFlow || ui.retire || ui.pendingExtra || ui.liveScorecard))
+    || (m && (ui.ballEdit || ui.scoreSet || ui.nameLater || ui.replacePick) && !ui.awayFromMatch));
 }
 // Called at the end of render(): record a screen change in browser history.
 function syncRoute(){
@@ -335,10 +335,12 @@ function closeTopOverlay(){
     return true;
   }
   if (m && ui.nameLater && !ui.awayFromMatch){ closeNameLater(); return true; }
+  if (m && ui.replacePick && !ui.awayFromMatch){ closeReplacePick(); return true; }
   if (m && ui.ballEdit && !ui.awayFromMatch){ closeBallEdit(); return true; }
   if (m && ui.scoreSet && !ui.awayFromMatch){ closeScoreSet(); return true; }
   if (onMatch && ui.catchUp){ closeCatchUp(); return true; }
   if (onMatch && ui.matchMenu){ ui.matchMenu = ui.matchMenu === "menu" ? null : "menu"; ui.squadError = null; render(); return true; }
+  if (onMatch && ui.retire){ ui.retire = null; render(); return true; }
   if (onMatch && ui.wicketFlow){ resetWicketUi(); render(); return true; }
   if (onMatch && ui.pendingExtra){ ui.pendingExtra = null; render(); return true; }
   if (onMatch && ui.liveScorecard){ ui.liveScorecard = false; render(); return true; }

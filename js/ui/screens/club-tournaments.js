@@ -137,7 +137,7 @@ function renderClubTournamentDashboard(){
       ${tabsHtml("switch-tournament-tab", tournamentTabs(ended), tab, ended ? "main-tabs many" : "main-tabs")}
       ${tab === "summary" ? renderTournamentSummary(tournamentContext()) : ""}
       ${tab === "overview" ? `
-        ${matches.length ? renderStandingsTable(computeStandings(matches, p), p.useNRR) : `<p class="hint">No matches yet — start one to fill the points table.</p>`}
+        ${matches.length ? renderStandingsTable(computeStandings(matches, p), p.useNRR) : `<p class="hint">No matches yet.</p>`}
         ${matches.length ? `<h3 class="section-label">Latest results</h3>${renderFixtureList([...matches].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)).slice(0, 3))}` : ""}
         ${ended ? ENDED_NOTE : tournamentActionsHtml(startBtn, matches.length, true)}` : ""}
       ${tab === "teams" ? renderTournamentTeams(t) : ""}
@@ -175,9 +175,8 @@ function renderTournamentTeams(t){
       <button data-action="new-tournament-team" class="team-card add" ${ui.tournamentTeamBusy ? "disabled" : ""}><span class="plus">＋</span><span>Add team</span></button>
       <button data-action="new-tournament-team" data-visiting="1" class="team-card add visiting" ${ui.tournamentTeamBusy ? "disabled" : ""}><span class="plus">＋</span><span>Visiting team</span></button>
     </div>
-    ${t.teams.length ? `<p class="hint">Tap a team to see its players.</p>` : ""}
     ${!t.teams.length ? `
-      <p class="hint">Most club tournaments are two sides. Build them here, then pick them when you start a match. Visitors coming to play? Add a visiting team: its players aren't added to the club, and you can lend it club players.</p>
+      <p class="hint">No teams yet. Build the sides here, then pick them when you start a match.</p>
       ${rosterReady && unassigned.length >= 2 ? `<button data-action="quick-split-teams" class="ghost" style="width:100%;" ${ui.tournamentTeamBusy ? "disabled" : ""}>${ui.tournamentTeamBusy ? "Creating…" : `🎲 Split the roster into 2 random teams (${unassigned.length} players)`}</button>` : ""}
     ` : rosterReady && unassigned.length ? `<p class="hint">${unassigned.length} roster player${unassigned.length === 1 ? " isn't" : "s aren't"} on a team yet: ${unassigned.slice(0, 5).map(p => escapeHtml(p.name)).join(", ")}${unassigned.length > 5 ? "…" : ""}</p>` : ""}
   `;
@@ -233,7 +232,7 @@ function renderTournamentTeamForm(t, edit){
   const picked = edit.playerIds.map(id => all.find(p => p.id === id)).filter(Boolean);
   const available = all.filter(p => !edit.playerIds.includes(p.id));
   const q = (edit.search || "").trim().toLowerCase();
-  const hit = p => !q || p.label.toLowerCase().includes(q);
+  const hit = p => nameSearchHit(nameSearchKey(p.label), q);
   const freeCount = available.filter(p => !takenBy[p.id] && hit(p)).length;
   const moving = picked.filter(p => takenBy[p.id]);
   const visiting = !!edit.visiting;
@@ -245,7 +244,7 @@ function renderTournamentTeamForm(t, edit){
   const grid = `
         <div class="pick-grid">
           ${available.map(p => `
-            <button type="button" data-action="team-builder-toggle" data-id="${escapeHtml(p.id)}" data-label="${escapeHtml(p.label.toLowerCase())}" data-free="${takenBy[p.id] ? "0" : "1"}" class="pick-row${takenBy[p.id] ? " taken" : ""}" ${hit(p) ? "" : "hidden"}>
+            <button type="button" data-action="team-builder-toggle" data-id="${escapeHtml(p.id)}" data-label="${escapeHtml(nameSearchKey(p.label))}" data-free="${takenBy[p.id] ? "0" : "1"}" class="pick-row${takenBy[p.id] ? " taken" : ""}" ${hit(p) ? "" : "hidden"}>
               <span class="mini-avatar">${escapeHtml(nameInitials(p.name))}</span>
               <span class="name">${escapeHtml(p.label)}${p.guest ? ` <span class="guest-tag">guest</span>` : ""}</span>
               <span class="state">${takenBy[p.id] ? `${escapeHtml(takenBy[p.id])} · move` : "＋"}</span>
@@ -267,7 +266,7 @@ function renderTournamentTeamForm(t, edit){
         <label><input type="radio" name="teamKind" value="club" ${visiting ? "" : "checked"}> Club side</label>
         <label><input type="radio" name="teamKind" value="visiting" ${visiting ? "checked" : ""} ${t.visiting_unavailable && !visiting ? "disabled" : ""}> Visiting team</label>
       </fieldset>
-      ${t.visiting_unavailable ? `<p class="hint">${VISITING_NEEDS_018}</p>` : visiting ? `<p class="hint team-kind-hint">Visitors play as guests: they aren't added to the club roster. It's a friendly, so you can lend them club players too.</p>` : ""}
+      ${t.visiting_unavailable ? `<p class="hint">${VISITING_NEEDS_018}</p>` : visiting ? `<p class="hint team-kind-hint">Visitors play as guests: they aren't added to the club roster.</p>` : ""}
 
       <div class="section-label">In this team · ${picked.length}</div>
       ${picked.length ? `<div class="team-roster picked">
@@ -815,7 +814,7 @@ function renderPublicTournament(){
       ${tab === "summary" ? renderTournamentSummary(tournamentContext()) : ""}
       ${tab === "overview" ? (matches.length
         ? `${renderStandingsTable(computeStandings(matches, p), p.useNRR)}<h3 class="section-label">Latest results</h3>${renderFixtureList(latest)}`
-        : `<p class="hint">No matches yet. The points table fills in as results come in.</p>`) : ""}
+        : `<p class="hint">No matches yet.</p>`) : ""}
       ${tab === "fixtures" ? `<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches)}` : ""}
       ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, pt.points), { points: pt.points, matches }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
       <p class="hint public-note">${pt.refreshError ? escapeHtml(pt.refreshError) : `Read only · updated ${escapeHtml(updated)}`}</p>
@@ -863,7 +862,6 @@ function renderResultEntryModal(){
           <h2>Enter a result</h2>
           <button type="button" data-action="close-result-entry" class="sheet-close" aria-label="Close">✕</button>
         </div>
-        <p class="hint">No ball-by-ball scoring: just the totals. It counts in the points table, with no scorecard or player stats.</p>
         <form id="result-entry-form">
           <div class="form-error"></div>
           ${scoreRow("A")}
@@ -879,7 +877,6 @@ function renderResultEntryModal(){
               <label>Overs per innings<input name="oversLimit" type="number" min="1" max="50" value="${limitInputValue(d.oversLimit, 20)}" placeholder="No limit"></label>
               <label>Players per side<input name="players" type="number" min="2" max="11" value="${limitInputValue(d.playersPerSide, 11)}" placeholder="No limit"></label>
             </div>
-            <p class="hint">Used for the wickets/overs checks and net run rate. Blank overs count as the full quota in NRR.</p>
           </details>
           <input type="hidden" name="ballsPerOver" value="${d.ballsPerOver}">
           <button type="submit" class="primary" style="width:100%;">Save result</button>

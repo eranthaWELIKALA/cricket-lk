@@ -36,7 +36,6 @@ function renderMatchSetup(){
       <h1>${clubMode ? headings[ui.clubMatchSetupType] : "🏏 New match"}</h1>
       <p class="tagline">${clubMode ? taglines[ui.clubMatchSetupType] : "Pick a preset, tweak anything, start scoring."}</p>
       ${clubMode && !presets.length ? `<p class="hint">Loading this club's presets…</p>` : ""}
-      ${clubMode && presets === DEFAULT_MATCH_PRESETS ? `<p class="hint">Built-in presets — this club has none of its own yet. Add some under the club's Presets.</p>` : ""}
       ${presets.length ? `
         ${presetPickerHtml({ presets, activeId: ui.matchSetupPresetId, pickAction: "pick-match-preset", kind: "match", slot: "match-setup" })}
       ` : ""}
@@ -58,21 +57,17 @@ function renderMatchSetup(){
             </fieldset>
             ${side === "A" ? `<div class="vs-badge">VS</div>` : ""}`).join("")}
         </div>
-        <p class="hint">From this tournament's teams. Only their players are suggested while scoring. Swap players between the sides for this match — lending visitors a club player, say — from ⋯ Match options once it starts.</p>
         ` : `
         <label>${clubMode && ui.clubMatchSetupType === "friendly" ? "Home team name" : "Team A name"}<input name="teamA" required maxlength="24" value="${clubMode && ui.clubMatchSetupType === "friendly" ? escapeHtml(clubName) : ""}" placeholder="e.g. Lions" list="teams-datalist"></label>
         <label>${clubMode && ui.clubMatchSetupType === "friendly" ? "Visiting team name" : "Team B name"}<input name="teamB" required maxlength="24" placeholder="e.g. Tigers" list="teams-datalist"></label>
-        ${inTournament && !pickTeams ? `<p class="hint">Tip: add teams on the tournament page to pick them here.</p>` : ""}
-        ${!clubMode && Object.keys(state.teams).length ? `<p class="hint">Type a saved team's name to bring its players along — only they're suggested for that side while scoring, and ⋯ Match options can switch players between sides.</p>` : ""}
         `}
         <h3 class="section-label">Playing conditions</h3>
         <div class="field-row">
           <label>Balls per over<input name="ballsPerOver" type="number" min="1" max="10" value="${preset.ballsPerOver ?? 6}" required></label>
-          <label>Overs per innings<input name="overs" type="number" min="1" max="50" value="${limitInputValue(preset.oversLimit, 20)}" placeholder="No limit"></label>
+          <label>Overs <span class="muted">· blank: no limit</span><input name="overs" type="number" min="1" max="50" value="${limitInputValue(preset.oversLimit, 20)}" placeholder="No limit"></label>
         </div>
-        <label>Players per side<input name="players" type="number" min="2" max="11" value="${limitInputValue(preset.playersPerSide, 11)}" placeholder="No limit"></label>
+        <label>Players per side <span class="muted">· blank: no limit</span><input name="players" type="number" min="2" max="11" value="${limitInputValue(preset.playersPerSide, 11)}" placeholder="No limit"></label>
         <label class="check-row"><input type="checkbox" name="lastManStands" ${preset.lastManStands ? "checked" : ""}> Last man stands — the last batter bats alone</label>
-        <p class="hint">Leave overs or players blank for no limit. With no overs limit, end each innings by hand from the live screen.</p>
         <fieldset>
           <legend>Extras</legend>
           <label class="check-row"><input type="checkbox" name="wideEnabled" ${preset.wide ? (preset.wide.enabled ? "checked" : "") : "checked"}> Wides count, worth <input name="wideRuns" type="number" min="0" max="6" value="${preset.wide ? preset.wide.runs : 1}" class="inline-num"> run(s)</label>
@@ -96,10 +91,8 @@ function renderMatchSetup(){
           <label><input type="radio" name="battingFirst" value="A" checked> <span data-bat-label="A">${pickTeams ? escapeHtml(savedTeams[0].name) : clubMode && ui.clubMatchSetupType === "friendly" && clubName ? escapeHtml(clubName) : "Team A"}</span></label>
           <label><input type="radio" name="battingFirst" value="B"> <span data-bat-label="B">${pickTeams ? escapeHtml(savedTeams[1].name) : "Team B"}</span></label>
         </fieldset>
-        <p class="hint">Openers and the first bowler are asked for on the next screen. Got the toss wrong? You can flip it there.</p>
         <h3 class="section-label">Scoring</h3>
-        <label class="check-row"><input type="checkbox" name="anonymous"> Score without player names</label>
-        <p class="hint">Just runs, wickets and overs — no names asked. Batters show as Batter 1, 2…, bowlers by over, and the match stays out of player stats.</p>
+        <label class="check-row"><input type="checkbox" name="anonymous"> Score without player names <span class="muted">· left out of player stats</span></label>
         <button type="submit" class="primary">Start match</button>
       </form>
     </div>

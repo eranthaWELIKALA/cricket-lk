@@ -18,11 +18,11 @@ const { setup, BASE } = require('./cap-lib.js');
   await shot('05-new-match');
   await tap('.preset-info-btn, [data-action="preset-info"]'); await shot('06-preset-info');
   await tap('#match-setup-form button[type=submit]');
-  // Each box lists its side's players while it's focused; a tapped row fills that box.
-  const pick = async (box, name) => { await p.focus(`#opening-form [name=${box}]`); await p.waitForTimeout(150); await tap(`#opening-form .combo:has([name=${box}]) [data-name="${name}"]`); };
-  await pick('striker', 'Kusal Mendis'); await pick('nonStriker', 'Pathum Nissanka');
-  await p.focus('#opening-form [name=bowler]'); await shot('07-opening');
-  await tap('#opening-form .combo:has([name=bowler]) [data-name="Matheesha Pathirana"]');
+  // The lit slot's side is listed under the tiles; a tapped row fills it and lights the next.
+  const pick = name => tap(`#opening-form .opening-list [data-name="${name}"]`);
+  await pick('Kusal Mendis'); await pick('Pathum Nissanka');
+  await shot('07-opening');
+  await pick('Matheesha Pathirana');
   await tap('#opening-form button[type=submit]');
   const ball = r => tap(`#app [data-action="ball"][data-runs="${r}"]`);
   for (const r of [1, 4, 0, 6, 1, 2]) await ball(r);
@@ -35,14 +35,13 @@ const { setup, BASE } = require('./cap-lib.js');
   await tap('#app [data-action="toggle-extra"][data-extra="wide"]'); await shot('09-extras');
   await tap('#modal-root [data-action="ball"]');
   await tap('#app [data-action="open-wicket"]'); await tap('#modal-root [data-action="pick-wicket"][data-type="caught"]');
-  await p.fill('#wicket-fielder', 'Wanindu Hasaranga'); await p.evaluate(() => document.activeElement.blur());
+  await tap('#modal-root .fielder-row[data-name="Wanindu Hasaranga"]');
   await shot('10-wicket-caught');
   await tap('#modal-root [data-action="pick-wicket"][data-type="runout"]'); await shot('11-wicket-runout');
   await tap('#modal-root [data-action="pick-wicket"][data-type="caught"]');
-  await p.fill('#wicket-fielder', 'Wanindu Hasaranga');
   await tap('#wicket-fielder-form button[type=submit]');
   await shot('12-new-batsman');
-  // Not sure who walked out: carry on as "Bat ?1", name them a bit later.
+  // Not sure who walked out: continue without naming ("Bat ?1"), name them a bit later.
   await tap('#modal-root [data-action="pick-unnamed"]');
   for (const r of [1, 1, 6]) await ball(r);
   await shot('14-new-bowler');
@@ -50,6 +49,9 @@ const { setup, BASE } = require('./cap-lib.js');
   for (const r of [2, 1, 0]) await ball(r);
   await tap('[data-action="open-match-menu"]'); await shot('15-match-options');
   await run('ui.matchMenu=null; render();');
+  // A wrong pick: tap the bowler's name on the board.
+  await tap('#app [data-action="replace-pick"][data-role="bowler"]'); await shot('15b-change-player');
+  await tap('#modal-root [data-action="close-replace-pick"]');
   await tap('#app [data-action="name-later"][data-name="Bat ?1"]'); await shot('13-name-later');
   await tap('#modal-root [data-action="name-later-pick"][data-name="Charith Asalanka"]');
   await tap('#app [data-action="open-live-scorecard"]'); await shot('16-scorecard');
@@ -63,7 +65,7 @@ const { setup, BASE } = require('./cap-lib.js');
   await shot('18-innings-break');
   // second innings via the UI, then finish the chase with code for brevity
   await tap('#app [data-action="start-second-innings"]');
-  await p.fill('#opening-form [name=striker]', 'Jos Buttler'); await p.fill('#opening-form [name=nonStriker]', 'Phil Salt'); await p.fill('#opening-form [name=bowler]', 'Nuwan Thushara');
+  for (const n of ['Jos Buttler', 'Phil Salt', 'Nuwan Thushara']){ await p.fill('#opening-form [data-pick-filter]', n); await tap('#opening-form [data-action="opening-use"]'); }
   await tap('#opening-form button[type=submit]'); await shot('07b-add-players'); await okIfAsked();
   for (const r of [4, 1, 0, 6, 1, 1]) await ball(r);
   await p.fill('#new-bowler-form [name=name]', 'Dilshan Madushanka'); await tap('#new-bowler-form button[type=submit]');

@@ -90,19 +90,15 @@ function renderExtraRunsModal(inn){
   const cfg = {
     wide:   { title: "Wide", base: inn.wideBaseRuns, from: 0, chip: n => n ? `Wd+${n}` : "Wd",
               ask: "Did they run, or did it go for four?",
-              note: `The wide itself is ${plural(inn.wideBaseRuns)} and the ball is bowled again. Pick the runs they ran, or 4 for a boundary.`,
               label: n => n === 0 ? "just the wide" : n === 4 ? "four" : `ran ${n}` },
     noball: { title: "No ball", base: inn.noBallBaseRuns, from: 0, chip: n => n ? `Nb+${n}` : "Nb",
               ask: "How many off the bat (or run)?",
-              note: `The no-ball itself is ${plural(inn.noBallBaseRuns)} and the ball is bowled again${inn.freeHitOnNoBall ? "; the next ball is a free hit" : ""}. Pick the runs hit or run — they go to the batter.`,
               label: n => n === 0 ? "just the no-ball" : n === 4 ? "four" : n === 6 ? "six" : plural(n) },
     bye:    { title: "Byes", base: 0, from: 1, chip: n => `B${n}`,
               ask: "How many byes?",
-              note: "Runs the batters ran (or a boundary) without the bat touching it. They count as a ball and go on the team total, not against the bowler.",
               label: n => n === 4 ? "four" : plural(n) },
     legbye: { title: "Leg byes", base: 0, from: 1, chip: n => `Lb${n}`,
               ask: "How many leg byes?",
-              note: "Runs off the batter's body (not the bat). They count as a ball and go on the team total, not against the bowler.",
               label: n => n === 4 ? "four" : plural(n) }
   }[kind];
   if (!cfg) return "";
@@ -115,7 +111,6 @@ function renderExtraRunsModal(inn){
           <h2>${cfg.title}${cfg.base ? ` <span class="extra-base">+${plural(cfg.base)}</span>` : ""}</h2>
         </div>
         <p class="extra-ask">${cfg.ask}</p>
-        <p class="hint">${escapeHtml(cfg.note)}</p>
         <div class="run-pad small extra-runs-pad">
           ${options.map(n => `<button type="button" data-action="ball" data-runs="${n}" class="run-btn${n === 4 || (n === 6 && kind === "noball") ? " boundary" : ""}" aria-label="${cfg.label(n)}, ${plural(cfg.base + n)} in total">
             <span class="total">${n}</span>
@@ -128,7 +123,7 @@ function renderExtraRunsModal(inn){
             <span class="main">Out on this ${kind === "wide" ? "wide" : "no-ball"}?</span>
             <span class="sub">${kind === "wide" && !inn.freeHit ? "Stumped, hit wicket or run out" : "Run out"}</span>
           </button>` : ""}
-        <button type="button" data-action="close-extra" class="ghost" style="width:100%;margin-top:6px;">Cancel</button>
+        <div class="sheet-actions"><button type="button" data-action="close-extra" class="ghost">Cancel</button></div>
       </div>
     </div>
   `;
@@ -171,7 +166,7 @@ function pendingPickKey(match){
   if (!match || match.status !== "live") return null;
   const inn = currentInnings(match);
   const slot = pendingBatsmanSlot(inn);
-  const at = `${match.innings.length}:${inn.legalBalls}:${inn.wickets}`;
+  const at = `${match.innings.length}:${inn.legalBalls}:${inn.wickets}:${(inn.retirements || []).length}`;
   if (slot) return `bat:${at}:${slot}`;
   if (!inn.bowler) return `bowl:${at}`;
   return null;
@@ -191,8 +186,9 @@ function reopenPick(){
   render();
   return true;
 }
-function renderPickLaterButton(){
-  return `<button type="button" data-action="dismiss-pick" class="ghost" style="width:100%;margin-top:10px;">Pick later</button>`;
+function renderPickLaterButton(bar){
+  return bar ? `<button type="button" data-action="dismiss-pick" class="ghost">Pick later</button>`
+    : `<button type="button" data-action="dismiss-pick" class="ghost" style="width:100%;margin-top:10px;">Pick later</button>`;
 }
 
 /* The scorer swaps who's on strike by hand (live screen's ⇅, or Match
@@ -213,7 +209,7 @@ function handleUndo(){
   const prev = state.snapshots.pop();
   keepArchiveInStep(state.match, prev);
   state.match = prev;
-  ui.pendingExtra = null; resetWicketUi(); ui.confirm = null; ui.matchMenu = null; ui.catchUp = null; ui.liveScorecard = false; ui.ballEdit = null; ui.nameLater = null; ui.scoreSet = null;
+  ui.pendingExtra = null; resetWicketUi(); ui.retire = null; ui.confirm = null; ui.matchMenu = null; ui.catchUp = null; ui.liveScorecard = false; ui.ballEdit = null; ui.nameLater = null; ui.replacePick = null; ui.scoreSet = null; ui.opening = null;
   save(); render();
 }
 
@@ -381,7 +377,8 @@ function renderLive(match){
   const econ = (b) => b.legalBalls ? (b.runs / (b.legalBalls / bpo)).toFixed(2) : "0.00";
   const later = pickSheetDismissed(match);
   const pickBtn = label => `<button type="button" data-action="reopen-pick" class="pick-slot">+ ${label}</button>`;
-  const slotName = (name, label) => name ? unnamedNameHtml(match, name, liveName(name)) : later ? pickBtn(label) : "—";
+  // A name opens "Wrong batter/bowler?" (a placeholder's, "Who was it?").
+  const slotName = (name, label, role) => name ? playerNameHtml(match, inn, role, name, liveName(name)) : later ? pickBtn(label) : "—";
 
   const overNumber = Math.floor(inn.legalBalls / bpo) + 1;
   // No "previous over" row straight after a catch-up (its last entry is the gap).
@@ -389,8 +386,10 @@ function renderLive(match){
   const unknownBalls = inn.partOverUnknown
     ? Math.max(0, inn.legalBalls % bpo - inn.currentOverEvents.filter(ev => !/^(Wd|Nb)/.test(ev.display)).length) : 0;
   const lastFow = inn.fallOfWickets.length ? inn.fallOfWickets[inn.fallOfWickets.length - 1] : null;
-  const partnershipRuns = inn.runs - (lastFow ? lastFow.score : 0);
-  const partnershipBalls = inn.legalBalls - (lastFow ? lastFow.balls : 0);
+  // since the last wicket, or a batter retiring / coming back in
+  const pBase = partnershipBase(inn);
+  const partnershipRuns = Math.max(0, inn.runs - pBase.score);
+  const partnershipBalls = Math.max(0, inn.legalBalls - pBase.balls);
 
   // Extras row only offers what this match's preset enabled -- the grid
   // itself adapts column count (3-up/4-up) instead of leaving a gap.
@@ -408,7 +407,7 @@ function renderLive(match){
       <div class="matchup-card">
         <div class="matchup-head"><span>BATTER${canSwapStrike(inn) ? ` <button type="button" data-action="swap-strike" class="swap-strike" aria-label="Swap strike: put ${escapeHtml(liveName(inn.nonStriker))} on strike">⇅ Swap</button>` : ""}</span><span style="width:34px;">R</span><span style="width:30px;">B</span><span style="width:24px;">4s</span><span style="width:24px;">6s</span><span style="width:46px;">SR</span></div>
         <div class="matchup-row">
-          <span class="matchup-marker striker"></span><span class="name">${slotName(inn.striker, "Pick batsman")}</span>
+          <span class="matchup-marker striker"></span><span class="name">${slotName(inn.striker, "Pick batsman", "batter")}</span>
           <span class="stat emph" style="width:34px;">${strikerStats ? strikerStats.runs + "*" : ""}</span>
           <span class="stat" style="width:30px;">${strikerStats ? strikerStats.balls : ""}</span>
           <span class="stat" style="width:24px;">${strikerStats ? strikerStats.fours : ""}</span>
@@ -416,7 +415,7 @@ function renderLive(match){
           <span class="stat" style="width:46px;">${strikerStats ? sr(strikerStats) : ""}</span>
         </div>
         <div class="matchup-row muted">
-          <span class="matchup-marker nonstriker"></span><span class="name">${alone ? "Batting alone" : slotName(inn.nonStriker, "Pick batsman")}</span>
+          <span class="matchup-marker nonstriker"></span><span class="name">${alone ? "Batting alone" : slotName(inn.nonStriker, "Pick batsman", "batter")}</span>
           <span class="stat emph" style="width:34px;">${nonStrikerStats ? nonStrikerStats.runs + "*" : ""}</span>
           <span class="stat" style="width:30px;">${nonStrikerStats ? nonStrikerStats.balls : ""}</span>
           <span class="stat" style="width:24px;">${nonStrikerStats ? nonStrikerStats.fours : ""}</span>
@@ -425,7 +424,7 @@ function renderLive(match){
         </div>
         <div class="matchup-head bowler-head"><span>BOWLER</span><span style="width:38px;">O</span><span style="width:24px;">M</span><span style="width:28px;">R</span><span style="width:24px;">W</span><span style="width:46px;">ECON</span></div>
         <div class="matchup-row">
-          <span class="matchup-marker bowler"></span><span class="name">${slotName(inn.bowler, "Pick bowler")}</span>
+          <span class="matchup-marker bowler"></span><span class="name">${slotName(inn.bowler, "Pick bowler", "bowler")}</span>
           <span class="stat" style="width:38px;">${bowlerStats ? oversDisplay(bowlerStats.legalBalls, bpo) : ""}</span>
           <span class="stat" style="width:24px;">${bowlerStats ? bowlerStats.maidens : ""}</span>
           <span class="stat" style="width:28px;">${bowlerStats ? bowlerStats.runs : ""}</span>

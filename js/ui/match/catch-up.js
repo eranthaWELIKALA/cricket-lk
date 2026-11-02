@@ -16,11 +16,12 @@ function catchUpDraftFrom(match){
   const bpo = inn.ballsPerOver;
   const batters = inn.batting.order.filter(n => !inn.batting.stats[n].out).map(n => {
     const s = inn.batting.stats[n];
-    return { name: n, locked: true, status: n === inn.nonStriker ? "nonStriker" : "striker", runs: String(s.runs), balls: String(s.balls) };
+    const status = n === inn.nonStriker ? "nonStriker" : n === inn.striker || !s.retired ? "striker" : "retired";
+    return { name: n, locked: true, status, runs: String(s.runs), balls: String(s.balls) };
   });
   // Two at the crease to fill in (one with last man stands' lone batter).
   const want = battingAlone(inn) ? 1 : 2;
-  while (batters.filter(b => b.status !== "out").length < want){
+  while (batters.filter(b => b.status === "striker" || b.status === "nonStriker").length < want){
     const taken = batters.map(b => b.status);
     batters.push({ name: "", status: taken.includes("striker") ? "nonStriker" : "striker", runs: "", balls: "" });
   }
@@ -140,7 +141,7 @@ function renderCatchUpModal(match){
         ${b.locked ? "" : `<button type="button" data-action="catch-up-remove" data-kind="bat" data-i="${i}" class="cu-remove" aria-label="Remove this batter">✕</button>`}
       </div>
       <div class="cu-line">
-        <select name="bat_status_${i}" class="cu-status" aria-label="Status">${opts([["striker", "On strike"], ["nonStriker", "Other end"], ["out", "Out"]], b.status)}</select>
+        <select name="bat_status_${i}" class="cu-status" aria-label="Status">${opts([["striker", "On strike"], ["nonStriker", "Other end"], ["out", "Out"], ["retired", "Retired hurt"]], b.status)}</select>
         <input name="bat_runs_${i}" value="${esc(b.runs)}" inputmode="numeric" placeholder="Runs" aria-label="Runs" class="cu-num">
         <input name="bat_balls_${i}" value="${esc(b.balls)}" inputmode="numeric" placeholder="Balls" aria-label="Balls" class="cu-num">
       </div>
@@ -170,7 +171,7 @@ function renderCatchUpModal(match){
           <span class="n batter">${esc(teamName(match, inn.battingTeam))} · ${now}</span>
           <button type="button" data-action="close-catch-up" class="sheet-close" aria-label="Close">✕</button>
         </div>
-        <p class="hint" style="margin-top:0;">Missed some balls? Enter the innings as it stands <b>now</b> and carry on scoring from there. What's already recorded stays; nothing changes until you confirm.</p>
+        <p class="hint" style="margin-top:0;">The innings as it stands <b>now</b>.</p>
         <form id="catch-up-form" novalidate>
           <div class="section-label">Score now</div>
           <div class="cu-grid three">
@@ -184,7 +185,7 @@ function renderCatchUpModal(match){
             ${field("Byes", "byes", d.byes)}
             ${field("Leg byes", "legByes", d.legByes)}
           </div>
-          <p class="hint">Overs like <b>6.1</b> = 6 overs and 1 ball (up to ${bpo - 1} after the dot). Extras are the innings totals so far.</p>
+          <p class="hint">Extras: the innings totals so far.</p>
           ${match.anonymous ? `<p class="hint">No names in this match: the next batters and bowlers fill in by themselves.</p>` : `
           <div class="section-label">Batters</div>
           ${doneOut.length ? `<div class="cu-done">${doneOut.map(n => { const s = inn.batting.stats[n]; return `<div class="cu-done-row"><span class="name">${esc(liveName(n))}</span><span class="n">${esc(s.howOut || "out")} · ${s.runs} (${s.balls})</span></div>`; }).join("")}</div>` : ""}
@@ -195,11 +196,10 @@ function renderCatchUpModal(match){
             <div class="cu-field"><span>Bowling now</span>${combo("bowlerNow", d.bowlerNow, "Needed mid-over", fieldPool, "none")}</div>
             <div class="cu-field"><span>Bowled the last over</span>${combo("lastOver", d.lastOver, "Needed at x.0", fieldPool, "none")}</div>
           </div>
-          <p class="hint">Mid-over (like 6.1) say who's bowling it. At the end of an over (like 6.0) say who bowled the last one: they can't bowl the next.</p>
           ${d.bowlers.map(bowlRow).join("")}
           <button type="button" data-action="catch-up-add" data-kind="bowl" class="ghost small cu-add">+ Add bowler figures</button>`}
           <label class="cu-check"><input type="checkbox" name="finished" ${d.finished ? "checked" : ""}> This innings is already over</label>
-          <p class="hint">Players' runs, balls and overs are optional; anything left blank shows as "not attributed" and isn't in anyone's player stats or MVP.</p>
+          <p class="hint">Players' runs, balls and overs are optional.</p>
           <div class="form-error" role="alert"></div>
           <div class="cu-actions">
             <button type="button" data-action="close-catch-up" class="ghost">Cancel</button>
@@ -238,6 +238,8 @@ function askCatchUpConfirm(m, data){
   const esc = escapeHtml;
   const score = i => `${i.runs}-${i.wickets} (${oversDisplay(i.legalBalls, bpo)})`;
   const newOut = after.fallOfWickets.slice(inn.fallOfWickets.length).map(f => `<li><b>${esc(f.batsman)}</b> ${esc(after.batting.stats[f.batsman].howOut)}</li>`);
+  const retired = (after.retirements || []).slice((inn.retirements || []).length)
+    .map(t => `<li><b>${esc(t.name)}</b> ${t.type === "back" ? "back in to bat" : "retired hurt, not out"} · ${t.runs} (${t.balls})</li>`);
   const un = catchUpUnattributed(after);
   const notes = [];
   if (un && un.batRuns > 0) notes.push(`${un.batRuns} run${un.batRuns === 1 ? "" : "s"} off the bat not credited to a batter`);
@@ -251,6 +253,7 @@ function askCatchUpConfirm(m, data){
     body: `
       <p>${esc(teamName(m, inn.battingTeam))} <b class="n">${score(inn)}</b> → <b class="n">${score(after)}</b></p>
       ${newOut.length ? `<p class="hint" style="margin-bottom:2px;">Out since then:</p><ul class="cu-list">${newOut.join("")}</ul>` : ""}
+      ${retired.length ? `<p class="hint" style="margin-bottom:2px;">Retired since then:</p><ul class="cu-list">${retired.join("")}</ul>` : ""}
       ${ends}
       ${notes.length ? `<p class="hint">Not attributed: ${notes.map(esc).join("; ")}.</p>` : ""}
       <p class="hint">Player stats and MVP count only what each player is credited with. Undo puts the score back.</p>`,

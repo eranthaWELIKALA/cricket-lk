@@ -25,6 +25,20 @@ final result. Beyond a single match, it also supports:
   (points, NRR) and per-tournament stats.
 - **Fielder credit** — optionally (or, per preset, mandatorily) name who
   took a catch or effected a run-out.
+- **Retired hurt / retired not out** — a batter can leave the crease
+  between balls without being out (Wicket → Retired hurt?, or ⋯ Match
+  options → Retire a batter). It isn't a wicket; they stay not out and can
+  come back in at the next wicket or retirement, carrying on from their
+  score.
+- **Quick player picks** — the openers, new batter, new bowler and the
+  fielder on a catch or run-out are lists of that side's players to tap, no
+  keyboard needed. Searching matches the start of any part of a name or a
+  nickname ("ku" or "men" finds Kusal Mendis).
+- **Fix a wrong pick** — tap a batter's or bowler's name (or ⋯ Match
+  options → Change a player) and pick who it really was, with a
+  confirmation: their figures move over, for a bowler just the overs chosen.
+- **Last man stands with a short side** — when nobody is left to come in, one
+  tap lets the batter still in carry on alone; the next wicket is all out.
 - **Forfeits** — end a match at any point (before it even starts, mid-
   innings, at the break) and declare the other team the winner. Counts
   toward tournament standings (points, not NRR) and archived stats.
@@ -107,6 +121,10 @@ gh api repos/<owner>/<name>/pages -X POST -f "source[branch]=master" -f "source[
 - **Wickets off a wide or no-ball are limited to the usual ones**: off a
   wide stumped, hit wicket or run out; off a no-ball (or on a free hit) run
   out only. Obstructing the field and handled the ball aren't offered at all.
+- **Retirements are retired hurt or retired not out only.** Retired out
+  (which counts as a wicket) isn't offered. A batter who retires and isn't
+  needed again stays "not out" in every stat; with nobody else left to bat,
+  the scorer ends the innings by hand.
 - **Editing an earlier ball replays the innings from the log.** Who faced
   each later ball stays as it was recorded; batters and bowlers come in in
   the order they were entered. If an edit turns a wide into a legal ball (or

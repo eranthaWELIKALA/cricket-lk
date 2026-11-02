@@ -606,7 +606,7 @@ function renderBallEditModal(m){
     ${choices.ask ? `
       <div class="ball-edit-need">
         <div class="section-label"><span class="chip unknown">?</span> Was a ball missed instead?</div>
-        <p class="hint">Taking out a legal ball moves every later ball along a place. If the scorer missed a ball somewhere else, add it here so the overs match up again.</p>
+        <p class="hint">Removing a legal ball moves every later ball up a place; adding the missed one keeps the overs in line.</p>
         <div class="ball-edit-kinds fill-choices">
           ${fillTile("", "Just remove it", choices.blocked ? "Not possible here" : "Later balls move up", !!choices.blocked)}
           ${fillTile("over", `Add one at the end of over ${choices.overNumber}`, "Same bowler, same over")}
@@ -618,17 +618,19 @@ function renderBallEditModal(m){
   const who = be.mode === "add"
     ? `New ball ${be.where} <span class="chip">${escapeHtml(orig.display)}</span> (${escapeHtml(be.label)})${!m.anonymous && sAct.bowler ? ` · ${name(sAct.bowler)} to ${name(sAct.striker)}` : ""}`
     : `${m.anonymous ? "" : `${name(act.bowler)} to ${name(act.striker)} · `}recorded as ${ballChipHtml(orig)}`;
-  const back = be.base === "edit" ? `<button type="button" data-action="ball-edit-mode" data-value="edit" class="ghost">Back</button>` : "";
-  const actions = be.mode === "edit" ? `
+  // The sheet's own buttons stick to its bottom (.sheet-actions); adding or
+  // removing a ball is a switch of mode, so it scrolls with the form.
+  const back = be.base === "edit"
+    ? `<button type="button" data-action="ball-edit-mode" data-value="edit" class="ghost">Back</button>`
+    : `<button type="button" data-action="close-ball-edit" class="ghost">Cancel</button>`;
+  const modes = be.mode === "edit" ? `
       <div class="ball-edit-add-row">
         <button type="button" data-action="ball-edit-mode" data-value="add-before" class="ghost small">+ Ball before</button>
         <button type="button" data-action="ball-edit-mode" data-value="add-after" class="ghost small">+ Ball after</button>
-      </div>
-      <div class="ball-edit-actions">
-        <button type="button" data-action="ball-edit-mode" data-value="remove" class="ghost danger-text">Remove ball</button>
-        <button type="submit" class="primary">${be.need ? "Continue" : "Review change"}</button>
-      </div>`
-    : `<div class="ball-edit-actions${back ? "" : " solo"}">${back}<button type="submit" class="primary">${be.need ? "Continue" : be.mode === "add" ? "Review new ball" : "Review removal"}</button></div>`;
+        <button type="button" data-action="ball-edit-mode" data-value="remove" class="ghost small danger-text">Remove</button>
+      </div>` : "";
+  const actions = `
+      <div class="sheet-actions">${back}<button type="submit" class="primary">${be.need ? "Continue" : be.mode === "edit" ? "Review change" : be.mode === "add" ? "Review new ball" : "Review removal"}</button></div>`;
   return `
     <div class="modal-backdrop">
       <div class="modal ball-edit-modal" data-keep-scroll="ball-edit" role="dialog" aria-modal="true" aria-label="${escapeHtml(ballEditTitle(be))}">
@@ -650,10 +652,10 @@ function renderBallEditModal(m){
                 : "With this change the over ends at a different ball, so the next over starts earlier."}</p>
               ${renderNameCombo("", `name="newName" maxlength="24" placeholder="Search or type a player" required`, needPool)}
             </div>` : ""}
+          ${modes}
           <div class="form-error">${be.error ? escapeHtml(be.error) : ""}</div>
           ${actions}
         </form>
-        <button type="button" data-action="close-ball-edit" class="ghost" style="width:100%;margin-top:6px;">Cancel</button>
       </div>
     </div>`;
 }
@@ -752,7 +754,7 @@ function renderScoreSetModal(m){
           <h2>Set the final score</h2>
           <button type="button" data-action="close-score-set" class="sheet-close" aria-label="Close">✕</button>
         </div>
-        <p class="hint">Skip fixing it ball by ball: type each side's final score${m.oversLimit != null ? ` (overs out of ${m.oversLimit})` : ""}. An innings still being scored ends at what you enter.</p>
+        ${m.oversLimit != null ? `<p class="hint">Overs out of ${m.oversLimit}.</p>` : ""}
         <form id="score-set-form" data-nav-ignore>
           ${rows}
           <div class="form-error">${ss.error ? escapeHtml(ss.error) : ""}</div>

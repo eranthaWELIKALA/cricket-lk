@@ -8,7 +8,7 @@ function renderTeamsScreen(){
     <div class="screen teams">
       ${renderBackBar("Home", "home")}
       <h1>👥 Teams</h1>
-      <p class="hint guest-note">Guest teams and players — kept only on this device, for guest mode. They are never added to a club or the global (Premier) list.</p>
+      <p class="hint guest-note">Guest teams · kept on this device only.</p>
       <form id="new-team-form" class="inline-form">
         <input name="name" required maxlength="30" placeholder="New team name">
         <button type="submit" class="primary small">Add team</button>
@@ -88,7 +88,7 @@ function renderPlayersScreen(){
     <div class="screen">
       ${renderBackBar("Home", "home")}
       <h1>🧑‍🤝‍🧑 Players</h1>
-      <p class="hint guest-note">Guest players — kept only on this device, for guest mode. They are never added to a club or the global (Premier) list.</p>
+      <p class="hint guest-note">Guest players · kept on this device only.</p>
       <form id="add-global-player-form" class="inline-form">
         <input name="name" required maxlength="24" placeholder="New player name">
         <button type="submit" class="primary small">Add</button>
@@ -101,7 +101,7 @@ function renderPlayersScreen(){
             <button data-action="delete-player" data-id="${p.id}" class="ghost small">Delete</button>
           </div>
         `;
-      }).join("") : `<p class="hint">No players yet — add one above, or type a new name while scoring a match.</p>`}
+      }).join("") : `<p class="hint">No players yet.</p>`}
     </div>
   `;
 }
@@ -205,10 +205,9 @@ function renderMatchPresetForm(p, clubId){
       <label>Name<input name="name" required maxlength="30" value="${escapeHtml(p.name || "")}"></label>
       <div class="field-row">
         <label>Balls/over<input name="ballsPerOver" type="number" min="1" max="10" value="${p.ballsPerOver ?? 6}" required></label>
-        <label>Overs<input name="oversLimit" type="number" min="1" max="50" value="${limitInputValue(p.oversLimit, 20)}" placeholder="No limit"></label>
+        <label>Overs <span class="muted">· blank: no limit</span><input name="oversLimit" type="number" min="1" max="50" value="${limitInputValue(p.oversLimit, 20)}" placeholder="No limit"></label>
       </div>
-      <label>Players/side<input name="playersPerSide" type="number" min="2" max="11" value="${limitInputValue(p.playersPerSide, 11)}" placeholder="No limit"></label>
-      <p class="hint">Leave overs or players blank for no limit.</p>
+      <label>Players/side <span class="muted">· blank: no limit</span><input name="playersPerSide" type="number" min="2" max="11" value="${limitInputValue(p.playersPerSide, 11)}" placeholder="No limit"></label>
       <label class="check-row"><input type="checkbox" name="lastManStands" ${p.lastManStands ? "checked" : ""}> Last man stands (last batter bats alone)</label>
       <label class="check-row"><input type="checkbox" name="wideEnabled" ${!p.wide || p.wide.enabled ? "checked" : ""}> Wides count, worth <input name="wideRuns" type="number" min="0" max="6" value="${p.wide ? p.wide.runs : 1}" class="inline-num"></label>
       <label class="check-row"><input type="checkbox" name="noBallEnabled" ${!p.noBall || p.noBall.enabled ? "checked" : ""}> No-balls count, worth <input name="noBallRuns" type="number" min="0" max="6" value="${p.noBall ? p.noBall.runs : 1}" class="inline-num"></label>
@@ -347,7 +346,6 @@ function renderPointsPresetsTab(){
   const builtInIds = new Set(DEFAULT_POINTS_PRESETS.map(p => p.id));
   const inUse = guestPointsPreset();
   return `
-    <p class="hint">MVP points and player of the match are counted with the preset in use. Changing it, or its numbers, recounts every match; a player of the match already given stays.</p>
     <div class="preset-list">
       ${Object.values(state.pointsPresets).map(p => pointsPresetCardHtml(p, { builtIn: builtInIds.has(p.id), inUse: p.id === inUse.id,
         useAction: "use-points-preset", editAction: "edit-points-preset", deleteAction: "delete-points-preset" })).join("")
@@ -527,7 +525,7 @@ function renderTournamentDashboard(){
       ${tab === "teams" ? `
         <div class="team-grid">${teams.map((tm, i) => teamCardHtml({ id: tm.id, name: tm.name, index: i,
           players: tm.playerIds.map(pid => state.players[pid]).filter(Boolean).map(pl => ({ name: pl.name })) })).join("")}</div>
-        <p class="hint">Tap a team to see its players. Edit them on the Teams screen.</p>` : ""}
+` : ""}
       ${tab === "fixtures" ? (ended ? `${ENDED_NOTE}<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches)}` : renderTournamentFixtures(matches, teams)) : ""}
       ${tab === "stats" ? renderTournamentStats(matches) : ""}
     </div>
@@ -543,7 +541,6 @@ function renderStandingsTable(standings, useNRR){
         <thead><tr><th>Team</th><th>P</th><th>W</th><th>L</th><th>T</th><th>Pts</th>${useNRR ? "<th>NRR</th>" : ""}</tr></thead>
         <tbody>${standings.map(s => `<tr><td>${escapeHtml(s.name)}</td><td>${s.played}</td><td>${s.won}</td><td>${s.lost}</td><td>${s.tied}</td><td><b>${s.points}</b></td>${useNRR ? `<td>${s.nrr >= 0 ? "+" : ""}${s.nrr.toFixed(3)}</td>` : ""}</tr>`).join("")}</tbody>
       </table>
-      <p class="hint" style="margin-top:6px;">Forfeited matches count for points but are excluded from net run rate. An all-out innings counts its full overs quota.</p>
     </div>
   `;
 }
@@ -566,8 +563,7 @@ function renderTournamentFixtures(matches, teams){
         <label><input type="radio" name="battingFirst" value="A" checked> Team A</label>
         <label><input type="radio" name="battingFirst" value="B"> Team B</label>
       </fieldset>
-      <label class="check-row"><input type="checkbox" name="anonymous"> Score without player names</label>
-      <p class="hint">Just runs, wickets and overs — no names asked. Batters show as Batter 1, 2…, bowlers by over, and the match stays out of player stats.</p>
+      <label class="check-row"><input type="checkbox" name="anonymous"> Score without player names <span class="muted">· left out of player stats</span></label>
       <button type="submit" class="primary" ${teams.length < 2 ? "disabled" : ""}>Start match</button>
     </form>
   `;

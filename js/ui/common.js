@@ -159,7 +159,7 @@ function renderNameCombo(label, inputAttrs, names){
           const r = rosterEntryFor(n);
           const nick = r && r.nickname ? r.nickname.trim() : "";
           const jersey = r && r.jersey_no != null ? `#${r.jersey_no}` : "";
-          const search = [n, nick, jersey].filter(Boolean).join(" ").toLowerCase();
+          const search = nameSearchKey(n, nick, jersey);
           return `<button type="button" class="combo-opt" role="option" data-action="combo-pick" data-name="${escapeHtml(n)}" data-search="${escapeHtml(search)}">${escapeHtml(n)}${nick ? ` <span class="combo-nick">${escapeHtml(nick)}</span>` : ""}${jersey ? `<span class="combo-jersey">${jersey}</span>` : ""}</button>`;
         }).join("")}
       </div>
@@ -209,7 +209,7 @@ function updateCombo(input, open){
     .map(other => resolveTypedName(other.value).toLowerCase()) : []);
   let shown = 0;
   list.querySelectorAll(".combo-opt").forEach(o => {
-    const hit = !taken.has(o.dataset.name.toLowerCase()) && (!q || (o.dataset.search || o.dataset.name.toLowerCase()).includes(q));
+    const hit = !taken.has(o.dataset.name.toLowerCase()) && nameSearchHit(o.dataset.search || nameSearchKey(o.dataset.name), q);
     o.hidden = !hit;
     if (hit) shown++;
   });

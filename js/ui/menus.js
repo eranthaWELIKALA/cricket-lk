@@ -21,10 +21,10 @@ function renderSyncSheet(){
       <div class="modal" data-keep-scroll="sync">
         <div class="wicket-modal-head"><h2>Sync</h2><span class="n batter">${offline ? "offline" : syncState.running ? "syncing…" : when ? `last synced ${when}` : "online"}</span></div>
         <p class="hint" style="margin-top:0;">${offline
-          ? "You're offline. Everything you do is saved on this device and sent to the cloud automatically when you're back online."
+          ? "Offline: changes are saved here and sync when you're back online."
           : !ops.length ? "Everything is synced."
-          : failed.length === ops.length ? "These changes are saved on this device, but the cloud refused them."
-          : "These changes are saved on this device and are being sent to the cloud."}</p>
+          : failed.length === ops.length ? "Saved on this device, but the cloud refused them."
+          : "Saved on this device, being sent to the cloud."}</p>
         ${ops.length ? `<div class="sync-list">${ops.map(o => `
           <div class="sync-row${o.failed ? " failed" : ""}">
             <div class="sync-row-text"><span class="title">${escapeHtml(describeOp(o))}</span>
@@ -34,8 +34,8 @@ function renderSyncSheet(){
               <button data-action="sync-discard" data-id="${o.id}" class="icon-btn danger" aria-label="Discard this change" title="Discard">${ICON_DELETE}</button>
             </div>` : ""}
           </div>`).join("")}</div>` : ""}
-        ${failed.length ? `<p class="hint">A change that couldn't sync was refused by the server (for example a team name that's already taken). Fix it and retry, or discard it.</p>` : ""}
-        <div class="confirm-actions">
+        ${failed.length ? `<p class="hint">The server refused a change (say, a team name that's taken): fix it and retry, or discard it.</p>` : ""}
+        <div class="sheet-actions">
           <button data-action="close-sync-sheet" class="ghost">Close</button>
           <button data-action="sync-now" class="primary" ${offline || syncState.running || !ops.length ? "disabled" : ""}>${syncState.running ? "Syncing…" : failed.length ? "Retry all" : "Sync now"}</button>
         </div>

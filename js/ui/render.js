@@ -211,9 +211,14 @@ function render(){
   const scoreSetOpen = !!(ui.scoreSet && m && !away && ballEditAllowed(m));
   if (ui.scoreSet && !scoreSetOpen) ui.scoreSet = null;
   if (ui.catchUp && !(m && (m.status === "opening" || m.status === "live"))) ui.catchUp = null;
+  // Retiring a batter: only while one of them is still at the end it names.
+  if (ui.retire && !(retireAllowed(m) && currentInnings(m)[ui.retire.end])) ui.retire = null;
   // Naming an unnamed player: same rule as editing a ball, and only while that placeholder is still there.
   const nameLaterOpen = !!(ui.nameLater && m && !away && ballEditAllowed(m) && unnamedPlayers(m).some(u => u.name === ui.nameLater.name));
   if (ui.nameLater && !nameLaterOpen) ui.nameLater = null;
+  // Changing a wrongly picked player: same rule, while they're still in that innings.
+  const replacePickOpen = !!(ui.replacePick && m && !away && canReplacePick(m) && replacePickStillThere(m, ui.replacePick));
+  if (ui.replacePick && !replacePickOpen) ui.replacePick = null;
   if (ui.sharePreview && ui.sharePreview.view !== navKey()) ui.sharePreview = null;
   if (ui.sharePreview){
     modalHtml = renderSharePreviewModal();
@@ -231,6 +236,8 @@ function render(){
     modalHtml = renderResultEntryModal();
   } else if (nameLaterOpen){
     modalHtml = renderNameLaterModal(m);
+  } else if (replacePickOpen){
+    modalHtml = renderReplacePickModal(m);
   } else if (ballEditOpen){
     modalHtml = renderBallEditModal(m);
   } else if (scoreSetOpen){
@@ -243,6 +250,8 @@ function render(){
     modalHtml = renderCatchUpModal(m);
   } else if (m && m.status !== "complete" && ui.matchMenu){
     modalHtml = renderMatchMenuModal(m);
+  } else if (m && m.status === "live" && ui.retire){
+    modalHtml = renderRetireModal(currentInnings(m));
   } else if (m && (m.status === "live" || m.status === "innings_break") && ui.liveScorecard){
     modalHtml = renderLiveScorecardModal(m);
   } else if (m && m.status === "opening"){

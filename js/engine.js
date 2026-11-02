@@ -293,7 +293,9 @@ function wicketTypesFor(freeHit, extra){
    ({t:"open"}), each ball ({t:"ball", ev, striker, nonStriker, bowler}: the
    event recordBall got, with its `seq` id, and who was where), each new
    batter ({t:"bat", name}) and bowler ({t:"bowl", name}), a strike swap by
-   hand ({t:"swap"}), closing the innings ({t:"end"}) and a score typed in
+   hand ({t:"swap"}), a batter retiring ({t:"retire", name, reason}; coming
+   back is a "bat"), the last batter going on alone ({t:"alone"}, see
+   batAlone), closing the innings ({t:"end"}) and a score typed in
    part way ({t:"score"} set by hand, {t:"catchup"} caught up; see
    setScoreStep). `inn.logBase` is the innings as it was before the first
    logged action: a fresh innings, or wherever an older match left it (balls
@@ -314,12 +316,14 @@ function openInnings(inn, striker, nonStriker, bowler){
   ensureBatsman(inn, striker); ensureBatsman(inn, nonStriker); ensureBowler(inn, bowler);
   inn.striker = striker; inn.nonStriker = nonStriker; inn.bowler = bowler;
 }
-// The batter goes into whichever slot is empty (pendingBatsmanSlot).
+// The batter goes into whichever slot is empty (pendingBatsmanSlot). A
+// retired batter comes back in and carries on their innings (retireBatter).
 function sendInBatter(inn, name){
   const slot = pendingBatsmanSlot(inn);
   if (!slot) return;
   logAction(inn, { t: "bat", name });
   ensureBatsman(inn, name);
+  resumeRetiredBatter(inn, name);
   inn[slot] = name;
 }
 function setBowler(inn, name){
@@ -337,6 +341,98 @@ function swapStrikeByHand(inn){
   logAction(inn, { t: "swap" });
   swapStrike(inn);
   return true;
+}
+
+/* Last man stands with fewer players than the preset's side (a short team,
+   uneven numbers on a club day): a wicket falls and nobody is left to come
+   in, so the batter still in carries on alone now instead of being asked for
+   a partner. The side is then the wickets so far + 1: battingAlone holds, the
+   lone batter takes strike, and the next wicket is all out. Logged
+   ({t:"alone"}), so a ball edit replays it. */
+function canBatAlone(inn){
+  return !!(inn && inn.lastManStands && !inn.complete && !battingAlone(inn) && pendingBatsmanSlot(inn)
+    && !!inn.striker !== !!inn.nonStriker);
+}
+function batAlone(inn){
+  if (!canBatAlone(inn)) return false;
+  logAction(inn, { t: "alone" });
+  inn.maxWickets = inn.wickets + 1;
+  if (!inn.striker){ inn.striker = inn.nonStriker; inn.nonStriker = null; }
+  return true;
+}
+
+/* --- a batter retiring (hurt, or retired not out) ---
+   Between balls, a batter at the crease leaves without being out: their slot
+   empties (the new-batsman sheet fills it, as after a wicket), it isn't a
+   wicket or a ball, and they stay not out (stats.retired = the reason, howOut
+   "retired hurt"), so averages and points count them as not out. They can
+   bat again later, at the fall of a wicket or another retirement (Law 25.4):
+   sendInBatter brings them back and their innings carries on where it
+   stopped. `inn.retirements` lists, in order, each retirement ({ type:
+   "retire", reason }) and each return ({ type: "back" }) with the batter's
+   and the team's score then, and `at`: how many balls (over events, wides
+   included) were recorded by then -- so the commentary, the partnership and a
+   scorecard rebuild can put them between the right balls. Logged ({t:
+   "retire", name, reason}), so a ball edit replays it. */
+const RETIRE_REASONS = { hurt: "retired hurt", notout: "retired not out" };
+function inningsEventCount(inn){
+  return inn.overs.reduce((n, o) => n + (o.events ? o.events.length : 0), 0) + inn.currentOverEvents.length;
+}
+function canRetireBatter(inn){
+  return !!(inn && !inn.complete && (inn.striker || inn.nonStriker));
+}
+function noteRetirement(inn, name, type, extra){
+  const s = inn.batting.stats[name];
+  (inn.retirements || (inn.retirements = [])).push(Object.assign({ type, name, runs: s.runs, balls: s.balls,
+    score: inn.runs, wickets: inn.wickets, legalBalls: inn.legalBalls || 0, at: inningsEventCount(inn), fow: inn.fallOfWickets.length }, extra));
+}
+function retireBatter(inn, end, reason){
+  const name = inn && (end === "striker" || end === "nonStriker") ? inn[end] : null;
+  if (!canRetireBatter(inn) || !name) return false;
+  const why = RETIRE_REASONS[reason] ? reason : "hurt";
+  logAction(inn, { t: "retire", name, reason: why });
+  const s = inn.batting.stats[name];
+  s.retired = why; s.howOut = RETIRE_REASONS[why];
+  inn[end] = null;
+  noteRetirement(inn, name, "retire", { reason: why });
+  return true;
+}
+// A retired batter coming back in (sendInBatter, a catch-up): not out, no "retired hurt" any more.
+function resumeRetiredBatter(inn, name, extra){
+  const s = inn.batting.stats[name];
+  if (!s || !s.retired) return;
+  delete s.retired; s.howOut = null;
+  noteRetirement(inn, name, "back", extra);
+}
+/* The retirement that just left the crease empty -- no ball, wicket or other
+   retirement since -- or null. That batter can't come straight back in. */
+function freshRetirement(inn){
+  const list = inn.retirements || [];
+  const last = list[list.length - 1];
+  return last && last.type === "retire" && last.at === inningsEventCount(inn) && last.fow === inn.fallOfWickets.length
+    && inn.batting.stats[last.name] && inn.batting.stats[last.name].retired ? last : null;
+}
+/* Retired batters (not out, off the field), in batting order. `now`: only
+   the ones who may come back in now (not the one whose own retirement left
+   the crease empty). */
+function retiredBatters(inn, now){
+  const names = inn.batting.order.filter(n => inn.batting.stats[n].retired && n !== inn.striker && n !== inn.nonStriker);
+  const fresh = now && freshRetirement(inn);
+  return fresh ? names.filter(n => n !== fresh.name) : names;
+}
+/* Where the current partnership started: the last wicket, or the last time a
+   batter retired or came back, whichever is later. */
+function partnershipBase(inn){
+  const f = inn.fallOfWickets[inn.fallOfWickets.length - 1];
+  const r = (inn.retirements || [])[(inn.retirements || []).length - 1];
+  const fb = f ? { score: f.score, balls: f.balls || 0 } : { score: 0, balls: 0 };
+  if (!r) return fb;
+  const rb = { score: r.score, balls: r.legalBalls };
+  return rb.balls > fb.balls || (rb.balls === fb.balls && rb.score >= fb.score) ? rb : fb;
+}
+// A batter's line on a scorecard: how out, "retired hurt", or "not out".
+function batterStatusText(s){
+  return s.out ? s.howOut : s.retired ? (s.howOut || RETIRE_REASONS[s.retired] || "retired hurt") : "not out";
 }
 
 /* "4.3": the over and ball number of the delivery about to be bowled. */
@@ -376,30 +472,49 @@ function replayInnings(inn, actions, supply, anonymous){
   const bpo = r.ballsPerOver || 6;
   const notes = [];
   const batQ = [], bowlQ = [], used = new Set(), skippedBatters = [];
+  // Batters whose retirement no longer fits (they're out, or not in, by then).
+  const lostRetire = new Set();
   let droppedBalls = 0;
   const lc = n => (n || "").toLowerCase();
   const lastStep = actions.reduce((at, a, j) => isScoreStep(a) ? j : at, -1);
   const limits = { target: r.target, oversLimit: r.oversLimit };
   const unlimit = () => { r.target = null; r.oversLimit = null; };
   if (lastStep >= 0) unlimit();
-  const ahead = (i, t) => {
-    for (let j = i + 1; j < actions.length && !isScoreStep(actions[j]); j++){
-      if (!used.has(j) && actions[j].t === t){ used.add(j); return actions[j].name; }
-    }
-    return null;
-  };
+  const atCrease = name => [r.striker, r.nonStriker].some(n => n && lc(n) === lc(name));
   const batterError = name => {
     const known = r.batting.order.find(n => lc(n) === lc(name));
     if (known && (r.batting.stats[known].out || known === r.striker || known === r.nonStriker)) return `${known} is already out or batting.`;
     return null;
   };
+  // A "bat" entry that can't apply: a retired batter's return when they're
+  // batting already (it's for a later retirement) or their retirement was dropped.
+  const staleReturn = name => atCrease(name) || (lostRetire.has(lc(name)) && !!batterError(name));
+  const ahead = (i, t) => {
+    for (let j = i + 1; j < actions.length && !isScoreStep(actions[j]); j++){
+      if (!used.has(j) && actions[j].t === t && !(t === "bat" && staleReturn(actions[j].name))){ used.add(j); return actions[j].name; }
+    }
+    return null;
+  };
   // Fill the empty slots from what was entered (in order). `now`: a ball is
   // about to be bowled, so a later entry or a supplied name may be used.
+  // A later "nobody left: bat alone" (batAlone), pulled forward when a
+  // wicket now falls earlier and nobody else was entered to come in.
+  const aloneAhead = i => {
+    for (let j = i + 1; j < actions.length && !isScoreStep(actions[j]); j++){
+      if (!used.has(j) && actions[j].t === "alone"){ used.add(j); return true; }
+    }
+    return false;
+  };
   const fill = (i, now) => {
     let slot;
     while ((slot = pendingBatsmanSlot(r))){
       let name = batQ.length ? batQ.shift() : null;
-      if (!name && now) name = anonymous ? `Batter ${r.batting.order.length + 1}` : (ahead(i, "bat") || supply.batters.shift() || null);
+      if (!name && now && anonymous) name = `Batter ${r.batting.order.length + 1}`;
+      else if (!name && now){
+        name = ahead(i, "bat");
+        if (!name && canBatAlone(r) && aloneAhead(i)){ batAlone(r); continue; }
+        if (!name) name = supply.batters.shift() || null;
+      }
       if (!name) break;
       const err = batterError(name);
       if (err) return { error: err };
@@ -438,8 +553,23 @@ function replayInnings(inn, actions, supply, anonymous){
     } else if (a.t === "bat"){
       if (anonymous) continue;
       if (r.complete){ skippedBatters.push(a.name); continue; }
+      if (staleReturn(a.name)) continue;
       batQ.push(a.name);
       const res = fill(i, false); if (res) return res;
+    } else if (a.t === "retire"){
+      if (anonymous || r.complete) continue;
+      // The slots fill first: the batter who retired may have only just come in.
+      const res = fill(i, false); if (res) return res;
+      const end = r.striker && lc(r.striker) === lc(a.name) ? "striker" : r.nonStriker && lc(r.nonStriker) === lc(a.name) ? "nonStriker" : null;
+      if (end) retireBatter(r, end, a.reason);
+      else {
+        lostRetire.add(lc(a.name));
+        notes.push(`${a.name} isn't batting by ball ${nextBallLabel(r)} any more, so they no longer retire ${a.reason === "notout" ? "not out" : "hurt"} there. Check it.`);
+      }
+    } else if (a.t === "alone"){
+      if (anonymous || r.complete) continue;
+      const res = fill(i, false); if (res) return res;
+      if (!batAlone(r) && r.striker && r.nonStriker) notes.push(`From ball ${nextBallLabel(r)} nobody bats alone any more: there are two batters in. Check it.`);
     } else if (a.t === "bowl"){
       if (anonymous || r.complete) continue;
       bowlQ.push(a.name);
@@ -473,8 +603,11 @@ function replayInnings(inn, actions, supply, anonymous){
   skippedBatters.push(...batQ);
   r.nextSeq = Math.max(inn.nextSeq || 0, r.nextSeq || 0);
   if (droppedBalls) notes.push(`The innings now ends earlier: ${droppedBalls} later ball${droppedBalls === 1 ? " is" : "s are"} removed.`);
-  // (a batter named again after a score typed in did bat)
-  const skipped = skippedBatters.filter(n => !r.batting.order.some(x => lc(x) === lc(n)));
+  // (a batter named again after a score typed in did bat; a retired one still waiting didn't come back)
+  const skipped = skippedBatters.filter(n => {
+    const k = r.batting.order.find(x => lc(x) === lc(n));
+    return !k || (r.batting.stats[k].retired && !atCrease(k));
+  });
   if (skipped.length) notes.push(`${skipped.join(", ")} no longer come${skipped.length === 1 ? "s" : ""} in to bat.`);
   return { inn: r, notes };
 }
@@ -670,6 +803,7 @@ function inningsScorecardKey(inn){
     // Fielding lines from before stumpings were counted have no `stumpings`.
     field: inn.fielding.order.map(n => { const f = inn.fielding.stats[n]; return [n, f.catches, f.runouts, f.stumpings || 0]; }),
     fow: inn.fallOfWickets.map(f => [f.score, f.wicket, f.batsman]),
+    ret: (inn.retirements || []).map(t => [t.type, t.name, t.at]),
     ballList: inningsBalls(inn).map(b => [b.label, b.ev.display, b.bowler])
   });
 }
@@ -715,9 +849,31 @@ function rebuildInningsFromScorecard(match, idx){
     }
     return e;
   };
+  // Retirements and returns (inn.retirements) go back in before the ball they
+  // came before (`at`: the balls recorded by then), in the order they happened.
+  const rets = inn.retirements || [];
+  if (tail.length && rets.some(t => t.at >= events.length)) return null;   // before or after the score set by hand?
+  let ri = 0, g = 0;
+  const retireUpTo = at => {
+    for (; ri < rets.length && rets[ri].at <= at; ri++){
+      const t = rets[ri];
+      const endOf = () => r.striker === t.name ? "striker" : r.nonStriker === t.name ? "nonStriker" : null;
+      if (t.type === "retire"){
+        // the batter who retired may have only just come in
+        if (!endOf() && !sendIn(r)) return false;
+        if (!endOf() || !retireBatter(r, endOf(), t.reason)) return false;
+      } else {
+        const s = r.batting.stats[t.name];
+        if (!pendingBatsmanSlot(r) || !s || !s.retired) return false;
+        sendInBatter(r, t.name);
+      }
+    }
+    return true;
+  };
   for (let o = 0; o < overs.length; o++){
-    for (let k = 0; k < overs[o].events.length; k++){
+    for (let k = 0; k < overs[o].events.length; k++, g++){
       const ev = overs[o].events[k];
+      if (!retireUpTo(g)) return null;
       if (!sendIn(r)) return null;
       if (!r.bowler){
         if (!overs[o].bowler || (r.lastOverBowler && r.lastOverBowler === overs[o].bowler)) return null;
@@ -746,6 +902,7 @@ function rebuildInningsFromScorecard(match, idx){
       recordBall(r, e);
     }
   }
+  if (!retireUpTo(g) || ri < rets.length) return null;
   const g0 = tail.length && tail[0].gap;
   if (g0 && (r.runs !== g0.fromRuns || r.wickets !== g0.fromWickets || (r.legalBalls || 0) !== g0.fromBalls)) return null;
   // a batter who came in after the last ball, before the score was set
@@ -817,7 +974,9 @@ function scoreByHandError(match, scores){
     const s = scores[i];
     if (!s) continue;
     const who = teamName(match, i === 0 ? i0.battingTeam : i0.bowlingTeam);
-    const maxW = i0.maxWickets;
+    // (a side that batted on alone with fewer players has a lower maxWickets)
+    const maxW = match.innings[i] ? match.innings[i].maxWickets
+      : match.playersPerSide == null ? null : match.lastManStands ? match.playersPerSide : match.playersPerSide - 1;
     if (!Number.isInteger(s.runs) || s.runs < 0 || s.runs > 9999) return `Enter ${who}'s runs.`;
     if (!Number.isInteger(s.wickets) || s.wickets < 0 || s.wickets > 99) return `Enter ${who}'s wickets.`;
     if (maxW != null && s.wickets > maxW) return `${who} can lose at most ${maxW} wicket${maxW === 1 ? "" : "s"}.`;
@@ -1263,7 +1422,8 @@ function playerSideConflict(match, name, teamKey){
 
 /* Which of `pool` (a squad, the club roster, the guest players list) can be
    offered as a one-tap pick for the current innings, in `role`:
-   - "batter": the batting side, minus anyone out or already at the crease;
+   - "batter": the batting side, minus anyone out, already at the crease or
+     retired (they have their own rows, retiredBatters);
    - "bowler": the bowling side, minus anyone who has already bowled (they
      have their own rows with figures) and the previous over's bowler;
    - "fielder": the bowling side.
@@ -1276,7 +1436,7 @@ function pickCandidates(match, pool, role, inn){
   const lc = n => n.toLowerCase();
   const skip = new Set();
   if (role === "batter"){
-    inn.batting.order.forEach(n => { if (inn.batting.stats[n].out) skip.add(lc(n)); });
+    inn.batting.order.forEach(n => { if (inn.batting.stats[n].out || inn.batting.stats[n].retired) skip.add(lc(n)); });
     [inn.striker, inn.nonStriker].forEach(n => { if (n) skip.add(lc(n)); });
   } else if (role === "bowler"){
     inn.bowling.order.forEach(n => skip.add(lc(n)));
@@ -1431,6 +1591,33 @@ function resolvePlayerAlias(value, roster){
     if (byNo.length === 1) return byNo[0].name;
   }
   return typed;
+}
+
+/* Finding a player in a list as the scorer types: every word typed has to be
+   the start of one of the player's words -- their name split at spaces, their
+   nickname's words, "#7" (or "7") for a jersey -- never the middle of one, so
+   "sal" doesn't find Kusal but "ku me" finds Kusal Mendis. Punctuation inside
+   a word is optional ("ms" or "m" finds "M.S."). nameSearchKey builds the
+   searchable words once (a list's data-search); nameSearchHit checks a query
+   against them. Case-insensitive. */
+const NAME_WORD_EDGE = /^[("“”'‘’)]+|[)"“”'‘’,.]+$/g;
+function nameSearchKey(...texts){
+  const parts = new Set();
+  texts.forEach(t => String(t == null ? "" : t).toLowerCase().split(/\s+/).forEach(raw => {
+    const w = raw.replace(NAME_WORD_EDGE, "");
+    if (!w) return;
+    parts.add(w);
+    const bare = w.replace(/[^\p{L}\p{M}\p{N}]/gu, "");
+    if (bare) parts.add(bare);
+    w.split(/[^\p{L}\p{M}\p{N}#]+/u).forEach(p => { if (p) parts.add(p); });
+  }));
+  return [...parts].join(" ");
+}
+function nameSearchHit(key, query){
+  const words = String(query || "").toLowerCase().split(/\s+/).map(w => w.replace(NAME_WORD_EDGE, "")).filter(Boolean);
+  if (!words.length) return true;
+  const parts = String(key || "").split(" ");
+  return words.every(w => parts.some(p => p.startsWith(w)));
 }
 
 /* Guest players (club tournaments): people playing for a side who aren't
@@ -1860,6 +2047,134 @@ function nameUnnamedPlayer(match, from, to){
   return walk(m);
 }
 
+/* --- a wrong player picked ---
+   The scorer tapped the wrong name: a batter (for their whole innings) or a
+   bowler (for the overs chosen -- by default every over they bowled in that
+   innings; each over is its own pick). The pick is changed in the innings'
+   log -- the "open"/"bat"/"bowl" entry, and who the logged balls say was
+   batting or bowling -- and the innings is replayed (replayInnings), so the
+   figures, dismissal texts ("c Fielder b Bowler"), fall of wickets, ball by
+   ball and commentary all follow, and an edited ball later replays it too.
+   Only that innings changes: the same name batting or bowling in the other
+   innings is left alone, and so is a fielder (a catch is fixed on its ball).
+   spec = { inn, role: "batter"|"bowler", from, to, overs }: `overs` are
+   keys from bowlerSpells (null = all of them). Placeholders (Bat ?1) are
+   named with nameUnnamedPlayer instead. */
+// Every over `name` bowled in the innings: { key (its place in
+// overBowlerSequence), number, seqs (its balls), now (the over going on) }.
+function bowlerSpells(inn, name){
+  const bpo = inn.ballsPerOver || 6;
+  const legal = ev => !/^(Wd|Nb)/.test(ev.display);
+  const out = [];
+  let balls = 0;
+  inn.overs.forEach((o, k) => {
+    if (o.gap){ balls = o.gap.toBalls; return; }
+    const start = balls;
+    o.events.forEach(ev => { if (legal(ev)) balls++; });
+    if (o.bowler === name) out.push({ key: k, number: Math.floor(start / bpo) + 1, seqs: o.events.map(ev => ev.seq) });
+  });
+  if (inn.bowler === name && (inn.currentOverEvents.length || !inn.complete)){
+    out.push({ key: inn.overs.length, number: Math.floor((inn.legalBalls || 0) / bpo) + 1, seqs: inn.currentOverEvents.map(ev => ev.seq), now: true });
+  }
+  return out;
+}
+function chosenSpells(inn, name, overs){
+  const all = bowlerSpells(inn, name);
+  return overs == null ? all : all.filter(sp => overs.includes(sp.key));
+}
+function replacePickError(match, spec){
+  const inn = match && match.innings[spec.inn];
+  if (!inn || match.forfeited || match.resultOnly || match.anonymous) return "This player can't be changed here.";
+  const from = spec.from;
+  if (isUnnamedPlayer(from)) return "Name an unnamed player by tapping their name.";
+  if (!inn.log) return "This innings was scored with an older version of the app, so its players can't be changed one by one.";
+  const to = unnamedTarget(match, spec.to);
+  if (!to) return "Enter a name.";
+  if (isUnnamedPlayer(to)) return "Pick a real name.";
+  const key = to.toLowerCase();
+  if (key === (from || "").toLowerCase()) return `That's ${from} already.`;
+  if (spec.role === "batter"){
+    if (!inn.batting.order.includes(from)) return `${from} didn't bat in this innings.`;
+    const conflict = playerSideConflict(match, to, inn.battingTeam);
+    if (conflict) return conflict;
+    if (inn.batting.order.some(n => n.toLowerCase() === key)) return `${to} has already batted in this innings.`;
+    return null;
+  }
+  if (!inn.bowling.order.includes(from)) return `${from} didn't bowl in this innings.`;
+  if (inn.logBase && inn.logBase.bowling.order.includes(from)) return `${from} bowled before this innings' balls were kept, so their overs can't be changed here.`;
+  const conflict = playerSideConflict(match, to, inn.bowlingTeam);
+  if (conflict) return conflict;
+  const spells = chosenSpells(inn, from, spec.overs);
+  if (!spells.length) return "Pick at least one over.";
+  const keys = new Set(spells.map(sp => sp.key));
+  const seq = overBowlerSequence(inn).map((n, k) => keys.has(k) ? to : n);
+  for (let i = 1; i < seq.length; i++){
+    if (seq[i] && seq[i - 1] && seq[i].toLowerCase() === key && seq[i - 1].toLowerCase() === key) return `${to} would bowl two overs in a row.`;
+  }
+  return null;
+}
+// `from` -> `to` in every string and key that is exactly `from`.
+function renameExact(v, from, to){
+  if (typeof v === "string") return v === from ? to : v;
+  if (Array.isArray(v)) return v.map(x => renameExact(x, from, to));
+  if (v && typeof v === "object"){
+    const o = {};
+    Object.keys(v).forEach(k => { o[k === from ? to : k] = renameExact(v[k], from, to); });
+    return o;
+  }
+  return v;
+}
+/* Returns { match, notes } -- a copy, the input isn't touched -- or { error }. */
+function replacePick(match, spec){
+  const err = replacePickError(match, spec);
+  if (err) return { error: err };
+  const m = JSON.parse(JSON.stringify(match));
+  const inn = m.innings[spec.inn];
+  const from = spec.from, to = unnamedTarget(match, spec.to);
+  const sw = n => n === from ? to : n;
+  let log = inn.log.map(a => Object.assign({}, a));
+  if (spec.role === "batter"){
+    log.forEach(a => {
+      if (a.t === "open" || a.t === "ball"){ a.striker = sw(a.striker); a.nonStriker = sw(a.nonStriker); }
+      else if (a.t === "bat" || a.t === "retire") a.name = sw(a.name);
+      else if (a.t === "catchup") a.data = Object.assign({}, a.data, { batters: (a.data.batters || []).map(b => b.name === from ? Object.assign({}, b, { name: to }) : b) });
+    });
+    // an older match whose log starts part way may have them in its base
+    inn.logBase = renameExact(inn.logBase, from, to);
+  } else {
+    const spells = chosenSpells(inn, from, spec.overs);
+    const every = spells.length === bowlerSpells(inn, from).length;
+    const picks = new Set(), balls = new Set();
+    for (const sp of spells){
+      sp.seqs.forEach(q => balls.add(q));
+      // the entry that put them on for this over: the last bowler pick before its first ball
+      let j = (sp.seqs.length ? log.findIndex(a => a.t === "ball" && a.ev.seq === sp.seqs[0]) : log.length) - 1;
+      for (; j >= 0; j--){
+        const a = log[j];
+        if ((a.t === "bowl" && a.name === from) || (a.t === "open" && a.bowler === from)) break;
+        if (a.t === "bowl" || a.t === "open" || a.t === "ball" || isScoreStep(a)){ j = -1; break; }
+      }
+      if (j < 0) return { error: `Over ${sp.number}'s bowler came from a score caught up or set by hand, so it can't be changed here.` };
+      picks.add(j);
+    }
+    log.forEach((a, j) => {
+      if (picks.has(j)){ if (a.t === "open") a.bowler = to; else a.name = to; }
+      else if (a.t === "ball" && balls.has(a.ev.seq)) a.bowler = sw(a.bowler);
+      else if (every && a.t === "catchup"){
+        const d = a.data;
+        a.data = Object.assign({}, d, { bowlerNow: sw(d.bowlerNow), lastOver: sw(d.lastOver),
+          bowlers: (d.bowlers || []).map(b => b.name === from ? Object.assign({}, b, { name: to }) : b),
+          batters: (d.batters || []).map(b => b.bowler === from ? Object.assign({}, b, { bowler: to }) : b) });
+      }
+    });
+  }
+  const res = replayInnings(inn, log, { batters: [], bowlers: [] }, !!m.anonymous);
+  if (res.error) return { error: res.error };
+  if (res.need) return { error: "The innings can't be worked out with that change." };
+  m.innings[spec.inn] = res.inn;
+  return { match: m, notes: res.notes };
+}
+
 /* --- catching up the score ---
    A scorer who stopped updating the board can jump to where the game is now
    instead of replaying every ball: the totals, every batter who got out (how,
@@ -1877,11 +2192,13 @@ function nameUnnamedPlayer(match, from, to){
    data: { runs, wickets, balls (legal), extras: { wides, noBalls, byes, legByes },
            finished,            -- this innings is over (else it ends on its own
                                    only by target / all out / overs)
-           batters: [{ name, status: "striker"|"nonStriker"|"out", runs, balls,
+           batters: [{ name, status: "striker"|"nonStriker"|"out"|"retired", runs, balls,
                        wicketType, bowler, fielder }]
                                 -- every batter not already out (those at the
-                                   crease too) plus new ones; runs/balls null =
-                                   leave as recorded,
+                                   crease and retired ones too) plus new ones;
+                                   "retired" = retired hurt, not out (a retired
+                                   batter given an end came back in); runs/balls
+                                   null = leave as recorded,
            bowlers: [{ name, balls, runs }],   -- null = leave as recorded
            bowlerNow, lastOver }  -- bowling the over now (needed mid-over);
                                      bowled the last one (needed at x.0)
@@ -2117,12 +2434,21 @@ function catchUpStep(inn, data, anonymous){
       const s = inn.batting.stats[name];
       if (b.runs != null) s.runs = b.runs;
       if (b.balls != null) s.balls = b.balls;
+      // A retirement or a return in the gap happened at the catch-up, as far as anyone knows.
+      const then = { catchUp: true, score: data.runs, wickets: data.wickets, legalBalls: data.balls };
       if (b.status !== "out"){
-        if (!s.out) continue;
+        if (!s.out){
+          if (b.status === "retired" && !s.retired){
+            s.retired = "hurt"; s.howOut = RETIRE_REASONS.hurt;
+            noteRetirement(inn, name, "retire", Object.assign({ reason: "hurt" }, then));
+          } else if (b.status !== "retired" && s.retired) resumeRetiredBatter(inn, name, then);
+          continue;
+        }
         const f = inn.fallOfWickets.find(x => x.batsman === name);
-        return `${name} is out${f ? ` at ${f.over}` : ""} now, but was still batting when the score was caught up (${oversDisplay(data.balls, bpo)} ov).`;
+        return `${name} is out${f ? ` at ${f.over}` : ""} now, but was ${b.status === "retired" ? "retired, not out," : "still batting"} when the score was caught up (${oversDisplay(data.balls, bpo)} ov).`;
       }
       if (s.out) continue;   // out ball by ball now: that's their dismissal
+      resumeRetiredBatter(inn, name, then);   // retired, came back in and got out
       const bowler = b.wicketType === "runout" ? null : keyOf(inn.bowling.order, b.bowler);
       const fielder = WICKET_FIELDER_TYPES.includes(b.wicketType) && lc(b.fielder)
         ? keyOf([...inn.fielding.order, ...inn.bowling.order], b.fielder) : null;
@@ -2173,6 +2499,8 @@ function catchUpStep(inn, data, anonymous){
   // the batters and bowler where the scorer put them.
   if (inningsFiguresKey(was) === inningsFiguresKey(inn)){
     const slots = { striker: inn.striker, nonStriker: inn.nonStriker, bowler: inn.bowler || was.bowler };
+    // ... and who has retired or come back in (their figures are the same)
+    if (inn.retirements) Object.assign(slots, { batting: inn.batting, retirements: inn.retirements });
     Object.keys(inn).forEach(k => { if (k !== "log" && k !== "logBase") delete inn[k]; });
     Object.assign(inn, was, slots);
   }
@@ -2235,8 +2563,21 @@ function inningsCommentary(inn, opts){
   const out = [];
   let batRuns = {}, batBalls = {}, figs = {};
   let score = 0, wkts = 0, balls = 0;
+  // A batter retiring or coming back in: a row between the balls it came
+  // between (`at`, see retireBatter). One from a catch-up goes after its gap.
+  const rets = inn.retirements || [];
+  let ri = 0, at = 0;
+  const retireRows = (upTo, beforeGap) => {
+    for (; ri < rets.length && rets[ri].at <= upTo && !(beforeGap && rets[ri].catchUp); ri++){
+      const t = rets[ri], back = t.type === "back";
+      out.push({ type: "retire", back, name: nm(t.name),
+        text: back ? `${nm(t.name)} back in` : `${nm(t.name)} ${RETIRE_REASONS[t.reason] || RETIRE_REASONS.hurt}`,
+        figures: `${t.runs} (${t.balls})`, score: `${t.score}-${t.wickets}`, overs: oversDisplay(t.legalBalls, bpo) });
+    }
+  };
   overs.forEach(ov => {
     if (ov.gap){
+      retireRows(at, true);
       const g = ov.gap;
       score = g.toRuns; wkts = g.toWickets; balls = g.toBalls;
       batRuns = {}; batBalls = {}; figs = {};
@@ -2252,6 +2593,7 @@ function inningsCommentary(inn, opts){
     let legal = start % bpo, overRuns = 0, overWkts = 0, bowlerRuns = 0;
     const f = ov.bowler ? (figs[ov.bowler] = figs[ov.bowler] || { balls: 0, maidens: 0, runs: 0, wickets: 0 }) : null;
     ov.events.forEach(ev => {
+      retireRows(at++);
       const c = commentaryEvent(ev);
       const isLegal = c.kind !== "wide" && c.kind !== "noball" && !c.extra;
       if (isLegal) legal += 1;
@@ -2308,6 +2650,7 @@ function inningsCommentary(inn, opts){
         figures: f ? `${oversDisplay(f.balls, bpo).replace(/\.0$/, "")}-${f.maidens}-${f.runs}-${f.wickets}` : "" });
     }
   });
+  retireRows(Infinity);
   return out;
 }
 

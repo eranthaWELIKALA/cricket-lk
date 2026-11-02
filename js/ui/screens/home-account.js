@@ -149,7 +149,6 @@ function renderHome(){
         </div>
       ` : "")}
       ${renderRecentMatches(activeClub ? `Recent matches · ${activeClub.name}` : "Recent matches", recentMatches)}
-      ${activeClub ? "" : `<p class="hint" style="margin-top:14px;">Everything is stored on this device. Signing in is optional.</p>`}
     </div>
   `;
 }

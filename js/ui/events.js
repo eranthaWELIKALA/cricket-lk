@@ -54,6 +54,11 @@ document.addEventListener("click", (e) => {
   else if (action === "close-wicket-modal"){ resetWicketUi(); render(); }
   else if (action === "wicket-on-extra" && (ui.pendingExtra === "wide" || ui.pendingExtra === "noball")){ ui.wicketExtra = ui.pendingExtra; ui.wicketFlow = "menu"; render(); }
   else if (action === "swap-strike") handleSwapStrike();
+  else if (action === "open-retire") openRetire(btn.dataset.end);
+  else if (action === "retire-end"){ if (ui.retire){ ui.retire.end = btn.dataset.end; render(); } }
+  else if (action === "retire-reason"){ if (ui.retire){ ui.retire.reason = btn.dataset.value; render(); } }
+  else if (action === "confirm-retire") confirmRetire();
+  else if (action === "close-retire"){ ui.retire = null; render(); }
   else if (action === "open-edit-balls") openEditBalls();
   else if (action === "edit-ball") openBallEdit(parseInt(btn.dataset.inn, 10), parseInt(btn.dataset.seq, 10), btn.dataset.label);
   else if (action === "ball-edit-set") ballEditSet(btn.dataset.field, btn.dataset.value);
@@ -70,6 +75,18 @@ document.addEventListener("click", (e) => {
   else if (action === "pick-batter"){ submitNewBatsman(btn.dataset.name, btn.closest(".modal").querySelector("form")); }
   else if (action === "pick-unnamed") pickUnnamed();
   else if (action === "name-later") openNameLater(btn.dataset.name);
+  // A wrong player picked: tap their name, pick who it really was.
+  else if (action === "replace-pick") openReplacePick(parseInt(btn.dataset.inn, 10), btn.dataset.role, btn.dataset.name);
+  else if (action === "replace-pick-to") askReplacePick(btn.dataset.name, btn.closest(".modal").querySelector("form"));
+  else if (action === "replace-pick-over") toggleReplaceOver(parseInt(btn.dataset.key, 10));
+  else if (action === "close-replace-pick") closeReplacePick();
+  else if (action === "open-replace-chooser") openReplaceChooser();
+  // Opening sheet: slot tiles + one list (setOpeningPick fills the slot being picked).
+  else if (action === "opening-slot") setOpeningSlot(btn.dataset.slot);
+  else if (action === "opening-pick") setOpeningPick(btn.dataset.name);
+  else if (action === "opening-use") useOpeningTyped();
+  else if (action === "pick-fielder") pickFielder(btn.dataset.name);
+  else if (action === "bat-alone") handleBatAlone();
   else if (action === "name-later-pick") saveNameLater(btn.dataset.name, btn.closest(".modal").querySelector("form"));
   else if (action === "close-name-later") closeNameLater();
   else if (action === "combo-pick"){
@@ -432,6 +449,7 @@ document.addEventListener("submit", (e) => {
   else if (id === "sign-in-form") handleSignInSubmit(e);
   else if (id === "sign-up-form") handleSignUpSubmit(e);
   else if (id === "create-club-form") handleCreateClubSubmit(e);
+  else if (id === "replace-pick-form") handleReplacePickSubmit(e);
   else if (id === "club-add-player-form") handleClubAddPlayerSubmit(e);
   else if (id === "club-invite-admin-form") handleClubInviteAdminSubmit(e);
   else if (id === "club-tournament-setup-form") handleClubTournamentSetupSubmit(e);
@@ -465,6 +483,11 @@ document.addEventListener("keydown", (e) => {
     // A visiting team's box takes visitors' names: Enter adds them.
     if (ui.tournamentTeamEdit && ui.tournamentTeamEdit.visiting) askAddBuilderPlayer();
   }
+  // A pick box whose button isn't its form's submit (the opening sheet): Enter presses that button.
+  if (e.key === "Enter" && e.target.dataset && e.target.dataset.pickEnter){
+    e.preventDefault();
+    if (e.target.dataset.pickEnter === "opening-use") useOpeningTyped();
+  }
   if (e.key === "Escape"){
     if (ui.confirm) cancelConfirm();
     else if (ui.tournamentTeamEdit && document.querySelector(".team-modal")) closeTeamEdit();
@@ -481,7 +504,16 @@ document.addEventListener("input", (e) => {
   // Search-select (renderNameCombo): narrow the list as you type.
   if (e.target.closest && e.target.closest(".combo")){ updateCombo(e.target, true); return; }
   // Pick sheets: the box filters the one-tap rows under it.
-  if (e.target.matches && e.target.matches("[data-pick-filter]")){ applyPickFilter(e.target); return; }
+  if (e.target.matches && e.target.matches("[data-pick-filter]")){
+    // Typing a fielder's name drops a tapped row: the last thing done wins.
+    if (e.target.matches("[data-fielder-search]") && ui.wicketFielder){
+      ui.wicketFielder = null;
+      const box = e.target.closest(".fielder-box");
+      box.querySelectorAll(".fielder-row.active").forEach(c => { c.classList.remove("active"); c.removeAttribute("aria-pressed"); });
+      const tag = box.querySelector(".fielder-picked"); if (tag) tag.remove();
+    }
+    applyPickFilter(e.target); return;
+  }
   // Team builder: keep the name in ui, and filter roster rows without a re-render.
   const builder = e.target.closest && e.target.closest("#tournament-team-form");
   if (builder && ui.tournamentTeamEdit){
@@ -493,7 +525,7 @@ document.addEventListener("input", (e) => {
       const q = e.target.value.trim().toLowerCase();
       let shown = 0, free = 0;
       builder.querySelectorAll(".pick-row").forEach(row => {
-        row.hidden = !!q && !row.dataset.label.includes(q);
+        row.hidden = !nameSearchHit(row.dataset.label, q);
         if (!row.hidden){ shown++; if (row.dataset.free === "1") free++; }
       });
       const none = builder.querySelector(".no-results"); if (none) none.hidden = shown > 0;

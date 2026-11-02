@@ -78,7 +78,6 @@ function renderPremierPlayers(){
             <span class="muted">${pl.claimed_by ? (session && pl.claimed_by === session.user.id ? "Claimed by you" : "Claimed") : "Unclaimed"}</span>
           </div>`).join("") : `<p class="hint">No players yet.</p>`}
         ${ui.claimMessage ? `<p class="hint">${escapeHtml(ui.claimMessage)}</p>` : ""}
-        <p class="hint">Open a player to claim their profile or request a merge — a platform admin approves both.</p>
       `}
     </div>
   `;

@@ -5,6 +5,8 @@
    Browsers never let a page install itself or launch an installed PWA:
    - Android/Chromium fires `beforeinstallprompt`; we hold it and call
      prompt() only from the banner's button (a user gesture is required).
+     It fires only after a tap and ~30s on the page, so those browsers
+     wait up to 45s for it before falling back to the menu steps.
    - Every other browser (iOS in any browser, Firefox, Opera, Samsung
      Internet without the event, in-app browsers like WhatsApp/Instagram)
      has no install API: `manualInstallHint()` names that browser's own
@@ -31,6 +33,11 @@
   const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   const isMobile = isIOS || /Android|Mobi/i.test(ua);
   if (!isMobile) return;
+  // In-app webviews carry "Chrome" in their UA, and report Chromium's
+  // install API too, but can't install anything.
+  const inApp = /FBAN|FBAV|FB_IAB|Instagram|WhatsApp|Line\/|Snapchat|Twitter|MicroMessenger|; wv\)/.test(ua);
+  const promptApi = !inApp && "onbeforeinstallprompt" in window;
+  const PROMPT_WAIT_MS = 45000;
   const snoozed = () => Date.now() - Number(get(KEY_SNOOZE) || 0) < SNOOZE_MS;
 
   let deferred = null;
@@ -71,7 +78,7 @@
   // Install steps for browsers with no install API, by user agent. Pure
   // text; the order matters (in-app webviews carry "Chrome" in their UA too).
   function manualInstallHint(){
-    if (/FBAN|FBAV|FB_IAB|Instagram|WhatsApp|Line\/|Snapchat|Twitter|MicroMessenger|; wv\)/.test(ua)){
+    if (inApp){
       return isIOS
         ? "This in-app browser can't install apps. Tap ⋯ → “Open in Safari”, then Share ⎋ → “Add to Home Screen”."
         : "This in-app browser can't install apps. Tap ⋮ → “Open in Chrome”, then install from there.";
@@ -93,19 +100,27 @@
     show("Get the Cricket.lk app", manualInstallHint());
     return;
   }
-  // Android: give beforeinstallprompt a moment (Chromium only). If it never
-  // fires, the app is either installed already or this browser has no
-  // install API — then show that browser's manual steps.
-  setTimeout(async () => {
+  // Android. Chromium browsers (Chrome, Edge, Samsung Internet) get the
+  // one-tap Install button, but only fire beforeinstallprompt once the
+  // visitor has tapped the page and spent ~30s on it (Chrome's engagement
+  // rule, counted across visits) — so on a first visit it comes late.
+  // Menu steps shown meanwhile would send them to the browser menu for
+  // nothing, and ✕ on them would snooze the real button, so those browsers
+  // wait for it and get the steps only if it never comes. Browsers without
+  // the API get the steps after 3s. Either way the banner turns into the
+  // Install button if the event fires later.
+  async function installedAlready(){
+    if (get(KEY_INSTALLED) === "1") return true;
+    try { return !!navigator.getInstalledRelatedApps && (await navigator.getInstalledRelatedApps()).length > 0; }
+    catch (_){ return false; }
+  }
+  async function noPrompt(waited){
     if (deferred || !banner.hidden) return;
-    let installed = get(KEY_INSTALLED) === "1";
-    try {
-      if (!installed && navigator.getInstalledRelatedApps){
-        installed = (await navigator.getInstalledRelatedApps()).length > 0;
-      }
-    } catch (_){}
-    if (deferred) return;
+    const installed = await installedAlready();
+    if (deferred || !banner.hidden) return;
     if (installed) openHint();
-    else show("Get the Cricket.lk app", manualInstallHint());
-  }, 3000);
+    else if (!promptApi || waited) show("Get the Cricket.lk app", manualInstallHint());
+  }
+  setTimeout(() => noPrompt(false), 3000);
+  if (promptApi) setTimeout(() => noPrompt(true), PROMPT_WAIT_MS);
 })();

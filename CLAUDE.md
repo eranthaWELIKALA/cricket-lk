@@ -31,7 +31,7 @@ of `index.html`:
 | `js/ui/router.js` | page navigation (routes, history, back interception, unsaved-input checks) |
 | `js/ui/menus.js` | sync pill/sheet, side menu |
 | `js/ui/screens/*.js` | `home-account`, `clubs` (+ profiles, player modals), `club-tournaments` (+ team builder, the public link page), `premier`, `guest` (teams/players/presets/tournaments), `stats` |
-| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `catch-up` (catch up the score), `edit-ball` (edit/add/remove a ball, set the final score by hand), `name-later` (name an unnamed batter/bowler), `live`, `result` (+ scorecards, share/export) |
+| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `catch-up` (catch up the score), `edit-ball` (edit/add/remove a ball, set the final score by hand), `name-later` (name an unnamed batter/bowler, replace a wrongly picked one), `live`, `result` (+ scorecards, share/export) |
 | `js/ui/render.js` | `render()` |
 | `js/ui/events.js` | the delegated listeners |
 | `js/boot.js` | boot: `load()`, first route + render, `initAuth()`, sync triggers, service worker |
@@ -117,7 +117,7 @@ one thing this file most needs you to preserve:
 - `inn.bowler === null` → new-bowler modal.
 - Either sheet can be closed with **Pick later** (or the back button) so the
   scorer can use the menu, match options or scorecard meanwhile:
-  `ui.pickDismissed` holds `pendingPickKey(match)` (innings/balls/wickets/
+  `ui.pickDismissed` holds `pendingPickKey(match)` (innings/balls/wickets/retirements/
   slot), so the sheet stays closed only for *that* pause, and the live
   screen shows a `+ Pick batsman/bowler` chip (`reopen-pick`) in the empty
   slot. Any run/extra/Wicket tap calls `reopenPick()` first and records
@@ -168,6 +168,38 @@ commentary. UI: the Wide/No ball runs sheet has an "Out on this wide?" button
 → `ui.wicketExtra` + the wicket sheet; closing it goes back to the runs sheet
 (`ui.pendingExtra` stays). `resetWicketUi()` resets every wicket-sheet field
 — use it instead of resetting `runoutEnd` etc. by hand.
+
+**Retired hurt / retired not out** (`retireBatter(inn, end, reason)`, ENGINE,
+tested; `reason` `"hurt"`|`"notout"`, `RETIRE_REASONS`): between balls, a
+batter at the crease leaves without being out. It's a logged action
+(`{t:"retire", name, reason}`), not a ball and not a wicket: their slot goes
+null (so the new-batsman sheet opens, like after a wicket),
+`stats.retired` = the reason and `howOut` = "retired hurt"/"retired not out",
+`out` stays false — so every stat, MVP point and highest score counts them
+**not out** with no special-casing (`batterStatusText(s)` is the scorecard
+text). They come back through `sendInBatter` (`resumeRetiredBatter` clears
+the flags; their runs/balls just carry on, `batting.order` isn't touched).
+`inn.retirements` lists every retirement and return **in order** (`type:
+"retire"|"back"`, the batter's and team's score, and `at` =
+`inningsEventCount(inn)`, the balls recorded by then) — the commentary rows,
+`partnershipBase(inn)` (the live board's partnership: the later of the last
+wicket and the last retirement/return), the scorecard's "Retired:" line and
+`rebuildInningsFromScorecard` (which puts them back between the right balls)
+read it. Law 25.4: a retired batter resumes only at a wicket or another
+retirement, so `retiredBatters(inn, true)` leaves out the one whose own
+retirement left the gap (`freshRetirement`); `pickCandidates("batter")` leaves
+out every retired batter (they get their own "Retired · can bat again" rows).
+In `replayInnings` a retire whose batter isn't at the crease any more (an edit
+got them out first) is dropped with a "Check it." note, and a "bat" entry that
+was a retired batter's return is skipped when it can't apply (`staleReturn`).
+Catch-up has a "Retired hurt" status (a batter retired, or still retired, at
+the catch-up; one given an end is back in). UI (`sheets.js`): `ui.retire = {
+end, reason }`, `renderRetireModal`, opened from the wicket sheet's "Retired
+hurt?" (menu state, not off an extra) and ⋯ Match options; checked in
+`render()` before the pick sheets, so it works while one waits. No "no names"
+matches (`retireAllowed`). With everyone else batted
+(`playersPerSide`) the new-batsman sheet shows End innings. Retired *out*
+(a wicket) isn't offered.
 
 **Wicket events carry an optional `fielder` name**, used for
 `wicketType: 'caught'`, `'runout'` and `'stumped'` (the keeper) only
@@ -228,7 +260,7 @@ always wins and ends the match immediately, even mid-over.
 Every change to an innings goes through a logging engine function, so it can
 be replayed: `openInnings` (openers), `recordBall` (each ball, given a `seq`
 id that its over event also carries), `sendInBatter` (fills whichever slot
-`pendingBatsmanSlot` says), `setBowler`, `swapStrikeByHand` (the live board's
+`pendingBatsmanSlot` says), `setBowler`, `batAlone` (last man stands, a short side), `swapStrikeByHand` (the live board's
 ⇅ Swap / Match options → Swap strike) and `endInnings`. They append to
 `inn.log` via `logAction`, which on its first call stores `inn.logBase` (the
 innings before that action: a fresh innings, or wherever an older match left
@@ -441,9 +473,9 @@ null `oversLimit` means no overs cap, so the live screen shows an "End
 innings" link (asks first via `askConfirm`, see "Confirmations" below) that calls `endInnings()`
 (`completeReason: "closed"`). The same button (`renderEndInningsButton`,
 gated by `canEndInningsByHand(inn)` — no overs limit *or* no players limit)
-also sits at the bottom of the new-batsman and new-bowler sheets, which
+also sits in the new-batsman and new-bowler sheets' sticky button bar, which
 otherwise block everything until a name is entered; in the 2nd innings it
-reads "finish match" and `afterBall` produces the result as usual.
+reads "Finish match" there and `afterBall` produces the result as usual.
 **Any** match (limits or not, guest or club) can also be closed early from
 ⋯ Match options → End innings (rain, time, a declaration), and reopened again
 (`reopenInnings`, see "The action log"): `handleEndInnings` only refuses a completed innings; `canEndInningsByHand` just decides whether
@@ -454,7 +486,20 @@ the on-screen buttons show. Never compare against these directly — use
 is true, `pendingBatsmanSlot` asks for nobody, and the end of `recordBall`
 puts the lone batter back in `striker` with `nonStriker = null` — this runs
 *after* both unconditional swaps, it doesn't replace them. The run-out end
-picker hides the non-striker tile when that slot is empty. `matchResult`
+picker hides the non-striker tile when that slot is empty. **A short side**
+(fewer players than the preset says, e.g. uneven teams on a club day) can go
+alone earlier: `batAlone(inn)` (ENGINE, tested; `canBatAlone`: last man
+stands, one batter at the crease, a slot waiting) is a logged `{t:"alone"}`
+that sets this innings' `maxWickets` to wickets + 1, so `battingAlone` holds,
+the survivor takes strike and the next wicket is all out (the wickets margin
+in `matchResult` follows). The new-batsman sheet offers it as **Nobody else
+to bat · X bats on alone** — first and primary when the side's squad has
+nobody left to bat, otherwise a ghost button under the list. `replayInnings`
+replays it, and pulls it forward (like a `bat` entry) when an edit makes a
+wicket fall earlier and no batter was entered to come in; `logBase` keeps the
+preset's `maxWickets`. `scoreByHandError` reads each innings' own
+`maxWickets`. Without last man stands, a squad with nobody left just shows End
+innings on that sheet. `matchResult`
 omits the wickets margin with no players limit and "overs left" with no
 overs limit.
 
@@ -825,11 +870,38 @@ move a player between tournament teams, new club player vs guest in the team bui
 end/reopen a tournament,
 delete guest team/player, delete match/tournament/points/club presets, change or
 remove an earlier ball, add a ball, set the final score by hand, reopen an
-innings. **Don't add
+innings, replace a wrongly picked player. **Don't add
 `window.confirm()` or "tap again to confirm" buttons** — use `askConfirm`.
 The wicket sheet's Confirm button is data entry, not a confirmation, and
 stays as it is. `admin.html` keeps its own typed-confirmation prompts (it's
 a separate page).
+
+**A sheet's buttons stay in view.** A bottom sheet's own button row is a
+`.sheet-actions` bar (css: "a bottom sheet's buttons stay in view"), sticky
+to the sheet's bottom edge while everything above it scrolls — a long name
+list never pushes Confirm / Pick later / Close off screen. It has to be the
+last thing in the `.modal` (or the last thing in a form that is): its bottom
+offset and negative margins cancel the sheet's bottom padding, like the team
+builder's `.builder-bar`. Buttons in it are equal flex items (a `.primary`
+twice as wide, `.undo-chip` its own size); don't give them inline
+width/margin styles. The pick sheets' bar is Undo · End innings (when shown,
+`renderEndInningsButton(…, "bar")`) · Pick later (`renderPickLaterButton(true)`);
+the opening sheet's is Undo · Start innings; the wicket, retire, ball edit,
+player and share sheets have Cancel/Back + their action; Match options, the
+scorecards, name later / change a player, extras and sync have Close/Cancel.
+**Sheets where everything has to be read or filled in first keep their
+buttons at the end**, not sticky: the shared confirmation, Catch up the score,
+Set the final score, Enter a result.
+
+**Hints: only what isn't obvious.** Sheets and screens don't explain what
+their controls plainly do ("Tap a team to see its players", "tap a column to
+sort", what a bye is, "Strike has already been swapped") or repeat what the
+confirmation that follows will say (what a replace / catch up / new name
+does): those lines were removed. What stays: empty and loading states, why
+something can't be done, state the scorer can't see otherwise (editing from
+history, a gap's shortfall, offline), privacy notes, and conditional
+"no match" lines. A "blank for no limit" is part of the field's label. Add a
+new hint only if it passes that bar, and keep it to one short line.
 
 **Drag down to close.** Every closable bottom sheet (`#modal-root` /
 `#confirm-root` `.modal`) follows a finger dragged down from its top edge, or
@@ -886,7 +958,7 @@ History rules — these are what make it work on phones:
   (`navReplaceNext`). Home is the first entry, so back at Home exits the app.
 - **Sheets get their own entry** (same URL, `overlay: true`) when opened by a
   tap (`overlayOpen()`: confirm, side menu, sync sheet, player modal, team
-  builder, match options, catch-up sheet, wicket sheet, extra-runs sheet, live scorecard, ball edit, set final score), so back closes them even on the first
+  builder, match options, catch-up sheet, wicket sheet, extra-runs sheet, live scorecard, ball edit, set final score, name later, change a player), so back closes them even on the first
   entry; closing one by tap pops its entry again. The auto-opened pick sheets
   aren't overlays — `interceptNav` handles them.
 - **Intercepted moves** (`interceptNav`, most specific first): close the top
@@ -1193,11 +1265,11 @@ ad hoc form already lives — it doesn't relocate the form itself.
 ## Home, Teams & Stats vs. their Design-canvas mockups
 
 Home gained a "Recent matches" section (latest 3 of `state.matchHistory`
-by `completedAt`) and a "stored on this device" footnote — both need
-only existing data. Stats now leads with the MVP leaderboard
+by `completedAt`), which needs only existing data. Stats now leads with the MVP leaderboard
 (`.leaderboard.mvp`, gold-tinted, with Pts/M/Runs/Wkt/Fld columns and the
-points preset it was counted with, ⓘ) and ends
-with an "archived matches only" footnote. `renderLeaderboards` is shared
+points preset it was counted with, ⓘ). (Its "stored on this device" and
+"archived matches only" footnotes went with the hint cleanup — see "Hints:
+only what isn't obvious".) `renderLeaderboards` is shared
 with the tournament Stats tab and club Stats, so they pick this up too.
 
 Deliberately **not** adopted from those mockups, each because it needs
@@ -1413,8 +1485,11 @@ temporarily off."
 dropdown): a box on top filters the rows as you type (`applyPickFilter`, DOM
 only) and its button takes a name that isn't listed; the rows are
 `pickCandidates` (+ "Already bowled" with figures) and call
-`submitNewBatsman`/`submitNewBowler`, so every check applies. **"Don't know
-yet · carry on as …"** (`pickUnnamed`) fills the slot with a placeholder,
+`submitNewBatsman`/`submitNewBowler`, so every check applies. The list sits
+straight under the box; nothing is focused when a sheet opens (no keyboard
+until the scorer taps the box). **"Continue without naming"** (`pickUnnamed`,
+`renderUnnamedButton`: the first thing in the form, above the search box, one
+compact accent-tinted button whose sub-line names the placeholder) fills the slot with a placeholder,
 `Bat ?N` / `Bowl ?N` (`nextUnnamedName`, numbered across the match, kept
 short for the board; ENGINE, tested), so scoring goes on. Placeholders are never
 registered (`registerMatchPlayer`) and are skipped by
@@ -1428,11 +1503,62 @@ the match, log included, merging a bowler placeholder into someone who
 already bowled) → `applyBallEdit` (snapshot, archive replaced in place). A
 finished match asks first (Result has no Undo).
 
-**The opening sheet** is three boxes, one per line (`striker` "On strike",
-`nonStriker` "Other end", `bowler`), each a search-select (`renderNameCombo`,
-see below): focusing a box lists that side's players under it as full-width
-rows, and a tapped row fills *that* box. A name in one box isn't offered in
-the other two (`updateCombo`). Typing any name still works.
+**A wrong player picked is replaced, not undone.** Every real name on the
+live board and in `renderInningsSummary` is a button too (`playerNameHtml`,
+name-later.js: `.name-btn`, a dashed underline; it prints as plain text) where
+`canReplacePick` (`ballEditAllowed`, not "no names") and the innings has a
+log; ⋯ Match options → **Change a player** lists the match's batters and
+bowlers first (`ui.replacePick = { choose: true }`; back returns to it).
+`ui.replacePick = { inn, role, name, overs }` opens **Wrong batter? / Wrong
+bowler?** (an overlay): the side's one-tap rows (`replaceCandidates`, each
+checked by `replacePickError`) or a typed name, then the shared confirmation
+says what moves (a bowler's new figures) → `applyBallEdit`. ENGINE
+(`replacePick(match, spec)`, tested) never hand-edits figures: it changes the
+pick in that innings' **log** and replays it (`replayInnings`), so stats,
+`howOut` text, fall of wickets, ball by ball and commentary all follow. A
+batter is renamed in every log entry of that innings (`open`/`bat`/`retire`,
+each ball's striker/non-striker, catch-up data) and in `logBase`; a bowler
+only for the overs chosen (`bowlerSpells(inn, name)`: one per over, keyed by
+its `overBowlerSequence` position, the over going on included — the sheet
+picks that one if they're bowling now, else all of them): the `bowl`/`open`
+entry before each over's first ball and those balls' `bowler`, plus
+catch-up data when all their overs move. Only that innings changes — the same
+name in the other innings, and fielders (fixed on the ball), stay. Refused:
+someone who already batted in that innings, the other side, two overs in a
+row, an over whose bowler came from a catch-up, a bowler from before the log
+(`logBase`). Placeholders still go to "Who was it?".
+
+**The opening sheet** is three slot tiles (`OPENING_SLOTS`: `striker` "On
+strike", `nonStriker` "Other end", `bowler`) and, under them, **one list**:
+the lit slot's side as one-tap rows (`openingChoices` → `pickCandidates`,
+minus the other two picks), shown straight away so nothing has to be typed.
+A tapped row (`opening-pick` → `setOpeningPick`) fills the lit slot and lights
+the first one still empty (openers, then the bowler); tapping a tile
+(`opening-slot`) re-picks it. The search box filters the rows and its **Use**
+button (or Enter, `data-pick-enter`) puts a typed name in the lit slot. Picks
+live in `ui.opening` (keyed by innings and batting side, so a toss swap or the
+2nd innings starts fresh; cleared on Undo and on a successful start), and the
+form's hidden `striker`/`nonStriker`/`bowler` inputs carry them to
+`handleOpeningSubmit`, which still checks everything. **Start innings** is in
+the sheet's sticky bar (with Undo after a restart), disabled until all three
+are picked (the list goes away then).
+
+**The fielder** (wicket sheet: caught / run out / stumped) is one-tap rows,
+not a box with a dropdown (`renderFielderPicker`): the fielding side
+(`pickCandidates(…, "fielder")`) under a search box, all shown, left aligned
+like the pick sheets (`.fielder-row`, a bit shorter). A tap sets
+`ui.wicketFielder` (ticked; again clears it; `resetWicketUi` resets it); typing in the
+box drops a tapped row (the delegated `input` listener, DOM only), so
+`handleWicketFielderSubmit` takes `ui.wicketFielder || the typed name`. The box
+is never `required` — the preset's rule is checked on submit.
+
+**Name search matches the start of words** everywhere names are filtered as
+you type (pick sheets, the opening list, the fielder rows, `renderNameCombo`,
+the team builder): `nameSearchKey(name, nickname, "#jersey")` (ENGINE,
+tested) splits each into words (punctuation optional: "M.S." also as "ms",
+"m", "s"; a label's "(Nick)" unwrapped) for `data-search`, and
+`nameSearchHit(key, query)` wants every word typed to be the start of one of
+them — "ku me" finds Kusal Mendis, "sal" doesn't.
 
 **A typed name that isn't on the side's list asks first.** `confirmUnlisted`
 (sheets.js, shared confirmation sheet) runs after the submit checks and
@@ -1446,8 +1572,8 @@ never do.
 
 **Other in-match name boxes are a search-select, not a `<datalist>`.** Native
 datalist popups proved unreliable on phones (options showed but couldn't be
-tapped inside the bottom sheet), so the opening sheet's boxes, the fielder
-input and Switch players' add box have no `list` attribute; `renderNameCombo()` puts our own
+tapped inside the bottom sheet), so Switch players' add box, the ball edit
+sheet's fielder and the catch-up form's names have no `list` attribute; `renderNameCombo()` puts our own
 `.combo-list` under each, hidden until the input is focused, narrowed by the
 delegated `input` listener, closed on `focusout` (delayed; `pointerdown` on
 an option is cancelled so the input keeps focus). A tap (`combo-pick`) only
@@ -1463,7 +1589,7 @@ out/at the crease, bowlers drop anyone who's already bowled (they keep their
 figure rows) and the last-over bowler, every role drops names already on the
 other side. Other forms (setup team names, guest Teams) still use datalists.
 In a club match each option also carries the roster's nickname and `#jersey`
-(`rosterEntryFor` → `data-search`), so typing either narrows the list, and
+(`rosterEntryFor` → `data-search`, `nameSearchKey`), so typing either narrows the list, and
 every in-match submit (openers, new batsman/bowler, fielder, Switch players)
 passes the typed text through `resolveTypedName` → the pure
 `resolvePlayerAlias(value, roster)` (ENGINE, tested): an exact name wins,
@@ -2096,7 +2222,10 @@ visitors to install. **A page can't install itself or launch an installed
 PWA**, so this is as far as it goes:
 - Android/Chromium: `beforeinstallprompt` is held (`preventDefault`) and
   `prompt()` runs only from the banner's Install button (needs a user tap).
-  If it never fires, `getInstalledRelatedApps()` (manifest
+  Chrome fires it only after a tap and ~30s on the page (its engagement
+  rule), so a browser with the API (`promptApi`) waits up to 45s for it
+  rather than showing menu steps that a ✕ would turn into a week's snooze
+  of the real button. If it never fires, `getInstalledRelatedApps()` (manifest
   `related_applications` webapp entry) or the `cricket.lk.installed` flag
   (set whenever the app runs standalone) shows "open it from your home
   screen" instead.

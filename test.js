@@ -998,33 +998,48 @@ async function main(){
       state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
       state.match.squads = { A: ["Kusal", "Pathum", "Charith"], B: ["Wanindu", "Dushmantha"] };
       state.snapshots = []; render();`);
-    const box = n => doc.querySelector(`#opening-form input[name="${n}"]`);
-    const list = n => box(n).closest(".combo").querySelector(".combo-list");
-    const opt = (n, name) => list(n).querySelector(`.combo-opt[data-name="${name}"]`);
-    const shown = n => list(n).hidden ? [] : [...list(n).querySelectorAll(".combo-opt")].filter(o => !o.hidden).map(o => o.dataset.name);
-    const focus = n => { box(n).focus(); box(n).dispatchEvent(new win.FocusEvent("focusin", { bubbles: true })); };
-    assert(box("striker") && box("nonStriker") && box("bowler") && opt("striker", "Kusal") && opt("nonStriker", "Kusal") && opt("bowler", "Wanindu") && !opt("striker", "Wanindu") && !opt("bowler", "Kusal")
-      && !doc.querySelector("#opening-form [data-open-list]") && [...doc.querySelectorAll("#opening-form .combo-list")].every(l => l.hidden), "opening sheet: three boxes, each with its own side's list, all closed");
-    focus("nonStriker");
-    assert(!list("nonStriker").hidden && list("striker").hidden && list("bowler").hidden, "focusing a box opens only that box's list");
-    opt("nonStriker", "Pathum").click();
-    assert(box("nonStriker").value === "Pathum" && box("striker").value === "" && list("nonStriker").hidden, "a tapped row fills the focused box (not the first empty one) and closes the list");
-    focus("striker");
-    assert(shown("striker").join() === "Kusal,Charith", "a name in one box isn't offered in another");
-    opt("striker", "Kusal").click(); focus("bowler"); opt("bowler", "Wanindu").click();
-    assert(box("striker").value === "Kusal" && box("nonStriker").value === "Pathum" && box("bowler").value === "Wanindu", "each box takes the row tapped under it");
+    const form = () => doc.getElementById("opening-form");
+    const rows = () => [...form().querySelectorAll(".opening-list .pick-row-item")].filter(r => !r.hidden).map(r => r.dataset.name);
+    const slotTile = k => form().querySelector(`[data-action="opening-slot"][data-slot="${k}"]`);
+    const val = k => form().querySelector(`input[type="hidden"][name="${k}"]`).value;
+    const tapRow = n => form().querySelector(`.opening-list [data-name="${n}"]`).click();
+    const search = () => form().querySelector("[data-pick-filter]");
+    const type = v => { search().value = v; search().dispatchEvent(new win.Event("input", { bubbles: true })); };
+    const startBtn = () => form().querySelector('button[type="submit"]');
+    assert(slotTile("striker").classList.contains("active") && rows().join() === "Kusal,Pathum,Charith" && !(doc.activeElement && doc.activeElement.matches("input")),
+      "opening sheet: the striker's slot first, with that side's whole list showing and nothing focused (no keyboard)");
+    assert(startBtn().disabled, "Start innings waits for all three");
+    slotTile("nonStriker").click();
+    tapRow("Pathum");
+    assert(val("nonStriker") === "Pathum" && val("striker") === "" && slotTile("striker").classList.contains("active"), "a tapped row fills the slot being picked, then the next empty slot is up");
+    assert(rows().join() === "Kusal,Charith", "a name in one slot isn't offered in another");
+    tapRow("Kusal");
+    assert(slotTile("bowler").classList.contains("active") && rows().join() === "Wanindu,Dushmantha", "then the opening bowler, from the other side");
+    type("dush");
+    assert(rows().join() === "Dushmantha", "typing narrows the list from the start of a name");
+    type("man");
+    assert(rows().join() === "" && !form().querySelector(".pick-none").hidden, "...never from the middle of one");
+    type("");
+    tapRow("Wanindu");
+    assert(val("bowler") === "Wanindu" && !form().querySelector(".opening-list") && !startBtn().disabled, "all three picked: the list goes and Start innings is ready");
+    slotTile("striker").click();
+    assert(slotTile("striker").classList.contains("active") && form().querySelector('.opening-list .active[data-name="Kusal"]'), "tapping a filled slot lists its side again, its pick lit");
+    tapRow("Charith");
+    assert(val("striker") === "Charith" && val("nonStriker") === "Pathum", "...and a tap changes just that pick");
     // Without squads both sides list the same players: one picked to bat isn't offered as a bowler.
-    win.eval(`state.match.squadsSaved = state.match.squads; state.match.squads = null; findOrCreatePlayer("Kusal"); findOrCreatePlayer("Wanindu"); render();`);
-    focus("bowler");
-    assert(box("striker").value === "Kusal" && opt("bowler", "Kusal") && opt("bowler", "Kusal").hidden && shown("bowler").includes("Wanindu"), "a name picked to bat isn't offered as the bowler");
+    win.eval(`state.match.squadsSaved = state.match.squads; state.match.squads = null; findOrCreatePlayer("Charith"); findOrCreatePlayer("Wanindu"); render();`);
+    slotTile("bowler").click();
+    assert(!rows().includes("Charith") && rows().includes("Wanindu"), "a name picked to bat isn't offered as the bowler");
     win.eval(`state.match.squads = state.match.squadsSaved; delete state.match.squadsSaved; render();`);
-    box("striker").value = "Ch"; box("striker").dispatchEvent(new win.Event("input", { bubbles: true }));
-    assert(shown("striker").join() === "Charith", "typing in a box narrows its list");
-    box("striker").value = "kusal"; box("nonStriker").value = "KUSAL";
-    doc.getElementById("opening-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
-    assert(/must be different players/.test(doc.querySelector("#opening-form .form-error").textContent) && win.eval("currentInnings(state.match).striker") === null, "same name at both ends (any case) is refused");
-    box("nonStriker").value = "Pathum";
-    doc.getElementById("opening-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    // A typed name goes into the slot being picked (Use, or Enter).
+    slotTile("striker").click(); type("kusal"); form().querySelector('[data-action="opening-use"]').click();
+    slotTile("nonStriker").click(); type("KUSAL");
+    search().dispatchEvent(new win.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    assert(val("striker") === "kusal" && val("nonStriker") === "KUSAL", "a typed name fills the slot (Use, or Enter in the box)");
+    form().dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(/must be different players/.test(form().querySelector(".form-error").textContent) && win.eval("currentInnings(state.match).striker") === null, "same name at both ends (any case) is refused");
+    slotTile("nonStriker").click(); tapRow("Pathum");
+    form().dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
     assert(win.eval("currentInnings(state.match).striker") === "kusal" || win.eval("currentInnings(state.match).striker") === "Kusal", "different openers start the innings");
 
     // Kusal out -> new batsman sheet: neither the out batter nor the one at the crease is offered.
@@ -1177,8 +1192,12 @@ async function main(){
       openInnings(currentInnings(state.match), "Kusal", "Pathum", "Wanindu"); state.match.status = "live";
       recordBall(currentInnings(state.match), { kind: "wicket", wicketType: "bowled" }); afterBall(state.match); save(); render();`);
     assert(doc.querySelector('#modal-root #new-batsman-form [data-pick-filter]') && !doc.querySelector("#modal-root .combo"), "the new-batsman sheet has a search/type box, no dropdown");
-    doc.querySelector('#modal-root [data-action="pick-unnamed"]').click();
-    assert(win.eval("currentInnings(state.match).striker") === "Bat ?1" && !doc.querySelector("#modal-root #new-batsman-form"), "carry on unnamed fills the slot and closes the sheet");
+    const unnamedBtn = doc.querySelector('#modal-root [data-action="pick-unnamed"]');
+    assert(/Continue without naming/.test(unnamedBtn.textContent) && /“Bat \?1”/.test(unnamedBtn.textContent)
+      && (unnamedBtn.compareDocumentPosition(doc.querySelector("#new-batsman-form [data-pick-filter]")) & win.Node.DOCUMENT_POSITION_FOLLOWING),
+      "'Continue without naming' is at the top, above the search box, saying the placeholder it scores as");
+    unnamedBtn.click();
+    assert(win.eval("currentInnings(state.match).striker") === "Bat ?1" && !doc.querySelector("#modal-root #new-batsman-form"), "Continue without naming fills the slot (Bat ?1) and closes the sheet");
     doc.querySelector('#app [data-action="name-later"][data-name="Bat ?1"]').click();
     const nf = doc.getElementById("name-later-form");
     assert(nf, "tapping the placeholder on the board opens 'Who was it?'");
@@ -2011,7 +2030,7 @@ async function main(){
     doc.querySelector('#modal-root [data-action="edit-ball"][data-label="0.3"]').click();
     sheet().querySelector('[data-action="ball-edit-mode"][data-value="remove"]').click();
     assert(/Remove ball 0\.3/.test(sheet().textContent) && /Was a ball missed instead\?/.test(sheet().textContent) && !sheet().querySelector('[data-action="ball-edit-fill"][data-value=""]').disabled, "Remove asks whether a ball was missed; just removing is allowed at the break");
-    assert(/Taking out a legal ball/.test(sheet().textContent) && /every later over moves/.test(sheet().textContent), "just removing it: the preview says every later over moves");
+    assert(/Removing a legal ball/.test(sheet().textContent) && /every later over moves/.test(sheet().textContent), "just removing it: the preview says every later over moves");
     sheet().querySelector('[data-action="ball-edit-fill"][data-value="over"]').click();
     sheet().querySelector('[data-field="runs"][data-value="4"]').click();
     assert(/New ball 0\.6/.test(sheet().textContent) && /10-0 \(1\.3\) → 13-0 \(1\.3\)/.test(sheet().textContent) && !/every later over moves/.test(sheet().textContent), "the missing ball (a 4) at the end of over 1: overs as they were, 10 → 13");
@@ -2186,7 +2205,7 @@ async function main(){
     win.eval(`state.matchHistory["${id}"].innings.forEach(i => [...i.overs.flatMap(o => o.events), ...i.currentOverEvents].forEach(ev => { delete ev.kind; delete ev.batter; }));
       delete matchLogStore()["${id}"]; openMatchDetail("${id}");`);
     doc.querySelector('#modal-root [data-action="edit-archived-match"]').click();
-    assert(!doc.querySelector('#app [data-action="edit-ball"]') && /scored with an older version of the app/.test(doc.getElementById("app").textContent) && doc.querySelector('#app [data-action="open-score-set"]'), "an older match: no ball edits, a note says why, Set the final score is there");
+    assert(!doc.querySelector('#app [data-action="edit-ball"]') && /Scored with an older version of the app/.test(doc.getElementById("app").textContent) && doc.querySelector('#app [data-action="open-score-set"]'), "an older match: no ball edits, a note says why, Set the final score is there");
     doc.querySelector('#app [data-action="finish-match"]').click();
 
     // not while another match is on screen
@@ -2451,6 +2470,243 @@ async function main(){
     win.eval(`supabaseClient = window.__prevClient; session = window.__prevSession; addPlayerToClub = __prevAdd; addGlobalPlayer = __prevGlobal;
       saveTournamentTeam = __prevSave; fetchClubTournamentDetail = __prevFetch;
       state.match = null; ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
+  // --- retired hurt: not out, not a wicket, and back in later to carry on ---
+  {
+    const doc = win.document;
+    const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 4, battingFirst: "A" });
+    const inn = currentInnings(m);
+    win.openInnings(inn, "A1", "A2", "B1");
+    m.status = "live";
+    const play = ev => { recordBall(inn, ev); afterBall(m); };
+    play({ kind: "run", runs: 4 }); play({ kind: "run", runs: 1 });   // A1 5 (2), A2 now on strike
+    assert(win.retireBatter(inn, "nonStriker", "hurt"), "a batter at the crease can retire");
+    const a1 = inn.batting.stats.A1;
+    assert(inn.nonStriker === null && inn.striker === "A2" && win.pendingBatsmanSlot(inn) === "nonStriker", "retiring empties their end, and the new batter is asked for there");
+    assert(inn.wickets === 0 && inn.fallOfWickets.length === 0 && inn.legalBalls === 2 && inn.runs === 5, "retiring isn't a wicket or a ball");
+    assert(!a1.out && a1.retired === "hurt" && a1.howOut === "retired hurt" && win.batterStatusText(a1) === "retired hurt", "the retired batter is not out, retired hurt");
+    assert(JSON.stringify(win.retiredBatters(inn, true)) === "[]" && JSON.stringify(win.retiredBatters(inn)) === JSON.stringify(["A1"]),
+      "a batter can't come straight back into the gap their own retirement left");
+    assert(JSON.stringify(win.pickCandidates(m, ["A1", "A3", "A4"], "batter")) === JSON.stringify(["A3", "A4"]), "a retired batter isn't listed with those yet to bat");
+    win.sendInBatter(inn, "A3");
+    assert(JSON.stringify(win.partnershipBase(inn)) === JSON.stringify({ score: 5, balls: 2 }), "the partnership starts again from the retirement");
+    play({ kind: "run", runs: 0 }); play({ kind: "wicket", wicketType: "bowled" });   // A2 out
+    assert(JSON.stringify(win.retiredBatters(inn, true)) === JSON.stringify(["A1"]), "after a wicket the retired batter can come back in");
+    win.sendInBatter(inn, "A1");
+    play({ kind: "run", runs: 2 });
+    assert(inn.striker === "A1" && !a1.retired && a1.howOut === null && a1.runs === 7 && a1.balls === 3, "back in, their innings carries on from where it stopped");
+    assert(inn.batting.order.join() === "A1,A2,A3", "...and they bat once on the scorecard");
+    assert(JSON.stringify(inn.retirements.map(t => [t.type, t.name, t.at, t.score])) === JSON.stringify([["retire", "A1", 2, 5], ["back", "A1", 4, 5]]),
+      "retirements and returns are kept in order, with the ball they came before");
+    const comm = win.inningsCommentary(inn);
+    const kinds = comm.map(l => l.type === "retire" ? (l.back ? "back" : "ret") : l.type === "ball" ? l.display : l.type).join(" ");
+    assert(kinds === "4 1 ret 0 W back 2", `commentary puts the retirement and the return between the right balls, got: ${kinds}`);
+    assert(comm.find(l => l.type === "retire").text === "A1 retired hurt" && comm.find(l => l.back).figures === "5 (2)", "...saying who, why and their score");
+
+    // A ball edited before the retirement: the retirement and the return replay.
+    const seqOf = n => inn.log.filter(a => a.t === "ball")[n].ev.seq;
+    let r = win.replayMatch(m, { inn: 0, seq: seqOf(0), ev: { kind: "run", runs: 6 } });
+    let ni = r.match && r.match.innings[0];
+    assert(ni && ni.batting.stats.A1.runs === 9 && !ni.batting.stats.A1.retired && ni.retirements[0].runs === 7 && ni.striker === "A1",
+      "a ball edited before a retirement replays it, and the return");
+    // ... and one that has A1 out before they retired drops the retirement (and the return).
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(1), ev: { kind: "wicket", wicketType: "bowled" } });
+    assert(r.need && r.need.kind === "batter", "with A1 out before retiring, another batter is needed later");
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(1), ev: { kind: "wicket", wicketType: "bowled" } }, { batters: ["A4"] });
+    ni = r.match && r.match.innings[0];
+    assert(ni && ni.batting.stats.A1.out && !ni.batting.stats.A1.retired && !(ni.retirements || []).length && r.notes.some(t => /A1 isn't batting by ball .* no longer retire hurt.*Check it/.test(t)),
+      "...the retirement is dropped with a note to check");
+
+    // Rebuilt from the scorecard (no log kept): the retirement and the return go back in.
+    const arch = JSON.parse(JSON.stringify(m));
+    delete arch.innings[0].log; delete arch.innings[0].logBase;
+    const rebuilt = win.rebuildInningsFromScorecard(arch, 0);
+    assert(rebuilt && rebuilt.log.some(a => a.t === "retire") && win.inningsScorecardKey(rebuilt) === win.inningsScorecardKey(inn),
+      "an innings with a retirement rebuilds from its scorecard");
+
+    // Retired again and never back: not out on the scorecard and in the stats.
+    win.retireBatter(inn, "striker", "notout");
+    assert(a1.howOut === "retired not out" && JSON.stringify(win.retiredBatters(inn, true)) === "[]", "retired not out, with no one to replace them yet");
+    win.endInnings(m);
+    const t = win.aggregatePlayerStats([m]).find(x => x.name === "A1");
+    assert(t.innings === 1 && t.notOuts === 1 && t.runs === 7, "a batter who retired and didn't come back counts as not out");
+    const card = win.eval(`renderInningsSummary(${JSON.stringify(m)}, ${JSON.stringify(inn)})`);
+    assert(/retired not out/.test(card) && /Retired: A1 5 \(2\) retired hurt at 5-0, 0\.2 ov, back in at 5-1; A1 7 \(3\) retired not out/.test(card),
+      "the scorecard says retired not out, and lists each retirement");
+
+    // Catch up the score: a retired batter has a status of their own, and can come back in.
+    const c = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A" });
+    const ci = currentInnings(c);
+    win.openInnings(ci, "A1", "A2", "B1"); c.status = "live";
+    recordBall(ci, { kind: "run", runs: 1 });
+    win.retireBatter(ci, "nonStriker", "hurt"); win.sendInBatter(ci, "A3");
+    const draft = win.catchUpDraftFrom(c);
+    assert(draft.batters.map(b => b.name + ":" + b.status).join() === "A1:retired,A2:striker,A3:nonStriker", "the catch-up form lists a retired batter as retired");
+    const ex = { wides: 0, noBalls: 0, byes: 0, legByes: 0 };
+    let data = { runs: 4, wickets: 0, balls: 3, extras: ex, batters: [{ name: "A1", status: "retired" }, { name: "A2", status: "striker" }, { name: "A3", status: "nonStriker" }], bowlers: [], bowlerNow: "B1", lastOver: "" };
+    assert(win.catchUpError(c, data) === null, "a catch-up with the retired batter still off is fine");
+    win.applyCatchUp(c, data);
+    assert(ci.batting.stats.A1.retired === "hurt" && ci.runs === 4, "...and leaves them retired");
+    data = { runs: 6, wickets: 1, balls: 4, extras: ex, batters: [{ name: "A1", status: "nonStriker" }, { name: "A2", status: "striker" }, { name: "A3", status: "out", wicketType: "bowled", bowler: "B1" }], bowlers: [], bowlerNow: "B1", lastOver: "" };
+    assert(win.catchUpError(c, data) === null, "a catch-up can bring a retired batter back in");
+    win.applyCatchUp(c, data);
+    const back = ci.retirements[ci.retirements.length - 1];
+    assert(!ci.batting.stats.A1.retired && ci.nonStriker === "A1" && back.type === "back" && back.catchUp && back.score === 6, "...they're back at the crease, at the caught-up score");
+    data = { runs: 8, wickets: 1, balls: 5, extras: ex, batters: [{ name: "A1", status: "nonStriker" }, { name: "A2", status: "retired" }, { name: "A4", status: "striker" }], bowlers: [], bowlerNow: "B1", lastOver: "" };
+    assert(win.catchUpError(c, data) === null, "a catch-up can retire a batter too");
+    win.applyCatchUp(c, data);
+    assert(ci.batting.stats.A2.retired === "hurt" && ci.striker === "A4" && ci.retirements[ci.retirements.length - 1].name === "A2", "...who is then retired hurt, not out");
+    assert(win.inningsCommentary(ci).filter(l => l.type === "retire").map(l => l.text).join("|") === "A1 retired hurt|A1 back in|A2 retired hurt",
+      "...and the commentary has every retirement and return");
+
+    // The sheets: Wicket -> Retired hurt? -> pick who -> Retire; then the new-batter sheet.
+    win.state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 4, battingFirst: "A" });
+    win.state.snapshots = [];
+    const li = currentInnings(win.state.match);
+    win.openInnings(li, "Kusal", "Pathum", "Wanindu"); win.state.match.status = "live";
+    recordBall(li, { kind: "run", runs: 4 });
+    win.ui = win.defaultUi(); win.eval("ui = window.ui; render();");
+    doc.querySelector('#app [data-action="open-wicket"]').click();
+    doc.querySelector('#modal-root [data-action="open-retire"]').click();
+    assert(/Retire a batter/.test(doc.querySelector("#modal-root").textContent) && /Retire Kusal/.test(doc.querySelector('#modal-root [data-action="confirm-retire"]').textContent),
+      "the wicket sheet's Retired hurt? opens the retire sheet, on the striker");
+    doc.querySelector('#modal-root [data-action="retire-end"][data-end="nonStriker"]').click();
+    assert(/Retire Pathum/.test(doc.querySelector('#modal-root [data-action="confirm-retire"]').textContent), "...and can pick the other batter");
+    doc.querySelector('#modal-root [data-action="retire-end"][data-end="striker"]').click();
+    doc.querySelector('#modal-root [data-action="confirm-retire"]').click();
+    let sheet = doc.querySelector("#modal-root").textContent;
+    assert(/New batsman/.test(sheet) && /Kusal/.test(doc.querySelector("#modal-root .dismissal-banner").textContent) && /retired hurt · 4 \(1\)/.test(sheet) && /UNDO RETIRE/.test(sheet),
+      "the new-batter sheet says who retired, with their score");
+    assert(!/Retired · can bat again/.test(sheet), "...and doesn't offer them straight back");
+    doc.querySelector('#modal-root [data-action="undo"]').click();
+    assert(currentInnings(win.state.match).striker === "Kusal" && !currentInnings(win.state.match).batting.stats.Kusal.retired, "Undo takes the retirement back");
+    win.eval(`retireBatter(currentInnings(state.match), "striker", "hurt"); sendInBatter(currentInnings(state.match), "Dasun");
+      recordBall(currentInnings(state.match), { kind: "wicket", wicketType: "bowled" }); render();`);
+    sheet = doc.querySelector("#modal-root").textContent;
+    assert(/Retired · can bat again/.test(sheet) && doc.querySelector('#modal-root [data-action="pick-batter"][data-name="Kusal"]'), "after a wicket the sheet lists the retired batter to come back");
+    doc.querySelector('#modal-root [data-action="pick-batter"][data-name="Kusal"]').click();
+    const after = currentInnings(win.state.match);
+    assert(after.striker === "Kusal" && after.batting.stats.Kusal.runs === 4 && !doc.querySelector("#modal-root .modal"), "tapping them brings them back in on their score");
+    win.eval(`openRetire(); render();`);
+    win.eval(`ui.retire = null; ui.matchMenu = "menu"; render();`);
+    assert(doc.querySelector('#modal-root [data-action="open-retire"]'), "Match options offers Retire a batter");
+    win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); save(); render();`);
+  }
+
+  // --- picking players: word-start search, last man stands alone, a wrong pick replaced, fielder chips ---
+  {
+    const doc = win.document;
+    const key = win.nameSearchKey("Kusal Mendis", "Kuse", "#7");
+    assert(["ku", "MEN", "kuse", "#7", "7", "ku me", ""].every(q => win.nameSearchHit(key, q)), "search matches the start of any name word, a nickname or the jersey");
+    assert(["sal", "endis", "use", "ku x"].every(q => !win.nameSearchHit(key, q)), "...never the middle of a word, and every word typed has to match");
+    assert(win.nameSearchHit(win.nameSearchKey("M.S. Dhoni"), "ms") && win.nameSearchHit(win.nameSearchKey("M.S. Dhoni"), "m.s") && win.nameSearchHit(win.nameSearchKey("#7 Kusal Mendis (Kuse)"), "kuse"),
+      "punctuation inside a name is optional, and a label's (nickname) is searchable");
+
+    // Last man stands with a short side: nobody left, so the batter still in goes on alone.
+    const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A", lastManStands: true });
+    const inn = currentInnings(m);
+    win.openInnings(inn, "A1", "A2", "B1"); m.status = "live";
+    const play = ev => { recordBall(inn, ev); afterBall(m); };
+    play({ kind: "run", runs: 1 }); play({ kind: "wicket", wicketType: "bowled" });   // A2 out
+    win.sendInBatter(inn, "A3");
+    play({ kind: "run", runs: 2 }); play({ kind: "wicket", wicketType: "caught", fielder: "B2" });   // A3 out
+    assert(inn.maxWickets === 6 && win.pendingBatsmanSlot(inn) === "striker" && win.canBatAlone(inn), "a wicket with players to spare still asks for a batter, but going on alone is allowed");
+    assert(win.batAlone(inn) && inn.maxWickets === 3 && inn.striker === "A1" && inn.nonStriker === null && win.battingAlone(inn) && !win.pendingBatsmanSlot(inn),
+      "batting on alone: the side is now 3, A1 takes strike and nobody is asked for");
+    play({ kind: "run", runs: 1 });
+    assert(inn.striker === "A1" && inn.nonStriker === null, "...and keeps the strike after a single");
+    play({ kind: "wicket", wicketType: "bowled" });
+    assert(inn.complete && inn.completeReason === "allout" && inn.wickets === 3, "the next wicket is all out");
+    const seqA = n => inn.log.filter(a => a.t === "ball")[n].ev.seq;
+    let r = win.replayMatch(m, { inn: 0, seq: seqA(2), ev: { kind: "run", runs: 4 } });
+    assert(r.match && r.match.innings[0].maxWickets === 3 && r.match.innings[0].completeReason === "allout" && r.match.innings[0].runs === 6, "an edited ball replays the batting alone");
+    r = win.replayMatch(m, { inn: 0, seq: seqA(0), ev: { kind: "wicket", wicketType: "bowled" } });
+    const ri = r.match && r.match.innings[0];
+    assert(ri && ri.wickets === 3 && ri.complete && ri.batting.order.join() === "A1,A2,A3" && r.notes.some(t => /ends earlier/.test(t)),
+      "a wicket added earlier brings the batting alone forward (no batter is asked for), and the innings ends sooner");
+
+    // A wrong pick, replaced: a batter for their innings, a bowler for chosen overs.
+    const w = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A", ballsPerOver: 2 });
+    const wi = currentInnings(w);
+    win.openInnings(wi, "A1", "A2", "B1"); w.status = "live";
+    const wp = ev => { recordBall(wi, ev); afterBall(w); };
+    wp({ kind: "run", runs: 4 }); wp({ kind: "wicket", wicketType: "caught", fielder: "B3" });   // over 1, B1: A1 c B3 b B1
+    win.sendInBatter(wi, "A3"); win.setBowler(wi, "B2");
+    wp({ kind: "run", runs: 1 }); wp({ kind: "run", runs: 2 });                                   // over 2, B2: A3 2 (1)
+    win.setBowler(wi, "B1");
+    wp({ kind: "wicket", wicketType: "bowled" }); win.sendInBatter(wi, "A4"); wp({ kind: "run", runs: 1 });   // over 3, B1: A2 b B1
+    win.setBowler(wi, "B3"); wp({ kind: "run", runs: 0 });                                        // over 4 (now), B3
+    let x = win.replacePick(w, { inn: 0, role: "batter", from: "A3", to: "A5" });
+    let xi = x.match && x.match.innings[0];
+    assert(xi && !xi.batting.stats.A3 && xi.batting.stats.A5.runs === 2 && xi.batting.stats.A5.balls === 1 && xi.batting.order.join() === "A1,A2,A5,A4"
+      && JSON.stringify(xi).indexOf('"A3"') < 0 && xi.runs === wi.runs && xi.bowler === "B3", "a batter replaced: their runs and balls move over, every trace of the wrong name goes, the score stays");
+    assert(win.replacePickError(w, { inn: 0, role: "batter", from: "A3", to: "a1" }) === "A1 has already batted in this innings." && /already plays for Tigers/.test(win.replacePickError(w, { inn: 0, role: "batter", from: "A3", to: "B2" })),
+      "...not with someone who has batted, or plays for the other side");
+    const spells = win.bowlerSpells(wi, "B1");
+    assert(spells.map(sp => sp.number).join() === "1,3" && win.bowlerSpells(wi, "B3")[0].now, "a bowler's overs are listed one by one (and the one going on)");
+    x = win.replacePick(w, { inn: 0, role: "bowler", from: "B1", to: "B4", overs: [spells[1].key] });
+    xi = x.match && x.match.innings[0];
+    assert(xi && xi.bowling.stats.B1.legalBalls === 2 && xi.bowling.stats.B1.wickets === 1 && xi.bowling.stats.B4.legalBalls === 2 && xi.bowling.stats.B4.wickets === 1
+      && xi.batting.stats.A2.howOut === "bowled b B4" && xi.batting.stats.A1.howOut === "c B3 b B1" && xi.overs[2].bowler === "B4", "a bowler replaced for one over: just that over's figures and wickets move");
+    x = win.replacePick(w, { inn: 0, role: "bowler", from: "B1", to: "B4", overs: null });
+    xi = x.match && x.match.innings[0];
+    assert(xi && !xi.bowling.stats.B1 && xi.batting.stats.A1.howOut === "c B3 b B4" && xi.fielding.stats.B3.catches === 1, "...or for all their overs; a catch by the fielder stays theirs");
+    assert(/two overs in a row/.test(win.replacePickError(w, { inn: 0, role: "bowler", from: "B1", to: "B2", overs: [spells[1].key] }))
+      && /two overs in a row/.test(win.replacePickError(w, { inn: 0, role: "bowler", from: "B1", to: "B3", overs: [spells[1].key] })), "a bowler can't be swapped in next to their own over");
+
+    // In the page: tap a name on the board -> Wrong batter? -> pick -> confirm.
+    win.state.match = JSON.parse(JSON.stringify(w)); win.state.snapshots = [];
+    win.eval(`ui = defaultUi(); state.match.squads = { A: ["A1", "A2", "A3", "A4", "A5"], B: ["B1", "B2", "B3", "B4"] }; render();`);
+    const live = () => currentInnings(win.state.match);
+    const nameBtn = (role, n) => doc.querySelector(`#app [data-action="replace-pick"][data-role="${role}"][data-name="${n}"]`);
+    assert(nameBtn("batter", live().striker) && nameBtn("bowler", "B3"), "the board's batter and bowler names can be tapped");
+    nameBtn("batter", "A4").click();
+    assert(/Wrong batter\?/.test(doc.querySelector("#modal-root").textContent) && doc.querySelector('#modal-root [data-action="replace-pick-to"][data-name="A5"]')
+      && !doc.querySelector('#modal-root [data-action="replace-pick-to"][data-name="A3"]'), "it lists who it could have been (not anyone who batted)");
+    doc.querySelector('#modal-root [data-action="replace-pick-to"][data-name="A5"]').click();
+    assert(/A4 → A5\?/.test(doc.querySelector("#confirm-root").textContent) && live().batting.stats.A4, "it asks first, saying what moves");
+    doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    assert(!live().batting.stats.A4 && live().batting.stats.A5 && !doc.querySelector("#modal-root .modal"), "confirmed: A5 is in, the sheet closes");
+    doc.querySelector('#app [data-action="undo"]').click();
+    assert(live().batting.stats.A4 && !live().batting.stats.A5, "Undo takes it back");
+    nameBtn("bowler", "B3").click();
+    assert(/Wrong bowler\?/.test(doc.querySelector("#modal-root").textContent), "the bowler's name opens Wrong bowler?");
+    win.eval(`ui.replacePick = null; ui.matchMenu = "menu"; render();`);
+    doc.querySelector('#modal-root [data-action="open-replace-chooser"]').click();
+    doc.querySelector('#modal-root [data-action="replace-pick"][data-role="bowler"][data-name="B1"]').click();
+    assert(/Which overs/.test(doc.querySelector("#modal-root").textContent) && doc.querySelectorAll('#modal-root .over-chip.active').length === 2,
+      "Match options → Change a player lists everyone; a bowler not on now has all their overs picked");
+    win.eval(`closeTopOverlay()`);
+    assert(/Change a player/.test(doc.querySelector("#modal-root").textContent), "back goes back to that list");
+    win.eval(`ui.replacePick = null; render();`);
+
+    // Fielder chips: tap one, Confirm credits them; typing a name drops the chip.
+    win.eval(`state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A", lastManStands: true });
+      state.match.squads = { A: ["A1", "A2", "A3"], B: ["B1", "B2", "B3"] }; state.snapshots = []; ui = defaultUi();
+      openInnings(currentInnings(state.match), "A1", "A2", "B1"); state.match.status = "live"; render();`);
+    doc.querySelector('#app [data-action="open-wicket"]').click();
+    doc.querySelector('#modal-root [data-action="pick-wicket"][data-type="caught"]').click();
+    const chips = () => [...doc.querySelectorAll("#modal-root .fielder-row")].map(c => c.dataset.name);
+    assert(chips().join() === "B1,B2,B3" && !(doc.activeElement && doc.activeElement.matches("input")), "Caught lists the fielding side as rows, nothing focused");
+    doc.querySelector('#modal-root .fielder-row[data-name="B3"]').click();
+    assert(doc.querySelector('#modal-root .fielder-row.active[data-name="B3"]'), "a tapped row is ticked");
+    const fbox = doc.getElementById("wicket-fielder");
+    fbox.value = "B"; fbox.dispatchEvent(new win.Event("input", { bubbles: true }));
+    assert(!doc.querySelector("#modal-root .fielder-row.active") && win.eval("ui.wicketFielder") === null, "typing drops the tapped row");
+    fbox.value = "";
+    doc.querySelector('#modal-root .fielder-row[data-name="B2"]').click();
+    doc.getElementById("wicket-fielder-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(live().wickets === 1 && live().batting.stats.A1.howOut === "c B2 b B1" && live().fielding.stats.B2.catches === 1, "Confirm credits the tapped fielder");
+
+    // The new-batter sheet: with the squad used up, going on alone comes first.
+    win.eval(`sendInBatter(currentInnings(state.match), "A3"); recordBall(currentInnings(state.match), { kind: "wicket", wicketType: "bowled" }); afterBall(state.match); render();`);
+    const alone = doc.querySelector('#modal-root [data-action="bat-alone"]');
+    assert(alone && alone.classList.contains("primary") && /A2 bats on alone/.test(alone.textContent), "nobody left in the squad: '… bats on alone' is the first thing on the sheet");
+    alone.click();
+    assert(win.eval("battingAlone(currentInnings(state.match))") && live().striker === "A2" && !doc.querySelector("#modal-root #new-batsman-form")
+      && /Batting alone/.test(doc.querySelector("#app .matchup-card").textContent), "one tap: A2 bats on alone, and the board says so");
+    win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); save(); render();`);
   }
 
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);

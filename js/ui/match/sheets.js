@@ -7,16 +7,68 @@
 function renderSheetScore(match, inn){
   return `<div class="sheet-score-banner" aria-label="Current score">${renderScoreBento(match, inn, teamName(match, inn.battingTeam))}</div>`;
 }
-/* Openers and the first bowler: three boxes, one per line, each a
-   search-select (renderNameCombo) -- focusing a box lists that side's players
-   under it as rows, typing narrows them, a tap fills that box. A name already
-   in one box isn't offered in the others (updateCombo). Any name can still be
-   typed; the submit handler checks it all. */
+/* Openers and the first bowler: three slot tiles on top (On strike, Other
+   end, Bowler) and under them the whole list for the slot being filled --
+   that side's players as one-tap rows, shown straight away, so nothing has to
+   be typed (no keyboard). A tapped row fills that slot and moves on to the
+   next empty one; tap a slot to change it. The search box above the list
+   narrows it (from the start of a name's words) or takes a name that isn't
+   listed (Use). The picks live in ui.opening ({ key, striker, nonStriker,
+   bowler, slot }, for this innings only: openingState); the form's hidden
+   fields carry them to handleOpeningSubmit, which checks it all. */
+const OPENING_SLOTS = [["striker", "On strike"], ["nonStriker", "Other end"], ["bowler", "Bowler"]];
+function openingState(match){
+  const key = `${match.innings.length}:${currentInnings(match).battingTeam}`;
+  return ui.opening && ui.opening.key === key ? ui.opening : { key, striker: "", nonStriker: "", bowler: "", slot: "striker" };
+}
+// The players a slot can take: its side, minus anyone in the other two slots.
+function openingChoices(match, o, slot){
+  const inn = currentInnings(match);
+  const taken = OPENING_SLOTS.filter(([k]) => k !== slot).map(([k]) => (o[k] || "").toLowerCase()).filter(Boolean);
+  return pickCandidates(match, pickPool(slot === "bowler" ? inn.bowlingTeam : inn.battingTeam), slot === "bowler" ? "bowler" : "batter")
+    .filter(n => !taken.includes(n.toLowerCase()));
+}
+function setOpeningPick(name){
+  const m = state.match;
+  if (!m || m.status !== "opening" || !name) return;
+  const o = ui.opening = Object.assign({}, openingState(m));
+  if (!o.slot) return;
+  o[o.slot] = name;
+  // on to the first slot still empty (openers first, then the bowler), else done
+  const next = OPENING_SLOTS.map(([k]) => k).find(k => !o[k]);
+  o.slot = next || null;
+  const box = document.querySelector("#opening-form [data-pick-filter]");
+  if (box) box.value = "";   // a fresh list for the next slot
+  render();
+  // the next slot's list starts at the top, under the tiles
+  const sheet = document.querySelector('#modal-root [data-keep-scroll="opening"]');
+  if (sheet) sheet.scrollTop = 0;
+}
+function setOpeningSlot(slot){
+  const m = state.match;
+  if (!m || m.status !== "opening" || !OPENING_SLOTS.some(([k]) => k === slot)) return;
+  ui.opening = Object.assign({}, openingState(m), { slot });
+  const box = document.querySelector("#opening-form [data-pick-filter]");
+  if (box) box.value = "";
+  render();
+}
+function useOpeningTyped(){
+  const box = document.querySelector("#opening-form [data-pick-filter]");
+  const name = box ? resolveTypedName(box.value) : "";
+  if (!name){ if (box) box.focus(); return; }
+  setOpeningPick(name);
+}
 function renderOpeningModal(match){
   const inn = currentInnings(match);
-  const bat = pickCandidates(match, pickPool(inn.battingTeam), "batter");
-  const bowl = pickCandidates(match, pickPool(inn.bowlingTeam), "bowler");
-  const box = (name, label, names) => renderNameCombo(label, `name="${name}" required maxlength="24" placeholder="${names.length ? "Tap to pick, or type a name" : "Type a name"}"`, names);
+  const o = openingState(match);
+  const slot = o.slot;
+  const ready = OPENING_SLOTS.every(([k]) => o[k]);
+  const sideName = escapeHtml(teamName(match, slot === "bowler" ? inn.bowlingTeam : inn.battingTeam));
+  const names = slot ? openingChoices(match, o, slot) : [];
+  const tile = ([k, label]) => `
+    <button type="button" data-action="opening-slot" data-slot="${k}" class="end-tile opening-slot${slot === k ? " active" : ""}${o[k] ? " filled" : ""}" aria-pressed="${slot === k}">
+      <span class="role">${label}</span><span class="n">${o[k] ? escapeHtml(o[k]) : slot === k ? "Pick below ↓" : "Tap to pick"}</span>
+    </button>`;
   return `
     <div class="modal-backdrop${inn.target != null ? " with-score" : ""}">
       ${inn.target != null ? renderSheetScore(match, inn) : ""}
@@ -25,16 +77,26 @@ function renderOpeningModal(match){
         <form id="opening-form">
           <div class="form-error"></div>
           <div class="section-label">Openers</div>
-          ${box("striker", "On strike", bat)}
-          ${box("nonStriker", "Other end", bat)}
+          <div class="end-picker opening-slots">${tile(OPENING_SLOTS[0])}${tile(OPENING_SLOTS[1])}</div>
           <div class="section-label">${escapeHtml(teamName(match, inn.bowlingTeam))} · opening bowler</div>
-          ${box("bowler", "Bowler", bowl)}
-          <button type="submit" class="primary">Start innings</button>
+          <div class="opening-slots solo">${tile(OPENING_SLOTS[2])}</div>
+          ${OPENING_SLOTS.map(([k]) => `<input type="hidden" name="${k}" value="${escapeHtml(o[k] || "")}">`).join("")}
+          ${slot ? `
+            <div class="opening-list">
+              <div class="section-label">${slot === "bowler" ? "Who bowls the first over?" : slot === "striker" ? "Who's on strike?" : "Who's at the other end?"} · ${sideName}</div>
+              ${renderPickSearch("Use", "opening-use")}
+              ${names.length
+                ? `<div class="bowler-pick-list">${names.map(n => pickRowHtml(n, "opening-pick", null, (o[slot] || "").toLowerCase() === n.toLowerCase())).join("")}</div>`
+                : o[slot] ? "" : `<p class="hint">No players listed: type a name above.</p>`}
+            </div>` : ""}
+          ${match.innings.length === 1 ? `<button type="button" data-action="swap-toss" class="link-btn">Wrong toss? ${escapeHtml(teamName(match, inn.bowlingTeam))} bats first instead</button>` : ""}
+          <button type="button" data-action="open-catch-up" class="link-btn">Already under way? Enter the score so far</button>
+          <button type="button" data-action="open-match-menu" class="link-btn">Match options</button>
+          <div class="sheet-actions">
+            ${state.snapshots.length ? `<button type="button" data-action="undo" class="undo-chip">UNDO</button>` : ""}
+            <button type="submit" class="primary" ${ready ? "" : "disabled"}>Start innings</button>
+          </div>
         </form>
-        ${match.innings.length === 1 ? `<button type="button" data-action="swap-toss" class="link-btn">Wrong toss? ${escapeHtml(teamName(match, inn.bowlingTeam))} bats first instead</button>` : ""}
-        <button type="button" data-action="open-catch-up" class="link-btn">Already under way? Enter the score so far</button>
-        <button type="button" data-action="open-match-menu" class="link-btn">Match options: cancel, forfeit${match.squads ? ", switch players" : ""}</button>
-        ${state.snapshots.length ? `<div class="modal-footer-hint"><p class="hint">${match.innings.length === 1 ? "Undo goes back to the match as it was before the restart." : "Undo goes back to the innings break."}</p><button type="button" data-action="undo" class="undo-chip">UNDO</button></div>` : ""}
       </div>
     </div>
   `;
@@ -80,9 +142,11 @@ function forfeitTeamLine(match, teamKey){
 /* Live screen + new-batsman/new-bowler sheets: close the innings by hand
    when there's no overs or players limit (see canEndInningsByHand). Asks
    first (handleEndInnings) -- in the 2nd innings this ends the match. */
-function renderEndInningsButton(match, inn, inline){
-  if (!canEndInningsByHand(inn)) return "";
+function renderEndInningsButton(match, inn, inline, force){
+  if (!canEndInningsByHand(inn) && !(force && !inn.complete)) return "";
   const last = match.innings.length === 2;
+  // "bar": a pick sheet's sticky button row (.sheet-actions)
+  if (inline === "bar") return `<button type="button" data-action="end-innings" class="ghost">${last ? "Finish match" : "End innings"}</button>`;
   return inline
     ? `<button type="button" data-action="end-innings" class="ghost small">${last ? "End · finish match" : "End innings"}</button>`
     : `<button type="button" data-action="end-innings" class="link-btn end-innings-sheet">${last ? "End innings · finish match" : "End innings"}</button>`;
@@ -123,7 +187,6 @@ function renderMatchMenuModal(match){
     const addable = suggestionPlayerNames().filter(n => !inSquads.has(n.toLowerCase()));
     return sheet(`
       <div class="wicket-modal-head"><h2>Switch players</h2><span class="n batter">this match only</span></div>
-      <p class="hint" style="margin-top:0;">Tap a player to move them to the other side. Anyone who has already batted, bowled or fielded stays where they are. ${match.clubId ? "The tournament's saved teams don't change." : "Your saved teams don't change."}</p>
       ${ui.squadError ? `<p class="form-error">${escapeHtml(ui.squadError)}</p>` : ""}
       <div class="squad-board">${side("A")}${side("B")}</div>
       <form id="squad-add-form" class="squad-add">
@@ -137,11 +200,10 @@ function renderMatchMenuModal(match){
         <div class="tile-fieldset">
           <label><input type="radio" name="kind" value="club" checked> Club player</label>
           <label><input type="radio" name="kind" value="guest"> Guest</label>
-        </div>
-        <p class="hint" style="margin-top:-4px;">A new club player joins the club roster once they play. A guest is never stored in the club.</p>` : ""}
+        </div>` : ""}
         <button type="submit" class="ghost" style="width:100%;">Add to squad</button>
       </form>
-      <button type="button" data-action="close-match-menu" class="primary">Done</button>`);
+      <div class="sheet-actions"><button type="button" data-action="close-match-menu" class="primary">Done</button></div>`);
   }
   const row = (action, icon, title, sub, extra) => `
     <button type="button" data-action="${action}" ${extra || ""} class="menu-row">
@@ -156,7 +218,10 @@ function renderMatchMenuModal(match){
         ? `Toss got reversed? Restarts from ball one with ${escapeHtml(teamName(match, otherFirst))} batting`
         : `Nothing bowled yet: ${escapeHtml(teamName(match, otherFirst))} bats first instead`)}
       ${match.status === "live" && canSwapStrike(cur) ? row("swap-strike", "⇅", "Swap strike", `Put ${escapeHtml(liveName(cur.nonStriker))} on strike instead of ${escapeHtml(liveName(cur.striker))}`) : ""}
+      ${retireAllowed(match) ? row("open-retire", "🩹", "Retire a batter", "Retired hurt (or retired not out): not a wicket, and they can bat again later") : ""}
       ${match.innings.some(i => i.log && i.log.some(x => x.t === "ball")) ? row("open-edit-balls", "✎", "Edit an earlier ball", "Wrong runs, a missed wide or wicket? Fix it from ball by ball") : ""}
+      ${canReplacePick(match) && match.innings.some((i, idx) => { const p = replaceablePlayers(match, idx); return p.batters.length || p.bowlers.length; })
+        ? row("open-replace-chooser", "↔", "Change a player", "Picked the wrong batter or bowler? Swap in who it really was") : ""}
       ${ballEditAllowed(match) ? row("open-score-set", "#", "Set the final score", "Skip ball by ball: type each side's runs, wickets and overs") : ""}
       ${reopenableInnings(match).map(i => row("reopen-innings", "↺", `Reopen ${escapeHtml(possessive(teamName(match, match.innings[i].battingTeam)))} innings`, match.innings[i + 1]
         ? `Ended too early? Clears ${escapeHtml(possessive(teamName(match, match.innings[i + 1].battingTeam)))} innings so far and carries on from ${inningsScoreText(match.innings[i])}`
@@ -178,7 +243,7 @@ function renderMatchMenuModal(match){
       ${row("open-forfeit", "🚩", "Forfeit", "End now and award the match to the other team")}
       ${row("ask-cancel-match", "✕", "Cancel match", "Started by mistake? Discard it with no result")}
     </div>
-    <button type="button" data-action="close-match-menu" class="ghost" style="width:100%;margin-top:4px;">Close</button>`);
+    <div class="sheet-actions"><button type="button" data-action="close-match-menu" class="ghost">Close</button></div>`);
 }
 
 /* The live screen's full scorecard, as a sheet over the board
@@ -195,7 +260,7 @@ function renderLiveScorecardModal(match){
           <button type="button" data-action="close-live-scorecard" class="sheet-close" aria-label="Close scorecard">✕</button>
         </div>
         ${renderScorecard(match)}
-        <button type="button" data-action="close-live-scorecard" class="primary" style="width:100%;">Close</button>
+        <div class="sheet-actions"><button type="button" data-action="close-live-scorecard" class="ghost">Close</button></div>
       </div>
     </div>`;
 }
@@ -312,6 +377,7 @@ function handleOpeningSubmit(e){
     if (!state.match || state.match.status !== "opening") return;
     pushSnapshot();
     const inn = currentInnings(state.match);
+    ui.opening = null;
     openInnings(inn, striker, nonStriker, bowler);
     registerMatchPlayer(striker, inn.battingTeam); registerMatchPlayer(nonStriker, inn.battingTeam); registerMatchPlayer(bowler, inn.bowlingTeam);
     state.match.status = "live";
@@ -362,9 +428,26 @@ function confirmUnlisted(match, entries, proceed){
    one-tap row; the box on top filters them or takes a new name; "carry on
    unnamed" scores on with a placeholder to be named later. */
 function renderNewBatsmanModal(inn, slot){
+  const m = state.match;
   const endBadge = slot === "striker" ? "STRIKER'S END" : "NON-STRIKER'S END";
   const lastFow = inn.fallOfWickets.length ? inn.fallOfWickets[inn.fallOfWickets.length - 1] : null;
   const dismissed = lastFow && lastFow.batsman ? inn.batting.stats[lastFow.batsman] : null;
+  // The crease is empty because a batter just retired (retireBatter), not a wicket.
+  const retiring = freshRetirement(inn);
+  // Retired batters who can come back in now, and whether anyone else is left to bat.
+  const comeBack = retiredBatters(inn, true);
+  const yetToBat = pickCandidates(m, pickPool(inn.battingTeam), "batter");
+  // With a squad, "nobody left" is known: everyone in it has batted.
+  const squad = m.squads && (m.squads[inn.battingTeam] || []).length && !lendOnlySide(m, inn.battingTeam);
+  const noneLeft = !!squad && !yetToBat.length && !comeBack.length;
+  const allBatted = noneLeft || (m.playersPerSide != null && inn.batting.order.length >= m.playersPerSide && retiredBatters(inn).length > 0);
+  // Last man stands: the batter still in can carry on alone (batAlone).
+  const survivor = canBatAlone(inn) ? inn.striker || inn.nonStriker : null;
+  const aloneBtn = (primary) => survivor ? `
+    <button type="button" data-action="bat-alone" class="${primary ? "primary" : "ghost"} bat-alone-btn">
+      <span class="main">Nobody else to bat · ${escapeHtml(liveName(survivor))} bats on alone</span>
+      <span class="sub">Last man stands · the next wicket ends the innings</span>
+    </button>` : "";
   return `
     <div class="modal-backdrop with-score">
       ${renderSheetScore(state.match, inn)}
@@ -373,28 +456,49 @@ function renderNewBatsmanModal(inn, slot){
           <h2>New batsman</h2>
           <span class="end-badge">${endBadge}</span>
         </div>
-        ${lastFow && dismissed ? `
+        ${retiring ? `
+          <div class="dismissal-banner retired">
+            <span class="name">${escapeHtml(retiring.name)}</span>
+            <span class="n detail">${escapeHtml(RETIRE_REASONS[retiring.reason] || "retired hurt")} · ${retiring.runs} (${retiring.balls})</span>
+          </div>
+        ` : lastFow && dismissed ? `
           <div class="dismissal-banner">
             <span class="name">${escapeHtml(lastFow.batsman)}</span>
             <span class="n detail">${escapeHtml(dismissed.howOut || "")} · ${dismissed.runs} (${dismissed.balls})</span>
           </div>
         ` : ""}
+        ${noneLeft && survivor ? aloneBtn(true) : ""}
         <form id="new-batsman-form">
           <div class="form-error"></div>
-          ${renderPickSearch("Send in")}
           ${renderUnnamedButton("batter")}
-          ${renderPickRows(lendOnlySide(state.match, inn.battingTeam) ? "Lend a club player" : state.match.squads ? "Yet to bat" : "Players", pickCandidates(state.match, pickPool(inn.battingTeam), "batter"), "pick-batter")}
-          <p class="hint">${isVisitingSide(state.match, inn.battingTeam) ? "Type a visitor's name above. Visitors aren't added to the club roster." : "A new name is added to your players list automatically."}</p>
+          ${renderPickSearch("Send in")}
+          ${comeBack.length ? `
+            <div class="section-label">Retired · can bat again</div>
+            <div class="bowler-pick-list">${comeBack.map(n => { const s = inn.batting.stats[n]; return pickRowHtml(n, "pick-batter", `${s.runs} (${s.balls})`); }).join("")}</div>
+          ` : ""}
+          ${allBatted && !survivor ? `<p class="hint">Everyone else has batted.</p>` : ""}
+          ${renderPickRows(lendOnlySide(state.match, inn.battingTeam) ? "Lend a club player" : state.match.squads ? "Yet to bat" : "Players", yetToBat, "pick-batter")}
+          ${noneLeft && survivor ? "" : aloneBtn(false)}
         </form>
-        <div class="modal-footer-hint">
-          <p class="hint">Scoring is paused until you pick someone or carry on unnamed. Pick later to do something else first.</p>
-          <button type="button" data-action="undo" class="undo-chip" ${state.snapshots.length ? "" : "disabled"}>UNDO BALL</button>
+        <div class="sheet-actions">
+          <button type="button" data-action="undo" class="undo-chip" ${state.snapshots.length ? "" : "disabled"}>${retiring ? "UNDO RETIRE" : "UNDO BALL"}</button>
+          ${renderEndInningsButton(state.match, inn, "bar", allBatted && !survivor)}
+          ${renderPickLaterButton(true)}
         </div>
-        ${renderEndInningsButton(state.match, inn)}
-        ${renderPickLaterButton()}
       </div>
     </div>
   `;
+}
+
+/* Last man stands, nobody left to come in: the batter still in goes on alone. */
+function handleBatAlone(){
+  const m = state.match;
+  const inn = m && m.status === "live" ? currentInnings(m) : null;
+  if (!inn || !canBatAlone(inn)) return;
+  pushSnapshot();
+  batAlone(inn);
+  ui.pickDismissed = null;
+  save(); render();
 }
 
 function handleNewBatsmanSubmit(e){
@@ -407,7 +511,18 @@ function submitNewBatsman(name, form){
   const inn = currentInnings(state.match);
   const slot = pendingBatsmanSlot(inn);
   if (!slot || !name) return;
-  if (isUnnamedPlayer(name)){ showFormError(form, "That name is kept for unnamed players. Use “carry on unnamed” instead."); return; }
+  // A retired batter coming back in: their innings carries on (sendInBatter).
+  const retired = retiredBatters(inn).find(n => n.toLowerCase() === name.toLowerCase());
+  if (retired){
+    if (!retiredBatters(inn, true).includes(retired)){
+      showFormError(form, `${retired} has only just retired. They can bat again once a wicket falls or another batter retires.`); return;
+    }
+    pushSnapshot();
+    sendInBatter(inn, retired);
+    save(); render();
+    return;
+  }
+  if (isUnnamedPlayer(name)){ showFormError(form, "That name is kept for unnamed players. Use “Continue without naming” instead."); return; }
   const other = slot === "striker" ? inn.nonStriker : inn.striker;
   if (other && name.toLowerCase() === other.toLowerCase()){
     showFormError(form, "That player is already at the crease."); return;
@@ -450,8 +565,8 @@ function renderNewBowlerModal(inn){
         </div>
         <form id="new-bowler-form">
           <div class="form-error"></div>
-          ${renderPickSearch("Bowl")}
           ${renderUnnamedButton("bowler")}
+          ${renderPickSearch("Bowl")}
           ${pickable.length || inn.lastOverBowler ? `
             <div class="section-label">Already bowled</div>
             <div class="bowler-pick-list">
@@ -466,16 +581,14 @@ function renderNewBowlerModal(inn){
                 </div>
               ` : ""}
             </div>
-            ${inn.lastOverBowler ? `<p class="hint">The previous over's bowler can't bowl two in a row.</p>` : ""}
           ` : ""}
           ${renderPickRows(lendOnlySide(state.match, inn.bowlingTeam) ? "Lend a club player" : "Yet to bowl", pickCandidates(state.match, pickPool(inn.bowlingTeam), "bowler"), "pick-bowler")}
         </form>
-        <div class="modal-footer-hint">
-          <p class="hint">Strike has already been swapped for the new over.</p>
+        <div class="sheet-actions">
           <button type="button" data-action="undo" class="undo-chip" ${state.snapshots.length ? "" : "disabled"}>UNDO BALL</button>
+          ${renderEndInningsButton(state.match, inn, "bar")}
+          ${renderPickLaterButton(true)}
         </div>
-        ${renderEndInningsButton(state.match, inn)}
-        ${renderPickLaterButton()}
       </div>
     </div>
   `;
@@ -486,20 +599,23 @@ function renderNewBowlerModal(inn){
    submits the form, so every check in the submit handler applies); one tap
    per listed player; and the way to carry on without a name. DOM-only
    filtering (the delegated input listener, [data-pick-filter]). */
-function renderPickSearch(submitLabel){
+function renderPickSearch(submitLabel, action){
+  // `action`: the button takes the typed name itself instead of submitting
+  // (the opening sheet's box fills a slot; its form submits Start innings).
   return `
     <div class="pick-search">
-      <input name="name" required maxlength="24" placeholder="Search, or type a new name" data-pick-filter autocomplete="off" autocapitalize="words" aria-label="Search or type a name">
-      <button type="submit" class="primary">${submitLabel}</button>
+      <input name="name" ${action ? "" : "required "}maxlength="24" placeholder="Search, or type a new name" data-pick-filter ${action ? `data-pick-enter="${action}" ` : ""}autocomplete="off" autocapitalize="words" ${action ? `enterkeyhint="done" ` : ""}aria-label="Search or type a name">
+      <button type="${action ? "button" : "submit"}" ${action ? `data-action="${action}" ` : ""}class="primary">${submitLabel}</button>
     </div>
-    <p class="hint pick-none" hidden>Nobody listed matches. Tap ${submitLabel} to use the name you typed.</p>`;
+    <p class="hint pick-none" hidden>No match: ${submitLabel} uses this name.</p>`;
 }
-// DOM-only: hide the rows (and empty sections) that don't match the box.
+// DOM-only: hide the rows (and empty sections) that don't match the box --
+// matched from the start of a name's words, a nickname or "#jersey" (nameSearchHit).
 function applyPickFilter(input){
   const sheet = input.closest(".modal"), q = input.value.trim().toLowerCase();
   if (!sheet) return;
   let shown = 0;
-  sheet.querySelectorAll(".pick-row-item").forEach(row => { row.hidden = !!q && !row.dataset.search.includes(q); if (!row.hidden) shown++; });
+  sheet.querySelectorAll(".pick-row-item").forEach(row => { row.hidden = !nameSearchHit(row.dataset.search, q); if (!row.hidden) shown++; });
   sheet.querySelectorAll(".bowler-pick-list").forEach(list => {
     const any = [...list.children].some(c => !c.hidden && c.classList.contains("pick-row-item"));
     list.hidden = !!q && !any;
@@ -508,12 +624,12 @@ function applyPickFilter(input){
   });
   const none = sheet.querySelector(".pick-none"); if (none) none.hidden = !q || shown > 0;
 }
-function pickRowHtml(name, action, figs){
+function pickRowHtml(name, action, figs, active, cls){
   const r = rosterEntryFor(name);
   const nick = r && r.nickname ? r.nickname.trim() : "";
   const jersey = r && r.jersey_no != null ? `#${r.jersey_no}` : "";
-  const search = [name, nick, jersey].filter(Boolean).join(" ").toLowerCase();
-  return `<button type="button" data-action="${action}" data-name="${escapeHtml(name)}" data-search="${escapeHtml(search)}" class="bowler-pick-row pick-row-item">`
+  const search = nameSearchKey(name, nick, jersey);
+  return `<button type="button" data-action="${action}" data-name="${escapeHtml(name)}" data-search="${escapeHtml(search)}" class="${cls || "bowler-pick-row"} pick-row-item${active ? " active" : ""}"${active ? ` aria-pressed="true"` : ""}>`
     + `<span class="name">${jersey ? `<span class="pick-jersey">${jersey}</span> ` : ""}${escapeHtml(name)}${nick ? ` <span class="combo-nick">${escapeHtml(nick)}</span>` : ""}</span>`
     + (figs ? `<span class="n figs">${figs}</span>` : "")
     + `</button>`;
@@ -524,11 +640,19 @@ function renderPickRows(label, names, action){
     <div class="section-label">${label}</div>
     <div class="bowler-pick-list">${names.map(n => pickRowHtml(n, action)).join("")}</div>`;
 }
+/* "Continue without naming", first thing on the new batter / bowler sheets:
+   scoring goes on with a placeholder (the sub-line says which), named later
+   by tapping it. One compact button, so the list still starts near the top. */
 function renderUnnamedButton(role){
   const next = nextUnnamedName(state.match, role);
   return `
-    <button type="button" data-action="pick-unnamed" class="ghost unnamed-btn">Don't know yet · carry on as “${escapeHtml(next)}”</button>
-    <p class="hint" style="margin-top:4px;">Tap that name later (on the board, the scorecard or ⋯ Match options) to say who it was.</p>`;
+    <button type="button" data-action="pick-unnamed" class="unnamed-btn" aria-label="Continue without naming: scores as ${escapeHtml(next)} for now">
+      <span class="txt">
+        <span class="main">Continue without naming</span>
+        <span class="sub">Shows as “${escapeHtml(next)}” · name them later</span>
+      </span>
+      <span class="chev" aria-hidden="true">›</span>
+    </button>`;
 }
 /* Carry on without a name: the slot gets the next placeholder (see
    nextUnnamedName). Logged like any name, so a later ball edit keeps it. */
@@ -566,7 +690,7 @@ function handleNewBowlerSubmit(e){
 function submitNewBowler(name, form){
   const inn = currentInnings(state.match);
   if (inn.bowler || !name) return;
-  if (isUnnamedPlayer(name)){ showFormError(form, "That name is kept for unnamed players. Use “carry on unnamed” instead."); return; }
+  if (isUnnamedPlayer(name)){ showFormError(form, "That name is kept for unnamed players. Use “Continue without naming” instead."); return; }
   if (inn.lastOverBowler && name.toLowerCase() === inn.lastOverBowler.toLowerCase()){
     showFormError(form, `${name} can't bowl two overs in a row.`); return;
   }
@@ -672,23 +796,20 @@ function renderWicketModal(inn){
             <div class="run-pad small">
               ${[0, 1, 2, 3].map(n => `<button type="button" data-action="runout-runs" data-runs="${n}" class="run-btn ${ui.runoutRuns === n ? "active" : ""}">${n}</button>`).join("")}
             </div>
-            <p class="hint">${extra === "wide" ? "They count as wides, against the bowler." : "These runs count against the bowler, unlike byes and leg byes."}</p>
           ` : ""}
           ${(isRunout || isCaught || isStumped) ? `
-            ${match.anonymous ? "" : `            <div class="fielder-box">
-              <div class="fielder-box-head">
-                <label for="wicket-fielder">${isStumped ? "KEEPER" : "FIELDER"}</label>
-                ${required ? `<span class="required-badge">REQUIRED</span>` : isStumped ? `<span class="muted optional-note">optional</span>` : ""}
-              </div>
-              ${renderNameCombo("", `id="wicket-fielder" name="fielder" maxlength="24" placeholder="Search players" ${required ? "required" : ""}`, pickCandidates(match, pickPool(inn.bowlingTeam), "fielder"))}
-              ${isCaught ? `<div class="hint">Credits a catch in the fielding stats.</div>` : isStumped ? `<div class="hint">Credits the keeper with a stumping.</div>` : ""}
-            </div>`}
-            <div style="display:flex;gap:10px;margin-top:14px;">
-              <button type="button" data-action="close-wicket-modal" class="ghost" style="width:112px;flex-shrink:0;">Cancel</button>
-              <button type="submit" class="primary danger-confirm" style="flex-grow:1;">Confirm ${isRunout ? "run out" : "wicket"}</button>
+            ${match.anonymous ? "" : renderFielderPicker(match, inn, { isCaught, isStumped, required })}
+            <div class="sheet-actions">
+              <button type="button" data-action="close-wicket-modal" class="ghost">Cancel</button>
+              <button type="submit" class="primary danger-confirm">Confirm ${isRunout ? "run out" : "wicket"}</button>
             </div>
           ` : `
-            <button type="button" data-action="close-wicket-modal" class="ghost" style="width:100%;margin-top:14px;">${extraLabel ? `Back to ${extraLabel.toLowerCase()}` : "Cancel"}</button>
+            ${!extra && retireAllowed(match) ? `
+              <button type="button" data-action="open-retire" data-end="striker" class="extra-wicket-btn retire-btn">
+                <span class="main">Retired hurt?</span>
+                <span class="sub">Not out, no ball bowled · they can bat again later</span>
+              </button>` : ""}
+            <div class="sheet-actions"><button type="button" data-action="close-wicket-modal" class="ghost">${extraLabel ? `Back to ${extraLabel.toLowerCase()}` : "Cancel"}</button></div>
           `}
         </form>
       </div>
@@ -718,7 +839,37 @@ function maybeArchiveCompletedMatch(match){
 /* Resets everything the wicket sheet keeps between taps (incl. the extra a
    wicket off a wide / no-ball came from). */
 function resetWicketUi(){
-  ui.wicketFlow = null; ui.wicketExtra = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.runoutAt = null;
+  ui.wicketFlow = null; ui.wicketExtra = null; ui.runoutRuns = 0; ui.runoutEnd = "striker"; ui.runoutAt = null; ui.wicketFielder = null;
+}
+/* The catch / run-out taker (the keeper, for a stumping): the fielding side
+   as one-tap rows under a search box, all shown at once -- tap one
+   (ui.wicketFielder, ticked), tap it again to clear it. The box narrows the chips; a name typed there that
+   isn't listed is used as it is (typing drops a tapped row, so the last thing
+   done wins). The search box is never `required` (a tapped row leaves it
+   empty): the submit handler checks the preset's rule. */
+function renderFielderPicker(match, inn, { isCaught, isStumped, required }){
+  const names = pickCandidates(match, pickPool(inn.bowlingTeam), "fielder");
+  const picked = ui.wicketFielder || "";
+  return `
+    <div class="fielder-box">
+      <div class="fielder-box-head">
+        <label for="wicket-fielder">${isStumped ? "KEEPER" : "FIELDER"}</label>
+        ${required ? `<span class="required-badge">REQUIRED</span>` : `<span class="muted optional-note">optional</span>`}
+        ${picked ? `<span class="fielder-picked">${escapeHtml(liveName(picked))}</span>` : ""}
+      </div>
+      <div class="pick-search fielder-search">
+        <input id="wicket-fielder" name="fielder" maxlength="24" placeholder="${names.length ? "Search, or type a name" : "Type a name"}" data-pick-filter data-fielder-search autocomplete="off" autocapitalize="words" enterkeyhint="done">
+      </div>
+      <p class="hint pick-none" hidden>No match: Confirm uses this name.</p>
+      ${names.length ? `<div class="bowler-pick-list fielder-list">${names.map(n => pickRowHtml(n, "pick-fielder", null, n === picked, "bowler-pick-row fielder-row")).join("")}</div>` : ""}
+    </div>`;
+}
+function pickFielder(name){
+  if (!ui.wicketFlow || !name) return;
+  ui.wicketFielder = ui.wicketFielder === name ? null : name;
+  const box = document.getElementById("wicket-fielder");
+  if (box) box.value = "";   // the whole list again, with the pick ticked
+  render();
 }
 function confirmWicket(type){
   const inn = currentInnings(state.match);
@@ -736,7 +887,8 @@ function confirmWicket(type){
 function handleWicketFielderSubmit(e){
   e.preventDefault();
   const f = new FormData(e.target);
-  const fielder = resolveTypedName(f.get("fielder"));
+  // a tapped chip, else whatever was typed in the box
+  const fielder = ui.wicketFielder || resolveTypedName(f.get("fielder"));
   const match = state.match;
   if (fielder){
     const sideConflict = playerSideConflict(match, fielder, currentInnings(match).bowlingTeam);
@@ -767,4 +919,67 @@ function handleWicketFielderSubmit(e){
     resetWicketUi(); ui.pendingExtra = null;
     save(); render();
   }
+}
+
+/* --- retiring a batter (retired hurt / retired not out) ---
+   Not a dismissal and not a ball: the batter leaves the crease, stays not out
+   and can bat again later, carrying on from their score (retireBatter,
+   ENGINE; they come back through the new-batsman sheet's "Retired · can bat
+   again" rows). ui.retire = { end, reason } while the sheet is open. Opened
+   from the wicket sheet ("Retired hurt?") and ⋯ Match options, at any point
+   of the live innings -- even while a pick sheet waits, so render() checks
+   it before those. Data entry like the wicket sheet: no confirmation, Undo
+   walks it back. Not in a "no names" match (the next "Batter N" would fill
+   the slot at once, so nobody could come back). */
+function retireAllowed(m){
+  return !!(m && m.status === "live" && !m.anonymous && canRetireBatter(currentInnings(m)));
+}
+function openRetire(end){
+  const m = state.match;
+  if (!retireAllowed(m)) return;
+  const inn = currentInnings(m);
+  resetWicketUi(); ui.pendingExtra = null; ui.matchMenu = null;
+  ui.retire = { end: end && inn[end] ? end : inn.striker ? "striker" : "nonStriker", reason: "hurt" };
+  render();
+}
+function renderRetireModal(inn){
+  const r = ui.retire;
+  const name = inn[r.end];
+  const tile = (end, role) => {
+    const n = inn[end];
+    if (!n) return "";
+    const b = inn.batting.stats[n];
+    return `<button type="button" data-action="retire-end" data-end="${end}" class="end-tile ${r.end === end ? "active" : ""}">
+      <span class="role">${role} · ${b.runs} (${b.balls})</span><span class="n">${escapeHtml(liveName(n))}</span></button>`;
+  };
+  const why = [["hurt", "Retired hurt", "INJURED OR ILL"], ["notout", "Retired not out", "ANY OTHER REASON"]];
+  return `
+    <div class="modal-backdrop with-score">
+      ${renderSheetScore(state.match, inn)}
+      <div class="modal retire-sheet" data-keep-scroll="retire" role="dialog" aria-modal="true" aria-label="Retire a batter">
+        <div class="wicket-modal-head">
+          <h2>Retire a batter</h2>
+          <span class="n batter">not out · not a wicket</span>
+        </div>
+        <div class="section-label">Who's leaving the field?</div>
+        <div class="end-picker">${tile("striker", "STRIKER")}${tile("nonStriker", "NON-STRIKER")}</div>
+        <div class="section-label">Why?</div>
+        <div class="end-picker">${why.map(([v, label, sub]) => `
+          <button type="button" data-action="retire-reason" data-value="${v}" class="end-tile ${r.reason === v ? "active" : ""}">
+            <span class="role">${sub}</span><span class="n">${label}</span></button>`).join("")}</div>
+        <p class="hint">They can bat again after the next wicket or retirement.</p>
+        <div class="sheet-actions">
+          <button type="button" data-action="close-retire" class="ghost">Cancel</button>
+          <button type="button" data-action="confirm-retire" class="primary">Retire ${escapeHtml(liveName(name).split(/\s+/)[0])}</button>
+        </div>
+      </div>
+    </div>`;
+}
+function confirmRetire(){
+  const m = state.match, r = ui.retire;
+  if (!r || !retireAllowed(m) || !currentInnings(m)[r.end]) return;
+  pushSnapshot();
+  retireBatter(currentInnings(m), r.end, r.reason);
+  ui.retire = null; ui.pickDismissed = null;
+  save(); render();
 }
