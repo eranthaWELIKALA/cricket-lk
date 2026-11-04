@@ -1542,6 +1542,44 @@ async function main(){
     assert(inn.legalBalls === 5 && inn.bowler === "B1" && inn.bowling.stats.B1.maidens === 0, "a wicket off a wide on the 6th ball: the over isn't over and it's no maiden");
   }
 
+  // --- runs taken off a wide: an odd number and the batters have crossed ---
+  {
+    const fresh = () => {
+      const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+      const inn = currentInnings(m);
+      win.openInnings(inn, "A1", "A2", "B1");
+      m.status = "live";
+      return { m, inn };
+    };
+    const strikeAfter = runs => { const { inn } = fresh(); recordBall(inn, { kind: "wide", runs }); return inn.striker; };
+    assert(strikeAfter(0) === "A1" && strikeAfter(2) === "A1" && strikeAfter(4) === "A1", "a wide, Wd+2 or a wide that goes for four: strike stays");
+    assert(strikeAfter(1) === "A2" && strikeAfter(3) === "A2", "Wd+1 / Wd+3: they crossed, so the other batter is on strike");
+    let { inn } = fresh();
+    for (let i = 0; i < 5; i++) recordBall(inn, { kind: "run", runs: 0 });
+    recordBall(inn, { kind: "wide", runs: 1 });
+    assert(inn.striker === "A2" && inn.bowler === "B1" && inn.extras.wides === 2, "Wd+1 before the 6th ball: 2 wides, and A2 faces the 6th ball");
+    recordBall(inn, { kind: "run", runs: 0 });
+    assert(inn.striker === "A1" && inn.bowler === null, "...and A1 faces the next over");
+
+    // A match scored before wides changed strike has Wd+1 in its log with
+    // nobody moving (or a hand swap after it). Editing another ball, or
+    // rebuilding it from its scorecard, keeps each ball with whoever faced it.
+    const old = fresh();
+    const oldWide = x => { recordBall(x, { kind: "wide", runs: 1 }); win.swapStrike(x); };   // where the old engine left them
+    recordBall(old.inn, { kind: "run", runs: 0 });
+    oldWide(old.inn);
+    recordBall(old.inn, { kind: "run", runs: 4 });                     // A1 hit the four
+    oldWide(old.inn); win.swapStrikeByHand(old.inn);                   // the scorer swapped by hand instead
+    recordBall(old.inn, { kind: "run", runs: 2 });                     // A2 hit the two
+    const seqs = old.inn.log.filter(a => a.t === "ball").map(a => a.ev.seq);
+    const r = win.replayMatch(old.m, { inn: 0, seq: seqs[0], ev: { kind: "run", runs: 2 } });
+    const ni = r.match && r.match.innings[0];
+    assert(ni && ni.runs === 12 && ni.batting.stats.A1.runs === 6 && ni.batting.stats.A2.runs === 2 && ni.striker === "A2", "an old match's Wd+1: an edit elsewhere still gives the 4 to A1 and the 2 to A2");
+    const arch = JSON.parse(JSON.stringify(old.m));
+    delete arch.innings[0].log; delete arch.innings[0].logBase;
+    assert(!!win.rebuildInningsFromScorecard(arch, 0), "...and it still rebuilds from its scorecard");
+  }
+
   // --- swapping strike by hand ---
   {
     const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
@@ -1730,6 +1768,29 @@ async function main(){
     doc.querySelector('#modal-root [data-action="close-live-scorecard"]').click();
     doc.querySelector('#app [data-action="undo"]').click();
     assert(inn().runs === 4, "Undo brings the old ball back");
+    win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); save(); render();`);
+  }
+
+  // --- UI: a wide they ran changes strike; only runs off the bat look like a four ---
+  {
+    const doc = win.document;
+    win.eval(`
+      ui = defaultUi(); state.snapshots = [];
+      state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+      openInnings(currentInnings(state.match), "Kusal", "Pathum", "Wanindu");
+      state.match.status = "live"; render();`);
+    const extra = (kind, runs) => {
+      doc.querySelector(`#app [data-action="toggle-extra"][data-extra="${kind}"]`).click();
+      doc.querySelector(`#modal-root [data-action="ball"][data-runs="${runs}"]`).click();
+    };
+    const striker = () => doc.querySelector("#app .matchup-row .name").textContent.trim();
+    extra("wide", 1);
+    assert(striker() === "Pathum" && win.eval("currentInnings(state.match).striker") === "Pathum", "Wd+1 (ran 1): Pathum is on strike on the board");
+    extra("bye", 4); extra("wide", 3);
+    doc.querySelector('#app [data-action="ball"][data-runs="4"]').click();
+    const chips = [...doc.querySelectorAll("#app .over-row:not(.dimmed) .chip:not(.empty)")];
+    assert(chips.map(c => c.textContent).join() === "Wd+1,B4,Wd+3,4" && !chips[1].matches(".four") && !chips[2].matches(".four") && chips[3].matches(".four"),
+      "the over row colours the 4 off the bat as a four, not B4 or Wd+3 (also worth 4)");
     win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); save(); render();`);
   }
 

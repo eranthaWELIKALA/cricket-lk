@@ -146,6 +146,8 @@ function recordBall(inn, event){
   } else if (event.kind === "wide"){
     ballRuns = inn.wideBaseRuns + (event.runs || 0);
     inn.extras.wides += ballRuns;
+    // Runs taken off a wide are run like byes: an odd number and they've crossed.
+    rotate = (event.runs || 0) % 2 === 1;
     display = event.runs ? `Wd+${event.runs}` : "Wd";
   } else if (event.kind === "noball"){
     const off = event.runs || 0;

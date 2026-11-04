@@ -299,9 +299,10 @@ function renderOverRow(label, events, bpo, dimmed, unknown){
     const key = escapeHtml(`${label}:${i}:${ev ? ev.display : ""}`);
     if (!ev){ slots.push(`<span class="chip empty" data-chip="${key}"></span>`); continue; }
     let cls = "chip";
+    // Only runs off the bat are a four/six (B4, Wd+3 are worth 4 too) -- same as ball by ball.
     if (ev.isWicket) cls += " wicket";
-    else if (ev.runs === 4) cls += " four";
-    else if (ev.runs === 6) cls += " six";
+    else if (ev.runs === 4 && !/^(Wd|Nb|B|Lb)/.test(ev.display)) cls += " four";
+    else if (ev.runs === 6 && !/^(Wd|Nb|B|Lb)/.test(ev.display)) cls += " six";
     else if (/^(Wd|Nb)/.test(ev.display)) cls += " extra";
     slots.push(`<span class="${cls}" data-chip="${key}">${escapeHtml(ev.display)}</span>`);
   }

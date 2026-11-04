@@ -137,7 +137,11 @@ for the new over (the not-out batsman takes strike, the incoming
 batsman will occupy the other end) with no special-casing. If you touch
 either swap, keep them as two independent, unconditional operations —
 merging them into one conditional swap will get the vacant-slot case
-wrong.
+wrong. The mid-ball swap is for an odd number of runs *run* (`rotate`):
+off the bat, byes/leg byes, a no-ball's runs, and the runs taken off a
+wide too (`Wd+1` crossed; a wide that went for four didn't). Matches
+scored before wides rotated still replay right: "who faced each ball is
+pinned" (see the action log) puts the batters back for the next ball.
 
 **Run-outs set both ends directly** rather than computing which end the
 batsmen ended up at from the parity of runs run. The wicket sheet asks

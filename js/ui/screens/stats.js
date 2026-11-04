@@ -122,7 +122,8 @@ function recordTileHtml(r){
 }
 function recordBallsHtml(balls){
   return `<span class="record-balls">${balls.map(e => {
-    const cls = e.isWicket ? " wicket" : e.runs === 4 ? " four" : e.runs === 6 ? " six" : /^(Wd|Nb)/.test(e.display) ? " extra" : "";
+    const bat = !/^(Wd|Nb|B|Lb)/.test(e.display);
+    const cls = e.isWicket ? " wicket" : e.runs === 4 && bat ? " four" : e.runs === 6 && bat ? " six" : /^(Wd|Nb)/.test(e.display) ? " extra" : "";
     return `<span class="chip${cls}">${escapeHtml(e.display)}</span>`;
   }).join("")}</span>`;
 }
