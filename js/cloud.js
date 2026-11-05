@@ -922,6 +922,18 @@ async function fetchViewerClubMatches(){
   (data || []).forEach(r => { if (r.data) byId.set(r.data.id || r.id, r.data); });
   return [...byId.values()];
 }
+/* Every match a player played in, from every club and Premier
+   (supabase/019's player_matches: public match data searched by their name
+   and aliases). Works signed out too. `{ unavailable: true }` when 019 isn't
+   run, so the profile falls back to fetchViewerClubMatches. Rows are
+   { id, club_id, club_name, level, match_type, data }. */
+async function fetchPlayerMatches(playerId){
+  if (!supabaseClient) return { rows: [] };
+  const offline = needsInternet(); if (offline) return offline;
+  const { data, error } = await supabaseClient.rpc("player_matches", { _player_id: playerId });
+  if (error) return cloudSqlMissing(error, "supabase/019_player_matches.sql") ? { unavailable: true } : { error: error.message };
+  return { rows: (data || []).filter(r => r && r.data && Array.isArray(r.data.innings)) };
+}
 async function updatePlayerDetails(playerId, d){
   const offline = needsInternet(); if (offline) return offline;
   const { error } = await supabaseClient.rpc("update_player_details", {
@@ -1081,10 +1093,36 @@ async function syncMatchToCloud(match, archived){
    real identity to claim regardless. Approval is admin-only, enforced
    server-side by the approve_claim/reject_claim RPCs (see
    supabase/004_premier_claims.sql), never by the isAdmin flag alone. */
+/* The whole public player list, a page at a time: one select stops at the
+   server's row limit (1,000 on Supabase by default), which used to leave
+   every player past it off Premier → Players. The first page asks for the
+   total; later pages follow until it's reached (or a page comes back empty,
+   so a smaller server limit can't loop). Nickname / jersey no come along
+   for the search box, without them before 010. Each player gets its
+   `searchKey` (nameSearchKey) once here, not on every keystroke. */
+const PLAYER_PAGE = 1000;
+async function fetchAllPublicPlayers(){
+  const page = (cols, from, count) => supabaseClient.from("players_public")
+    .select(cols, count ? { count: "exact" } : undefined).order("name").order("id").range(from, from + PLAYER_PAGE - 1);
+  let cols = "id, name, claimed_by, nickname, jersey_no";
+  let first = await page(cols, 0, true);
+  if (first.error){ cols = "id, name, claimed_by"; first = await page(cols, 0, true); }
+  if (first.error) return [];
+  const all = [...(first.data || [])];
+  const total = first.count == null ? Infinity : first.count;
+  let last = first.data || [];
+  while (last.length && all.length < total){
+    const next = await page(cols, all.length, false);
+    if (next.error) break;
+    last = next.data || [];
+    all.push(...last);
+  }
+  return all.map(p => Object.assign(p, { searchKey: nameSearchKey(p.name, p.nickname, p.jersey_no != null ? `#${p.jersey_no}` : "") }));
+}
 async function fetchPremierData(){
   if (!supabaseClient){ ui.premier = { players: [], premierMatches: [], pendingClaims: [], pendingMerges: [] }; return; }
-  const [{ data: players }, { data: premierMatches }, pendingClaims, pendingMerges] = await Promise.all([
-    supabaseClient.from("players_public").select("id, name, claimed_by").order("name"),
+  const [players, { data: premierMatches }, pendingClaims, pendingMerges] = await Promise.all([
+    fetchAllPublicPlayers(),
     supabaseClient.from("matches").select("id, data").eq("level", "premier"),
     isAdmin
       ? supabaseClient.from("claim_requests").select("id, player_id, requested_by, claimed_phone, note, created_at").eq("status", "pending")
@@ -1114,9 +1152,15 @@ async function fetchMyPlayerIdentity(){
     supabaseClient.from("claim_requests").select("id, player_id").eq("requested_by", uid).eq("status", "pending").limit(1),
     supabaseClient.from("merge_requests").select("id, from_player_id").eq("requested_by", uid).eq("status", "pending")
   ]);
+  const pendingClaim = (claim.data && claim.data[0]) || null;
+  // Account names the profile a claim is waiting on.
+  if (pendingClaim){
+    const { data: pl } = await supabaseClient.from("players_public").select("name").eq("id", pendingClaim.player_id).maybeSingle();
+    pendingClaim.name = (pl && pl.name) || "";
+  }
   ui.identity = {
     myPlayer: (mine.data && mine.data[0]) || null,
-    pendingClaim: (claim.data && claim.data[0]) || null,
+    pendingClaim,
     pendingMerges: merges.data || []
   };
 }

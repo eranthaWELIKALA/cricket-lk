@@ -763,7 +763,7 @@ function askShareTournamentLink(){
   if (!t || !t.name) return;
   const url = publicTournamentUrl(t.id);
   const unsynced = club ? club.matches.filter(m => m.local).length : 0;
-  const canShare = typeof navigator.share === "function";
+  const canShare = canShareLinks();
   askConfirm({
     title: "Share this tournament", icon: "🔗", tone: "primary",
     body: `
@@ -775,13 +775,18 @@ function askShareTournamentLink(){
     confirmLabel: canShare ? "Share link" : "Copy link",
     busyLabel: canShare ? "Sharing…" : "Copied ✓",
     cancelLabel: "Close",
-    // Cancelling the phone's share sheet closes this one too. A copy holds
-    // "Copied ✓" on the button for a moment before closing.
-    onConfirm: () => canShare
-      ? navigator.share({ title: t.name, text: `${t.name}: points table, results and stats`, url }).catch(() => {})
-      : (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
-          .then(() => new Promise(done => setTimeout(done, 900)), () => ({ error: "Couldn't copy it here. Select the link above and copy it." }))
+    onConfirm: () => shareOrCopyLink({ title: t.name, text: `${t.name}: points table, results and stats`, url })
   });
+}
+/* A share-link confirmation's button: the phone's share sheet where there is
+   one, else a copy. Cancelling the share sheet closes the confirmation too; a
+   copy holds "Copied ✓" on the button for a moment before closing. */
+function canShareLinks(){ return typeof navigator.share === "function"; }
+function shareOrCopyLink({ title, text, url }){
+  return canShareLinks()
+    ? navigator.share({ title, text, url }).catch(() => {})
+    : (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
+        .then(() => new Promise(done => setTimeout(done, 900)), () => ({ error: "Couldn't copy it here. Select the link above and copy it." }));
 }
 function renderPublicTournament(){
   const pt = ui.publicTournament;

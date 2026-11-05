@@ -89,7 +89,7 @@ h2{font-weight:800;}
 p{margin:0 0 12px;color:var(--muted);}
 .tagline{margin-top:-4px;}
 label{display:block;font-size:.85rem;color:var(--muted);margin-bottom:12px;}
-input[type=text],input[type=number],input[type=email],input[type=password],input[type=tel],input:not([type]),select{
+input[type=text],input[type=number],input[type=email],input[type=password],input[type=tel],input[type=search],input:not([type]),select{
   display:block;width:100%;margin-top:4px;padding:12px 13px;border-radius:var(--radius-sm);
   border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:1rem;
   transition:border-color .15s ease, box-shadow .15s ease, background .15s ease;
@@ -1159,6 +1159,11 @@ button.fixture-row{ width:100%; text-align:left; color:var(--text); align-items:
 .fixture-main .fixture-result{ font-size:.8rem; }
 .fixture-meta{ display:flex; align-items:center; gap:8px; flex-shrink:0; color:var(--muted); font-size:.75rem; }
 .fixture-meta .chevron{ font-size:1.1rem; }
+/* A profile's Matches tab: the player's own line, then where and when. */
+.profile-match-line{ font-size:.82rem; font-weight:700; color:var(--text); }
+.profile-match-where{ font-size:.75rem; color:var(--muted); }
+/* Premier → Players' search box, over the list it narrows. */
+.list-search{ margin:4px 0 10px; }
 
 /* Tabs that are a second level (scorecard mode, leaderboard tables) sit
    tighter under the first. */

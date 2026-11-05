@@ -25,6 +25,16 @@ function render(){
   if (state.view === "publicTournament" && !ui.publicTournamentId) state.view = "home";
   if (state.view === "publicTournament" && cloudReady && (!ui.publicTournament || ui.publicTournament.id !== ui.publicTournamentId)
     && ui.publicTournamentLoading !== ui.publicTournamentId) loadPublicTournament(ui.publicTournamentId);
+  // Account's Player profile card: who the viewer is on the platform (their
+  // claimed profile, or a claim waiting). Reset on each visit (go-account).
+  if (state.view === "account" && session && supabaseClient && !needsInternet() && !ui.identity && !ui.identityLoading){
+    ui.identityLoading = true;
+    fetchMyPlayerIdentity().catch(() => {}).then(() => {
+      ui.identityLoading = false;
+      if (!ui.identity && session) ui.identity = { myPlayer: null, pendingClaim: null, pendingMerges: [] };
+      render();
+    });
+  }
   // Premier screens and profiles (both tiers) need ui.premier; load it once.
   if ((state.view.startsWith("premier") || state.view === "playerProfile") && cloudReady && !ui.premier && !ui.premierLoading){
     ui.premierLoading = true;
@@ -164,6 +174,11 @@ function render(){
   const prevChips = sameScreen ? new Set([...root.querySelectorAll("[data-chip]")].map(c => c.dataset.chip)) : null;
   const prevTabs = sameScreen ? activeTabs(root) : null;
   const menuWasOpen = !!root.querySelector(".side-menu");
+  // A search box marked data-keep-focus keeps focus (and the caret) across a
+  // re-render, so a background render while typing doesn't drop the keyboard.
+  const act = document.activeElement;
+  const keepFocus = act && root.contains(act) && act.dataset && act.dataset.keepFocus
+    ? { key: act.dataset.keepFocus, start: act.selectionStart, end: act.selectionEnd } : null;
   syncRoute();
   root.innerHTML = renderTopBar(canNavigate, onAuthScreen) + html + renderPlayersDatalist() + renderTeamsDatalist()
     + (canNavigate ? renderSideMenu() : "");
@@ -178,6 +193,10 @@ function render(){
   }
   if (menuWasOpen) root.querySelectorAll(".side-menu, .side-menu-backdrop").forEach(el => el.classList.add("no-anim"));
   restoreFormDrafts(root, appDrafts);
+  if (keepFocus){
+    const el = root.querySelector(`[data-keep-focus="${keepFocus.key}"]`);
+    if (el){ el.focus(); try { el.setSelectionRange(keepFocus.start, keepFocus.end); } catch (_){} }
+  }
 
   const modalRoot = document.getElementById("modal-root");
   let modalHtml = "";

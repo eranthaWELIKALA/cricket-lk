@@ -197,7 +197,8 @@ function renderOwnershipBlock(pr, d, canEdit){
       ? note("This is your profile. Only you and platform admins can edit it.")
       : note("Claimed by the player — only they (and platform admins) can edit this profile.");
   } else if (!session){
-    inner = note("Unclaimed. Sign in to claim this profile if it's you.");
+    inner = `${note("Unclaimed. If this is you, sign in to claim it.")}
+       <button data-action="sign-in-to-claim" class="ghost small">Sign in to claim</button>`;
   } else if (!id){
     inner = note("Checking your claim status…");
   } else if (pr.claiming || pr.merging){
@@ -233,7 +234,9 @@ function renderOwnershipBlock(pr, d, canEdit){
 function renderPlayerProfile(){
   const pr = ui.profile;
   const isClub = pr.scope === "club";
-  const back = isClub ? renderBackBar("Players", "clubPlayers") : renderBackBar("Premier players", "premierPlayers");
+  const back = isClub ? renderBackBar("Players", "clubPlayers")
+    : pr.from === "account" ? renderBackBar("Account", "account")
+    : renderBackBar("Premier players", "premierPlayers");
   const d = pr.data;
   const f1 = n => n == null ? "—" : n.toFixed(1);
   const stat = (label, value) => `<div class="stat-tile"><span class="n stat-num">${value}</span><span class="stat-label">${label}</span></div>`;
@@ -270,17 +273,23 @@ function renderPlayerProfile(){
     `;
   };
   const clubMatches = isClub ? clubMatchesFor(ui.currentClubId) : (pr.clubMatches || []);
-  const clubLabel = isClub ? (currentClubName() || "club") : "your clubs";
+  // A Premier-opened profile counts every club's matches (supabase/019), or
+  // -- before 019 -- only the clubs the viewer belongs to.
+  const everyClub = pr.clubScope === "all";
+  const clubLabel = isClub ? (currentClubName() || "club") : everyClub ? "all clubs" : "your clubs";
+  const names = [pr.name, ...(pr.aliases || [])];
+  const premierMatches = ui.premier ? ui.premier.premierMatches.map(m => m.data).filter(Boolean) : [];
   const clubBlock = statsBlock(
-    `Club matches · ${escapeHtml(clubLabel)}`, playerCareer([pr.name, ...(pr.aliases || [])], clubMatches, isClub ? clubPointsPreset(ui.currentClubId) : null),
+    `Club matches · ${escapeHtml(clubLabel)}`, playerCareer(names, clubMatches, isClub ? clubPointsPreset(ui.currentClubId) : null),
     isClub ? "No matches for this player in this club yet."
       : pr.clubMatches === undefined ? "Loading…"
+      : everyClub ? "No club matches for this player yet."
       : session ? "No matches for this player in the clubs you belong to yet." : "Sign in to see club stats from your clubs.",
     "",
     isClub
   );
   const premierBlock = statsBlock(
-    "Premier matches", playerCareer([pr.name, ...(pr.aliases || [])], ui.premier ? ui.premier.premierMatches.map(m => m.data).filter(Boolean) : []),
+    "Premier matches", playerCareer(names, premierMatches),
     ui.premier ? "No Premier matches yet for this player." : "Loading…", ""
   );
   const sections = isClub ? [clubBlock, premierBlock] : [premierBlock, clubBlock];
@@ -323,6 +332,7 @@ function renderPlayerProfile(){
       </div>
       <div class="profile-actions">
         ${canEdit ? `<button data-action="edit-player-profile" class="ghost small">Edit profile</button>` : ""}
+        <button data-action="share-player-link" class="ghost small">Share profile link</button>
         ${isClub && onClubRoster(pr.id) ? `<button data-action="ask-remove-club-player" data-id="${escapeHtml(pr.id)}" data-name="${escapeHtml(pr.name)}" class="ghost small danger-text">Remove from club</button>` : ""}
       </div>`;
   }
@@ -341,12 +351,68 @@ function renderPlayerProfile(){
           </div>
         </div>
       </div>
-      ${tabsHtml("profile-tab", [["profile", "Profile"], ["stats", "Stats"]], pr.tab === "stats" ? "stats" : "profile", "main-tabs")}
-      ${pr.tab === "stats" ? sections.join("") : `
+      ${tabsHtml("profile-tab", [["profile", "Profile"], ["stats", "Stats"], ["matches", "Matches"]], ["stats", "matches"].includes(pr.tab) ? pr.tab : "profile", "main-tabs")}
+      ${pr.tab === "stats" ? sections.join("")
+        : pr.tab === "matches" ? renderProfileMatches(pr, names, isClub ? clubMatches : pr.clubMatches, premierMatches)
+        : `
         ${body}
         ${!pr.loading && !pr.error && d ? renderOwnershipBlock(pr, d, canEdit) : ""}`}
     </div>
   `;
+}
+
+/* A profile's Matches tab: every match the Stats tab counts (the same club
+   and Premier matches), newest first, each with the player's own line --
+   tap one for its scorecard. View only: a scorecard opened from a profile
+   never offers Edit match (renderMatchDetailModal). */
+function renderProfileMatches(pr, names, clubMatches, premierMatches){
+  if (clubMatches === undefined || !ui.premier) return loadingHtml();
+  const lines = playerMatchLines(names, [...clubMatches, ...premierMatches]);
+  if (!lines.length) return `<p class="hint">No matches for this player yet.</p>`;
+  const clubName = m => (pr.clubNames && pr.clubNames[m.id])
+    || (m.clubId && ((ui.myClubs || []).find(c => c.id === m.clubId) || {}).name) || "";
+  return `<div class="fixtures">${lines.map(l => {
+    const m = l.match;
+    const premier = premierMatches.includes(m);
+    const where = [premier ? "Premier" : clubName(m), m.completedAt ? new Date(m.completedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : ""].filter(Boolean).join(" · ");
+    const mine = playerMatchLineText(l);
+    return `
+    <button type="button" data-action="open-match-detail" data-id="${escapeHtml(m.id || "")}" class="fixture-row fixture-open">
+      <span class="fixture-main">
+        <b>${escapeHtml(m.teamA)} v ${escapeHtml(m.teamB)}</b>
+        <span class="fixture-result">${escapeHtml(m.result || "")}</span>
+        ${mine ? `<span class="profile-match-line">${l.team ? `For ${escapeHtml(teamName(m, l.team))} · ` : ""}${escapeHtml(mine)}</span>` : ""}
+        ${where ? `<span class="muted profile-match-where">${escapeHtml(where)}</span>` : ""}
+      </span>
+      <span class="fixture-meta"><span class="chevron">›</span></span>
+    </button>`;
+  }).join("")}</div>`;
+}
+
+/* Share a player's profile: the Premier URL (#/premier/players/<id>), which
+   anyone can open, signed in or not -- the way a club gets a player to their
+   profile to claim it. */
+function playerProfileUrl(id){
+  return location.origin + location.pathname + "#/premier/players/" + encodeURIComponent(id);
+}
+function askSharePlayerLink(){
+  const pr = ui.profile;
+  if (!pr || !pr.id) return;
+  const d = pr.data;
+  const url = playerProfileUrl(pr.id);
+  const name = pr.name || (d && d.name) || "this player";
+  const unclaimed = d && !d.claimed_by;
+  askConfirm({
+    title: `Share ${name}'s profile`, icon: "🔗", tone: "primary",
+    body: `
+      <p>Anyone with this link can see the <b>profile, stats and matches</b>, with no sign-in. It's view only, and the contact number and NIC stay private.</p>
+      <input type="text" class="share-link-input" readonly value="${escapeHtml(url)}" aria-label="Link to this profile">
+      ${unclaimed ? `<p>Not claimed yet: send it to ${escapeHtml(name)} so they can sign in and claim it.</p>` : ""}`,
+    confirmLabel: canShareLinks() ? "Share link" : "Copy link",
+    busyLabel: canShareLinks() ? "Sharing…" : "Copied ✓",
+    cancelLabel: "Close",
+    onConfirm: () => shareOrCopyLink({ title: name, text: `${name} on Cricket.lk: profile, stats and matches`, url })
+  });
 }
 
 /* Is this player on the currently loaded club's roster? (Gates "Remove from

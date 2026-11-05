@@ -72,15 +72,34 @@ function renderPremierPlayers(){
               </div>`).join("")}
         ` : ""}
 
-        ${p.players.length ? p.players.map(pl => `
-          <div class="list-row">
-            <button data-action="open-player-profile" data-scope="premier" data-id="${pl.id}" data-name="${escapeHtml(pl.name)}" class="name-link">${escapeHtml(pl.name)}</button>
-            <span class="muted">${pl.claimed_by ? (session && pl.claimed_by === session.user.id ? "Claimed by you" : "Claimed") : "Unclaimed"}</span>
-          </div>`).join("") : `<p class="hint">No players yet.</p>`}
+        ${p.players.length ? `
+          <input type="search" class="list-search" data-premier-search data-keep-focus="premier-search" data-nav-ignore
+            value="${escapeHtml(ui.premierPlayerQuery || "")}" placeholder="Search a name, nickname or #jersey" aria-label="Search players"
+            autocomplete="off" enterkeyhint="search">` : ""}
+        <div class="premier-player-list">${premierPlayerRowsHtml()}</div>
         ${ui.claimMessage ? `<p class="hint">${escapeHtml(ui.claimMessage)}</p>` : ""}
       `}
     </div>
   `;
+}
+/* The rows under Premier → Players' search box, for ui.premierPlayerQuery
+   (word starts, like every name search: nameSearchHit). Also refilled
+   straight into the DOM as you type (the input listener), with no render().
+   At most PREMIER_LIST_MAX rows: the platform can hold thousands. */
+const PREMIER_LIST_MAX = 100;
+function premierPlayerRowsHtml(){
+  const p = ui.premier;
+  if (!p || !p.players.length) return `<p class="hint">No players yet.</p>`;
+  const q = (ui.premierPlayerQuery || "").trim();
+  const hits = q ? p.players.filter(pl => nameSearchHit(pl.searchKey, q)) : p.players;
+  if (!hits.length) return `<p class="hint">No player matches “${escapeHtml(q)}”. Try another spelling, a nickname or a jersey no.</p>`;
+  const shown = hits.slice(0, PREMIER_LIST_MAX);
+  return shown.map(pl => `
+    <div class="list-row">
+      <button data-action="open-player-profile" data-scope="premier" data-id="${escapeHtml(pl.id)}" data-name="${escapeHtml(pl.name)}" class="name-link">${escapeHtml(playerLabel(pl))}</button>
+      <span class="muted">${pl.claimed_by ? (session && pl.claimed_by === session.user.id ? "Claimed by you" : "Claimed") : "Unclaimed"}</span>
+    </div>`).join("")
+    + (hits.length > shown.length ? `<p class="hint">Showing ${shown.length} of ${hits.length}. ${q ? "Keep typing to narrow it down." : "Search to find a player."}</p>` : "");
 }
 
 function renderPremierTeams(){

@@ -326,6 +326,20 @@ async function main(){
     assert(both.notOuts === 2 && Math.abs(both.average - (both.runs / 2)) < 1e-9, "merged average is recomputed over combined dismissals, not averaged from the parts");
     assert(win.playerCareer(["Nobody", "Star"], [m2]).runs === 165 && win.playerCareer(["Nobody", "Nope"], [m2]) === null, "unknown aliases are ignored; no appearances under any name is still null");
     assert(win.playerCareer(["Star", "STAR"], [m2]).runs === 165, "a duplicated name isn't counted twice");
+
+    // A profile's Matches tab: the player's own line in each match, newest first.
+    m2.id = "m2"; m2.completedAt = 2000; m3.id = "m3"; m3.completedAt = 3000; m.id = "m1"; m.completedAt = 1000;
+    const lines = win.playerMatchLines(["star", "S. Star"], [m, m2, m3, m2]);
+    assert(lines.map(l => l.match.id).join() === "m3,m2", "Matches: every match the player (any spelling) appears in, newest first, a repeated match once");
+    assert(lines[1].bat.runs === 165 && lines[1].bat.balls === 100 && lines[1].bat.out && lines[1].field.catches === 2 && lines[1].field.runouts === 1 && lines[1].team === "A",
+      "Matches: both innings' batting and the fielding fold into one line, with the side they played for");
+    assert(lines[0].bat.runs === 70 && lines[0].bat.out === true, "Matches: two spellings in one match add up");
+    assert(win.playerMatchLineText(lines[1]) === "165 (100) · 2 ct, 1 ro", "Matches: the line in words (no bowling line for a non-bowler)");
+    const ace = win.playerMatchLines("Ace", [m2])[0];
+    assert(win.playerMatchLineText(ace) === "6/39 (6.0)" && ace.team === "B", "Matches: a bowler's figures, as wickets/runs (overs)");
+    assert(win.playerMatchLineText(win.playerMatchLines("A2", [m])[0]) === "0* (0)", "Matches: a not-out batter gets a *");
+    assert(win.playerMatchLines("Nobody", [m, m2]).length === 0 && win.playerMatchLines("Star", [Object.assign({}, m2, { anonymous: true })]).length === 0,
+      "Matches: none for a name that never played, and \"no names\" matches are left out");
   }
 
   // --- 5g. optional player details: labels, validation, safe photo ---
@@ -2768,6 +2782,91 @@ async function main(){
     assert(win.eval("battingAlone(currentInnings(state.match))") && live().striker === "A2" && !doc.querySelector("#modal-root #new-batsman-form")
       && /Batting alone/.test(doc.querySelector("#app .matchup-card").textContent), "one tap: A2 bats on alone, and the board says so");
     win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); save(); render();`);
+  }
+
+  // --- Players who aren't club members: find, view (read only), claim ---
+  {
+    const tick = () => new Promise(r => setTimeout(r, 0));
+    win.eval(`state.match = null; state.snapshots = []; window.__prevSession = session; window.__prevClient = supabaseClient;
+      window.__lpp = loadPlayerProfile; window.__fmi = fetchMyPlayerIdentity; window.__rpa = refreshProfileAndAdmin;
+      loadPlayerProfile = () => { ui.profile.pending = false; };   // no network: the test fills the profile in
+      session = null; ui = defaultUi();
+      ui.premier = { premierMatches: [], pendingClaims: [], pendingMerges: [],
+        players: Array.from({ length: 150 }, (_, i) => ({ id: "p" + i, name: "Player " + String(i).padStart(3, "0"), claimed_by: null }))
+          .concat([{ id: "k1", name: "Kusal Mendis", nickname: "KM", jersey_no: 7, claimed_by: null }])
+          .map(p => Object.assign(p, { searchKey: nameSearchKey(p.name, p.nickname, p.jersey_no != null ? "#" + p.jersey_no : "") })) };
+      state.view = "premierPlayers"; render();`);
+    const rows = () => doc.querySelectorAll("#app .premier-player-list .list-row");
+    const search = () => doc.querySelector("#app [data-premier-search]");
+    assert(rows().length === 100 && /Showing 100 of 151/.test(doc.querySelector("#app .premier-player-list").textContent),
+      "Premier → Players lists at most 100 rows and says how many there are");
+    const type = v => { search().value = v; search().dispatchEvent(new win.Event("input", { bubbles: true })); };
+    type("ku me");
+    assert(rows().length === 1 && /#7 Kusal Mendis \(KM\)/.test(rows()[0].textContent), "the search box finds a player by the start of each word");
+    type("#7"); const byJersey = rows().length; type("km");
+    assert(byJersey === 1 && rows().length === 1, "...or by jersey no or nickname");
+    type("zzz");
+    assert(rows().length === 0 && /No player matches/.test(doc.querySelector("#app .premier-player-list").textContent), "no match says so");
+    type("kus"); search().focus(); win.eval("render()");
+    assert(doc.activeElement === search() && search().value === "kus" && rows().length === 1, "a re-render keeps the search box's text, rows and focus");
+
+    // A profile's Matches tab, opened by someone who isn't in the club.
+    win.eval(`(function(){
+      const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A" });
+      const inn = currentInnings(m);
+      ensureBatsman(inn, "Kusal Mendis"); ensureBatsman(inn, "A2"); ensureBowler(inn, "B1");
+      Object.assign(inn.batting.stats["Kusal Mendis"], { runs: 45, balls: 30, out: true, howOut: "bowled b B1" });
+      Object.assign(m, { id: "pm1", completedAt: Date.now(), status: "complete", result: "Lions won by 5 runs", clubId: "c9" });
+      state.matchHistory.pm1 = m;   // even archived on this phone, a profile's scorecard is view only
+      openPlayerProfile("premier", "k1", "Kusal Mendis");
+      Object.assign(ui.profile, { pending: false, loading: false, tab: "matches", clubScope: "all", clubNames: { pm1: "Colombo CC" }, clubMatches: [m],
+        data: { id: "k1", name: "Kusal Mendis", claimed_by: null, can_see_contact: false, details_unavailable: true, kit_unavailable: true } });
+      state.view = "playerProfile"; render();
+    })()`);
+    const tab = doc.querySelector("#app .fixtures");
+    assert(tab && /For Lions · 45 \(30\)/.test(tab.textContent) && /Colombo CC/.test(tab.textContent), "the Matches tab lists the player's matches with their own line and the club");
+    tab.querySelector('[data-action="open-match-detail"]').click();
+    const sheet = doc.querySelector("#modal-root .scorecard-modal");
+    assert(sheet && !sheet.querySelector('[data-action="edit-archived-match"]') && !/another phone/.test(sheet.textContent) && !sheet.querySelector('[data-action="edit-ball"]'),
+      "a scorecard opened from a profile is view only: no Edit match, no ball edits");
+    win.eval(`ui.matchDetail = null; ui.profile.tab = "stats"; render();`);
+    assert(/Club matches · all clubs/.test(doc.querySelector("#app").textContent), "Stats: a Premier-opened profile counts every club's matches (019)");
+    win.eval(`ui.profile.tab = "profile"; render();`);
+    assert(!doc.querySelector('#app [data-action="edit-player-profile"]') && !doc.querySelector('#app [data-action="ask-remove-club-player"]'),
+      "someone who can't manage the profile gets no edit or remove buttons");
+    doc.querySelector('#app [data-action="share-player-link"]').click();
+    assert(doc.querySelector("#confirm-root .share-link-input").value.endsWith("#/premier/players/k1") && /claim it/.test(doc.querySelector("#confirm-root").textContent),
+      "Share profile link gives the Premier profile URL, and says an unclaimed player can claim it");
+    win.eval("cancelConfirm()");
+    // Signed out: "Sign in to claim", and back to this profile once signed in.
+    doc.querySelector('#app [data-action="sign-in-to-claim"]').click();
+    assert(win.eval("state.view") === "signIn" && win.eval("ui.afterSignIn.id") === "k1", "Sign in to claim goes to sign in and remembers the profile");
+    win.eval(`refreshProfileAndAdmin = async () => {};`);
+    await win.eval(`completeSignIn({ user: { id: "u9" } })`);
+    assert(win.eval("state.view") === "playerProfile" && win.eval("ui.profile.id") === "k1" && win.eval("ui.afterSignIn") === null, "...and signing in lands back on that profile");
+
+    // Account → Player profile: find it, or open the one already claimed.
+    win.eval(`supabaseClient = {}; window.__who = { myPlayer: null, pendingClaim: null, pendingMerges: [] };
+      fetchMyPlayerIdentity = async () => { ui.identity = JSON.parse(JSON.stringify(__who)); };
+      state.view = "account"; ui.identity = null; render();`);
+    await tick();
+    const findBtn = doc.querySelector('#app [data-action="find-my-profile"]');
+    assert(findBtn && /Play for a club/.test(doc.querySelector("#app .my-player-card").textContent), "Account offers Find my profile to someone with no profile yet");
+    findBtn.click();
+    assert(win.eval("state.view") === "premierPlayers" && search().value === "", "Find my profile opens Premier → Players with an empty search");
+    win.eval(`__who.pendingClaim = { id: "c1", player_id: "k1", name: "Kusal Mendis" };`);
+    win.eval(`state.view = "account"; ui.identity = null; render();`);
+    await tick();
+    assert(/claim on Kusal Mendis is waiting/.test(doc.querySelector("#app .my-player-card").textContent), "a claim waiting for approval is named on Account");
+    win.eval(`__who.pendingClaim = null; __who.myPlayer = { id: "k1", name: "Kusal Mendis" }; state.view = "account"; ui.identity = null; render();`);
+    await tick();
+    doc.querySelector('#app [data-action="open-my-profile"]').click();
+    assert(win.eval("state.view") === "playerProfile" && win.eval("ui.profile.id") === "k1" && /Account/.test(doc.querySelector("#app .back-bar").textContent),
+      "a claimed player opens their own profile from Account, and its back bar returns there");
+
+    win.eval(`session = window.__prevSession; supabaseClient = window.__prevClient; loadPlayerProfile = window.__lpp;
+      fetchMyPlayerIdentity = window.__fmi; refreshProfileAndAdmin = window.__rpa; delete state.matchHistory.pm1;
+      ui = defaultUi(); state.view = "home"; save(); render();`);
   }
 
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);

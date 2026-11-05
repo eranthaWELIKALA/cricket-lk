@@ -253,8 +253,30 @@ function renderAccount(){
           <button data-action="sign-out" class="ghost">Sign out</button>
         </div>
       </div>
+      ${renderMyPlayerCard()}
     </div>
   `;
+}
+/* Account → Player profile: the way in for someone who plays for a club but
+   isn't one of its members (so has no club screens): their claimed profile
+   (stats + matches), the claim waiting on one, or a search for it.
+   ui.identity is loaded by render() and reset on every visit (go-account). */
+function renderMyPlayerCard(){
+  if (!supabaseClient) return "";
+  const id = ui.identity;
+  let inner;
+  if (needsInternet()) inner = `<p class="hint">Your player profile needs an internet connection.</p>`;
+  else if (!id) inner = loadingHtml();
+  else if (id.myPlayer) inner = `
+    <p>You're <b>${escapeHtml(id.myPlayer.name)}</b> on Cricket.lk.</p>
+    <button data-action="open-my-profile" class="primary">My stats & matches</button>`;
+  else if (id.pendingClaim) inner = `
+    <p class="hint">Your claim on <b>${escapeHtml(id.pendingClaim.name || "a profile")}</b> is waiting for a platform admin to approve it.</p>
+    <button data-action="open-my-profile" class="ghost">Open that profile</button>`;
+  else inner = `
+    <p class="hint">Play for a club? Find your profile to see your stats and matches, and claim it.</p>
+    <button data-action="find-my-profile" class="primary">Find my profile</button>`;
+  return `<h3 class="section-label">Player profile</h3><div class="auth-card my-player-card" style="margin-top:0;">${inner}</div>`;
 }
 
 /* --- settings: sound + theme gallery. Deliberately separate from
@@ -316,8 +338,13 @@ function completeSignIn(newSession){
   cancelAuthMail();
   session = newSession;
   ui.myClubs = null; // force a fresh fetch under the newly-signed-in account
+  ui.identity = null;
   return refreshProfileAndAdmin().then(() => {
-    state.view = "account";
+    // Came from a profile's "Sign in to claim": back to that profile.
+    const back = ui.afterSignIn;
+    ui.afterSignIn = null;
+    if (back){ openPlayerProfile("premier", back.id, back.name); state.view = "playerProfile"; }
+    else state.view = "account";
     save(); render();
   });
 }

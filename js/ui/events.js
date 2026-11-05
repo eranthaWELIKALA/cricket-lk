@@ -170,7 +170,22 @@ document.addEventListener("click", (e) => {
     if (btn.classList.contains("back-bar")) leaveScreen(() => backBarTo(view));
     else goToView(view);
   }
-  else if (action === "go-account"){ state.view = session ? "account" : "signIn"; render(); }
+  // Account's "Player profile" card reloads each time, so an approved claim shows up.
+  else if (action === "go-account"){ if (session) ui.identity = null; state.view = session ? "account" : "signIn"; render(); }
+  else if (action === "open-my-profile" && ui.identity){
+    const mine = ui.identity.myPlayer || (ui.identity.pendingClaim && { id: ui.identity.pendingClaim.player_id, name: ui.identity.pendingClaim.name });
+    if (!mine) return;
+    openPlayerProfile("premier", mine.id, mine.name);
+    ui.profile.from = "account";
+    state.view = "playerProfile"; render(); // render() loads it (loadPlayerProfile)
+  }
+  else if (action === "find-my-profile"){ ui.premierPlayerQuery = ""; state.view = "premierPlayers"; render(); } // render() loads it
+  // A profile's "Sign in to claim": back to that profile once signed in (completeSignIn).
+  else if (action === "sign-in-to-claim" && ui.profile){
+    ui.afterSignIn = { id: ui.profile.id, name: ui.profile.name };
+    state.view = "signIn"; render();
+  }
+  else if (action === "share-player-link"){ askSharePlayerLink(); }
   else if (action === "sign-out"){ handleSignOut(); }
   else if (action === "auth-mail-send"){ sendAuthMail(); }                // queued sign-up/resend: try now
   else if (action === "auth-mail-cancel"){ cancelAuthMail(); render(); }
@@ -501,6 +516,13 @@ document.addEventListener("pointerdown", (e) => {
   if (e.target.closest && e.target.closest(".combo-opt")) e.preventDefault();
 });
 document.addEventListener("input", (e) => {
+  // Premier → Players: the search box refills the rows, without a re-render.
+  if (e.target.matches && e.target.matches("[data-premier-search]")){
+    ui.premierPlayerQuery = e.target.value;
+    const list = document.querySelector(".premier-player-list");
+    if (list) list.innerHTML = premierPlayerRowsHtml();
+    return;
+  }
   // Search-select (renderNameCombo): narrow the list as you type.
   if (e.target.closest && e.target.closest(".combo")){ updateCombo(e.target, true); return; }
   // Pick sheets: the box filters the one-tap rows under it.

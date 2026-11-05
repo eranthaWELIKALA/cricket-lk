@@ -23,7 +23,9 @@ function defaultUi(){
     clubMatchSetupType: null, // "practice" | "friendly" | "tournament", set when entering club match setup
     clubTournamentSetupPresetId: null, clubTournamentSetupName: null, currentTournamentId: null, clubTournament: null, tournamentTeamEdit: null, tournamentTeamBusy: false, tournamentTeamError: null,
     premierLoading: false, premier: null, // { players, premierMatches, pendingClaims, pendingMerges } -- see fetchPremierData()
-    identity: null, // { myPlayer, pendingClaim, pendingMerges } for the signed-in viewer -- see fetchMyPlayerIdentity()
+    premierPlayerQuery: "", // Premier → Players' search box
+    identity: null, identityLoading: false, // { myPlayer, pendingClaim, pendingMerges } for the signed-in viewer -- see fetchMyPlayerIdentity()
+    afterSignIn: null, // { id, name }: a profile's "Sign in to claim" goes back there once signed in
     claimMessage: null, clubAddMessage: null, playerModal: null,
     sideMenuOpen: false
   };

@@ -220,10 +220,33 @@ function loadPlayerProfile(){
   fetchPlayerAliases(id).then(al => { if (still()){ ui.profile.aliases = al; render(); } });
   if (session) fetchMyPlayerIdentity().then(() => { if (still()) render(); });
   // The Premier block needs ui.premier (render() loads it); a Premier-opened
-  // profile also needs the viewer's clubs' matches for its club block.
-  if (pr.scope === "premier"){
-    fetchViewerClubMatches().then(ms => { if (still()){ ui.profile.clubMatches = ms; render(); } });
-  }
+  // profile also needs club matches for its club block: every club's
+  // (supabase/019), else -- before 019 -- the viewer's own clubs'.
+  if (pr.scope === "premier") loadProfileClubMatches(id);
+}
+function loadProfileClubMatches(id){
+  const still = () => ui.profile && ui.profile.id === id;
+  fetchPlayerMatches(id).then(r => {
+    if (!still()) return;
+    if (r.unavailable || r.error){
+      // An error (offline, say) isn't "no matches": the old fallback is
+      // the viewer's own clubs, which is what 019's absence means too.
+      return fetchViewerClubMatches().then(ms => { if (still()){ Object.assign(ui.profile, { clubMatches: ms, clubScope: "mine" }); render(); } });
+    }
+    const byId = new Map(), clubNames = {};
+    // This phone's own archive first, so a match not synced yet still counts;
+    // the cloud copy wins where both exist, unless this phone's own upload of
+    // it is still queued (the same rule as findCompletedMatch).
+    Object.values(state.matchHistory).filter(m => m.clubId).forEach(m => byId.set(m.id, m));
+    const queued = id => outbox.some(op => op.kind === "match" && op.args && op.args.id === id);
+    r.rows.forEach(row => {
+      const key = row.data.id || row.id;
+      if (row.club_name) clubNames[key] = row.club_name;
+      if (row.level === "local" && !(byId.has(key) && queued(key))) byId.set(key, Object.assign({ id: key }, row.data));
+    });
+    Object.assign(ui.profile, { clubMatches: [...byId.values()], clubScope: "all", clubNames });
+    render();
+  });
 }
 
 /* A form holds unsaved input when any field differs from what it was

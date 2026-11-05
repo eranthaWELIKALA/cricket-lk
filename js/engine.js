@@ -1335,6 +1335,64 @@ function playerLabel(p){
   return `${jersey}${p.name}${p.nickname ? ` (${p.nickname})` : ""}`;
 }
 
+/* A player's matches, newest first, each with their own line in it: what
+   they scored (`bat`: runs, balls, out), took (`bowl`: wickets, runs,
+   legalBalls, ballsPerOver) and held (`field`: catches, runouts, stumpings),
+   and the side they played for (`team`: "A"/"B"). Same name matching as
+   playerCareer (every spelling in `nameOrNames`, case-insensitive), and the
+   same matches left out ("no names" ones). A match listed twice (the local
+   archive and the cloud copy) counts once. Feeds a profile's Matches tab. */
+function playerMatchLines(nameOrNames, matches){
+  const keys = new Set((Array.isArray(nameOrNames) ? nameOrNames : [nameOrNames])
+    .map(n => (n || "").trim().toLowerCase()).filter(Boolean));
+  const seen = new Set();
+  const lines = [];
+  matches.forEach(m => {
+    if (!m || !Array.isArray(m.innings) || playerStatsExcluded(m)) return;
+    if (m.id && seen.has(m.id)) return;
+    // Every spelling found counts, like playerCareer (two of them in one
+    // innings add up there too).
+    const mine = list => (list || []).filter(n => keys.has(String(n).toLowerCase()));
+    let bat = null, bowl = null, field = null, team = null;
+    m.innings.forEach(inn => {
+      mine(inn.batting.order).forEach(bn => {
+        const s = inn.batting.stats[bn];
+        bat = bat || { runs: 0, balls: 0, out: false };
+        bat.runs += s.runs; bat.balls += s.balls; bat.out = bat.out || !!s.out;
+        team = team || inn.battingTeam;
+      });
+      mine(inn.bowling.order).forEach(wn => {
+        const w = inn.bowling.stats[wn];
+        bowl = bowl || { wickets: 0, runs: 0, legalBalls: 0, ballsPerOver: inn.ballsPerOver };
+        bowl.wickets += w.wickets; bowl.runs += w.runs; bowl.legalBalls += w.legalBalls;
+        team = team || inn.bowlingTeam;
+      });
+      mine(inn.fielding && inn.fielding.order).forEach(fn => {
+        const f = inn.fielding.stats[fn];
+        field = field || { catches: 0, runouts: 0, stumpings: 0 };
+        field.catches += f.catches || 0; field.runouts += f.runouts || 0; field.stumpings += f.stumpings || 0;
+        team = team || inn.bowlingTeam;
+      });
+    });
+    if (!bat && !bowl && !field) return;
+    if (m.id) seen.add(m.id);
+    lines.push({ match: m, bat, bowl, field, team });
+  });
+  return lines.sort((a, b) => (b.match.completedAt || 0) - (a.match.completedAt || 0));
+}
+/* "32* (24) · 2/18 (3) · 1 ct" -- one line of playerMatchLines in words. */
+function playerMatchLineText(line){
+  const parts = [];
+  if (line.bat) parts.push(`${line.bat.runs}${line.bat.out ? "" : "*"} (${line.bat.balls})`);
+  if (line.bowl && (line.bowl.legalBalls > 0 || line.bowl.wickets > 0)) parts.push(`${line.bowl.wickets}/${line.bowl.runs} (${oversDisplay(line.bowl.legalBalls, line.bowl.ballsPerOver || 6)})`);
+  const f = line.field;
+  if (f){
+    const bits = [f.catches ? `${f.catches} ct` : "", f.stumpings ? `${f.stumpings} st` : "", f.runouts ? `${f.runouts} ro` : ""].filter(Boolean);
+    if (bits.length) parts.push(bits.join(", "));
+  }
+  return parts.join(" · ");
+}
+
 /* One player's career line, folded from whatever matches the caller passes
    (a club's matches for a club profile, Premier matches for Premier) --
    matched by name, case-insensitive, since matches store names not ids.

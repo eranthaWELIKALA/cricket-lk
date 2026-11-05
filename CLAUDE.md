@@ -982,7 +982,9 @@ History rules — these are what make it work on phones:
   `innerHTML` swap — only when the re-render left that field's default alone
   (so a preset pick still re-fills overs), and never for a just-submitted form
   (`data-submitted`, cleared on the next edit). Mark a control or container
-  `data-nav-ignore` if it shouldn't count as unsaved input.
+  `data-nav-ignore` if it shouldn't count as unsaved input. A search box
+  outside a form that must keep focus and caret through a re-render carries
+  `data-keep-focus="<key>"` (Premier → Players' box does).
 - Playwright's `goBack()` doesn't apply Chrome's skip rule, so it can't prove
   the gesture rule — test with `devices["Pixel 5"]` + `tap()` for the logic,
   and on a real phone for the rule itself.
@@ -1023,7 +1025,10 @@ view it was opened on, is an overlay (back closes it), and is opened from
 tournament fixtures, Home's Recent matches and club Stats' match list. For a
 match archived on this device it also offers **✎ Edit match** (see "Editing a
 finished match from history"), and otherwise says why not (`historyEditBlocked`:
-another phone, result only, forfeited, a match on screen). For a club match it
+another phone, result only, forfeited, a match on screen) — except when opened
+from a tournament's public page or a player profile (`ui.matchDetail.view`
+`publicTournament`/`playerProfile`): those are view only, no Edit match and no
+"why not" line, even for a match this phone scored. For a club match it
 shows the loaded cloud copy over this device's archive (a fix made in the cloud
 since), unless this device still has its own `match` upload queued for it.
 
@@ -1139,7 +1144,7 @@ the player, so a phone shows it without swiping). Tapping a column head
 sorts by it (`stats-sort` → `ui.statsSort[table]`: best-first, again flips;
 blanks last; ties by `LEADERBOARD_ORDER`, then name). Wide tables scroll
 sideways inside their card (`.table-scroll`, never the page) with the player
-column pinned, and keep their scroll across the re-sort. The player profile has **Profile / Stats** tabs (`ui.profile.tab`, so
+column pinned, and keep their scroll across the re-sort. The player profile has **Profile / Stats / Matches** tabs (`ui.profile.tab`, so
 it resets with each profile). All of them use `tabsHtml(action, tabs,
 active, cls)` (common.js); `main-tabs` makes a top-level row equal-width.
 
@@ -1941,17 +1946,27 @@ per-innings ones (highest, 50s/100s/ducks, best bowling) by walking the
 matches itself, since `aggregatePlayerStats` only keeps totals — a 100 counts
 as a hundred, not also a fifty, matching `calcPlayerPoints`. Premier = only the
 `level:"premier"` matches (`ui.premier.premierMatches`, loaded on demand).
-Club = a club-opened profile folds `clubMatchesFor(ui.currentClubId)`; a
-Premier-opened profile folds the *viewer's own clubs'* matches
-(`fetchViewerClubMatches`: `matches` where `level = "local"` and `club_id` in
-`ui.myClubs`, merged by id with the local archive). That asymmetry is
-deliberate, not a gap to "fix" client-side: matches are publicly readable, but
-club rosters are members-only, so there's no way to ask which clubs an
-arbitrary player belongs to; a signed-out visitor gets a "sign in" hint for
-the club block. If you want true per-player club stats across every club,
-it needs a server-side query (e.g. an RPC over `matches.data`), not more
-client fetching. Economy uses 6-ball overs (like the
-leaderboards); highest score/best bowling aren't tracked.
+Club = a club-opened profile folds `clubMatchesFor(ui.currentClubId)` (that
+club, with its MVP points); a Premier-opened profile folds **every club's**
+matches the player appears in (`loadProfileClubMatches` → `fetchPlayerMatches`
+→ `player_matches`, `supabase/019`, merged by id with this device's archive of
+club matches; `ui.profile.clubScope = "all"`, the tier reads "all clubs"). 019
+searches the public match data by name + aliases server-side, so it works for
+anyone, signed out too, and never reads `club_rosters` (rosters stay
+members-only). Before 019 is run (or on an error) it falls back to the
+*viewer's own clubs'* matches (`fetchViewerClubMatches`, `clubScope = "mine"`,
+"your clubs"). Like every name-based stat, two different people with the same
+name are counted together there. Economy uses 6-ball overs (like the
+leaderboards).
+
+**Matches tab** (`renderProfileMatches`, clubs.js): the same club + Premier
+matches the Stats tab counts, newest first, through `playerMatchLines(names,
+matches)` (ENGINE, tested: the player's batting/bowling/fielding in each match,
+every alias, the side they played for, "no names" matches out) and
+`playerMatchLineText` ("42 (28) · 1/14 (2.0) · 1 ct"), with the club (019's
+`club_name`, kept in `ui.profile.clubNames`) and date. Each row opens the
+completed-match sheet, **view only** from a profile (see "Completed-match
+sheet"); `findCompletedMatch` also looks in `ui.profile.clubMatches`.
 
 **Gotcha (fixed):** the submit dispatcher reads `e.target.getAttribute("id")`,
 not `e.target.id` — the preset forms contain a hidden `<input name="id">`,
@@ -2205,6 +2220,47 @@ capture ids as superuser first). The 009 scenarios (46 checks: manage rule per
 actor, claimed-club lockout, one-claim-per-user, direct-write blocks, merge
 alias/roster/blank-fill/deletion, alias resolution, no contact leak) all passed
 this way.
+
+## Players who aren't club members (`supabase/019_player_matches.sql`)
+
+Someone who plays for a club but didn't create it and wasn't invited as an
+admin has no club screens (rosters are members-only). They get to their own
+profile, stats and matches through public screens instead, and **everything
+there is view only** for them: Edit profile shows only to those who may manage
+it (009's rule: once they've claimed it, that's them), Remove from club only to
+members, and a scorecard opened from a profile never offers Edit match.
+- **Account → Player profile** (`renderMyPlayerCard`, home-account.js; its
+  `ui.identity` is loaded by `render()` and reset on every `go-account`, so an
+  approved claim shows up): **My stats & matches** (`open-my-profile`, their
+  claimed profile, `ui.profile.from = "account"` so its back bar says Account),
+  the claim waiting for approval (named: `fetchMyPlayerIdentity` adds
+  `pendingClaim.name`), or **Find my profile** (`find-my-profile` → Premier →
+  Players). Hidden without a cloud client; offline it says it needs internet.
+- **Premier → Players** is searchable (`[data-premier-search]`,
+  `ui.premierPlayerQuery`, `premierPlayerRowsHtml`: word starts via
+  `nameSearchHit` over each player's `searchKey` — name, nickname, `#jersey` —
+  computed once in `fetchAllPublicPlayers`). The input listener refills the
+  rows without a `render()`; at most `PREMIER_LIST_MAX` (100) rows show, with
+  "Showing 100 of N". **The list is fetched a page at a time**
+  (`fetchAllPublicPlayers`, `PLAYER_PAGE` = 1000, `count: "exact"` on the first
+  page): one select stops at the server's row limit (1,000 on Supabase by
+  default), which used to drop everyone past it.
+- **Share profile link** (every profile, `askSharePlayerLink`, shared
+  confirmation sheet): `#/premier/players/<id>` (`playerProfileUrl`), which
+  anyone can open, signed in or not; for an unclaimed profile it says to send
+  it to the player to claim. Share sheet or copy via `shareOrCopyLink` /
+  `canShareLinks` (club-tournaments.js), shared with the tournament link.
+- **Sign in to claim** (the signed-out Ownership box) remembers the profile in
+  `ui.afterSignIn`; `completeSignIn` opens it again instead of Account. Memory
+  only: a sign-up that waits for an email confirmation link lands on Account,
+  where Find my profile is.
+- The profile's club tier and Matches tab use 019 (see "Player profiles");
+  019 is a plain SECURITY INVOKER function over tables that are already public
+  read, granted to anon + authenticated. Checked in PGlite (WASM Postgres)
+  against stub tables with RLS, as `anon` and `authenticated`: batting/bowling/
+  fielding/alias hits in any case, newest first, club names, no "no names"
+  match, no near-name false hits, malformed match rows skipped, base `players`
+  still unreadable.
 
 ## Launch splash
 

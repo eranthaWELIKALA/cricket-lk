@@ -247,7 +247,8 @@ function findCompletedMatch(id){
   const shared = state.view === "publicTournament" && ui.publicTournament ? fromRows(ui.publicTournament.matches) : null;
   if (shared) return Object.assign({ id }, shared);
   const cloud = local && local.clubId && !outbox.some(op => op.kind === "match" && op.args && op.args.id === id)
-    ? fromRows(ui.clubTournament && ui.clubTournament.matches) || fromRows(ui.club && ui.club.matches) : null;
+    ? fromRows(ui.clubTournament && ui.clubTournament.matches) || fromRows(ui.club && ui.club.matches)
+      || (state.view === "playerProfile" ? fromRows(ui.profile && ui.profile.clubMatches) : null) : null;
   return (cloud && cloud.innings ? Object.assign({}, local, cloud, { id }) : null)
     || local
     || fromRows(ui.clubTournament && ui.clubTournament.matches)
@@ -287,8 +288,9 @@ function renderMatchDetailModal(){
         </div>
         ${(() => {
           // A match finished on this device can still be put right (see openMatchFromHistory).
-          // Not from a tournament's public page: that's read only.
-          const blocked = ui.matchDetail.view === "publicTournament" ? "none" : historyEditBlocked(m);
+          // Not from a tournament's public page or a player's profile: those are view only
+          // (a player looking at their own matches isn't the scorer).
+          const blocked = ["publicTournament", "playerProfile"].includes(ui.matchDetail.view) ? "none" : historyEditBlocked(m);
           if (blocked === "none") return "";
           return blocked ? `<p class="hint">${escapeHtml(blocked)}</p>`
             : `<button type="button" data-action="edit-archived-match" data-id="${escapeHtml(m.id)}" class="ghost edit-match-btn">✎ Edit match</button>`;
