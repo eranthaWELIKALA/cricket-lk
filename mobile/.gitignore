@@ -1,0 +1,11 @@
+node_modules/
+# Built from ../ by scripts/build-web.mjs
+www/
+# Signing: never commit the upload key or its passwords
+*.jks
+*.keystore
+android/keystore.properties
+# Release outputs
+dist/
+# Plain store screenshots (npm run store-graphics makes them again)
+store/screenshots/plain/

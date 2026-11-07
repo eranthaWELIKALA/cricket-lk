@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launch screen before Android 12: plain app background. The page's own
+     splash (index.html: logo, name, loading bar) follows straight away. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/app_background" />
+</shape>

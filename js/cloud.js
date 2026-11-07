@@ -17,6 +17,12 @@
    <script> tag) so a slow/blocked CDN fetch can never delay booting
    the core scorer — see loadSupabaseLib() below.
    ============================================================ */
+/* The guest edition (the Android app, mobile/) is this same app with no cloud
+   at all: no sign-in, clubs, Premier or sync. Its build sets
+   window.CRICKET_LK_EDITION = "guest" before these scripts (and blanks the
+   two keys below); the website leaves it unset. `var` so test.js can read it.
+   See CLAUDE.md "Guest edition: the Android app". */
+var GUEST_EDITION = typeof window !== "undefined" && window.CRICKET_LK_EDITION === "guest";
 const SUPABASE_URL = "https://xfsaldtvvcuyondayjjw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_jDfjBu62WssP3fKEbbfVKw_ZyoxCXUm";  // publishable key -- safe to expose, access is enforced by RLS
 const SUPABASE_JS_CDN_URL = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js";
@@ -479,7 +485,7 @@ function discardOp(id){
 }
 
 async function initAuth(){
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return; // cloud not configured on this deployment
+  if (GUEST_EDITION || !SUPABASE_URL || !SUPABASE_ANON_KEY) return; // the guest edition, or cloud not configured on this deployment
   let lib;
   // supabase-js comes from the service worker's cache when offline (sw.js);
   // without it (first ever visit offline) stay in guest mode.

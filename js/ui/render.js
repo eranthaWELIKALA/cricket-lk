@@ -4,6 +4,11 @@
 function render(){
   const root = document.getElementById("app");
   const m = state.match;
+  // The guest edition has no cloud screens and no clubs to act as.
+  if (GUEST_EDITION && (!GUEST_EDITION_VIEWS.has(state.view) || state.activeClubId)){
+    if (!GUEST_EDITION_VIEWS.has(state.view)) state.view = "home";
+    state.activeClubId = null; save();
+  }
   // A "no names" match never pauses for a name: fill the empty slots first.
   if (m && fillAnonymousSlots(m)) save();
   // Home's club switcher needs ui.myClubs; fetch it once, lazily, rather

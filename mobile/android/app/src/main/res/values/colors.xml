@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The app's default theme (Sri Lanka): the page background in css/app.css and the HTML splash.
+         Shown while the app starts and behind the system bars, so there's no white flash. -->
+    <color name="app_background">#030B22</color>
+</resources>

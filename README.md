@@ -109,6 +109,13 @@ gh api repos/<owner>/<name>/pages -X POST -f "source[branch]=master" -f "source[
   account needed — that's only required for native App Store
   distribution, not a home-screen PWA install.
 
+## Android app (guest edition)
+
+`mobile/` builds the scorer as an Android app for Google Play and the
+Samsung Galaxy Store: the guest part only (no sign-in, clubs or Premier),
+fully offline, no permissions. It's built from this code; see
+[mobile/README.md](mobile/README.md).
+
 ## Files
 
 | File | Purpose |

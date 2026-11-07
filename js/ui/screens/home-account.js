@@ -52,14 +52,14 @@ function renderHome(){
         <h1>${b.logo ? "" : "🏏 "}<span class="brand-highlight">${escapeHtml(b.name) || "Cricket.lk"}</span></h1>
         <p class="tagline">Ball-by-ball live scorer.</p>
       </div>
-      <div class="club-switcher">
+      ${GUEST_EDITION ? "" : `<div class="club-switcher">
         <span class="club-switcher-label">Acting as</span>
         <select id="home-club-switcher">
           <option value="">Guest</option>
           ${session ? (ui.myClubs || []).map(c => `<option value="${c.id}" ${c.id === state.activeClubId ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("") : ""}
           <option value="__premier__">🏆 Premier</option>
         </select>
-      </div>
+      </div>`}
       <div class="home-grid">
         ${state.match && state.match.status !== "complete" ? `
           <button data-action="resume-match" class="home-card primary-card">

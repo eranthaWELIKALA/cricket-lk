@@ -1,0 +1,15 @@
+{
+  "appId": "com.eranthawelikala.cricketlk",
+  "appName": "Cricket.lk",
+  "webDir": "www",
+  "backgroundColor": "#030B22",
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "native",
+      "style": "DARK"
+    }
+  }
+}

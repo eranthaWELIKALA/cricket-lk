@@ -49,7 +49,9 @@ function renderSideMenu(){
   const items = [
     ...(state.match && state.match.status !== "complete" ? [{ action: "resume-match", icon: "🔴", label: "Live match" }] : []),
     { view: "home", icon: "🏠", label: "Home" },
-    { action: "go-premier", icon: "🏆", label: "Premier" },
+    // The guest edition (the Android app) has no Premier, account or
+    // tutorial page (the tutorial covers clubs and Premier too).
+    ...(GUEST_EDITION ? [] : [{ action: "go-premier", icon: "🏆", label: "Premier" }]),
     // Teams / Players / Presets / Stats are per role: the guest ones (on this
     // device) only in guest mode; while acting as a club, that club's own
     // Players / Presets / Stats (+ Admins), all cloud, instead.
@@ -68,8 +70,10 @@ function renderSideMenu(){
       ]),
     { view: "settings", icon: "🎨", label: "Settings" },
     // The tutorial is its own page (tutorial.html), not a screen of the app.
-    { action: "open-tutorial", icon: "📘", label: "How to use" },
-    { action: "go-account", icon: "👤", label: session ? "Account" : "Sign in" }
+    ...(GUEST_EDITION ? [] : [
+      { action: "open-tutorial", icon: "📘", label: "How to use" },
+      { action: "go-account", icon: "👤", label: session ? "Account" : "Sign in" }
+    ])
   ];
   return `
     <div class="side-menu-backdrop" data-action="close-side-menu"></div>

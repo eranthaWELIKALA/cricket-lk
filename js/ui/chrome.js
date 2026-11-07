@@ -28,7 +28,7 @@ function renderTopBar(canNavigate, onAuthScreen){
       </div>
       <div class="topbar-right">
         ${inProgress && !away ? `<button data-action="open-match-menu" class="topbar-icon-btn" aria-label="Match options">⋯</button>` : ""}
-        ${canNavigate && !inProgress && !onAuthScreen
+        ${canNavigate && !inProgress && !onAuthScreen && !GUEST_EDITION
           ? (session
               ? `<button data-action="go-account" class="topbar-icon-btn" aria-label="Account">👤</button>`
               : `<button data-action="go-account" class="topbar-signin">Sign in</button>`)

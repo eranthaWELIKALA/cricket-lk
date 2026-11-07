@@ -3144,6 +3144,34 @@ async function main(){
       delete state.teams["so-ta"]; delete state.teams["so-tb"]; ui = defaultUi(); state.view = "home"; save(); render();`);
   }
 
+  // --- Guest edition (the Android app, mobile/): the same page with the flag set, no cloud ---
+  {
+    const guestHtml = html.replace("<script>", '<script>window.CRICKET_LK_EDITION = "guest";</script><script>');
+    const gdom = new JSDOM(guestHtml, { runScripts: "dangerously", url: "http://localhost/#/premier/players" });
+    const gw = gdom.window, gd = gw.document;
+    await wait(50);
+    assert(gw.GUEST_EDITION === true && win.GUEST_EDITION === false, "the guest edition flag is on only when the page sets it");
+    assert(gw.eval("state.view") === "home" && gw.eval("supabaseClient") === null,
+      "guest edition: opened on a Premier link it lands on Home, with no cloud client");
+    assert(!gd.querySelector('#app [data-action="go-account"]') && !gd.getElementById("home-club-switcher")
+      && gd.querySelector('#app [data-action="go-match-setup"]'),
+      "guest edition: no Sign in in the top bar, no Acting as switcher, New match still there");
+    gd.querySelector('#app [data-action="open-side-menu"]').click();
+    const menu = [...gd.querySelectorAll(".side-menu .side-menu-item")].map(b => b.textContent.trim().replace(/\s+/g, " "));
+    assert(!menu.some(t => /Premier|Sign in|Account|How to use/.test(t)) && ["Teams", "Players", "Presets", "Stats", "Settings"].every(x => menu.some(t => t.includes(x))),
+      "guest edition: the side menu lists only on-device screens: " + menu.join(", "));
+    const cloudRoutes = ["/premier", "/premier/players/p1", "/clubs", "/clubs/c1/players", "/clubs/c1/tournaments/t1", "/sign-in", "/account", "/t/abc"];
+    assert(cloudRoutes.every(r => gw.eval(`parseRoute(${JSON.stringify(r)}).view`) === "home"), "guest edition: every cloud route goes to Home");
+    assert(gw.eval('parseRoute("/stats").view') === "stats" && gw.eval('parseRoute("/tournaments/t1").view') === "tournamentDashboard"
+      && gw.eval('parseRoute("/live").view') === "match" && gw.eval('parseRoute("/new-match").view') === "matchSetup",
+      "guest edition: on-device routes still work");
+    gw.eval('ui.sideMenuOpen = false; state.view = "premierPlayers"; state.activeClubId = "c1"; render();');
+    assert(gw.eval("state.view") === "home" && gw.eval("state.activeClubId") === null, "guest edition: a saved cloud view or club falls back to guest Home");
+    assert(win.eval('parseRoute("/premier").view') === "premier" && win.eval('parseRoute("/clubs/c1/players").view') === "clubPlayers",
+      "web edition: cloud routes unchanged");
+    gw.close();
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }

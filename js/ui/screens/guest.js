@@ -8,7 +8,7 @@ function renderTeamsScreen(){
     <div class="screen teams">
       ${renderBackBar("Home", "home")}
       <h1>👥 Teams</h1>
-      <p class="hint guest-note">Guest teams · kept on this device only.</p>
+      <p class="hint guest-note">${GUEST_EDITION ? "Kept" : "Guest teams · kept"} on this device only.</p>
       <form id="new-team-form" class="inline-form">
         <input name="name" required maxlength="30" placeholder="New team name">
         <button type="submit" class="primary small">Add team</button>
@@ -88,7 +88,7 @@ function renderPlayersScreen(){
     <div class="screen">
       ${renderBackBar("Home", "home")}
       <h1>🧑‍🤝‍🧑 Players</h1>
-      <p class="hint guest-note">Guest players · kept on this device only.</p>
+      <p class="hint guest-note">${GUEST_EDITION ? "Kept" : "Guest players · kept"} on this device only.</p>
       <form id="add-global-player-form" class="inline-form">
         <input name="name" required maxlength="24" placeholder="New player name">
         <button type="submit" class="primary small">Add</button>

@@ -37,6 +37,11 @@ const ROUTES = [
   ["/t/:pt", "publicTournament"], // a club tournament's shared link (renderPublicTournament)
   ["/live", "match"], ["/result", "result"]
 ];
+// The guest edition (GUEST_EDITION, the Android app) has only the on-device
+// screens: a link or saved view naming any other lands on Home (parseRoute,
+// render()).
+const GUEST_EDITION_VIEWS = new Set(["home", "teams", "players", "presets", "stats", "settings",
+  "matchSetup", "tournamentSetup", "tournamentDashboard", "match", "result"]);
 // Screens you never go back to: setup forms (consumed by starting the match /
 // tournament) and Result (its match is gone once you leave).
 const NAV_TRANSIENT = new Set(["matchSetup", "tournamentSetup", "clubTournamentSetup", "result"]);
@@ -62,7 +67,8 @@ function parseRoute(path){
     const ps = pattern.split("/").filter(Boolean);
     if (ps.length !== segs.length) continue;
     const params = Object.assign({}, extra);
-    if (ps.every((p, i) => p.startsWith(":") ? (params[p.slice(1)] = decodeURIComponent(segs[i]), true) : p === segs[i])) return { view, params };
+    if (!ps.every((p, i) => p.startsWith(":") ? (params[p.slice(1)] = decodeURIComponent(segs[i]), true) : p === segs[i])) continue;
+    return GUEST_EDITION && !GUEST_EDITION_VIEWS.has(view) ? { view: "home", params: {} } : { view, params };
   }
   return { view: "home", params: {} };
 }

@@ -2399,6 +2399,51 @@ never appear in this client-side file. Still no environment variables
 and no application server of our own — Supabase is a hosted backend we
 call directly from the client, not a backend we run.
 
+## Guest edition: the Android app (`mobile/`)
+
+The app on Google Play and the Samsung Galaxy Store is **only the guest part**
+of this web app, kept apart in `mobile/` (its own `package.json`, Capacitor 8
+Android project, README and store texts). It is built *from* this code, never
+a fork: `mobile/scripts/build-web.mjs` copies whatever `index.html` loads into
+`mobile/www/`, so a new `<script src>` needs nothing there. In the copy it
+sets `window.CRICKET_LK_EDITION = "guest"` before the scripts, blanks the
+Supabase URL/key in `js/cloud.js`, adds `mobile/web/native-bridge.js`, and
+leaves out the manifest, the service worker and `js/install-prompt.js`. The
+APK has no permissions at all, not even INTERNET.
+
+**`GUEST_EDITION`** (`var`, `js/cloud.js`) is that flag; the website never
+sets it, so nothing changes there. With it: `initAuth` returns at once (no
+client), `GUEST_EDITION_VIEWS` (router.js, next to `ROUTES`) is the only set
+of views — `parseRoute` sends every other route to Home and `render()` resets
+any other `state.view` (and `activeClubId`) — and the entry points are
+hidden: the top bar's Sign in / 👤, the side menu's Premier, How to use and
+Account, Home's "Acting as" switcher. The guest Teams/Players notes drop the
+word "Guest" (there's no other role). Tested in `test.js` (a second jsdom
+page with the flag set). **Adding a screen:** a cloud screen needs nothing (it
+isn't in `GUEST_EDITION_VIEWS`); a new entry point to one on a guest screen
+must check `GUEST_EDITION`; a new guest screen must be added to
+`GUEST_EDITION_VIEWS` or the app can't reach it.
+
+**Android's WebView lacks some web APIs the app uses**, and
+`native-bridge.js` fills them in from native code (`CricketNativePlugin.java`)
+so the app's own code paths are the same as on the web: `navigator.share` /
+`canShare` with image files (the share sheet), an `<a download>` of a
+blob (Save image → Pictures/Cricket.lk; before Android 10, the share sheet),
+`window.print()` (Export PDF → Android's print dialog, which prints the page
+with the `@media print` rules, named after `document.title`), and the system
+bar icons following `meta[name=theme-color]`. If the app starts relying on
+another browser API, check it works in a WebView or add it there.
+`MainActivity` sends the hardware back button to the page's history (Capacitor
+alone would close the app from any screen), so back works through the
+router's rules as in Chrome. That includes a known quirk that isn't specific
+to the app: after a finished match, Home sits on top of the earlier Home entry,
+so the first back at Home stays put and the second leaves.
+The store screenshots and feature graphic (`mobile/store/`) come from
+`mobile/scripts/store-graphics.mjs`: the guest build in Chrome at phone size,
+sample data scored through the logged engine calls (made-up names, never real
+players). Re-run it (`npm run store-graphics` in `mobile/`) when a screen they
+show changes, like the tutorial shots.
+
 ## Platform admin portal (`admin.html`, `supabase/011_admin_portal.sql`)
 
 A **separate page**, not a screen in `index.html`: desktop-first, online-only,
