@@ -151,7 +151,7 @@ function tournamentRowMatches(rows){
   return rows.map(m => m.data ? Object.assign({ id: m.id }, m.data) : null).filter(Boolean);
 }
 function clubTournamentTagline(p, played){
-  return `${p.pointsForWin ?? 2}/${p.pointsForTie ?? 1}/${p.pointsForLoss ?? 0} pts${p.useNRR ? " · NRR" : ""} · ${played} match${played === 1 ? "" : "es"} played`;
+  return `${p.pointsForWin ?? 2}/${p.pointsForTie ?? 1}/${p.pointsForLoss ?? 0} pts${p.useNRR ? " · NRR" : ""}${p.superOver ? " · super over" : ""} · ${played} match${played === 1 ? "" : "es"} played`;
 }
 
 /* Tournament teams (supabase/012). A team is a name + players picked from

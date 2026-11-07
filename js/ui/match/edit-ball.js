@@ -484,9 +484,9 @@ async function takeNewerCloudCopy(id){
     cloud = data && data.data;
   } catch (_){ return false; }
   if (!cloud || !Array.isArray(cloud.innings)) return false;
-  const card = x => canonicalJson([x.teamA, x.teamB, x.result, x.motm || null, x.innings]);
+  const card = x => canonicalJson([x.teamA, x.teamB, x.result, x.motm || null, x.innings, x.superOvers || null]);
   if (card(cloud) === card(local)) return false;
-  state.matchHistory[id] = Object.assign({}, local, { teamA: cloud.teamA, teamB: cloud.teamB, result: cloud.result, motm: cloud.motm, innings: cloud.innings });
+  state.matchHistory[id] = Object.assign({}, local, { teamA: cloud.teamA, teamB: cloud.teamB, result: cloud.result, motm: cloud.motm, innings: cloud.innings, superOvers: cloud.superOvers });
   const store = matchLogStore();
   delete store[id];
   DB.save(MATCH_LOGS_KEY, store);

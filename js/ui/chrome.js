@@ -22,8 +22,8 @@ function renderTopBar(canNavigate, onAuthScreen){
       <div class="topbar-left">
         ${inProgress
           ? menuBtn + (away
-              ? `<button data-action="resume-match" class="topbar-live"><span class="live-dot"></span>Live · ${escapeHtml(m.teamA)} v ${escapeHtml(m.teamB)}</button>`
-              : `<span class="live-dot"></span><span class="topbar-match">${escapeHtml(m.teamA)} v ${escapeHtml(m.teamB)}</span>`)
+              ? `<button data-action="resume-match" class="topbar-live"><span class="live-dot"></span>${m.superOverOf ? escapeHtml(capitalize(superOverName(m.superOverOf.n))) : "Live"} · ${escapeHtml(m.teamA)} v ${escapeHtml(m.teamB)}</button>`
+              : `<span class="live-dot"></span><span class="topbar-match">${m.superOverOf ? `${escapeHtml(capitalize(superOverName(m.superOverOf.n)))} · ` : ""}${escapeHtml(m.teamA)} v ${escapeHtml(m.teamB)}</span>`)
           : canNavigate ? menuBtn : `<span class="topbar-brand">🏏 Cricket.lk</span>`}
       </div>
       <div class="topbar-right">

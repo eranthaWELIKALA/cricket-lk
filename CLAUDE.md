@@ -31,7 +31,7 @@ of `index.html`:
 | `js/ui/router.js` | page navigation (routes, history, back interception, unsaved-input checks) |
 | `js/ui/menus.js` | sync pill/sheet, side menu |
 | `js/ui/screens/*.js` | `home-account`, `clubs` (+ profiles, player modals), `club-tournaments` (+ team builder, the public link page), `premier`, `guest` (teams/players/presets/tournaments), `stats` |
-| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `catch-up` (catch up the score), `edit-ball` (edit/add/remove a ball, set the final score by hand), `name-later` (name an unnamed batter/bowler, replace a wrongly picked one), `live`, `result` (+ scorecards, share/export) |
+| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `catch-up` (catch up the score), `edit-ball` (edit/add/remove a ball, set the final score by hand), `name-later` (name an unnamed batter/bowler, replace a wrongly picked one), `live`, `result` (+ scorecards, share/export), `super-over` (start one off a tie, keep its result in the tied match) |
 | `js/ui/render.js` | `render()` |
 | `js/ui/events.js` | the delegated listeners |
 | `js/boot.js` | boot: `load()`, first route + render, `initAuth()`, sync triggers, service worker |
@@ -668,6 +668,73 @@ prospectively bowling next), or `"Yet to bat"` (no `innings` entry for
 that team key at all) — this one function covers every point
 `forfeitMatch` can fire from, so don't special-case "at the break"
 separately from "mid-second-innings."
+
+## Super over (`js/ui/match/super-over.js`)
+
+A tied match can be settled by a super over. **It's a match of its own**
+while it's played — `createSuperOver(entry, id)` (ENGINE, tested) builds it
+from the tie's archive entry: same sides, over length and extras, one over
+(`SUPER_OVER_OVERS`) and `SUPER_OVER_PLAYERS` (3) a side (2 wickets, fewer
+for a tinier side), no last man stands, and the side that batted second bats
+first (in a 2nd super over, the side that batted second in the 1st). It
+carries `superOverOf: { id, n, tiedOn }` (the tie's archive id, which super
+over, the tied score; in `MATCH_CARRY_FIELDS`, so a toss swap keeps it) and
+`squads` from `superOverSquads` (each side's squad plus everyone who batted,
+bowled or fielded for it), so the pick sheets list that side's players and
+`playerSideConflict` stops anyone switching sides. So live scoring, Undo,
+ball edits, catch-up, name later and the pick sheets need nothing new.
+`matchResult` gives it "Lions won the super over" / "Super over tied".
+**There's no limit:** a super over that ties is followed by another (its
+Result leads with it), as often as it takes. From the 2nd on they're
+numbered everywhere (`superOverName(n)`: "Tigers won the 2nd super over",
+"3rd super over tied", the eyebrow, top bar, opening sheet and the
+scorecard's list, which numbers the 1st too once there are several).
+
+**It's never archived by itself.** `maybeArchiveCompletedMatch` hands a
+super over to `syncSuperOver`, which puts `superOverRecord(so)` (innings
+without logs, `n`, `battingFirst`, `result`, `winner` via `matchWinnerKey`, so
+a forfeited one is won by the other side) into the tie's archive entry as
+`superOvers[n - 1]`, through `writeSuperOvers` (`withSuperOvers` says the
+result again, re-synced for a club; the tie's kept logs are untouched). The
+tie's `matchResult` then reads "Match tied · Lions won the super over" (or
+"· super over tied"). Like a reopened match, a finished super over that's
+taken back (Undo, reopen) keeps its result in the tie until it finishes again
+(replaced in place); `keepArchiveInStep` drops it (`dropSuperOver`) only when
+Undo leaves the super over altogether (back to the tie's Result — starting
+one from Result is snapshotted). Cancelling one leaves the tie as it is
+(`cancelSuperOverText`).
+
+**What reads it:** `matchWinnerKey` (a tie settled by a super over has a
+winner) → `computeStandings` counts it as a win and a loss; NRR, player stats,
+MVP, MOTM, records and `player_matches` only read `match.innings`, so the
+super over is in none of them (ICC). `finishMatch` (afterBall,
+`settleMatchStatus`) drops `superOvers` from a match an edit made no longer
+tied. Display: `renderSuperOverSection` (the result, each side's balls,
+batters and bowler) under the scorecard on Result, the completed-match sheet
+and the print; a "SUPER OVER" card on the share image. `matchMotm` gives a
+super over no player of the match.
+
+**Starting one** (`startSuperOver`, `superOverError` ENGINE says why not:
+unfinished, forfeited, result only, not tied, already settled): a tie's
+Result shows `renderSuperOverCard` — first, with a primary button and the exit
+button demoted (`.result-exit`), when `superOverCalledFor` (the match's
+`superOver` flag, or a super over that tied); otherwise after the scorecards,
+as a ghost button. The completed-match sheet offers it for a tie archived on
+this device (`superOverStartBlocked`; not with a match on screen, not from the
+public tournament page or a profile), checking a club match's cloud copy
+first (`takeNewerCloudCopy` now compares and copies `superOvers` too).
+
+**Presets:** match presets have `superOver` ("A tie goes to a super over";
+`describeMatchPreset`'s "If tied" row, a "super over" tag via
+`conditionTagsFor`), and so do tournament presets ("Tied matches go to a super
+over"; `describeTournamentPreset`'s "Ties" row). `createMatch({ superOver })`
+stores it on the match: match setup's checkbox is filled from the match
+preset or a club tournament's `tournament_preset.superOver`, a guest
+tournament match takes either preset's. Club presets are jsonb, so no
+migration. The flag only decides how Result leads: any tie can go to a super
+over, and one that's played always decides standings — the winner gets the
+tournament preset's win points even when neither preset uses super overs
+(tested through a guest tournament).
 
 ## Navigation: `state.view` vs `match.status`
 
@@ -1798,7 +1865,7 @@ is next online. Three pieces, all in the CLOUD section:
   and the tournament overlay also folds this device's archived matches for
   it, so standings count a match scored offline. Pending items render with
   a "not synced" tag.
-- **Offline sign-in.** `sw.js` (cache `cricket-lk-v15`; the page and the app's
+- **Offline sign-in.** `sw.js` (cache `cricket-lk-v16`; the page and the app's
   own `css/`/`js/` files are network-first, refreshing the cache, so a deploy
   never mixes versions) precaches the
   supabase-js CDN script and serves it stale-while-revalidate — keep its URL

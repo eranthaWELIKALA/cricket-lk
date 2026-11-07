@@ -1604,3 +1604,38 @@ button.chip.chip-add:hover, button.chip.chip-add:focus-visible{ outline:2px soli
 .sheet-actions > button.primary{ flex-grow:2; }
 .sheet-actions > .undo-chip{ flex:0 0 auto; }
 .sheet-actions > .link-btn{ flex:0 0 auto; }
+
+/* Super over (super-over.js): the card that starts one off a tie (gold and
+   first on Result when the preset sends ties to a super over), and the super
+   overs a tie was settled with, under its scorecard. */
+.super-over-card, .super-over-block{
+  background:var(--panel); border:2px solid var(--line-strong); border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-card); padding:10px 12px 12px; margin:10px 0;
+}
+.super-over-card.main{ background:rgba(var(--accent-rgb),.1); border-color:var(--accent); }
+.super-over-head{ display:flex; align-items:center; gap:8px; min-width:0; }
+.super-over-head b{ font-size:.95rem; font-weight:800; white-space:nowrap; }
+.super-over-head .muted, .super-over-result{ margin-left:auto; font-size:.75rem; font-weight:800; text-align:right; }
+.super-over-result{ color:var(--accent-2); }
+.so-badge{
+  flex-shrink:0; font-size:.62rem; font-weight:900; letter-spacing:.06em; line-height:1;
+  padding:4px 6px; border-radius:var(--radius-sm); background:var(--accent); color:var(--accent-ink);
+}
+.super-over-rules{ margin:6px 0 10px; font-size:.8rem; color:var(--muted); }
+.super-over-card > button{ width:100%; margin:0; }
+.result-exit{ width:100%; margin-top:6px; padding:12px 14px; font-weight:700; }
+.so-inn{ margin-top:10px; padding-top:8px; border-top:2px solid var(--line); }
+.so-inn-head{ display:flex; align-items:baseline; gap:8px; font-size:.85rem; }
+.so-inn-head b{ flex-grow:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.so-inn-head .n{ font-weight:800; }
+.so-balls{ margin-top:6px; gap:5px; }
+.so-balls .chip{ animation:none; }
+.so-players{ font-size:.74rem; color:var(--muted); margin-top:6px; line-height:1.35; }
+@media print{
+  .super-over-card{ display:none !important; }
+  .super-over-block{ background:#fff !important; border:1px solid #ccc !important; color:#111 !important; box-shadow:none !important; break-inside:avoid; }
+  .super-over-block .so-players, .super-over-result{ color:#333 !important; }
+  .so-balls .chip{ background:#fff !important; color:#111 !important; border:1px solid #999 !important; }
+  .so-balls .chip.four, .so-balls .chip.six{ border:2px solid #0E9F6E !important; font-weight:800; }
+  .so-balls .chip.wicket{ border:2px solid #D6304A !important; color:#D6304A !important; font-weight:800; }
+}

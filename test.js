@@ -2869,6 +2869,281 @@ async function main(){
       ui = defaultUi(); state.view = "home"; save(); render();`);
   }
 
+  // --- super over: a tie settled by one, in results, standings and stats ---
+  {
+    // A one-over match, each ball a single; `runs` = how many of the 6 score.
+    const tie = (opts) => {
+      const m = createMatch(Object.assign({ teamA: "Lions", teamB: "Tigers", oversLimit: 1, playersPerSide: 11, battingFirst: "A" }, opts));
+      win.openInnings(currentInnings(m), "Kusal", "Pathum", "Shaheen"); m.status = "live";
+      for (let i = 0; i < 6; i++){ recordBall(currentInnings(m), { kind: "run", runs: 1 }); afterBall(m); }
+      startSecondInnings(m);
+      win.openInnings(currentInnings(m), "Babar", "Rizwan", "Wanindu"); m.status = "live";
+      for (let i = 0; i < 6; i++){ recordBall(currentInnings(m), { kind: "run", runs: 1 }); afterBall(m); }
+      return m;
+    };
+    const m = tie({ superOver: true });
+    assert(m.status === "complete" && m.result === "Match tied" && m.superOver === true, "a preset's super-over flag is kept on the match; a tie reads Match tied");
+    assert(win.superOverError(m) === null, "a finished tie can go to a super over");
+    const so = win.createSuperOver(JSON.parse(JSON.stringify(m)), "m1");
+    const si = currentInnings(so);
+    assert(so.battingFirst === "B" && si.oversLimit === 1 && si.maxWickets === 2 && si.lastManStands === false,
+      "the super over: the side that batted second bats first, one over, two wickets");
+    assert(JSON.stringify(so.superOverOf) === JSON.stringify({ id: "m1", n: 1, tiedOn: 6 }) && so.status === "opening", "it's linked to the tie (id, which one, the tied score)");
+    assert(so.squads && so.squads.A.includes("Kusal") && so.squads.A.includes("Wanindu") && so.squads.B.includes("Babar") && so.squads.B.includes("Shaheen"),
+      "each side's squad is everyone who played for it (batters, bowlers)");
+    assert(win.playerSideConflict(so, "Kusal", "B"), "so nobody can turn out for the other side");
+    assert(win.restartMatch(so, "A").superOverOf.n === 1, "a toss swap keeps it a super over");
+    assert(win.commentaryBookends(so, 0).start[0] === "Super over: the match was tied on 6.", "its commentary opens with the tie");
+    // Tigers 8, Lions chase 9 with a six and a four.
+    win.openInnings(si, "Babar", "Rizwan", "Wanindu"); so.status = "live";
+    [4, 4, 0, 0, 0, 0].forEach(r => { recordBall(currentInnings(so), { kind: "run", runs: r }); afterBall(so); });
+    startSecondInnings(so);
+    win.openInnings(currentInnings(so), "Kusal", "Pathum", "Shaheen"); so.status = "live";
+    [6, 4].forEach(r => { recordBall(currentInnings(so), { kind: "run", runs: r }); afterBall(so); });
+    assert(so.status === "complete" && so.result === "Lions won the super over", "the super over's own result: Lions won the super over");
+    const rec = win.superOverRecord(so);
+    assert(rec.winner === "A" && rec.n === 1 && !rec.innings[0].log && !rec.squads, "its record: winner, number, innings without logs");
+    const settled = win.withSuperOvers(m, [rec]);
+    assert(settled.result === "Match tied · Lions won the super over" && win.matchWinnerKey(settled) === "A", "the tie's result names the super-over winner");
+    assert(/played/.test(win.superOverError(settled)), "a settled tie can't go to another super over");
+    const tp = { pointsForWin: 2, pointsForTie: 1, pointsForLoss: 0, useNRR: true };
+    const table = Object.fromEntries(computeStandings([settled], tp).map(t => [t.name, t]));
+    assert(table.Lions.won === 1 && table.Lions.points === 2 && table.Tigers.lost === 1 && table.Tigers.tied === 0, "standings count the super-over winner as a win");
+    assert(table.Lions.runsFor === 6 && table.Tigers.runsFor === 6, "super-over runs stay out of NRR");
+    const plain = Object.fromEntries(computeStandings([m], tp).map(t => [t.name, t]));
+    assert(plain.Lions.tied === 1 && plain.Lions.points === 1, "without one it's a tie, tie points each");
+    const kusal = aggregatePlayerStats([settled], win.eval("DEFAULT_POINTS_PRESETS[0]")).find(t => t.name === "Kusal");
+    assert(kusal && kusal.runs === 3, "super-over runs stay out of player stats (Kusal: 3 in the match, 6 in the super over)");
+    // A super over that ties too: another one, the other side batting first.
+    const so2 = win.createSuperOver(JSON.parse(JSON.stringify(m)), "m1");
+    win.openInnings(currentInnings(so2), "Babar", "Rizwan", "Wanindu"); so2.status = "live";
+    for (let i = 0; i < 6; i++){ recordBall(currentInnings(so2), { kind: "run", runs: 1 }); afterBall(so2); }
+    startSecondInnings(so2);
+    win.openInnings(currentInnings(so2), "Kusal", "Pathum", "Shaheen"); so2.status = "live";
+    for (let i = 0; i < 6; i++){ recordBall(currentInnings(so2), { kind: "run", runs: 1 }); afterBall(so2); }
+    assert(so2.result === "Super over tied" && win.superOverError(so2) === null, "a tied super over: Super over tied, and another can follow");
+    const level = win.withSuperOvers(m, [win.superOverRecord(so2)]);
+    assert(level.result === "Match tied · super over tied" && win.superOverError(level) === null && win.matchWinnerKey(level) === null, "the tie stays level, and can go again");
+    const next = win.createSuperOver(level, "m1");
+    assert(next.superOverOf.n === 2 && next.battingFirst === "A", "the 2nd super over: the side that batted second in the 1st bats first");
+    assert(win.commentaryBookends(next, 0).start[0] === "2nd super over: the last one was tied too.", "...and its commentary says so");
+    // An edit that breaks the tie drops the super over.
+    const broken = JSON.parse(JSON.stringify(settled));
+    broken.innings[1].runs = 7; win.settleMatchStatus(broken);
+    assert(!broken.superOvers && /^Tigers won/.test(broken.result), "a match that's no longer tied loses its super over");
+    // Forfeiting a super over, and the preset words.
+    const f = win.createSuperOver(JSON.parse(JSON.stringify(m)), "m1");
+    forfeitMatch(f, "B");
+    assert(f.result === "Lions won — Tigers forfeited the super over" && win.superOverRecord(f).winner === "A", "a forfeited super over is won by the other side");
+    assert(win.describeMatchPreset(Object.assign({}, win.eval("DEFAULT_MATCH_PRESETS[0]"), { superOver: true })).some(([k, v]) => k === "If tied" && /super over/.test(v))
+      && win.describeMatchPreset(win.eval("DEFAULT_MATCH_PRESETS[0]")).some(([k, v]) => k === "If tied" && v === "It stays a tie."), "a match preset's ⓘ says what a tie does");
+    assert(win.describeTournamentPreset(Object.assign({}, win.eval("DEFAULT_TOURNAMENT_PRESETS[0]"), { superOver: true }), "T20").some(([k, v]) => k === "Ties" && /super over/.test(v)), "...and a tournament preset's");
+    assert(win.conditionTagsFor({ oversLimit: 20, ballsPerOver: 6, playersPerSide: 11, superOver: true }).includes("super over"), "the preset card tags it");
+  }
+
+  // --- UI: a tie goes to a super over from Result, its result goes back into the tie ---
+  {
+    const doc = win.document;
+    win.eval(`
+      ui = defaultUi(); state.snapshots = []; state.matchHistory = {}; state.view = "home";
+      state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 1, playersPerSide: 11, battingFirst: "A", superOver: true });
+      openInnings(currentInnings(state.match), "Kusal", "Pathum", "Shaheen"); state.match.status = "live";
+      for (let i = 0; i < 6; i++) handleBallClick(1);
+      startSecondInnings(state.match); openInnings(currentInnings(state.match), "Babar", "Rizwan", "Wanindu"); state.match.status = "live";
+      for (let i = 0; i < 6; i++) handleBallClick(1);
+      render();`);
+    const tieId = win.eval("state.match.archivedId");
+    const card = () => doc.querySelector("#app .super-over-card");
+    assert(win.eval("state.match.result") === "Match tied" && card() && card().classList.contains("main")
+      && /Tigers bat first/.test(card().textContent) && doc.querySelector('#app [data-action="finish-match"]').classList.contains("ghost"),
+      "a tied match whose preset sends ties to a super over leads with it on Result (Tigers bat first), the exit button second");
+    card().querySelector('[data-action="start-super-over"]').click();
+    assert(win.eval("state.match.superOverOf.id") === tieId && win.eval("state.match.status") === "opening" && win.eval("state.match.battingFirst") === "B",
+      "Start super over: a new match, linked to the tie, Tigers to bat");
+    assert(/Super over · Lions v Tigers/.test(doc.querySelector(".topbar").textContent) && /Super over · Tigers/.test(doc.querySelector("#modal-root h2").textContent),
+      "the top bar and the opening sheet say it's the super over");
+    assert(/Babar/.test(doc.querySelector("#modal-root .bowler-pick-list").textContent) && !/Kusal/.test(doc.querySelector("#modal-root .bowler-pick-list").textContent),
+      "the opening list offers the side's own players from the match");
+    win.eval(`openInnings(currentInnings(state.match), "Babar", "Rizwan", "Wanindu"); state.match.status = "live";
+      [4, 4, 0, 0, 0, 0].forEach(r => handleBallClick(r));
+      startSecondInnings(state.match); openInnings(currentInnings(state.match), "Kusal", "Pathum", "Shaheen"); state.match.status = "live";
+      handleBallClick(6); handleBallClick(4); render();`);
+    assert(win.eval("state.match.result") === "Lions won the super over" && /SUPER OVER/.test(doc.querySelector("#app .result-hero .eyebrow").textContent)
+      && /tied on 6/.test(doc.querySelector("#app .result-hero").textContent) && !doc.querySelector("#app .motm-card") && !card(),
+      "the super over's Result: who won it, the tied score, no player of the match, no other super over");
+    assert(win.eval(`state.matchHistory["${tieId}"].result`) === "Match tied · Lions won the super over" && win.eval(`state.matchHistory["${tieId}"].superOvers.length`) === 1
+      && win.eval("Object.keys(state.matchHistory).length") === 1, "it went into the tie's archive entry (no entry of its own)");
+    win.eval(`handleUndo()`);
+    assert(win.eval("state.match.status") === "live" && win.eval(`state.matchHistory["${tieId}"].superOvers.length`) === 1, "Undo the winning ball: the tie keeps the result until it finishes again");
+    win.eval(`handleBallClick(1); handleBallClick(2);`);
+    assert(win.eval(`state.matchHistory["${tieId}"].superOvers.length`) === 1 && win.eval(`state.matchHistory["${tieId}"].superOvers[0].innings[1].runs`) === 9, "...and finishing again replaces it in place");
+    win.eval(`while (state.match.superOverOf) handleUndo(); render();`);
+    assert(win.eval("state.match.archivedId") === tieId && win.eval("state.match.result") === "Match tied" && !win.eval(`state.matchHistory["${tieId}"].superOvers`)
+      && win.eval(`state.matchHistory["${tieId}"].result`) === "Match tied" && card(), "Undo all the way out of it: back on the tie's Result, the super over gone from history");
+    // From history: a tie archived on this phone can start its super over from the scorecard sheet.
+    win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); render(); openMatchDetail("${tieId}");`);
+    const sheetBtn = () => doc.querySelector('#modal-root .super-over-card [data-action="start-super-over"]');
+    assert(sheetBtn() && sheetBtn().dataset.id === tieId, "the tie's scorecard sheet offers a super over");
+    sheetBtn().click();
+    assert(win.eval("state.match && state.match.superOverOf.id") === tieId && !win.eval("ui.matchDetail") && win.eval("state.snapshots.length") === 0, "...which starts it from history");
+    win.eval(`askCancelMatch()`);
+    assert(/Cancel this super over/.test(doc.querySelector("#confirm-root").textContent) && /keeps its result/.test(doc.querySelector("#confirm-root").textContent), "cancelling a super over says the match keeps its result");
+    doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    assert(!win.eval("state.match") && win.eval(`state.matchHistory["${tieId}"].result`) === "Match tied", "...and leaves the tie as it was");
+    // A settled tie's sheet shows the super over, and offers no other.
+    win.eval(`state.matchHistory["${tieId}"] = withSuperOvers(state.matchHistory["${tieId}"], [{ n: 1, battingFirst: "B", winner: "A", result: "Lions won the super over",
+      innings: JSON.parse(JSON.stringify(state.matchHistory["${tieId}"].innings)) }]); ui = defaultUi(); render(); openMatchDetail("${tieId}");`);
+    assert(doc.querySelector("#modal-root .super-over-block") && /Lions won the super over/.test(doc.querySelector("#modal-root .super-over-block").textContent) && !sheetBtn(),
+      "a settled tie's sheet shows its super over and offers no other");
+    // The presets: a match preset and a tournament preset can send ties to a super over.
+    win.eval(`ui = defaultUi(); state.view = "presets"; ui.editingMatchPreset = Object.assign({}, state.matchPresets[Object.keys(state.matchPresets)[0]]); render();`);
+    const pf = doc.getElementById("match-preset-form");
+    assert(pf && pf.elements.namedItem("superOver") && pf.elements.namedItem("superOver").type === "checkbox", "the match preset form has the super-over switch");
+    pf.elements.namedItem("superOver").checked = true;
+    assert(win.parseMatchPresetForm(new win.FormData(pf)).superOver === true, "...and saves it");
+    win.eval(`state.match = null; state.snapshots = []; state.matchHistory = {}; ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
+  // --- super over: no limit -- tied ones are followed by another until one has a winner ---
+  {
+    const tie = () => {
+      const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 1, playersPerSide: 11, battingFirst: "A" });
+      win.openInnings(currentInnings(m), "Kusal", "Pathum", "Shaheen"); m.status = "live";
+      for (let i = 0; i < 6; i++){ recordBall(currentInnings(m), { kind: "run", runs: 1 }); afterBall(m); }
+      startSecondInnings(m);
+      win.openInnings(currentInnings(m), "Babar", "Rizwan", "Wanindu"); m.status = "live";
+      for (let i = 0; i < 6; i++){ recordBall(currentInnings(m), { kind: "run", runs: 1 }); afterBall(m); }
+      return m;
+    };
+    // One super over: the first side scores `first`, the chase `second` (one ball each, then dots).
+    const play = (so, first, second) => {
+      const names = { A: ["Kusal", "Pathum", "Shaheen"], B: ["Babar", "Rizwan", "Wanindu"] };
+      win.openInnings(currentInnings(so), ...names[so.battingFirst]); so.status = "live";
+      [first, 0, 0, 0, 0, 0].forEach(r => { recordBall(currentInnings(so), { kind: "run", runs: r }); afterBall(so); });
+      startSecondInnings(so);
+      win.openInnings(currentInnings(so), ...names[so.battingFirst === "A" ? "B" : "A"]); so.status = "live";
+      [second, 0, 0, 0, 0, 0].forEach(r => { if (so.status === "live"){ recordBall(currentInnings(so), { kind: "run", runs: r }); afterBall(so); } });
+      return so;
+    };
+    let entry = tie();
+    const firsts = [], results = [];
+    for (let n = 1; n <= 4; n++){
+      const so = win.createSuperOver(entry, "m1");
+      firsts.push(so.battingFirst);
+      play(so, 4, 4);
+      results.push(so.result);
+      assert(so.superOverOf.n === n && win.superOverError(so) === null, `super over ${n} tied: it's number ${n}, and another can follow`);
+      entry = win.withSuperOvers(entry, [...(entry.superOvers || []), win.superOverRecord(so)]);
+      assert(win.superOverError(entry) === null && win.matchWinnerKey(entry) === null, `after ${n} tied super over${n > 1 ? "s" : ""} the match can still go again`);
+    }
+    assert(JSON.stringify(results) === JSON.stringify(["Super over tied", "2nd super over tied", "3rd super over tied", "4th super over tied"]), "tied super overs are numbered from the 2nd: " + results.join(", "));
+    assert(entry.result === "Match tied · 4th super over tied", "the tie's result names the last one");
+    const fifth = play(win.createSuperOver(entry, "m1"), 6, 1);
+    firsts.push(fifth.battingFirst);
+    assert(JSON.stringify(firsts) === JSON.stringify(["B", "A", "B", "A", "B"]), "the side batting first swaps every super over (the one that batted second last time)");
+    assert(fifth.superOverOf.n === 5 && fifth.result === "Tigers won the 5th super over", "the 5th decides it: Tigers won the 5th super over");
+    entry = win.withSuperOvers(entry, [...entry.superOvers, win.superOverRecord(fifth)]);
+    assert(entry.result === "Match tied · Tigers won the 5th super over" && win.matchWinnerKey(entry) === "B" && /played/.test(win.superOverError(entry)),
+      "the tie names the winner and which super over; no 6th");
+    const t = Object.fromEntries(computeStandings([entry], { pointsForWin: 2, pointsForTie: 1, pointsForLoss: 0, useNRR: true }).map(x => [x.name, x]));
+    assert(t.Tigers.won === 1 && t.Tigers.points === 2 && t.Lions.lost === 1 && t.Lions.points === 0 && t.Lions.runsFor === 6, "standings: one win for Tigers however many super overs it took, NRR from the match only");
+    assert(win.superOverName(1) === "super over" && win.superOverName(1, true) === "1st super over" && win.superOverName(11) === "11th super over" && win.superOverName(22) === "22nd super over",
+      "super overs are named 1st/2nd/3rd/4th…11th/22nd");
+    const html = win.renderSuperOverSection(Object.assign({ id: "m1" }, entry));
+    assert((html.match(/class="super-over-block"/g) || []).length === 5 && /1st super over/.test(html) && /5th super over/.test(html), "the scorecard lists all five, numbered");
+  }
+
+  // --- UI: a chain of tied super overs from Result, Undo out of the last one ---
+  {
+    const doc = win.document;
+    win.eval(`
+      ui = defaultUi(); state.snapshots = []; state.matchHistory = {}; state.view = "home";
+      state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 1, playersPerSide: 11, battingFirst: "A" });
+      openInnings(currentInnings(state.match), "Kusal", "Pathum", "Shaheen"); state.match.status = "live";
+      for (let i = 0; i < 6; i++) handleBallClick(1);
+      startSecondInnings(state.match); openInnings(currentInnings(state.match), "Babar", "Rizwan", "Wanindu"); state.match.status = "live";
+      for (let i = 0; i < 6; i++) handleBallClick(1);
+      window.__soPlay = (first, second) => {
+        const names = { A: ["Kusal", "Pathum", "Shaheen"], B: ["Babar", "Rizwan", "Wanindu"] };
+        openInnings(currentInnings(state.match), ...names[state.match.battingFirst]); state.match.status = "live";
+        [first, 0, 0, 0, 0, 0].forEach(r => handleBallClick(r));
+        startSecondInnings(state.match); openInnings(currentInnings(state.match), ...names[state.match.battingFirst === "A" ? "B" : "A"]); state.match.status = "live";
+        [second, 0, 0, 0, 0, 0].forEach(r => { if (state.match.status === "live") handleBallClick(r); });
+        render();
+      };
+      render();`);
+    const tieId = win.eval("state.match.archivedId");
+    const startBtn = () => doc.querySelector('#app .super-over-card [data-action="start-super-over"]');
+    assert(startBtn() && !doc.querySelector("#app .super-over-card.main") && doc.querySelector('#app [data-action="finish-match"]').classList.contains("primary"),
+      "a tie with no super-over preset still offers one, second to the exit button");
+    startBtn().click();
+    for (let n = 1; n <= 3; n++){
+      win.eval(`__soPlay(4, 4)`);
+      const head = doc.querySelector("#app .super-over-card .super-over-head");
+      assert(win.eval("state.match.result") === (n === 1 ? "Super over tied" : `${n}${["", "st", "nd", "rd"][n]} super over tied`)
+        && doc.querySelector("#app .super-over-card.main") && head && head.textContent.includes(`${n + 1}${["", "st", "nd", "rd", "th"][n + 1]} super over`),
+        `super over ${n} tied: Result leads with the ${n + 1}${["", "st", "nd", "rd", "th"][n + 1]}`);
+      assert(win.eval(`state.matchHistory["${tieId}"].superOvers.length`) === n, `...and the tie's history entry holds all ${n} so far`);
+      startBtn().click();
+      assert(win.eval("state.match.superOverOf.n") === n + 1 && win.eval("state.match.status") === "opening", `the ${n + 1}${["", "st", "nd", "rd", "th"][n + 1]} super over starts`);
+    }
+    assert(/4th super over · Lions v Tigers/.test(doc.querySelector(".topbar").textContent) && /4th super over · /.test(doc.querySelector("#modal-root h2").textContent), "the top bar and opening sheet number it");
+    win.eval(`handleUndo(); render();`);
+    assert(win.eval("state.match.superOverOf.n") === 3 && win.eval("state.match.status") === "complete" && win.eval(`state.matchHistory["${tieId}"].superOvers.length`) === 3,
+      "Undo on the 4th's opening sheet: back on the 3rd's Result, the three tied ones kept");
+    startBtn().click();
+    win.eval(`__soPlay(1, 6)`);
+    assert(win.eval("state.match.result") === "Tigers won the 4th super over" && /4TH SUPER OVER/.test(doc.querySelector("#app .result-hero .eyebrow").textContent) && !startBtn(),
+      "the 4th has a winner: no 5th offered");
+    assert(win.eval(`state.matchHistory["${tieId}"].result`) === "Match tied · Tigers won the 4th super over" && win.eval(`state.matchHistory["${tieId}"].superOvers.length`) === 4
+      && win.eval("Object.keys(state.matchHistory).length") === 1, "the tie's entry: all four super overs, Tigers won the 4th, still one match in history");
+    win.eval(`state.match = null; state.snapshots = []; state.matchHistory = {}; ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
+  // --- UI: a guest tournament whose presets don't use super overs still gives a super-over winner the win points ---
+  {
+    const doc = win.document;
+    win.eval(`
+      ui = defaultUi(); state.snapshots = []; state.matchHistory = {}; state.match = null;
+      state.matchPresets["so-test"] = { id: "so-test", name: "One over", ballsPerOver: 6, oversLimit: 1, playersPerSide: 11,
+        wide: { enabled: true, runs: 1 }, noBall: { enabled: true, runs: 1 }, freeHitOnNoBall: true, requireFielderOnCatch: false, requireFielderOnRunout: false, superOver: false };
+      state.tournamentPresets["so-test-t"] = { id: "so-test-t", name: "League", matchPresetId: "so-test", pointsForWin: 2, pointsForTie: 1, pointsForLoss: 0, useNRR: true, superOver: false };
+      state.teams["so-ta"] = { id: "so-ta", name: "Lions", playerIds: [] }; state.teams["so-tb"] = { id: "so-tb", name: "Tigers", playerIds: [] };
+      const t = createTournament({ name: "Cup", tournamentPresetId: "so-test-t", teamIds: ["so-ta", "so-tb"] });
+      state.activeTournamentId = t.id; state.view = "tournamentDashboard"; ui.tournamentTab = "fixtures"; render();`);
+    const form = doc.getElementById("tournament-start-match-form");
+    form.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(win.eval("state.match && state.match.superOver") === false && win.eval("state.match.tournamentId") === win.eval("state.activeTournamentId"),
+      "a tournament match started from presets without super overs has the flag off");
+    win.eval(`
+      openInnings(currentInnings(state.match), "Kusal", "Pathum", "Shaheen"); state.match.status = "live";
+      for (let i = 0; i < 6; i++) handleBallClick(1);
+      startSecondInnings(state.match); openInnings(currentInnings(state.match), "Babar", "Rizwan", "Wanindu"); state.match.status = "live";
+      for (let i = 0; i < 6; i++) handleBallClick(1);
+      render();`);
+    const tid = win.eval("state.activeTournamentId");
+    const table = () => Object.fromEntries(win.eval(`JSON.stringify(computeStandings(state.tournaments["${tid}"].matchIds.map(id => state.matchHistory[id]), state.tournamentPresets["so-test-t"]))`)
+      && JSON.parse(win.eval(`JSON.stringify(computeStandings(state.tournaments["${tid}"].matchIds.map(id => state.matchHistory[id]), state.tournamentPresets["so-test-t"]))`)).map(x => [x.name, x]));
+    assert(table().Lions.tied === 1 && table().Lions.points === 1 && table().Tigers.points === 1, "tied, no super over yet: tie points each");
+    doc.querySelector('#app .super-over-card [data-action="start-super-over"]').click();
+    win.eval(`
+      openInnings(currentInnings(state.match), "Babar", "Rizwan", "Wanindu"); state.match.status = "live";
+      [4, 0, 0, 0, 0, 0].forEach(r => handleBallClick(r));
+      startSecondInnings(state.match); openInnings(currentInnings(state.match), "Kusal", "Pathum", "Shaheen"); state.match.status = "live";
+      [6].forEach(r => handleBallClick(r)); render();`);
+    assert(win.eval(`state.tournaments["${tid}"].matchIds.length`) === 1, "the super over isn't a second tournament match");
+    const t2 = table();
+    assert(t2.Lions.won === 1 && t2.Lions.points === 2 && t2.Lions.tied === 0 && t2.Tigers.lost === 1 && t2.Tigers.points === 0,
+      "super over played though the presets don't use them: Lions get the win points, Tigers the loss points");
+    doc.querySelector('#app [data-action="finish-match"]').click();
+    const rows = [...doc.querySelectorAll("#app .standings-table tbody tr")].map(r => [...r.cells].map(c => c.textContent.trim()).join(" "));
+    assert(win.eval("state.view") === "tournamentDashboard" && /^Lions 1 1 0 0 2/.test(rows[0] || "") && /^Tigers 1 0 1 0 0/.test(rows[1] || "")
+      && /Match tied · Lions won the super over/.test(doc.querySelector("#app .fixtures").textContent),
+      "the tournament's points table and results show it: " + rows.join(" | "));
+    win.eval(`state.match = null; state.snapshots = []; state.matchHistory = {}; state.tournaments = {}; delete state.matchPresets["so-test"]; delete state.tournamentPresets["so-test-t"];
+      delete state.teams["so-ta"]; delete state.teams["so-tb"]; ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }

@@ -20,6 +20,9 @@ function renderMatchSetup(){
   const preset = presets.find(p => p.id === ui.matchSetupPresetId) || {};
   const clubName = clubMode ? currentClubName() : "";
   const inTournament = clubMode && ui.clubMatchSetupType === "tournament";
+  // A club tournament's own preset can send ties to a super over too.
+  const tournamentSuperOver = !!(inTournament && ui.clubTournament && ui.clubTournament.id === ui.currentTournamentId
+    && (ui.clubTournament.tournament_preset || {}).superOver);
   const tournamentName = inTournament && ui.clubTournament ? ui.clubTournament.name : "";
   // Two or more saved tournament teams -> pick them instead of typing names.
   const savedTeams = inTournament && ui.clubTournament && ui.clubTournament.id === ui.currentTournamentId ? ui.clubTournament.teams || [] : [];
@@ -68,6 +71,7 @@ function renderMatchSetup(){
         </div>
         <label>Players per side <span class="muted">· blank: no limit</span><input name="players" type="number" min="2" max="11" value="${limitInputValue(preset.playersPerSide, 11)}" placeholder="No limit"></label>
         <label class="check-row"><input type="checkbox" name="lastManStands" ${preset.lastManStands ? "checked" : ""}> Last man stands — the last batter bats alone</label>
+        <label class="check-row"><input type="checkbox" name="superOver" ${preset.superOver || tournamentSuperOver ? "checked" : ""}> A tie goes to a super over</label>
         <fieldset>
           <legend>Extras</legend>
           <label class="check-row"><input type="checkbox" name="wideEnabled" ${preset.wide ? (preset.wide.enabled ? "checked" : "") : "checked"}> Wides count, worth <input name="wideRuns" type="number" min="0" max="6" value="${preset.wide ? preset.wide.runs : 1}" class="inline-num"> run(s)</label>
@@ -143,7 +147,8 @@ function handleMatchSetupSubmit(e){
     requireFielderOnCatch, requireFielderOnRunout,
     presetId: preset ? preset.id : null, presetName: preset ? preset.name : null,
     tournamentId: inTournament ? ui.currentTournamentId : null,
-    tossWinner: f.get("tossWinner")
+    tossWinner: f.get("tossWinner"),
+    superOver: f.get("superOver") === "on"
   });
   if (ui.currentClubId && ui.clubMatchSetupType){
     // Extra, UI-only fields on top of the engine's match object (like

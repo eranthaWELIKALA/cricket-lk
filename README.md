@@ -11,8 +11,9 @@ final result. Beyond a single match, it also supports:
 - **Match & tournament presets** — reusable playing conditions (balls
   per over, overs, players per side, wide/no-ball run values and
   on/off toggles, whether a no-ball gives a free hit, whether a catch/
-  run-out taker is required) and tournament-level rules (points for a
-  win/tie/loss, NRR ranking).
+  run-out taker is required, whether a tie goes to a super over) and
+  tournament-level rules (points for a win/tie/loss, NRR ranking, whether
+  tied matches go to a super over).
   Three match presets and one tournament preset ship built in; add,
   edit, or delete your own from the Presets screen.
 - **Teams & players** — persistent, editable rosters with name
@@ -39,6 +40,14 @@ final result. Beyond a single match, it also supports:
   confirmation: their figures move over, for a bowler just the overs chosen.
 - **Last man stands with a short side** — when nobody is left to come in, one
   tap lets the batter still in carry on alone; the next wicket is all out.
+- **Super overs** — a tied match can be settled by a super over (one over,
+  two wickets a side; the side that batted second bats first), started from
+  its Result screen or later from match history, and scored like any match.
+  The tie's result then names the winner ("Match tied · Lions won the super
+  over") and standings give the winner the win points, even when the
+  presets don't use super overs. A tied super over is followed by another,
+  as many as it takes ("Tigers won the 3rd super over"). A preset can say a
+  tie goes to one, so Result leads with it.
 - **Forfeits** — end a match at any point (before it even starts, mid-
   innings, at the break) and declare the other team the winner. Counts
   toward tournament standings (points, not NRR) and archived stats.
@@ -121,6 +130,14 @@ gh api repos/<owner>/<name>/pages -X POST -f "source[branch]=master" -f "source[
 - **Wickets off a wide or no-ball are limited to the usual ones**: off a
   wide stumped, hit wicket or run out; off a no-ball (or on a free hit) run
   out only. Obstructing the field and handled the ball aren't offered at all.
+- **Super overs follow the basics only.** One over, two wickets, the side
+  that batted second bats first. Their runs and wickets stay out of player
+  stats, MVP, records and NRR (as in the ICC's playing conditions). The
+  ICC's rules for a *second* super over (batters out and the bowler in the
+  first can't take part) aren't enforced, and there's no boundary count-back.
+  A result entered by hand can't record a super-over winner. A super over can
+  be fixed ball by ball until the scorer leaves its Result; after that it's
+  kept as it was.
 - **Retirements are retired hurt or retired not out only.** Retired out
   (which counts as a wicket) isn't offered. A batter who retires and isn't
   needed again stays "not out" in every stat; with nobody else left to bat,

@@ -73,7 +73,7 @@ function renderOpeningModal(match){
     <div class="modal-backdrop${inn.target != null ? " with-score" : ""}">
       ${inn.target != null ? renderSheetScore(match, inn) : ""}
       <div class="modal" data-keep-scroll="opening">
-        <h2>${escapeHtml(teamName(match, inn.battingTeam))} — opening players</h2>
+        <h2>${match.superOverOf ? `${escapeHtml(capitalize(superOverName(match.superOverOf.n)))} · ` : ""}${escapeHtml(teamName(match, inn.battingTeam))} — opening players</h2>
         <form id="opening-form">
           <div class="form-error"></div>
           <div class="section-label">Openers</div>
@@ -298,11 +298,11 @@ function askCancelMatch(){
   ui.matchMenu = null;
   const cur = currentInnings(m);
   askConfirm({
-    title: "Cancel this match?", icon: "✕",
-    body: m.reopenedFrom && state.matchHistory[m.reopenedFrom]
+    title: m.superOverOf ? "Cancel this super over?" : "Cancel this match?", icon: "✕",
+    body: m.superOverOf ? cancelSuperOverText(m) : m.reopenedFrom && state.matchHistory[m.reopenedFrom]
       ? `<p>This match was finished, then reopened. Cancelling throws away the changes since then; match history keeps the result it had (<b>${escapeHtml(state.matchHistory[m.reopenedFrom].result || "")}</b>). This can't be undone.</p>`
       : `<p>Started by mistake? The match is thrown away: no result, and nothing goes into stats, standings${m.clubId ? " or the club's cloud records" : ""}.${matchHasStarted(m) ? ` What's been scored so far (<b class="n">${cur.runs}-${cur.wickets}</b>) is lost.` : ""} This can't be undone.</p>${m.clubId ? `<p class="hint">Players already added to the club roster during this match stay on it.</p>` : ""}`,
-    confirmLabel: "Cancel match", cancelLabel: "Keep playing",
+    confirmLabel: m.superOverOf ? "Cancel super over" : "Cancel match", cancelLabel: "Keep playing",
     onConfirm: () => cancelMatch()
   });
 }
@@ -818,6 +818,8 @@ function renderWicketModal(inn){
 }
 
 function maybeArchiveCompletedMatch(match){
+  // A super over goes into its tied match's entry, never one of its own.
+  if (match.superOverOf){ syncSuperOver(match); return; }
   if (match.status === "complete" && !match.archivedId){
     match.motm = pickMatchMOTM(match, pointsPresetFor(match));
     // A finished match that was reopened (or undone past its end) and has now

@@ -219,6 +219,13 @@ function handleUndo(){
    the entry stays (with the old result) until the match finishes again and
    replaces it (`reopenedFrom`, see maybeArchiveCompletedMatch). */
 function keepArchiveInStep(cur, prev){
+  // A super over: back to a finished version of it, and that goes into its
+  // tied match; back out of it altogether, and it comes out (super-over.js).
+  if (cur && cur.superOverOf){
+    const same = prev && prev.superOverOf && prev.superOverOf.id === cur.superOverOf.id && prev.superOverOf.n === cur.superOverOf.n;
+    if (same) syncSuperOver(prev); else dropSuperOver(cur.superOverOf);
+    return;
+  }
   const id = cur && (cur.archivedId || cur.reopenedFrom);
   if (!id || !prev || !state.matchHistory[id]) return;
   if (prev.status === "complete"){ delete prev.reopenedFrom; prev.archivedId = id; replaceArchivedMatch(id, prev); }

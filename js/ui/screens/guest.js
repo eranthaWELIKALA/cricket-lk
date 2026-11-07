@@ -176,6 +176,7 @@ function tournamentPresetCardHtml(p, matchPresetName, builtIn, editAction, delet
         <span class="n tag-pill">tie ${p.pointsForTie}</span>
         <span class="n tag-pill">loss ${p.pointsForLoss}</span>
         <span class="n tag-pill${p.useNRR !== false ? " gold" : ""}">NRR ${p.useNRR !== false ? "on" : "off"}</span>
+        ${p.superOver ? `<span class="n tag-pill gold">super over</span>` : ""}
       </div>
     </div>
   `;
@@ -214,6 +215,7 @@ function renderMatchPresetForm(p, clubId){
       <label class="check-row"><input type="checkbox" name="freeHitOnNoBall" ${p.freeHitOnNoBall !== false ? "checked" : ""}> No-ball gives a free hit</label>
       <label class="check-row"><input type="checkbox" name="requireFielderOnCatch" ${p.requireFielderOnCatch ? "checked" : ""}> Require catch taker</label>
       <label class="check-row"><input type="checkbox" name="requireFielderOnRunout" ${p.requireFielderOnRunout ? "checked" : ""}> Require run-out taker</label>
+      <label class="check-row"><input type="checkbox" name="superOver" ${p.superOver ? "checked" : ""}> A tie goes to a super over</label>
       <div class="action-row">
         <button type="submit" class="primary">Save preset</button>
         <button type="button" data-action="${clubId ? "club-cancel-preset-edit" : "cancel-preset-edit"}" class="ghost">Cancel</button>
@@ -252,6 +254,7 @@ function renderTournamentPresetForm(p, clubId){
         <label>Loss pts<input name="pointsForLoss" type="number" min="0" max="10" value="${p.pointsForLoss ?? 0}" required></label>
       </div>
       <label class="check-row"><input type="checkbox" name="useNRR" ${p.useNRR !== false ? "checked" : ""}> Rank ties on NRR</label>
+      <label class="check-row"><input type="checkbox" name="superOver" ${p.superOver ? "checked" : ""}> Tied matches go to a super over</label>
       <div class="action-row">
         <button type="submit" class="primary">Save preset</button>
         <button type="button" data-action="${clubId ? "club-cancel-preset-edit" : "cancel-preset-edit"}" class="ghost">Cancel</button>
@@ -272,7 +275,8 @@ function parseMatchPresetForm(f){
     noBall: { enabled: f.get("noBallEnabled") === "on", runs: Math.max(0, parseInt(f.get("noBallRuns"), 10) || 0) },
     freeHitOnNoBall: f.get("freeHitOnNoBall") === "on",
     requireFielderOnCatch: f.get("requireFielderOnCatch") === "on",
-    requireFielderOnRunout: f.get("requireFielderOnRunout") === "on"
+    requireFielderOnRunout: f.get("requireFielderOnRunout") === "on",
+    superOver: f.get("superOver") === "on"
   };
 }
 function parseTournamentPresetForm(f){
@@ -283,7 +287,8 @@ function parseTournamentPresetForm(f){
     pointsForWin: Math.max(0, parseInt(f.get("pointsForWin"), 10) || 0),
     pointsForTie: Math.max(0, parseInt(f.get("pointsForTie"), 10) || 0),
     pointsForLoss: Math.max(0, parseInt(f.get("pointsForLoss"), 10) || 0),
-    useNRR: f.get("useNRR") === "on"
+    useNRR: f.get("useNRR") === "on",
+    superOver: f.get("superOver") === "on"
   };
 }
 
@@ -515,7 +520,7 @@ function renderTournamentDashboard(){
     <div class="screen tournament">
       ${renderBackBar("Home", "home")}
       <h1>🏆 ${escapeHtml(t.name)}</h1>
-      <p class="tagline">${escapeHtml(matchPreset.name)} · ${preset.pointsForWin}/${preset.pointsForTie}/${preset.pointsForLoss} pts${preset.useNRR ? " · NRR" : ""}</p>
+      <p class="tagline">${escapeHtml(matchPreset.name)} · ${preset.pointsForWin}/${preset.pointsForTie}/${preset.pointsForLoss} pts${preset.useNRR ? " · NRR" : ""}${preset.superOver || matchPreset.superOver ? " · super over" : ""}</p>
       ${tabsHtml("switch-tournament-tab", tournamentTabs(ended), tab, ended ? "main-tabs many" : "main-tabs")}
       ${tab === "summary" ? renderTournamentSummary(tournamentContext()) : ""}
       ${tab === "overview" ? `
@@ -610,7 +615,9 @@ function handleTournamentStartMatchSubmit(e){
     requireFielderOnRunout: matchPreset.requireFielderOnRunout,
     battingFirst, tossWinner: f.get("tossWinner"),
     presetId: matchPreset.id, presetName: matchPreset.name,
-    tournamentId: t.id
+    tournamentId: t.id,
+    // Either preset can say a tie goes to a super over.
+    superOver: !!(matchPreset.superOver || preset.superOver)
   });
   if (f.get("anonymous") === "on") state.match.anonymous = true;
   else state.match.squads = { A: guestTeamSquad(state.teams[teamAId], state.players), B: guestTeamSquad(state.teams[teamBId], state.players) };

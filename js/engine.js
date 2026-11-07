@@ -733,7 +733,7 @@ function settleMatchStatus(m){
   const last = currentInnings(m);
   if (last.complete){
     if (m.innings.length === 1){ m.status = "innings_break"; m.result = null; }
-    else { m.status = "complete"; m.result = matchResult(m); }
+    else finishMatch(m);
   } else {
     m.status = last.batting.order.length ? "live" : "opening";
     m.result = null;
@@ -1116,7 +1116,7 @@ function setScoresByHand(match, scores){
   return { match: m, notes };
 }
 
-function createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst, ballsPerOver, wideRuns, noBallRuns, wideEnabled, noBallEnabled, freeHitOnNoBall, lastManStands, requireFielderOnCatch, requireFielderOnRunout, presetId, presetName, tournamentId, tossWinner }){
+function createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst, ballsPerOver, wideRuns, noBallRuns, wideEnabled, noBallEnabled, freeHitOnNoBall, lastManStands, requireFielderOnCatch, requireFielderOnRunout, presetId, presetName, tournamentId, tossWinner, superOver }){
   // null/undefined overs or players = no limit (see createInnings).
   oversLimit = oversLimit || null;
   playersPerSide = playersPerSide || null;
@@ -1136,6 +1136,8 @@ function createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst, b
     freeHitOnNoBall: cfg.freeHitOnNoBall,
     requireFielderOnCatch: !!requireFielderOnCatch,
     requireFielderOnRunout: !!requireFielderOnRunout,
+    // A tie goes to a super over (see "super over" below): Result leads with it.
+    superOver: !!superOver,
     presetId: presetId || null,
     presetName: presetName || null,
     tournamentId: tournamentId || null,
@@ -1238,10 +1240,11 @@ function limitInputValue(v, def){ return v === undefined ? def : (v == null ? ""
 /* Playing-condition tags shared by preset cards and the innings break. */
 function conditionTagsFor(c){
   return [
-    c.oversLimit != null ? `${c.oversLimit} overs` : "no over limit",
+    c.oversLimit != null ? `${c.oversLimit} over${c.oversLimit === 1 ? "" : "s"}` : "no over limit",
     `${c.ballsPerOver}-ball`,
     c.playersPerSide != null ? `${c.playersPerSide} a side` : "any number a side",
-    c.lastManStands && c.playersPerSide != null ? "last man stands" : null
+    c.lastManStands && c.playersPerSide != null ? "last man stands" : null,
+    c.superOver ? "super over" : null
   ].filter(Boolean);
 }
 
@@ -1261,6 +1264,7 @@ function describeMatchPreset(p){
   ];
   const fielder = [p.requireFielderOnCatch && "catches", p.requireFielderOnRunout && "run-outs"].filter(Boolean);
   if (fielder.length) rows.push(["Fielder", `Must be named for ${fielder.join(" and ")}.`]);
+  rows.push(["If tied", p.superOver ? `A super over decides it: ${plural(SUPER_OVER_OVERS, "over")} and ${SUPER_OVER_PLAYERS - 1} wickets a side.` : "It stays a tie."]);
   return rows;
 }
 /* `matchPresetName` is null for a club tournament preset, whose match
@@ -1269,6 +1273,7 @@ function describeTournamentPreset(t, matchPresetName){
   return [
     ["Matches", matchPresetName ? `Played as ${matchPresetName}.` : "Conditions are picked when each match is set up."],
     ["Points", `Win ${t.pointsForWin} · Tie ${t.pointsForTie} · Loss ${t.pointsForLoss}`],
+    ["Ties", t.superOver ? "Settled by a super over. Its winner gets the win points." : "Tie points each, unless a super over is played."],
     ["Level on points", t.useNRR !== false ? "Ranked by net run rate (NRR)." : "Stay level. NRR isn't used."]
   ];
 }
@@ -1523,6 +1528,10 @@ function startSecondInnings(match){
 function matchResult(match){
   const [i1, i2] = match.innings;
   const bpo = match.ballsPerOver || 6;
+  if (match.superOverOf){
+    const w = inningsWinnerKey(match), name = superOverName(match.superOverOf.n);
+    return w ? `${teamName(match, w)} won the ${name}` : `${capitalize(name)} tied`;
+  }
   if (i2.runs >= i2.target){
     // No players limit -> no wickets margin; no overs limit -> no "overs left".
     const wl = i2.maxWickets != null ? i2.maxWickets - i2.wickets : null;
@@ -1530,7 +1539,11 @@ function matchResult(match){
     const margin = wl != null ? ` by ${wl} wicket${wl === 1 ? "" : "s"}` : "";
     return `${teamName(match, i2.battingTeam)} won${margin}${left}`;
   }
-  if (i2.runs === i1.runs) return "Match tied";
+  if (i2.runs === i1.runs){
+    const last = lastSuperOver(match);
+    if (!last) return "Match tied";
+    return last.winner ? `Match tied · ${teamName(match, last.winner)} won the ${superOverName(last.n)}` : `Match tied · ${superOverName(last.n)} tied`;
+  }
   const margin = i1.runs - i2.runs;
   return `${teamName(match, i1.battingTeam)} won by ${margin} run${margin === 1 ? "" : "s"}`;
 }
@@ -1539,7 +1552,7 @@ function afterBall(match){
   const inn = currentInnings(match);
   if (inn.complete){
     if (match.innings.length === 1) match.status = "innings_break";
-    else { match.status = "complete"; match.result = matchResult(match); }
+    else finishMatch(match);
   }
 }
 
@@ -1553,7 +1566,7 @@ function forfeitMatch(match, forfeitingTeamKey){
   match.forfeited = true;
   match.forfeitedBy = forfeitingTeamKey;
   match.status = "complete";
-  match.result = `${teamName(match, winnerKey)} won — ${teamName(match, forfeitingTeamKey)} forfeited the match`;
+  match.result = `${teamName(match, winnerKey)} won — ${teamName(match, forfeitingTeamKey)} forfeited the ${match.superOverOf ? "super over" : "match"}`;
 }
 
 /* True once anything at all has been recorded -- a delivery, an extra, or
@@ -1569,7 +1582,7 @@ function matchHasStarted(match){
    was scored (the UI warns and snapshots first, so Undo can bring it back).
    UI-only extras that recordBall never reads (club, match type, squads,
    visitor name) are carried over so the restart is the same fixture. */
-const MATCH_CARRY_FIELDS = ["clubId", "matchType", "squads", "guestNames", "visitingSides", "opponentName", "anonymous", "reopenedFrom", "editingFromHistory"];
+const MATCH_CARRY_FIELDS = ["clubId", "matchType", "squads", "guestNames", "visitingSides", "opponentName", "anonymous", "reopenedFrom", "editingFromHistory", "superOverOf"];
 function restartMatch(match, battingFirst){
   const i1 = match.innings[0];
   const fresh = createMatch({
@@ -1581,10 +1594,143 @@ function restartMatch(match, battingFirst){
     freeHitOnNoBall: match.freeHitOnNoBall, lastManStands: match.lastManStands,
     requireFielderOnCatch: match.requireFielderOnCatch, requireFielderOnRunout: match.requireFielderOnRunout,
     presetId: match.presetId, presetName: match.presetName, tournamentId: match.tournamentId,
-    tossWinner: match.tossWinner
+    tossWinner: match.tossWinner, superOver: match.superOver
   });
   MATCH_CARRY_FIELDS.forEach(k => { if (match[k] !== undefined) fresh[k] = JSON.parse(JSON.stringify(match[k])); });
   return fresh;
+}
+
+/* --- super over ---
+   A tied match can be settled by a super over: a match of its own (one over
+   a side, two wickets and they're all out), scored with every tool a match
+   has, and linked to the tie by `superOverOf: { id, n, tiedOn }` (the tied
+   match's archive id, which super over this is, the tied score). The side
+   that batted second bats first; in a second super over (the first one tied
+   too), the side that batted second in that one. Once it finishes, a slim
+   copy goes into the tied match's `superOvers` list (superOverRecord, UI:
+   syncSuperOver) and matchResult reads it -- "Match tied · Lions won the
+   super over" -- which standings count as a win and a loss. Only
+   `match.innings` feed player stats, records, MOTM and NRR, so the super
+   over's runs and wickets stay out of all of them (as in the ICC's playing
+   conditions). A preset's `superOver` flag (match or tournament preset)
+   only says a tie goes to one, so Result leads with it; any tie can still
+   be settled with one. */
+const SUPER_OVER_OVERS = 1;
+const SUPER_OVER_PLAYERS = 3;   // two wickets and they're all out
+/* There's no limit: a super over that ties too is followed by another, as
+   often as it takes. From the 2nd on they're numbered, as the scorecards
+   do ("Lions won the 2nd super over"); `numbered` names the 1st too. */
+function superOverName(n, numbered){
+  if (n <= 1 && !numbered) return "super over";
+  const r = n % 100, suffix = r >= 11 && r <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" })[n % 10] || "th";
+  return `${n}${suffix} super over`;
+}
+function capitalize(s){ return s ? s[0].toUpperCase() + s.slice(1) : s; }
+
+// The end of a two-innings match (afterBall, settleMatchStatus). A super over
+// only belongs to a tie: an edit that breaks the tie drops it.
+function finishMatch(m){
+  m.status = "complete";
+  if (m.superOvers && !matchTied(m)) delete m.superOvers;
+  m.result = matchResult(m);
+}
+// Who won on the innings alone: "A"/"B", or null for a tie (or no chase yet).
+function inningsWinnerKey(match){
+  const [i1, i2] = match.innings;
+  if (!i1 || !i2 || i2.runs === i1.runs) return null;
+  return i2.runs > i1.runs ? i2.battingTeam : i1.battingTeam;
+}
+function matchTied(match){
+  const [i1, i2] = match.innings;
+  return !!(i1 && i2 && !match.forfeited && i2.runs === i1.runs);
+}
+function lastSuperOver(match){
+  const list = match.superOvers || [];
+  return list.length ? list[list.length - 1] : null;
+}
+// The winner of a finished match, super over included: "A"/"B", or null (a tie).
+function matchWinnerKey(match){
+  if (match.forfeited) return match.forfeitedBy === "A" ? "B" : "A";
+  const w = inningsWinnerKey(match);
+  if (w || match.superOverOf || !matchTied(match)) return w;
+  const last = lastSuperOver(match);
+  return last && last.winner ? last.winner : null;
+}
+// Why `match` can't go to a(nother) super over, or null if it can. `match` is
+// a finished tied match, or a finished super over that tied too.
+function superOverError(match){
+  if (!match || match.status !== "complete") return "The match isn't finished yet.";
+  if (match.forfeited) return "A forfeited match has no super over.";
+  if (match.resultOnly) return "This result was entered by hand.";
+  if (!matchTied(match)) return match.superOverOf ? "The super over has a winner." : "Only a tied match goes to a super over.";
+  if (!match.superOverOf && lastSuperOver(match) && lastSuperOver(match).winner) return "The super over has been played.";
+  return null;
+}
+/* The next super over for a tied match (`parent`, as archived, under
+   `parentId`): same sides, same over length and extras, one over and two
+   wickets a side (fewer for a tiny side), no last man stands. Each side's
+   squad is everyone who played for it in the match (superOverSquads), so
+   the pick sheets list them and nobody can turn out for the other side. */
+function createSuperOver(parent, parentId){
+  const list = parent.superOvers || [];
+  const prev = list.length ? list[list.length - 1] : parent;
+  const i1 = parent.innings[0];
+  const so = createMatch({
+    teamA: parent.teamA, teamB: parent.teamB,
+    oversLimit: SUPER_OVER_OVERS,
+    playersPerSide: parent.playersPerSide != null ? Math.min(SUPER_OVER_PLAYERS, parent.playersPerSide) : SUPER_OVER_PLAYERS,
+    battingFirst: prev.innings[1].battingTeam,
+    ballsPerOver: parent.ballsPerOver, wideRuns: i1.wideBaseRuns, noBallRuns: i1.noBallBaseRuns,
+    wideEnabled: parent.wideEnabled, noBallEnabled: parent.noBallEnabled, freeHitOnNoBall: parent.freeHitOnNoBall,
+    requireFielderOnCatch: parent.requireFielderOnCatch, requireFielderOnRunout: parent.requireFielderOnRunout,
+    presetId: parent.presetId, presetName: parent.presetName, tournamentId: parent.tournamentId
+  });
+  ["clubId", "matchType", "guestNames", "visitingSides", "opponentName", "anonymous"].forEach(k => {
+    if (parent[k] !== undefined) so[k] = JSON.parse(JSON.stringify(parent[k]));
+  });
+  const squads = parent.anonymous ? null : superOverSquads(parent);
+  if (squads) so.squads = squads;
+  so.superOverOf = { id: parentId, n: list.length + 1, tiedOn: i1.runs };
+  return so;
+}
+// Each side's squad plus everyone who batted, bowled or fielded for it
+// (placeholders left out), or null when nobody's known.
+function superOverSquads(match){
+  const sides = { A: [], B: [] };
+  const add = (side, raw) => {
+    const n = (raw || "").trim();
+    if (!n || isUnnamedPlayer(n) || sides[side].some(x => x.toLowerCase() === n.toLowerCase())) return;
+    sides[side].push(n);
+  };
+  ["A", "B"].forEach(k => ((match.squads || {})[k] || []).forEach(n => add(k, n)));
+  match.innings.forEach(inn => {
+    inn.batting.order.forEach(n => add(inn.battingTeam, n));
+    inn.bowling.order.forEach(n => add(inn.bowlingTeam, n));
+    (inn.fielding.order || []).forEach(n => add(inn.bowlingTeam, n));
+  });
+  return sides.A.length || sides.B.length ? sides : null;
+}
+// What a finished super over leaves in its tied match: no logs, no squads.
+function superOverRecord(so){
+  const innings = JSON.parse(JSON.stringify(so.innings));
+  innings.forEach(inn => { delete inn.log; delete inn.logBase; });
+  return { n: so.superOverOf.n, battingFirst: so.battingFirst, innings, result: so.result, winner: matchWinnerKey(so) };
+}
+// A copy of a finished tied match with these super overs, its result said again.
+function withSuperOvers(match, list){
+  const m = JSON.parse(JSON.stringify(match));
+  if (list && list.length) m.superOvers = JSON.parse(JSON.stringify(list));
+  else delete m.superOvers;
+  if (m.status === "complete" && !m.forfeited && m.innings[1]) m.result = matchResult(m);
+  return m;
+}
+// One of a match's super overs as a match object, for the scorecard tables.
+function superOverMatch(match, rec){
+  return {
+    teamA: match.teamA, teamB: match.teamB, battingFirst: rec.battingFirst, ballsPerOver: match.ballsPerOver,
+    oversLimit: SUPER_OVER_OVERS, innings: rec.innings, status: "complete", result: rec.result,
+    anonymous: !!match.anonymous, superOverOf: { id: match.id || null, n: rec.n }
+  };
 }
 
 /* Has this name batted, bowled or fielded in the match yet? */
@@ -1902,11 +2048,13 @@ function computeStandings(matches, tournamentPreset){
       bwt.runsAgainst += inn.runs; bwt.oversAgainst += faced[n];
     });
     ensureTeam(nameA).played += 1; ensureTeam(nameB).played += 1;
-    if (i2.runs === i1.runs){
+    // A tie settled by a super over is a win and a loss (its runs stay out of NRR).
+    const winnerKey = matchWinnerKey(match);
+    if (!winnerKey){
       teams[nameA].tied += 1; teams[nameB].tied += 1;
       teams[nameA].points += tournamentPreset.pointsForTie; teams[nameB].points += tournamentPreset.pointsForTie;
     } else {
-      const winner = i2.runs > i1.runs ? teamName(match, i2.battingTeam) : teamName(match, i1.battingTeam);
+      const winner = teamName(match, winnerKey);
       const loser = winner === nameA ? nameB : nameA;
       teams[winner].won += 1; teams[loser].lost += 1;
       teams[winner].points += tournamentPreset.pointsForWin;
@@ -2723,6 +2871,10 @@ function commentaryBookends(match, idx){
   const bpo = inn.ballsPerOver || 6;
   const start = [];
   if (idx === 0){
+    if (match.superOverOf){
+      const so = match.superOverOf, on = so.tiedOn != null ? ` on ${so.tiedOn}` : "";
+      start.push(so.n > 1 ? `${capitalize(superOverName(so.n))}: the last one was tied too.` : `Super over: the match was tied${on}.`);
+    }
     if (match.tossWinner){
       const won = teamName(match, match.tossWinner);
       start.push(`${won} won the toss and chose to ${match.tossWinner === inn.battingTeam ? "bat" : "field"}.`);

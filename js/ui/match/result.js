@@ -264,10 +264,13 @@ function openMatchDetail(id){
   ui.scorecard = { inn: 0, mode: "card" };
   render();
 }
+// Player of the match (a super over has none: it belongs to the match it settled).
+function matchMotm(m){ return m.superOverOf ? null : m.motm || pickMatchMOTM(m, pointsPresetFor(m)); }
 function renderMatchDetailModal(){
   const m = ui.matchDetail.match;
   const detail = renderResultDetail(m);
-  const motm = m.motm || pickMatchMOTM(m, pointsPresetFor(m));
+  const motm = matchMotm(m);
+  const viewOnly = ["publicTournament", "playerProfile"].includes(ui.matchDetail.view);
   const when = m.completedAt ? new Date(m.completedAt).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" }) : "";
   return `
     <div class="modal-backdrop">
@@ -282,6 +285,8 @@ function renderMatchDetailModal(){
           <div class="muted">${[when, motm ? `Player of the match: ${escapeHtml(motm)}` : ""].filter(Boolean).join(" · ")}</div>
         </div>
         ${m.resultOnly ? renderResultOnlyCard(m) : renderScorecard(m)}
+        ${renderSuperOverSection(m)}
+        ${viewOnly ? "" : renderSuperOverCard(m, m.id)}
         <div class="share-row">
           <button type="button" data-action="share-match-detail" class="ghost" style="font-weight:800;letter-spacing:.04em;">Share image</button>
           <button type="button" data-action="export-pdf-detail" class="ghost" style="font-weight:800;letter-spacing:.04em;">Export PDF</button>
@@ -290,7 +295,7 @@ function renderMatchDetailModal(){
           // A match finished on this device can still be put right (see openMatchFromHistory).
           // Not from a tournament's public page or a player's profile: those are view only
           // (a player looking at their own matches isn't the scorer).
-          const blocked = ["publicTournament", "playerProfile"].includes(ui.matchDetail.view) ? "none" : historyEditBlocked(m);
+          const blocked = viewOnly ? "none" : historyEditBlocked(m);
           if (blocked === "none") return "";
           return blocked ? `<p class="hint">${escapeHtml(blocked)}</p>`
             : `<button type="button" data-action="edit-archived-match" data-id="${escapeHtml(m.id)}" class="ghost edit-match-btn">✎ Edit match</button>`;
@@ -365,7 +370,7 @@ function renderInningsBreak(match){
   return `
     <div class="screen break">
       <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px;">
-        <h2 style="margin:0;">Innings break</h2>
+        <h2 style="margin:0;">${match.superOverOf ? capitalize(superOverName(match.superOverOf.n)) : "Innings break"}</h2>
         <span style="flex-grow:1;text-align:right;font-size:.7rem;font-weight:700;color:var(--muted);letter-spacing:.06em;">1ST INNINGS DONE</span>
       </div>
       ${renderInningsHighlights(match, i1)}
@@ -373,7 +378,7 @@ function renderInningsBreak(match){
         <div class="eyebrow">${escapeHtml(battingNext).toUpperCase()} NEED</div>
         <div style="display:flex;align-items:baseline;gap:10px;margin-top:2px;">
           <span class="n" style="font-size:1.6rem;font-weight:800;">${target}</span>
-          <span class="n" style="font-size:.8rem;font-weight:700;opacity:.8;">${match.oversLimit != null ? `from ${match.oversLimit} overs` : "no over limit"}</span>
+          <span class="n" style="font-size:.8rem;font-weight:700;opacity:.8;">${match.oversLimit != null ? `from ${match.oversLimit} over${match.oversLimit === 1 ? "" : "s"}` : "no over limit"}</span>
           ${rpo != null ? `<span class="n" style="flex-grow:1;text-align:right;font-size:.8rem;font-weight:800;">${rpo.toFixed(2)} rpo</span>` : ""}
         </div>
       </div>
@@ -468,19 +473,25 @@ function confettiHtml(){
 function renderResult(match){
   const allNames = Array.from(matchPlayerNames(match)).filter(n => !isUnnamedPlayer(n));
   const unnamed = ballEditAllowed(match) ? unnamedPlayers(match) : [];
-  const motmName = match.motm || pickMatchMOTM(match, pointsPresetFor(match));
+  const motmName = matchMotm(match);
   const motmTotal = motmName ? aggregatePlayerStats([match], pointsPresetFor(match)).find(t => t.name === motmName) : null;
   const detail = renderResultDetail(match);
-  const won = !match.forfeited && !match.editingFromHistory && / won by /.test(match.result || "");
+  const won = !match.forfeited && !match.editingFromHistory && / won (by|the super over)/.test(match.result || "");
+  const so = match.superOverOf;
+  // A tie that goes to a super over: that's the way on, not the exit button.
+  const superOverCard = renderSuperOverCard(match);
+  const superOverNext = !!superOverCard && superOverCalledFor(match);
   return `
     <div class="screen result">
       <div class="result-hero">
         ${won ? confettiHtml() : ""}
-        <div class="eyebrow">RESULT</div>
+        <div class="eyebrow">${so ? superOverName(so.n).toUpperCase() : "RESULT"}</div>
         <h2>${escapeHtml(match.result)}</h2>
         ${detail ? `<div class="n detail">${escapeHtml(detail)}</div>` : ""}
+        ${so && so.tiedOn != null ? `<div class="n detail">The match was tied on ${so.tiedOn}</div>` : ""}
       </div>
-      <div class="motm-card">
+      ${superOverNext ? superOverCard : ""}
+      ${so ? "" : `<div class="motm-card">
         <div style="display:flex;align-items:center;gap:8px;">
           <span class="motm-label">Player of the match</span>
           ${motmTotal ? `<span class="n" style="flex-grow:1;text-align:right;font-size:.82rem;font-weight:800;color:var(--accent);">${motmTotal.points} pts</span>` : ""}
@@ -493,7 +504,7 @@ function renderResult(match){
             <button type="submit" class="ghost small">Change</button>
           </form>
         ` : ""}
-      </div>
+      </div>`}
       ${unnamed.length ? `
         <div class="unnamed-card">
           <div class="section-label">Still unnamed</div>
@@ -504,13 +515,15 @@ function renderResult(match){
         ${renderResultInningsCard(match, match.innings[0])}
         ${match.innings[1] ? renderResultInningsCard(match, match.innings[1]) : ""}
       `}
+      ${renderSuperOverSection(match)}
+      ${superOverNext ? "" : superOverCard}
       ${match.editingFromHistory ? `<p class="hint">Editing from match history: each change saves straight away.</p>` : ""}
       <div class="share-row">
         <button data-action="share-image" class="ghost" style="font-weight:800;letter-spacing:.04em;">Share image</button>
         <button data-action="export-pdf" class="ghost" style="font-weight:800;letter-spacing:.04em;">Export PDF</button>
       </div>
       ${renderGoBackRow(match)}
-      <button data-action="finish-match" class="primary">${match.editingFromHistory ? "Done" : match.tournamentId ? "Back to tournament" : match.clubId ? "Back to club" : "New match"}</button>
+      <button data-action="finish-match" class="${superOverNext ? "ghost result-exit" : "primary"}">${match.editingFromHistory ? "Done" : match.tournamentId ? "Back to tournament" : match.clubId ? "Back to club" : "New match"}</button>
     </div>
   `;
 }
@@ -652,8 +665,9 @@ function shareTable(ctx, th, x, y, w, cols, head, rows){
 function renderScorecardCanvas(match, themeKey, logo){
   const th = SHARE_THEMES[themeKey] || SHARE_THEMES.night;
   const when = match.completedAt ? new Date(match.completedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
-  const motm = match.motm || pickMatchMOTM(match, pointsPresetFor(match));
+  const motm = matchMotm(match);
   const motmTotal = motm ? aggregatePlayerStats([match], pointsPresetFor(match)).find(t => t.name === motm) : null;
+  const superOvers = matchTied(match) ? match.superOvers || [] : [];
   return composeShareImage(th, ctx => {
     const X = SHARE_PAD, W = SHARE_W - SHARE_PAD * 2;
     let y = shareHeader(ctx, th, logo, when);
@@ -697,6 +711,19 @@ function renderScorecardCanvas(match, themeKey, logo){
           bowl.map(({ n, b }) => ({ cells: [n, oversDisplay(b.legalBalls, bpo), b.maidens, b.runs, b.wickets, b.legalBalls ? (b.runs / (b.legalBalls / bpo)).toFixed(2) : "–"], strong: b.wickets >= 3 })));
       }
       y = cardTop + h + 24;
+    });
+    // A tie's super overs: each side's score, under the scorecards.
+    superOvers.forEach(rec => {
+      const h = 84 + rec.innings.length * 54;
+      shareCard(ctx, X, y, W, h, th.panel, th.line);
+      shareText(ctx, superOverName(rec.n, superOvers.length > 1).toUpperCase(), X + 32, y + 50, { size: 20, weight: 800, color: th.muted, spacing: 3 });
+      shareText(ctx, rec.result || "", X + W - 32, y + 50, { size: 24, weight: 800, color: th.accent, align: "right", maxW: W - 380 });
+      rec.innings.forEach((inn, k) => {
+        const yy = y + 104 + k * 54;
+        shareText(ctx, teamName(match, inn.battingTeam), X + 32, yy, { size: 30, weight: 700, color: th.text, maxW: W - 400 });
+        shareText(ctx, `${inn.runs}/${inn.wickets} (${oversDisplay(inn.legalBalls, inn.ballsPerOver)} ov)`, X + W - 32, yy, { size: 30, weight: 800, color: th.text, align: "right" });
+      });
+      y += h + 24;
     });
     if (match.resultOnly){
       shareText(ctx, "Result entered by hand — no ball-by-ball scorecard.", X, y + 10, { size: 22, color: th.muted });
@@ -755,11 +782,12 @@ function exportPdfCleanup(){
    the match and every innings in full. */
 function renderPrintableMatch(m){
   const detail = renderResultDetail(m);
-  const motm = m.motm || pickMatchMOTM(m, pointsPresetFor(m));
+  const motm = matchMotm(m);
   return `
     <div class="result-hero"><div class="eyebrow">RESULT</div><h2>${escapeHtml(m.result || "")}</h2>${detail ? `<div class="n detail">${escapeHtml(detail)}</div>` : ""}</div>
     ${motm ? `<div class="motm-card"><span class="motm-label">Player of the match</span><span class="motm-name">${escapeHtml(motm)}</span></div>` : ""}
-    ${m.resultOnly ? renderResultOnlyCard(m) : m.innings.map(inn => renderInningsSummary(m, inn)).join("")}`;
+    ${m.resultOnly ? renderResultOnlyCard(m) : m.innings.map(inn => renderInningsSummary(m, inn)).join("")}
+    ${renderSuperOverSection(m)}`;
 }
 
 /* The preview sheet. ui.sharePreview = { kind: "scorecard" | "tournament",

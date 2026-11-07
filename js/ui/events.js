@@ -143,6 +143,7 @@ document.addEventListener("click", (e) => {
   else if (action === "open-match-detail") openMatchDetail(btn.dataset.id);
   else if (action === "close-match-detail"){ ui.matchDetail = null; render(); }
   else if (action === "edit-archived-match") openMatchFromHistory(btn.dataset.id);
+  else if (action === "start-super-over") startSuperOver(btn.dataset.id || null);
   else if (action === "close-live-scorecard"){ ui.liveScorecard = false; render(); }
   else if (action === "start-second-innings"){ pushSnapshot(); startSecondInnings(state.match); save(); render(); }
   else if (action === "share-image") openSharePreview("scorecard");
