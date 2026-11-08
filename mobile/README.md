@@ -49,12 +49,14 @@ inspected from desktop Chrome at `chrome://inspect`.
 
 ## Release
 
-1. **Once: create the release key.** `sh scripts/make-keystore.sh` asks for a
-   password and writes `~/.android-keys/cricket-lk-upload.jks` and
-   `android/keystore.properties` (both kept out of git). Back up the `.jks`
-   file and its password somewhere safe, off this computer. Google Play can
-   reset a lost key; the Galaxy Store can't, and without the key you can
-   never update the app there.
+1. **The release key** (made 8 Nov 2026) is `~/.android-keys/cricket-lk-upload.jks`.
+   Its password and fingerprints are in `~/.android-keys/cricket-lk-upload-info.txt`,
+   and the build reads them from `android/keystore.properties`. None of these
+   are in git. Keep a backup of the `.jks` file and the info file off this
+   computer. Google Play can reset a lost key; the Galaxy Store can't, and
+   without the key you can never update the app there. On a new computer,
+   copy both back and recreate `android/keystore.properties` (format: see
+   `scripts/make-keystore.sh`, which made keys like this one).
 2. **Each release:** raise `versionCode` by 1 (and `versionName` if you like)
    in `android/app/build.gradle`. Both stores refuse a `versionCode` they've
    already seen.
@@ -68,8 +70,8 @@ inspected from desktop Chrome at `chrome://inspect`.
 
 ### Before the first upload
 
-- **The app id is permanent once uploaded:** `com.eranthawelikala.cricketlk`.
-  To use a different one, change it in `capacitor.config.json`,
+- **The app id is permanent once uploaded:** `com.eranthawelikala.cricketlk`
+  (confirmed 8 Nov 2026). To use a different one before the first upload, change it in `capacitor.config.json`,
   `android/app/build.gradle` (`namespace`, `applicationId`),
   `android/app/src/main/res/values/strings.xml`, and the Java package folder
   `android/app/src/main/java/com/eranthawelikala/cricketlk/`.
@@ -79,10 +81,9 @@ inspected from desktop Chrome at `chrome://inspect`.
   production. Plan for that.
 - **Galaxy Store:** the APK is installed exactly as you signed it, so every
   future update must use the same key.
-- Store text, Data safety answers and the privacy policy are in
-  `store/listing.md` and `store/privacy-policy.html`. Both stores want the
-  privacy policy at a public URL. Put that page on your website (fill in the
-  contact email first).
+- Store text and Data safety answers are in `store/listing.md`. The privacy
+  policy (`store/privacy-policy.html`) is public on this repo's GitHub Pages
+  site, https://eranthawelikala.github.io/cricket-lk/mobile/store/privacy-policy.html. Both stores link to that URL, so don't move or rename the file.
 - **Store images** are ready: `store/screenshots/` (8 captioned phone
   screenshots, 1080×1920, for both stores), `store/feature-graphic.jpg`
   (Google Play, 1024×500) and `store/play-icon-512.png`. `npm run

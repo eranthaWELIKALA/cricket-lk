@@ -12,7 +12,8 @@ claim against the build you upload. This describes version 1.0.0.
 | Category | Sports |
 | Price | Free, no ads, no in-app purchases |
 | Developer | Erantha Welikala |
-| Privacy policy URL | where you host `privacy-policy.html` (fill in the contact email first) |
+| Contact email | eranthawelikala@gmail.com |
+| Privacy policy URL | https://eranthawelikala.github.io/cricket-lk/mobile/store/privacy-policy.html (this repo's GitHub Pages site; keep the file where it is) |
 | Store icon | `play-icon-512.png` (512×512) |
 
 ## Short description (Google Play, max 80 characters)
