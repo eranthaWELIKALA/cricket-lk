@@ -484,18 +484,87 @@ function discardOp(id){
   refreshAfterSync().then(render);
 }
 
-async function initAuth(){
+/* --- coming back from an auth email ---
+   A confirmation link goes to Supabase's /verify, which confirms the email
+   and sends the browser back to authRedirectUrl() with ?code=… (PKCE), or
+   ?error=…/#error=… (expired or already used). Links sent before PKCE carry
+   #access_token=… instead. The router rewrites the hash on the first
+   render, before supabase-js has even loaded, so boot.js takes this out of
+   the URL first (takeAuthReturn) and initAuth finishes it. */
+const AUTH_RETURN_KEYS = ["code", "error", "error_code", "error_description", "access_token", "refresh_token", "expires_at", "expires_in", "token_type", "type", "provider_token", "provider_refresh_token"];
+/* Pure: what an auth redirect left in the URL, and the URL without it.
+   null when there's nothing. A hash that is an app route ("#/…") is kept;
+   one holding auth parameters is dropped. */
+function parseAuthReturn(search, hash){
+  const q = new URLSearchParams(search || "");
+  const h = hash && !/^#\/?$/.test(hash) && !hash.startsWith("#/") ? new URLSearchParams(hash.slice(1)) : null;
+  const get = k => q.get(k) || (h && h.get(k)) || null;
+  const ret = {
+    code: get("code"),
+    accessToken: get("access_token"), refreshToken: get("refresh_token"),
+    error: get("error_code") || get("error"), errorText: get("error_description")
+  };
+  if (!ret.code && !(ret.accessToken && ret.refreshToken) && !ret.error) return null;
+  AUTH_RETURN_KEYS.forEach(k => q.delete(k));
+  const rest = q.toString();
+  ret.cleanSearch = rest ? "?" + rest : "";
+  ret.cleanHash = h ? "" : (hash || "");
+  return ret;
+}
+/* Boot: take an auth redirect out of the address bar (so the code never
+   sits in history or a shared link) and hand it to initAuth. */
+function takeAuthReturn(){
+  if (GUEST_EDITION) return null;
+  const ret = parseAuthReturn(location.search, location.hash);
+  if (ret) history.replaceState(history.state, "", location.pathname + ret.cleanSearch + ret.cleanHash);
+  return ret;
+}
+/* Signs in with the returned code (or old-style tokens). Returns the
+   session, or null. Either way authNotice says what happened. The email is
+   confirmed whenever a code came back: /verify does that before redirecting.
+   So a code that can't be exchanged (link opened in another browser, which
+   doesn't hold this sign-up's PKCE verifier, or opened twice) still means
+   "confirmed, now sign in". */
+async function finishAuthReturn(ret){
+  let s = null;
+  if (!ret.error){
+    try {
+      const res = ret.code
+        ? await supabaseClient.auth.exchangeCodeForSession(ret.code)
+        : await supabaseClient.auth.setSession({ access_token: ret.accessToken, refresh_token: ret.refreshToken });
+      s = (res && res.data && res.data.session) || null;
+    } catch (_){}
+  }
+  if (s){
+    authNotice = { view: "account", icon: "✅", title: "Email confirmed", text: "You're signed in." };
+    return s;
+  }
+  authNotice = ret.error
+    ? { view: "signIn", icon: "⚠️", title: "That link didn't work", text: /expired/i.test(ret.error + " " + (ret.errorText || ""))
+        ? "It has expired. Sign in below: if your email isn't confirmed yet, you can get a new link."
+        : "It may have been used already. Sign in below: if your email isn't confirmed yet, you can get a new link." }
+    : { view: "signIn", icon: "✅", title: "Email confirmed", text: "Sign in to continue." };
+  state.view = "signIn"; save();
+  return null;
+}
+
+async function initAuth(authReturn){
   if (GUEST_EDITION || !SUPABASE_URL || !SUPABASE_ANON_KEY) return; // the guest edition, or cloud not configured on this deployment
   let lib;
   // supabase-js comes from the service worker's cache when offline (sw.js);
   // without it (first ever visit offline) stay in guest mode.
   try { lib = await loadSupabaseLib(); } catch (_){ return; }
   supabaseClient = lib.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { storage: makeCloudAuthStorage(), persistSession: true, autoRefreshToken: true },
+    // PKCE: an email link comes back as ?code=… (the hash is the app's own
+    // route). The URL is read once at boot (takeAuthReturn), so supabase-js
+    // doesn't look at it itself -- see finishAuthReturn.
+    auth: { storage: makeCloudAuthStorage(), persistSession: true, autoRefreshToken: true, flowType: "pkce", detectSessionInUrl: false },
     // Every Supabase request (data, RPC, auth) goes through trackedFetch, so
     // the loading indicators know when the network is busy -- see "activity".
     global: { fetch: trackedFetch }
   });
+  // Opened from a confirmation email: sign in with it first.
+  const returned = authReturn ? await finishAuthReturn(authReturn) : null;
   // Offline, getSession() can sit retrying a token refresh for a long time,
   // so don't wait on it: use the stored user straight away (session.offline)
   // and let the real session replace it once the network is back.
@@ -507,8 +576,9 @@ async function initAuth(){
       new Promise(res => setTimeout(() => res(undefined), 2500))
     ]);
   }
-  session = real || (real === null && isOnline() ? null : stored);
+  session = returned || real || (real === null && isOnline() ? null : stored);
   await refreshProfileAndAdmin();
+  if (returned){ state.view = "account"; save(); }
   render();
   supabaseClient.auth.onAuthStateChange((event, newSession) => {
     // Offline, a failed token refresh isn't a sign-out: keep the stored user.
@@ -553,7 +623,7 @@ async function doSignOut(){
   // Local first: supabase-js' own sign-out can wait behind a stuck token
   // refresh offline, and the device must be cleared regardless.
   const client = supabaseClient;
-  session = null; profile = null; isAdmin = false;
+  session = null; profile = null; isAdmin = false; authNotice = null;
   // The read cache holds members-only club data (rosters, teams) -- never
   // leave it for whoever uses this device next. Queued changes stay, tagged
   // with their user, until that user signs in again.
@@ -1025,6 +1095,10 @@ async function cancelClubInvite(inviteId){
    because `ui` is reset wholesale at times. One job at a time: it's the
    one person on the sign-up/sign-in screen. */
 let authMail = null;      // { kind: "signup"|"resend", email, displayName, password, status, attempts, nextAt, error }
+/* What happened when the app was opened from an auth email (finishAuthReturn):
+   { view, icon, title, text }, shown on that view until dismissed, a sign-in
+   or a sign-out. Memory only, like authMail. */
+let authNotice = null;
 let authMailTimer = null;
 const AUTH_MAIL_MAX_TRIES = 12; // about 1h40m of retrying with authMailDelay
 
@@ -1059,6 +1133,16 @@ function cancelAuthMail(){
   clearTimeout(authMailTimer);
   authMail = null;
 }
+/* Where an auth email's link brings the user back: this page, without the
+   hash route. Without it Supabase falls back to the Referer header, which
+   browsers cut down to the origin, so a project page like
+   https://<user>.github.io/cricket-lk/ came back as https://<user>.github.io/.
+   The address has to match Authentication → URL Configuration → Redirect
+   URLs (e.g. https://<user>.github.io/cricket-lk/**), or Supabase uses the
+   Site URL instead. */
+function authRedirectUrl(){
+  return location.origin + location.pathname;
+}
 /* Sends (or re-sends) the queued job now. A sign-up that comes back with a
    session (email confirmation turned off) signs straight in. */
 async function sendAuthMail(){
@@ -1070,8 +1154,8 @@ async function sendAuthMail(){
   let res;
   try {
     res = job.kind === "signup"
-      ? await supabaseClient.auth.signUp({ email: job.email, password: job.password, options: { data: { display_name: job.displayName } } })
-      : await supabaseClient.auth.resend({ type: "signup", email: job.email });
+      ? await supabaseClient.auth.signUp({ email: job.email, password: job.password, options: { data: { display_name: job.displayName }, emailRedirectTo: authRedirectUrl() } })
+      : await supabaseClient.auth.resend({ type: "signup", email: job.email, options: { emailRedirectTo: authRedirectUrl() } });
   } catch (err){ res = { error: err }; }
   if (authMail !== job) return; // cancelled or replaced meanwhile
   const error = res && res.error;

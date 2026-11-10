@@ -169,6 +169,7 @@ function renderSignIn(){
       ${renderBackBar("Home", "home")}
       <h1>🔐 Sign in</h1>
       ${!supabaseClient ? `<p class="hint">Cloud features aren't configured on this deployment yet.</p>` : `
+        ${renderAuthNotice("signIn")}
         ${renderAuthMailCard()}
         <div class="auth-card">
           <form id="sign-in-form">
@@ -204,6 +205,18 @@ function renderSignUp(){
       `}
     </div>
   `;
+}
+
+/* What happened when the app was opened from a confirmation email
+   (authNotice, set by finishAuthReturn in CLOUD), on the view it names. */
+function renderAuthNotice(view){
+  const n = authNotice;
+  if (!n || n.view !== view) return "";
+  return `<div class="auth-card auth-mail-card" role="status">
+    <p class="mvp-name">${n.icon} ${escapeHtml(n.title)}</p>
+    <p class="hint">${escapeHtml(n.text)}</p>
+    <button type="button" data-action="auth-notice-dismiss" class="link-btn">Dismiss</button>
+  </div>`;
 }
 
 /* The queued sign-up / confirmation email (authMail, CLOUD) -- shown on the
@@ -252,6 +265,7 @@ function renderAccount(){
     <div class="screen">
       ${renderBackBar("Home", "home")}
       <h1>Account</h1>
+      ${renderAuthNotice("account")}
       <div class="auth-card">
         <div class="avatar-badge">${escapeHtml(initial)}</div>
         <p class="mvp-name">${escapeHtml(profile?.display_name || "—")}</p>
@@ -345,6 +359,7 @@ function handleSignInSubmit(e){
 /* Shared by sign-in, sign-up and a queued sign-up that went through. */
 function completeSignIn(newSession){
   cancelAuthMail();
+  authNotice = null;
   session = newSession;
   ui.myClubs = null; // force a fresh fetch under the newly-signed-in account
   ui.identity = null;
@@ -368,7 +383,7 @@ function handleSignUpSubmit(e){
   const password = f.get("password") || "";
   supabaseClient.auth.signUp({
     email, password,
-    options: { data: { display_name: displayName } }
+    options: { data: { display_name: displayName }, emailRedirectTo: authRedirectUrl() }
   }).then(({ data, error }) => {
     if (error && isAuthRateLimit(error)){
       // The mailer's hourly limit: queue it and keep retrying (see authMail).

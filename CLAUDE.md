@@ -2107,6 +2107,27 @@ becomes a resend. Like `session`, it's a top-level `let`, not a `ui` field.
 Covered in `test.js`. A real fix for volume is custom SMTP in the Supabase
 dashboard, which needs no code change.
 
+**A confirmation link signs the user in (PKCE).** The client uses `flowType:
+"pkce"` with `detectSessionInUrl: false`, and every auth email call passes
+`emailRedirectTo: authRedirectUrl()` (this page without its hash). Without
+that, Supabase falls back to the `Referer` header, which browsers cut down to
+the origin, so a GitHub Pages project page came back to `<user>.github.io/`.
+The address must match the dashboard's Redirect URLs (`…/cricket-lk/**`).
+Supabase's `/verify` confirms the email, then redirects with `?code=…` (or
+`?error=…`/`#error=…` for an expired or used link; links from before PKCE use
+`#access_token=…`). **The router rewrites the hash on the first render,
+before supabase-js loads**, so `boot.js` calls `takeAuthReturn()` first
+(`parseAuthReturn`, pure and tested: it reads those, strips them from the URL
+and keeps an app route) and passes the result to `initAuth(authReturn)`.
+`finishAuthReturn` then exchanges the code. On success it lands on Account
+with an "Email confirmed · You're signed in" card (`authNotice`, memory
+only, `renderAuthNotice(view)`). A code that can't be exchanged means
+"confirmed, now sign in": a different browser doesn't hold this sign-up's
+PKCE verifier, and on iOS that includes the home-screen app vs Safari. An
+error says the link didn't work.
+Email templates live in `supabase/email-templates/` (pasted into the
+dashboard by hand).
+
 ## Deleted matches stay deleted (`supabase/015_deleted_matches.sql`)
 
 A match deleted in the cloud (the admin portal's Delete, the SQL editor, or a

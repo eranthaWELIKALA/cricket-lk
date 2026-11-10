@@ -1,6 +1,9 @@
 /* Cricket.lk — boot: load, first render, cloud auth, sync triggers, service worker.
    Classic script, loaded in order by index.html; all files share one global scope (see CLAUDE.md "Code layout"). */
 load();
+// Opened from a confirmation email: take ?code=… (or an old #access_token=…)
+// out of the URL before the router rewrites it (see takeAuthReturn).
+const authReturn = takeAuthReturn();
 // Page navigation (see ROUTES): number this entry, and let a URL that names a
 // screen (reload, shared link) pick what's shown.
 history.replaceState({ idx: 0 }, "", location.hash || "#/");
@@ -9,7 +12,7 @@ if (currentRoute() !== "/") applyRoute(currentRoute());
 // ...except mid-match: a reload always lands back on the match (see "Navigation").
 ui.awayFromMatch = false;
 navApplying = true; render(); navApplying = false;
-const authReady = initAuth();
+const authReady = initAuth(authReturn);
 // Launch splash (static in index.html, with its loading bar): stays up until
 // the app is ready -- first render done and the sign-in restored -- and at
 // least ~0.9s so it doesn't flash, at most 3s so a slow network never holds

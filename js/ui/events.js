@@ -192,6 +192,7 @@ document.addEventListener("click", (e) => {
   else if (action === "sign-out"){ handleSignOut(); }
   else if (action === "auth-mail-send"){ sendAuthMail(); }                // queued sign-up/resend: try now
   else if (action === "auth-mail-cancel"){ cancelAuthMail(); render(); }
+  else if (action === "auth-notice-dismiss"){ authNotice = null; render(); } // the "email confirmed" / "link didn't work" card
   else if (action === "cancel-club-invite"){ handleCancelClubInvite(btn.dataset.id); }
   else if (action === "go-admin-portal"){ location.href = "admin.html"; } // platform admins only; admin.html re-checks server-side
   else if (action === "go-premier"){ state.view = "premier"; render(); } // render() loads it

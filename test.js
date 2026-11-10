@@ -272,6 +272,23 @@ async function main(){
     assert(st.players.p_Typed, "a guest player never seen in any club match is untouched");
   }
 
+  // --- 5e2. coming back from a confirmation email (parseAuthReturn) ---
+  {
+    const p = win.parseAuthReturn;
+    assert(p("", "") === null && p("", "#/teams") === null && p("?x=1", "#/") === null, "no auth parameters: nothing to do");
+    const a = p("?code=abc123", "");
+    assert(a && a.code === "abc123" && !a.error && a.cleanSearch === "" && a.cleanHash === "", "a PKCE code is read and taken out of the URL");
+    const b = p("?code=abc&keep=1", "#/clubs/7");
+    assert(b.code === "abc" && b.cleanSearch === "?keep=1" && b.cleanHash === "#/clubs/7", "other query parameters and an app route survive, got " + b.cleanSearch + b.cleanHash);
+    const c = p("?error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired", "");
+    assert(c && c.error === "otp_expired" && /expired/.test(c.errorText) && !c.code && c.cleanSearch === "", "an expired link's error (query) is read and removed");
+    const d = p("", "#error=access_denied&error_code=otp_expired&error_description=expired");
+    assert(d && d.error === "otp_expired" && d.cleanHash === "", "an error in the hash (implicit flow) is read, and the hash dropped");
+    const e = p("", "#access_token=AT&refresh_token=RT&expires_in=3600&token_type=bearer&type=signup");
+    assert(e && e.accessToken === "AT" && e.refreshToken === "RT" && e.cleanHash === "", "an old-style #access_token link is read, and the tokens leave the URL");
+    assert(p("", "#access_token=AT") === null, "an access token without a refresh token isn't a sign-in");
+  }
+
   // --- 5f. player profile field rules + career fold ---
   {
     assert(win.isValidNic("") && win.isValidNic("  "), "a blank NIC is allowed (optional)");
