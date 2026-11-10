@@ -126,6 +126,9 @@ function renderClubTournamentDashboard(){
   const tab = tournamentTab(ended);
   const matches = tournamentRowMatches(t.matches);
   const startBtn = `<button data-action="go-club-tournament-match-setup" class="primary">Start match</button>`;
+  // A club the user only plays for (supabase/020): everything to see, nothing to change.
+  const canEdit = clubCanEdit(t.organizer_club_id);
+  const actions = (played, withEnd) => !canEdit ? "" : ended ? ENDED_NOTE : tournamentActionsHtml(startBtn, played, withEnd);
   return `
     <div class="screen tournament">
       ${renderBackBar(escapeHtml(clubName) || "Home", "home")}
@@ -139,9 +142,9 @@ function renderClubTournamentDashboard(){
       ${tab === "overview" ? `
         ${matches.length ? renderStandingsTable(computeStandings(matches, p), p.useNRR) : `<p class="hint">No matches yet.</p>`}
         ${matches.length ? `<h3 class="section-label">Latest results</h3>${renderFixtureList([...matches].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)).slice(0, 3))}` : ""}
-        ${ended ? ENDED_NOTE : tournamentActionsHtml(startBtn, matches.length, true)}` : ""}
-      ${tab === "teams" ? renderTournamentTeams(t) : ""}
-      ${tab === "fixtures" ? `${ended ? ENDED_NOTE : tournamentActionsHtml(startBtn, 0, false)}<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches, "No matches yet — start one above.")}` : ""}
+        ${actions(matches.length, true)}` : ""}
+      ${tab === "teams" ? renderTournamentTeams(t, canEdit) : ""}
+      ${tab === "fixtures" ? `${actions(0, false)}<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches, canEdit && !ended ? "No matches yet — start one above." : "No matches yet.")}` : ""}
       ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, clubPointsPreset(t.organizer_club_id)), { points: clubPointsPreset(t.organizer_club_id), where: "the club's Presets", matches }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
     </div>
   `;
@@ -159,7 +162,7 @@ function clubTournamentTagline(p, played){
    here, on save). Teams only pre-fill match setup and set match.squads --
    played matches keep their own names, so editing or deleting a team never
    changes history or standings. */
-function renderTournamentTeams(t){
+function renderTournamentTeams(t, canEdit = true){
   if (t.teams_unavailable){
     return `<p class="hint">Saved teams need 012_tournament_teams.sql — run it in the Supabase SQL editor. You can still type team names at match setup.</p>`;
   }
@@ -169,13 +172,13 @@ function renderTournamentTeams(t){
   return `
     ${ui.tournamentTeamError ? `<p class="form-error">${escapeHtml(ui.tournamentTeamError)}</p>` : ""}
     <div class="team-grid">
-      ${t.teams.map((team, i) => teamCardHtml({ id: team.id, name: team.name, players: team.players, index: i, pending: team.pending, visiting: !!team.visiting, actions: `
+      ${t.teams.map((team, i) => teamCardHtml({ id: team.id, name: team.name, players: team.players, index: i, pending: team.pending, visiting: !!team.visiting, actions: !canEdit ? "" : `
         <button data-action="edit-tournament-team" data-id="${team.id}" class="icon-btn" aria-label="Edit ${escapeHtml(team.name)}" title="Edit team">${ICON_EDIT}</button>
         <button data-action="delete-tournament-team" data-id="${team.id}" class="icon-btn danger" aria-label="Delete ${escapeHtml(team.name)}" title="Delete team">${ICON_DELETE}</button>` })).join("")}
-      <button data-action="new-tournament-team" class="team-card add" ${ui.tournamentTeamBusy ? "disabled" : ""}><span class="plus">＋</span><span>Add team</span></button>
-      <button data-action="new-tournament-team" data-visiting="1" class="team-card add visiting" ${ui.tournamentTeamBusy ? "disabled" : ""}><span class="plus">＋</span><span>Visiting team</span></button>
+      ${canEdit ? `<button data-action="new-tournament-team" class="team-card add" ${ui.tournamentTeamBusy ? "disabled" : ""}><span class="plus">＋</span><span>Add team</span></button>
+      <button data-action="new-tournament-team" data-visiting="1" class="team-card add visiting" ${ui.tournamentTeamBusy ? "disabled" : ""}><span class="plus">＋</span><span>Visiting team</span></button>` : ""}
     </div>
-    ${!t.teams.length ? `
+    ${!canEdit ? (t.teams.length ? "" : `<p class="hint">No teams yet.</p>`) : !t.teams.length ? `
       <p class="hint">No teams yet. Build the sides here, then pick them when you start a match.</p>
       ${rosterReady && unassigned.length >= 2 ? `<button data-action="quick-split-teams" class="ghost" style="width:100%;" ${ui.tournamentTeamBusy ? "disabled" : ""}>${ui.tournamentTeamBusy ? "Creating…" : `🎲 Split the roster into 2 random teams (${unassigned.length} players)`}</button>` : ""}
     ` : rosterReady && unassigned.length ? `<p class="hint">${unassigned.length} roster player${unassigned.length === 1 ? " isn't" : "s aren't"} on a team yet: ${unassigned.slice(0, 5).map(p => escapeHtml(p.name)).join(", ")}${unassigned.length > 5 ? "…" : ""}</p>` : ""}
@@ -559,6 +562,7 @@ function tournamentContext(){
     const p = (club ? club.tournament_preset : pub.preset) || {};
     return {
       kind: club ? "club" : "public", id: (club || pub).id, name: (club || pub).name, endedAt: p.endedAt || null,
+      readOnly: !!club && !clubCanEdit(club.organizer_club_id),
       preset: { pointsForWin: p.pointsForWin ?? 2, pointsForTie: p.pointsForTie ?? 1, pointsForLoss: p.pointsForLoss ?? 0, useNRR: !!p.useNRR },
       matches: tournamentRowMatches((club || pub).matches),
       teamNames: club ? (club.teams || []).map(x => x.name) : [],
@@ -647,7 +651,7 @@ function renderTournamentSummary(c){
       ${row("Highest total", s.highestTotal && `${escapeHtml(s.highestTotal.team)} <span class="muted">v ${escapeHtml(s.highestTotal.against)}</span>`, s.highestTotal && `${s.highestTotal.runs}-${s.highestTotal.wickets}`)}
     </div>
     ${renderStandingsTable(s.standings, c.preset.useNRR)}
-    ${c.kind === "public" ? "" : `<button type="button" data-action="reopen-tournament" class="ghost" style="width:100%;">Reopen tournament</button>`}`;
+    ${c.kind === "public" || c.readOnly ? "" : `<button type="button" data-action="reopen-tournament" class="ghost" style="width:100%;">Reopen tournament</button>`}`;
 }
 
 /* The share image: drawn with the share kit in result.js (logo, theme,
@@ -804,6 +808,7 @@ function renderPublicTournament(){
   const matches = tournamentRowMatches(pt.matches);
   const latest = [...matches].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)).slice(0, 3);
   const member = (ui.myClubs || []).some(c => c.id === pt.clubId);
+  const manageLabel = clubCanEdit(pt.clubId) ? "Manage" : "Open in club";
   const updated = new Date(pt.loadedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   return `
     <div class="screen tournament">
@@ -813,7 +818,7 @@ function renderPublicTournament(){
       <div class="tournament-links">
         <button type="button" data-action="share-tournament-link" class="ghost small">${ICON_LINK} Share link</button>
         <button type="button" data-action="refresh-public-tournament" class="ghost small">↻ Refresh</button>
-        ${member ? `<button type="button" data-action="manage-public-tournament" class="ghost small">Manage</button>` : ""}
+        ${member ? `<button type="button" data-action="manage-public-tournament" class="ghost small">${manageLabel}</button>` : ""}
       </div>
       ${tabsHtml("switch-tournament-tab", tabs, tab, ended ? "main-tabs many" : "main-tabs")}
       ${tab === "summary" ? renderTournamentSummary(tournamentContext()) : ""}

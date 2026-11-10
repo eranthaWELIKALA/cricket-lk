@@ -24,6 +24,8 @@ document.addEventListener("click", (e) => {
     // drops straight back onto it.
     if (state.match && state.match.status !== "complete" && action !== "resume-match") ui.awayFromMatch = true;
   }
+  // A club the user only plays for is read only (clubCanEdit, supabase/020).
+  if (clubWriteRefused(action)) return;
   if (action === "confirm-ok"){ runConfirm(); return; }
   if (action === "open-sync-sheet"){ ui.syncSheet = true; render(); return; }
   if (action === "close-sync-sheet"){ ui.syncSheet = false; render(); return; }

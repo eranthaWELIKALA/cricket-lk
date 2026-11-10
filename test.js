@@ -3172,6 +3172,68 @@ async function main(){
     gw.close();
   }
 
+  // --- A claimed player sees the clubs they play for, read only (supabase/020) ---
+  {
+    win.eval(`state.match = null; state.snapshots = []; window.__prevSession = session; window.__prevClient = supabaseClient;
+      session = { user: { id: "u7" } }; ui = defaultUi();
+      supabaseClient = {
+        from(){ const q = { select(){ return q; }, eq(){ return q; },
+          then: (ok, no) => Promise.resolve({ data: [{ role: "owner", clubs: { id: "own", name: "My XI" } }], error: null }).then(ok, no) }; return q; },
+        rpc: async (fn) => fn === "my_player_clubs" ? { data: [{ id: "kicc", name: "KICC" }, { id: "own", name: "My XI" }], error: null } : { data: null, error: { code: "PGRST202" } }
+      };`);
+    await win.eval(`fetchMyClubs()`);
+    assert(win.eval(`JSON.stringify(ui.myClubs.map(c => c.id + ":" + c.role))`) === JSON.stringify(["own:owner", "kicc:player"]),
+      "My clubs: clubs the user plays for come in as 'player' (a club they're a member of keeps its own role)");
+    assert(win.eval(`clubCanEdit("kicc")`) === false && win.eval(`clubCanEdit("own")`) === true && win.eval(`clubCanEdit("unknown")`) === true && win.eval(`isClubAdmin("kicc")`) === false,
+      "a player can't edit or administer the club; a member can; an unknown club isn't locked");
+    win.eval(`supabaseClient = window.__prevClient; state.view = "myClubs"; render();`);
+    assert(/player · view only/.test(doc.querySelector("#app").textContent), "My clubs labels a club the user plays for 'player · view only'");
+
+    win.eval(`ui.club = { id: "kicc", name: "KICC", members: [], invites: [], roster: [{ id: "d1", name: "Dulanjana" }, { id: "d2", name: "Kasun" }], matches: [],
+        tournaments: [{ id: "kt", name: "KICC Cup", created_at: new Date().toISOString() }], presets: { match: [], tournament: [], points: [] } };
+      state.activeClubId = "kicc"; state.view = "home"; render();`);
+    const app = () => doc.querySelector("#app");
+    assert(!app().querySelector('[data-action="go-club-match-setup"]') && !app().querySelector('[data-action="go-club-tournament-setup"]')
+      && !app().querySelector('[data-view="clubPresets"]') && !app().querySelector('[data-view="clubAdmins"]'),
+      "Home acting as a club you play for: no new match / tournament, Presets or Admins");
+    assert(app().querySelector('.primary-card[data-view="clubStats"]') && app().querySelector('[data-view="clubPlayers"]')
+      && app().querySelector('[data-action="open-club-tournament"][data-id="kt"]') && /You play for KICC: view only/.test(app().textContent),
+      "...but Stats, Players and the club's tournaments, and it says it's view only");
+    win.eval(`ui.sideMenuOpen = true; render();`);
+    assert(!doc.querySelector('.side-menu [data-view="clubPresets"]') && doc.querySelector('.side-menu [data-view="clubStats"]'), "the side menu leaves out Presets too");
+    win.eval(`ui.sideMenuOpen = false; ui.currentClubId = "kicc"; state.view = "clubPlayers"; render();`);
+    assert(app().querySelectorAll(".roster-row").length === 2 && !app().querySelector(".roster-remove") && !doc.querySelector('[data-action="open-club-add-player"]'),
+      "Players: the roster, with no add or remove");
+    // A write reached anyway is refused.
+    const fake = doc.createElement("button"); fake.dataset.action = "open-club-add-player"; app().appendChild(fake); fake.click();
+    assert(win.eval("ui.playerModal") === null, "a club write action is refused for a player even if a button for it is tapped");
+    win.eval(`ui.clubMatchSetupType = "practice"; state.view = "matchSetup"; render();`);
+    assert(win.eval("state.view") === "home", "club match setup sends a player back Home (a link or a reload can't open it)");
+    win.eval(`ui.currentClubId = "kicc"; state.view = "clubPresets"; render();`);
+    assert(win.eval("state.view") === "home", "...and so does the club's Presets screen");
+
+    win.eval(`ui.currentClubId = "kicc"; ui.currentTournamentId = "kt"; ui.clubMatchSetupType = null;
+      ui.clubTournament = { id: "kt", name: "KICC Cup", organizer_club_id: "kicc", tournament_preset: { pointsForWin: 2 }, matches: [],
+        teams: [{ id: "tm1", name: "Reds", players: [{ id: "d1", name: "Dulanjana" }] }] };
+      ui.tournamentTab = "overview"; state.view = "clubTournamentDashboard"; render();`);
+    assert(!app().querySelector('[data-action="go-club-tournament-match-setup"]') && !app().querySelector('[data-action="open-result-entry"]')
+      && !app().querySelector('[data-action="end-tournament"]'), "a club tournament: no Start match, Enter result or End tournament for a player");
+    win.eval(`ui.tournamentTab = "teams"; render();`);
+    assert(app().querySelector(".team-card") && !app().querySelector('[data-action="edit-tournament-team"]') && !app().querySelector('[data-action="new-tournament-team"]'),
+      "its Teams tab shows the teams with no edit, delete or add");
+    win.eval(`ui.clubTournament.tournament_preset.endedAt = Date.now(); ui.tournamentTab = "summary"; render();`);
+    assert(!app().querySelector('[data-action="reopen-tournament"]') && app().querySelector('[data-action="share-tournament"]'), "an ended tournament's Summary: share it, but no Reopen");
+
+    // A member of the same kind of club still gets everything.
+    win.eval(`ui.myClubs = [{ id: "kicc", name: "KICC", role: "owner" }]; delete ui.clubTournament.tournament_preset.endedAt; ui.tournamentTab = "overview"; render();`);
+    assert(app().querySelector('[data-action="go-club-tournament-match-setup"]') && app().querySelector('[data-action="open-result-entry"]'), "a member's dashboard keeps Start match and Enter result");
+    win.eval(`state.view = "home"; render();`);
+    assert(app().querySelector('[data-action="go-club-match-setup"]') && app().querySelector('[data-view="clubPresets"]') && !/view only/.test(app().textContent), "a member's Home keeps the match tiles and Presets");
+
+    win.eval(`session = window.__prevSession; supabaseClient = window.__prevClient; state.activeClubId = null;
+      ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }

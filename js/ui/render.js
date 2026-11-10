@@ -62,6 +62,18 @@ function render(){
     if (state.view === "clubTournamentDashboard" && !ui.currentTournamentId) ui.currentTournamentId = state.viewTournamentId;
     if (!ui.currentClubId || (state.view === "clubTournamentDashboard" && !ui.currentTournamentId)) state.view = "home";
   }
+  // A club the user only plays for (supabase/020) is read only: no setup or
+  // Presets screens, even by a link or a reload.
+  if (!m && ["clubPresets", "clubTournamentSetup", "matchSetup"].includes(state.view) && ui.currentClubId
+      && (state.view !== "matchSetup" || ui.clubMatchSetupType) && !clubCanEdit(ui.currentClubId)){
+    state.view = "home"; save();
+  }
+  // Club screens read the user's role in the club (clubCanEdit) from
+  // ui.myClubs, so a reload straight onto one loads it too.
+  if (!m && CLUB_VIEWS.includes(state.view) && session && ui.myClubs === null && !ui.myClubsLoading){
+    ui.myClubsLoading = true;
+    fetchMyClubs().then(() => { ui.myClubsLoading = false; render(); });
+  }
   // A club screen belongs to the club you're acting as, so its back bar
   // ("Home") lands on that club's Home -- even when it was reached by a link.
   if (CLUB_VIEWS.includes(state.view) && (state.viewClubId !== ui.currentClubId || state.viewTournamentId !== ui.currentTournamentId || (ui.currentClubId && state.activeClubId !== ui.currentClubId))){

@@ -581,8 +581,17 @@ async function fetchMyClubs(){
   const cache = cacheFor();
   let list = null;
   if (!session.offline && isOnline()){
-    const { data, error } = await supabaseClient.from("club_members").select("role, clubs(id, name)").eq("user_id", session.user.id);
-    if (!error){ list = data.map(r => ({ id: r.clubs.id, name: r.clubs.name, role: r.role })); cache.myClubs = list; saveCloudCache(); }
+    const [{ data, error }, played] = await Promise.all([
+      supabaseClient.from("club_members").select("role, clubs(id, name)").eq("user_id", session.user.id),
+      // Clubs this user plays for as a claimed player, read only (supabase/020;
+      // an error just means it isn't run yet).
+      Promise.resolve().then(() => supabaseClient.rpc("my_player_clubs")).catch(e => ({ error: e }))
+    ]);
+    if (!error){
+      list = data.map(r => ({ id: r.clubs.id, name: r.clubs.name, role: r.role }));
+      if (!played.error) (played.data || []).forEach(c => { if (!list.some(x => x.id === c.id)) list.push({ id: c.id, name: c.name, role: "player" }); });
+      cache.myClubs = list; saveCloudCache();
+    }
     else if (!isNetworkError(error, isOnline())) list = [];
   }
   if (!list) list = (cache && cache.myClubs) || [];

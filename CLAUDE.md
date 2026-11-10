@@ -2291,7 +2291,8 @@ this way.
 ## Players who aren't club members (`supabase/019_player_matches.sql`)
 
 Someone who plays for a club but didn't create it and wasn't invited as an
-admin has no club screens (rosters are members-only). They get to their own
+admin has no club screens until they claim their profile (then 020 shows the
+club read only, see the next section). They get to their own
 profile, stats and matches through public screens instead, and **everything
 there is view only** for them: Edit profile shows only to those who may manage
 it (009's rule: once they've claimed it, that's them), Remove from club only to
@@ -2328,6 +2329,36 @@ members, and a scorecard opened from a profile never offers Edit match.
   fielding/alias hits in any case, newest first, club names, no "no names"
   match, no near-name false hits, malformed match rows skipped, base `players`
   still unreadable.
+
+## Claimed players see their clubs, read only (`supabase/020_club_players_view.sql`)
+
+A player whose **claimed** profile (an admin approved the claim, 009) is on a
+club's roster sees that club like a member does, but can't change anything.
+- **Server:** `is_club_player(club)` (SECURITY DEFINER: the caller's claimed
+  profile is on that club's roster) adds permissive **SELECT-only** policies on
+  `club_rosters`, `club_presets` and `tournament_teams`. Every write policy
+  still checks `is_club_member`, so nothing a player sends is accepted;
+  `club_members` and `club_invites` stay members-only. `my_player_clubs()`
+  lists the clubs the caller plays for and isn't a member of. Releasing the
+  claim (admin portal) takes the access away. Checked in PGlite as a player,
+  a stranger, a member and anon (reads, every write refused, members unchanged).
+- **Client:** `fetchMyClubs` adds those clubs to `ui.myClubs` with
+  `role: "player"` (020 not run → none). **`clubCanEdit(clubId)`** (clubs.js)
+  is false for that role (and true for a club not in the list, so a member's
+  buttons never go missing while it loads); `isClubAdmin` is already false.
+  Read only means: Home acting as the club leads with Stats ("You play for
+  KICC: view only"), Players and the club's tournaments, with no match /
+  tournament tiles, Presets or Admins (side menu too); Players has no + or ✕
+  (and the profile no Remove from club); a club tournament has no Start match,
+  Enter result, End/Reopen, or team editing (`renderTournamentTeams(t,
+  canEdit)`, `tournamentContext().readOnly`); the public page's Manage reads
+  "Open in club". My clubs labels it "player · view only". As a backstop the
+  click handler refuses `CLUB_WRITE_ACTIONS` / `CLUB_TOURNAMENT_WRITE_ACTIONS`
+  on such a club (`clubWriteRefused`, `screenClubId`), and `render()` sends
+  club match setup, club tournament setup and club Presets back Home. Club
+  screens load `ui.myClubs` when it's missing (a reload straight onto one), so
+  the role is known. **A new club write control** must check `clubCanEdit`
+  and its action belongs in `CLUB_WRITE_ACTIONS`.
 
 ## Launch splash
 

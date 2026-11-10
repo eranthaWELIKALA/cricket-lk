@@ -41,6 +41,9 @@ function renderHome(){
   }
   const activeClub = state.activeClubId ? (ui.myClubs || []).find(c => c.id === state.activeClubId) : null;
   const clubLoaded = !!(activeClub && ui.club && ui.club.id === activeClub.id);
+  // A club the user plays for but isn't a member of (supabase/020): read only.
+  const playerOnly = !!(activeClub && !clubCanEdit(activeClub.id));
+  const clubMatchCount = activeClub ? clubMatchesFor(activeClub.id).length : 0;
   const recentMatches = activeClub
     ? recentMatchesFor(clubMatchesFor(activeClub.id), 3)
     : recentMatchesFor(Object.values(state.matchHistory).filter(m => !m.clubId), 3);
@@ -60,11 +63,17 @@ function renderHome(){
           <option value="__premier__">🏆 Premier</option>
         </select>
       </div>`}
+      ${playerOnly ? `<p class="hint guest-note">You play for ${escapeHtml(activeClub.name)}: view only.</p>` : ""}
       <div class="home-grid">
         ${state.match && state.match.status !== "complete" ? `
           <button data-action="resume-match" class="home-card primary-card">
             <span class="home-card-icon">🔴</span><span class="home-card-title">Resume live match</span>
             <span class="home-card-sub">${escapeHtml(state.match.teamA)} v ${escapeHtml(state.match.teamB)} · ${currentInnings(state.match).runs}-${currentInnings(state.match).wickets}</span>
+          </button>
+        ` : playerOnly ? `
+          <button data-action="go-club-view" data-view="clubStats" class="home-card primary-card">
+            <span class="home-card-icon">📊</span><span class="home-card-title">Stats</span>
+            <span class="home-card-sub">${escapeHtml(activeClub.name)} · ${clubMatchCount} club match${clubMatchCount === 1 ? "" : "es"}</span>
           </button>
         ` : activeClub ? `
           <button data-action="go-club-match-setup" data-type="practice" class="home-card primary-card">
@@ -104,14 +113,14 @@ function renderHome(){
           <span class="home-card-sub">${playerCount} player${playerCount === 1 ? "" : "s"}</span>
         </button>
         `}
-        ${activeClub ? `
+        ${playerOnly ? "" : activeClub ? `
         <button data-action="go-club-view" data-view="clubPresets" class="home-card">
           <span class="home-card-icon">⚙️</span><span class="home-card-title">Presets</span>
           <span class="home-card-sub">${clubLoaded ? `${ui.club.presets.match.length} match · ${ui.club.presets.tournament.length} tournament` : "Club conditions"}</span>
         </button>
         <button data-action="go-club-view" data-view="clubStats" class="home-card">
           <span class="home-card-icon">📊</span><span class="home-card-title">Stats</span>
-          <span class="home-card-sub">${clubMatchesFor(activeClub.id).length} club match${clubMatchesFor(activeClub.id).length === 1 ? "" : "es"}</span>
+          <span class="home-card-sub">${clubMatchCount} club match${clubMatchCount === 1 ? "" : "es"}</span>
         </button>
         ${isClubAdmin(activeClub.id) ? `
         <button data-action="go-club-view" data-view="clubAdmins" class="home-card">

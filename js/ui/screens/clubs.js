@@ -27,19 +27,52 @@ function renderMyClubs(){
       </form>
       ${ui.myClubs === null ? `${loadingHtml()}` : ui.myClubs.length ? ui.myClubs.map(c => `
         <button data-action="open-club" data-id="${c.id}" class="list-row">
-          <span>${escapeHtml(c.name)}<br><span class="muted">${escapeHtml(c.role)}</span></span><span class="chevron">›</span>
+          <span>${escapeHtml(c.name)}<br><span class="muted">${c.role === "player" ? "player · view only" : escapeHtml(c.role)}</span></span><span class="chevron">›</span>
         </button>
       `).join("") : `<p class="hint">No clubs yet — create one above.</p>`}
     </div>
   `;
 }
 
-// Every club member is an owner or an admin (supabase/002), so this holds
-// for any club in ui.myClubs; checked anyway so a lesser role added later
-// doesn't get the Admins screen by default.
+// Every club member is an owner or an admin (supabase/002); a "player" (a
+// claimed profile on the club's roster, supabase/020) is neither, so it
+// never gets the Admins screen.
 function isClubAdmin(clubId){
   const c = (ui.myClubs || []).find(x => x.id === clubId);
   return !!c && (c.role === "owner" || c.role === "admin");
+}
+/* May this user change this club's data? Members (owner/admin) may; a
+   "player" -- someone who plays for the club and claimed their profile
+   (supabase/020) -- sees it read only. The database enforces the same:
+   every write policy checks is_club_member. A club not in ui.myClubs (the
+   list isn't loaded yet) isn't read only here, so a member's buttons never
+   go missing; the server still refuses a player's write. */
+function clubCanEdit(clubId){
+  const c = clubId && (ui.myClubs || []).find(x => x.id === clubId);
+  return !c || c.role !== "player";
+}
+/* The club the screen in front of you belongs to, for clubCanEdit. */
+function screenClubId(){
+  if (state.view === "clubTournamentDashboard" && ui.clubTournament) return ui.clubTournament.organizer_club_id;
+  if (state.view === "home") return state.activeClubId;
+  return ui.currentClubId || state.activeClubId;
+}
+/* Actions that change a club's data. Refused in the click handler on a
+   club the user only plays for, even if a button for one is reached. */
+const CLUB_WRITE_ACTIONS = new Set([
+  "go-club-match-setup", "go-club-tournament-setup", "go-club-tournament-match-setup",
+  "open-club-add-player", "add-existing-club-player", "ask-remove-club-player",
+  "new-tournament-team", "edit-tournament-team", "delete-tournament-team", "quick-split-teams",
+  "club-new-match-preset", "club-edit-match-preset", "club-delete-match-preset",
+  "club-new-tournament-preset", "club-edit-tournament-preset", "club-delete-tournament-preset",
+  "club-new-points-preset", "club-edit-points-preset", "club-delete-points-preset", "club-use-points-preset",
+  "cancel-club-invite"
+]);
+// Shared with guest tournaments, so they're only refused on a club's own tournament.
+const CLUB_TOURNAMENT_WRITE_ACTIONS = new Set(["open-result-entry", "end-tournament", "reopen-tournament"]);
+function clubWriteRefused(action){
+  if (CLUB_TOURNAMENT_WRITE_ACTIONS.has(action)) return state.view === "clubTournamentDashboard" && !clubCanEdit(screenClubId());
+  return CLUB_WRITE_ACTIONS.has(action) && !clubCanEdit(screenClubId());
 }
 
 /* --- club-scoped screens: Players / Presets / Stats / Admins. Reached from
@@ -333,7 +366,7 @@ function renderPlayerProfile(){
       <div class="profile-actions">
         ${canEdit ? `<button data-action="edit-player-profile" class="ghost small">Edit profile</button>` : ""}
         <button data-action="share-player-link" class="ghost small">Share profile link</button>
-        ${isClub && onClubRoster(pr.id) ? `<button data-action="ask-remove-club-player" data-id="${escapeHtml(pr.id)}" data-name="${escapeHtml(pr.name)}" class="ghost small danger-text">Remove from club</button>` : ""}
+        ${isClub && onClubRoster(pr.id) && clubCanEdit(ui.currentClubId) ? `<button data-action="ask-remove-club-player" data-id="${escapeHtml(pr.id)}" data-name="${escapeHtml(pr.name)}" class="ghost small danger-text">Remove from club</button>` : ""}
       </div>`;
   }
   return `
@@ -422,7 +455,9 @@ function onClubRoster(playerId){
 }
 
 function renderClubPlayers(){
-  const loaded = !!(session && ui.club && ui.club.id === ui.currentClubId && !ui.clubBusy);
+  // A club the user only plays for (supabase/020): the roster, read only.
+  const canEdit = clubCanEdit(ui.currentClubId);
+  const loaded = !!(session && ui.club && ui.club.id === ui.currentClubId && !ui.clubBusy) && canEdit;
   // The FAB sits outside .screen: .screen animates a transform, which would
   // make a position:fixed child position against it during the animation.
   return renderClubScreen("Players", club => `
@@ -430,14 +465,14 @@ function renderClubPlayers(){
     ${club.roster.length ? club.roster.map(p => p.id && String(p.id).startsWith(TEMP_ID_PREFIX)
       ? `<div class="list-row roster-row">
           <span class="roster-open" style="cursor:default;"><span>${escapeHtml(playerLabel(p))}<span class="pending-tag">not synced</span></span></span>
-          <button data-action="ask-remove-club-player" data-id="${p.id}" data-name="${escapeHtml(p.name)}" class="roster-remove" aria-label="Remove ${escapeHtml(p.name)} from club" title="Remove from club">✕</button>
+          ${canEdit ? `<button data-action="ask-remove-club-player" data-id="${p.id}" data-name="${escapeHtml(p.name)}" class="roster-remove" aria-label="Remove ${escapeHtml(p.name)} from club" title="Remove from club">✕</button>` : ""}
         </div>`
       : p.id
       ? `<div class="list-row roster-row">
           <button data-action="open-player-profile" data-scope="club" data-id="${p.id}" data-name="${escapeHtml(p.name)}" class="roster-open"><span>${escapeHtml(playerLabel(p))}</span><span class="chevron">›</span></button>
-          <button data-action="ask-remove-club-player" data-id="${p.id}" data-name="${escapeHtml(p.name)}" class="roster-remove" aria-label="Remove ${escapeHtml(p.name)} from club" title="Remove from club">✕</button>
+          ${canEdit ? `<button data-action="ask-remove-club-player" data-id="${p.id}" data-name="${escapeHtml(p.name)}" class="roster-remove" aria-label="Remove ${escapeHtml(p.name)} from club" title="Remove from club">✕</button>` : ""}
         </div>`
-      : `<div class="list-row"><span>${escapeHtml(p.name)}<span class="pending-tag">not synced</span></span></div>`).join("") : `<p class="hint">No players yet — tap + to add one.</p>`}
+      : `<div class="list-row"><span>${escapeHtml(p.name)}<span class="pending-tag">not synced</span></span></div>`).join("") : `<p class="hint">${canEdit ? "No players yet — tap + to add one." : "No players yet."}</p>`}
     <div class="fab-spacer"></div>
   `) + (loaded ? `<button data-action="open-club-add-player" class="fab" aria-label="Add player" title="Add player">+</button>` : "");
 }

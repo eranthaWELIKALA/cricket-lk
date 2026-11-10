@@ -58,7 +58,8 @@ function renderSideMenu(){
     ...(clubRole
       ? [
         { action: "go-club-view", view: "clubPlayers", icon: "🧑‍🤝‍🧑", label: "Players" },
-        { action: "go-club-view", view: "clubPresets", icon: "⚙️", label: "Presets" },
+        // A club the user only plays for: no Presets (supabase/020, read only).
+        ...(clubCanEdit(clubRole.id) ? [{ action: "go-club-view", view: "clubPresets", icon: "⚙️", label: "Presets" }] : []),
         { action: "go-club-view", view: "clubStats", icon: "📊", label: "Stats" },
         ...(isClubAdmin(clubRole.id) ? [{ action: "go-club-view", view: "clubAdmins", icon: "🛡️", label: "Admins" }] : [])
       ]
