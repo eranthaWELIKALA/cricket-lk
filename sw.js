@@ -1,5 +1,5 @@
 /* Cricket.lk service worker: offline cache only, no notifications (yet). */
-const CACHE = "cricket-lk-v16";
+const CACHE = "cricket-lk-v17";
 // The app's own code: index.html's stylesheet and <script src> files, in the
 // same order. test.js checks this list against index.html, so a file added
 // there and not here fails the tests instead of breaking offline use.
@@ -41,7 +41,10 @@ const SUPABASE_JS = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/u
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(async c => {
-    await c.addAll(ASSETS);
+    // cache: "reload" -- straight from the server, not the browser's HTTP
+    // cache (GitHub Pages lets it keep files 10 minutes), so a new version's
+    // cache never starts with the old version's files.
+    await c.addAll(ASSETS.map(u => new Request(u, { cache: "reload" })));
     // Best effort: a blocked CDN must not fail the whole install.
     try { await c.add(SUPABASE_JS); } catch (_){}
   }).then(() => self.skipWaiting()));
@@ -61,8 +64,12 @@ self.addEventListener("activate", e => {
 // supabase-js CDN script; cache first for everything else (icons). Supabase
 // API calls themselves are never cached here -- the app keeps its own read
 // cache and outbox (see "Offline-first sync" in CLAUDE.md).
+// "no-cache" makes the browser check with the server every time (a cheap
+// 304 when nothing changed) instead of reusing its HTTP cache: GitHub Pages
+// sends max-age=600, so a deploy otherwise took up to 10 minutes to show,
+// and a page opened in that time ran the old code.
 function networkFirst(req, cacheKey){
-  return fetch(req).then(res => {
+  return fetch(new Request(req.url, { cache: "no-cache", credentials: "same-origin" })).then(res => {
     if (res && res.ok) caches.open(CACHE).then(c => c.put(cacheKey, res.clone()));
     return res;
   }).catch(() => caches.match(cacheKey));

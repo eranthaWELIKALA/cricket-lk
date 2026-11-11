@@ -1865,9 +1865,11 @@ is next online. Three pieces, all in the CLOUD section:
   and the tournament overlay also folds this device's archived matches for
   it, so standings count a match scored offline. Pending items render with
   a "not synced" tag.
-- **Offline sign-in.** `sw.js` (cache `cricket-lk-v16`; the page and the app's
+- **Offline sign-in.** `sw.js` (cache `cricket-lk-v17`; the page and the app's
   own `css/`/`js/` files are network-first, refreshing the cache, so a deploy
-  never mixes versions) precaches the
+  never mixes versions; those fetches are `cache: "no-cache"`, because GitHub
+  Pages' `max-age=600` otherwise let the browser run the old code for up to 10
+  minutes after a deploy, and install fetches with `cache: "reload"`) precaches the
   supabase-js CDN script and serves it stale-while-revalidate — keep its URL
   in step with `SUPABASE_JS_CDN_URL`. Offline, `supabase.auth.getSession()`
   can hang retrying a token refresh, so `initAuth` doesn't wait on it: it uses
