@@ -2900,12 +2900,48 @@ async function main(){
     win.eval(`__who.pendingClaim = { id: "c1", player_id: "k1", name: "Kusal Mendis" };`);
     win.eval(`state.view = "account"; ui.identity = null; render();`);
     await tick();
-    assert(/claim on Kusal Mendis is waiting/.test(doc.querySelector("#app .my-player-card").textContent), "a claim waiting for approval is named on Account");
+    assert(/Kusal Mendis\s*Claim waiting/.test(doc.querySelector("#app .my-player-card").textContent), "a claim waiting for approval is named on Account");
+    // Withdraw it (023): asks first, then the RPC with the request's id, and the card reloads.
+    win.eval(`window.__rpc = []; supabaseClient = { rpc: async (fn, args) => { __rpc.push([fn, args]); if (fn === "withdraw_my_request") __who.pendingClaim = null; return { error: null }; } };`);
+    doc.querySelector('#app .my-player-card [data-action="withdraw-request"][data-kind="claim"]').click();
+    assert(/Withdraw your claim/.test(doc.querySelector("#confirm-root").textContent) && win.eval("__rpc.length") === 0, "Withdraw asks first");
+    doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    await tick(); await tick();
+    assert(win.eval(`JSON.stringify(__rpc)`) === JSON.stringify([["withdraw_my_request", { _kind: "claim", _request_id: "c1" }]])
+      && !doc.querySelector("#confirm-root .confirm-modal") && doc.querySelector('#app [data-action="find-my-profile"]'),
+      "...then withdraws that claim, and Account offers Find my profile again");
+    // Claimed, with a name merged in and a merge still waiting: all listed, each with its way out.
+    win.eval(`__rpc.length = 0; __who.myPlayer = { id: "k1", name: "Kusal Mendis", aliases: ["K. Mendis"] };
+      __who.pendingMerges = [{ id: "m1", from_player_id: "k2", name: "Kusal M" }];
+      state.view = "account"; ui.identity = null; ui.myClubs = [{ id: "c9", name: "KICC", role: "player" }]; render();`);
+    await tick();
+    const card = doc.querySelector("#app .my-player-card");
+    assert(/Kusal Mendis\s*Claimed/.test(card.textContent) && /Also played as K\. Mendis/.test(card.textContent)
+      && /Kusal M\s*Merge waiting/.test(card.textContent) && card.querySelector('[data-action="withdraw-request"][data-kind="merge"][data-id="m1"]')
+      && card.querySelector('[data-action="open-player-profile"][data-id="k2"]') && card.querySelector('[data-action="unclaim-profile"]'),
+      "Account lists the claimed profile (with its merged names) and the merge waiting, with Withdraw and Unclaim");
+    card.querySelector('[data-action="unclaim-profile"]').click();
+    const unclaim = doc.querySelector("#confirm-root");
+    assert(/Unclaim Kusal Mendis\?/.test(unclaim.textContent) && /merge request into it is withdrawn/.test(unclaim.textContent)
+      && unclaim.querySelector('[data-action="confirm-pick"][data-value="remove"].active'),
+      "Unclaim asks first, says the waiting merge goes too, and removing the contact no & NIC is picked");
+    unclaim.querySelector('[data-action="confirm-pick"][data-value="keep"]').click();
+    win.eval(`supabaseClient.rpc = async (fn, args) => { __rpc.push([fn, args]); __who.myPlayer = null; __who.pendingMerges = []; return { error: null }; };`);
+    doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    await tick(); await tick();
+    assert(win.eval(`JSON.stringify(__rpc)`) === JSON.stringify([["release_my_claim", { _remove_contact: false }]])
+      && win.eval("ui.myClubs") === null && doc.querySelector('#app [data-action="find-my-profile"]'),
+      "...then releases it as picked, reloads My clubs (020's read-only clubs go) and Account offers Find my profile");
+    win.eval(`supabaseClient = {}; __who.myPlayer = { id: "k1", name: "Kusal Mendis" }; state.view = "account"; ui.identity = null; render();`);
+    await tick();
     win.eval(`__who.pendingClaim = null; __who.myPlayer = { id: "k1", name: "Kusal Mendis" }; state.view = "account"; ui.identity = null; render();`);
     await tick();
     doc.querySelector('#app [data-action="open-my-profile"]').click();
     assert(win.eval("state.view") === "playerProfile" && win.eval("ui.profile.id") === "k1" && /Account/.test(doc.querySelector("#app .back-bar").textContent),
       "a claimed player opens their own profile from Account, and its back bar returns there");
+    win.eval(`Object.assign(ui.profile, { pending: false, loading: false, data: { id: "k1", name: "Kusal Mendis", claimed_by: session.user.id, can_see_contact: true, details_unavailable: true, kit_unavailable: true } }); render();`);
+    assert(doc.querySelector('#app [data-action="unclaim-profile"]') && /This is your profile/.test(doc.querySelector("#app").textContent),
+      "your own profile's Ownership box offers Unclaim");
 
     win.eval(`session = window.__prevSession; supabaseClient = window.__prevClient; loadPlayerProfile = window.__lpp;
       fetchMyPlayerIdentity = window.__fmi; refreshProfileAndAdmin = window.__rpa; delete state.matchHistory.pm1;

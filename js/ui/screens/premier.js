@@ -147,6 +147,53 @@ function handleClaimRequestSubmit(e){
   });
 }
 
+/* The player's own way out (023): unclaim their profile, or withdraw a claim
+   or merge still waiting. From Account's Player profile card or the profile's
+   Ownership box. */
+function askUnclaimProfile(){
+  const mine = ui.identity && ui.identity.myPlayer;
+  if (!mine) return;
+  const merges = ui.identity.pendingMerges.length;
+  askConfirm({
+    title: `Unclaim ${mine.name}?`,
+    icon: "↩",
+    body: `<p>The profile stays on Cricket.lk with its stats and matches, but it's no longer yours: the club that added this player can edit it again, and you lose your view-only access to its clubs.${merges ? ` Your ${merges === 1 ? "merge request" : `${merges} merge requests`} into it ${merges === 1 ? "is" : "are"} withdrawn.` : ""} To get it back you'd claim it again and wait for approval.</p>`,
+    choices: [
+      { value: "remove", label: "Remove my contact no & NIC", sub: "The club won't see them" },
+      { value: "keep", label: "Leave them on the profile", sub: "The club can see them" }
+    ],
+    choice: "remove",
+    confirmLabel: "Unclaim",
+    busyLabel: "Unclaiming…",
+    onConfirm: choice => releaseMyClaim(choice === "remove").then(res => res.error ? res : refreshAfterOwnershipChange())
+  });
+}
+function askWithdrawRequest(kind, requestId){
+  const id = ui.identity;
+  if (!id) return;
+  const req = kind === "claim" ? id.pendingClaim : id.pendingMerges.find(m => m.id === requestId);
+  if (!req) return;
+  const name = `<b>${escapeHtml(req.name || "that profile")}</b>`;
+  askConfirm({
+    title: kind === "claim" ? "Withdraw your claim?" : "Withdraw this merge request?",
+    body: `<p>${kind === "claim" ? `Your claim on ${name} won't be reviewed.` : `${name} won't be merged into ${escapeHtml(id.myPlayer ? id.myPlayer.name : "your profile")}.`} You can ask again later.</p>`,
+    confirmLabel: "Withdraw",
+    busyLabel: "Withdrawing…",
+    onConfirm: () => withdrawMyRequest(kind, req.id).then(res => res.error ? res : refreshAfterOwnershipChange())
+  });
+}
+/* After a claim changes hands: who the viewer is, the profile on screen (its
+   Ownership box and who may edit it) and My clubs (020's read-only clubs
+   follow the claim; Home drops an "Acting as" club that's gone). */
+function refreshAfterOwnershipChange(){
+  ui.myClubs = null;
+  const pr = ui.profile;
+  const profile = state.view === "playerProfile" && pr && pr.id
+    ? fetchPlayerProfile(pr.id).then(r => { if (ui.profile === pr && !r.error) pr.data = r.data; })
+    : null;
+  return Promise.all([fetchMyPlayerIdentity(), profile]).catch(() => {}).then(() => { render(); });
+}
+
 function handleMergeRequestSubmit(e){
   e.preventDefault();
   const form = e.target;

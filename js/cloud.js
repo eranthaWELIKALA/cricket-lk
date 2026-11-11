@@ -1303,16 +1303,20 @@ async function fetchMyPlayerIdentity(){
     supabaseClient.from("merge_requests").select("id, from_player_id").eq("requested_by", uid).eq("status", "pending")
   ]);
   const pendingClaim = (claim.data && claim.data[0]) || null;
-  // Account names the profile a claim is waiting on.
-  if (pendingClaim){
-    const { data: pl } = await supabaseClient.from("players_public").select("name").eq("id", pendingClaim.player_id).maybeSingle();
-    pendingClaim.name = (pl && pl.name) || "";
-  }
-  ui.identity = {
-    myPlayer: (mine.data && mine.data[0]) || null,
-    pendingClaim,
-    pendingMerges: merges.data || []
-  };
+  const myPlayer = (mine.data && mine.data[0]) || null;
+  const pendingMerges = merges.data || [];
+  // Account names the profile a claim or merge is waiting on, and the names
+  // already merged into the claimed profile (its aliases).
+  const ids = [pendingClaim && pendingClaim.player_id, ...pendingMerges.map(m => m.from_player_id)].filter(Boolean);
+  const [names, aliases] = await Promise.all([
+    ids.length ? supabaseClient.from("players_public").select("id, name").in("id", ids) : { data: [] },
+    myPlayer ? fetchPlayerAliases(myPlayer.id) : []
+  ]);
+  const nameOf = id => ((names.data || []).find(p => p.id === id) || {}).name || "";
+  if (pendingClaim) pendingClaim.name = nameOf(pendingClaim.player_id);
+  pendingMerges.forEach(m => { m.name = nameOf(m.from_player_id); });
+  if (myPlayer) myPlayer.aliases = aliases;
+  ui.identity = { myPlayer, pendingClaim, pendingMerges };
 }
 
 async function fetchPlayerAliases(playerId){
@@ -1332,3 +1336,12 @@ const approveClaimRequest = requestId => ownershipRpc("approve_claim", { _reques
 const rejectClaimRequest = requestId => ownershipRpc("reject_claim", { _request_id: requestId });
 const approveMergeRequest = requestId => ownershipRpc("approve_merge", { _request_id: requestId });
 const rejectMergeRequest = requestId => ownershipRpc("reject_merge", { _request_id: requestId });
+// The player's own: unclaim their profile, or withdraw a request still waiting (023).
+const UNCLAIM_SQL_MISSING = "supabase/023_unclaim_profile.sql";
+async function unclaimRpc(fn, args){
+  const offline = needsInternet(); if (offline) return offline;
+  const { error } = await supabaseClient.rpc(fn, args);
+  return error ? { error: cloudSqlMissing(error, UNCLAIM_SQL_MISSING) || error.message } : { ok: true };
+}
+const releaseMyClaim = removeContact => unclaimRpc("release_my_claim", { _remove_contact: !!removeContact });
+const withdrawMyRequest = (kind, requestId) => unclaimRpc("withdraw_my_request", { _kind: kind, _request_id: requestId });

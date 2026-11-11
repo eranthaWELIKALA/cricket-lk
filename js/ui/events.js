@@ -293,6 +293,8 @@ document.addEventListener("click", (e) => {
   else if (action === "open-claim-form"){ ui.profile.claiming = true; ui.profile.merging = false; ui.profile.message = null; render(); }
   else if (action === "open-merge-form"){ ui.profile.merging = true; ui.profile.claiming = false; ui.profile.message = null; render(); }
   else if (action === "close-ownership-form"){ ui.profile.claiming = false; ui.profile.merging = false; render(); }
+  else if (action === "unclaim-profile") askUnclaimProfile();
+  else if (action === "withdraw-request") askWithdrawRequest(btn.dataset.kind, btn.dataset.id);
   else if (action === "approve-merge" || action === "reject-merge"){
     (action === "approve-merge" ? approveMergeRequest : rejectMergeRequest)(btn.dataset.id).then(result => {
       ui.claimMessage = result && result.error ? result.error : (action === "approve-merge" ? "Merged." : "Rejected.");

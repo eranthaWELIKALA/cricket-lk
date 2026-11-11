@@ -288,21 +288,44 @@ function renderAccount(){
   `;
 }
 /* Account → Player profile: the way in for someone who plays for a club but
-   isn't one of its members (so has no club screens): their claimed profile
-   (stats + matches), the claim waiting on one, or a search for it.
+   isn't one of its members (so has no club screens). Lists the profile they've
+   claimed (with the names merged into it) and any claim or merge still
+   waiting, each with its own way out: Unclaim, or Withdraw (023). With none of
+   those, a search for their profile. One person holds one claimed profile
+   (009); a second one that's also them is merged into it, which is why the
+   merged names show under it.
    ui.identity is loaded by render() and reset on every visit (go-account). */
 function renderMyPlayerCard(){
   if (!supabaseClient) return "";
   const id = ui.identity;
+  const row = (name, sub, tag, buttons) => `
+    <div class="my-profile-row">
+      <div class="my-profile-main">
+        <span class="my-profile-name">${escapeHtml(name || "A player")}${tag}</span>
+        ${sub ? `<span class="my-profile-sub">${sub}</span>` : ""}
+      </div>
+      ${buttons}
+    </div>`;
+  const tag = (text, gold) => `<span class="tag-pill${gold ? " gold" : ""}">${text}</span>`;
+  const openBtn = (pid, name) => `<button data-action="open-player-profile" data-scope="premier" data-id="${escapeHtml(pid)}" data-name="${escapeHtml(name || "")}" class="ghost small">Open</button>`;
+  const withdrawBtn = (kind, rid) => `<button data-action="withdraw-request" data-kind="${kind}" data-id="${escapeHtml(rid)}" class="ghost small">Withdraw</button>`;
   let inner;
   if (needsInternet()) inner = `<p class="hint">Your player profile needs an internet connection.</p>`;
   else if (!id) inner = loadingHtml();
-  else if (id.myPlayer) inner = `
-    <p>You're <b>${escapeHtml(id.myPlayer.name)}</b> on Cricket.lk.</p>
-    <button data-action="open-my-profile" class="primary">My stats & matches</button>`;
+  else if (id.myPlayer){
+    const me = id.myPlayer, aliases = me.aliases || [];
+    inner = `
+      ${row(me.name, aliases.length ? `Also played as ${aliases.map(escapeHtml).join(", ")}` : "", tag("Claimed", true), "")}
+      ${id.pendingMerges.map(m => row(m.name, `Waiting to be merged into ${escapeHtml(me.name)}`, tag("Merge waiting"),
+          `<div class="my-profile-btns">${openBtn(m.from_player_id, m.name)}${withdrawBtn("merge", m.id)}</div>`)).join("")}
+      <div class="auth-actions">
+        <button data-action="open-my-profile" class="primary">My stats & matches</button>
+        <button data-action="unclaim-profile" class="ghost">Unclaim this profile</button>
+      </div>`;
+  }
   else if (id.pendingClaim) inner = `
-    <p class="hint">Your claim on <b>${escapeHtml(id.pendingClaim.name || "a profile")}</b> is waiting for a platform admin to approve it. We'll email you when it's approved.</p>
-    <button data-action="open-my-profile" class="ghost">Open that profile</button>`;
+    ${row(id.pendingClaim.name, "Waiting for a platform admin to approve it. We'll email you when it's approved.", tag("Claim waiting"),
+        `<div class="my-profile-btns"><button data-action="open-my-profile" class="ghost small">Open</button>${withdrawBtn("claim", id.pendingClaim.id)}</div>`)}`;
   else inner = `
     <p class="hint">Play for a club? Find your profile to see your stats and matches, and claim it.</p>
     <button data-action="find-my-profile" class="primary">Find my profile</button>`;

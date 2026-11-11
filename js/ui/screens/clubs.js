@@ -227,7 +227,8 @@ function renderOwnershipBlock(pr, d, canEdit){
   let inner;
   if (d.claimed_by){
     inner = me && d.claimed_by === me
-      ? note("This is your profile. Only you and platform admins can edit it.")
+      ? `${note("This is your profile. Only you and platform admins can edit it.")}
+         <button data-action="unclaim-profile" class="ghost small">Unclaim this profile</button>`
       : note("Claimed by the player — only they (and platform admins) can edit this profile.");
   } else if (!session){
     inner = `${note("Unclaimed. If this is you, sign in to claim it.")}
@@ -249,13 +250,16 @@ function renderOwnershipBlock(pr, d, canEdit){
         </div>
       </form>`;
   } else if (id.myPlayer){
-    inner = id.pendingMerges.some(m => m.from_player_id === d.id)
-      ? note("Your merge request for this profile is waiting for admin approval. We'll email you when it's approved.")
+    const merge = id.pendingMerges.find(m => m.from_player_id === d.id);
+    inner = merge
+      ? `${note("Your merge request for this profile is waiting for admin approval. We'll email you when it's approved.")}
+         <button data-action="withdraw-request" data-kind="merge" data-id="${escapeHtml(merge.id)}" class="ghost small">Withdraw merge request</button>`
       : `${note(`You've already claimed <b>${escapeHtml(id.myPlayer.name)}</b> — one person can only have one profile. If this one is also you, request a merge into it.`)}
          <button data-action="open-merge-form" class="ghost small">This is also me — request merge</button>`;
   } else if (id.pendingClaim){
     inner = id.pendingClaim.player_id === d.id
-      ? note("Your claim on this profile is waiting for admin approval. We'll email you when it's approved.")
+      ? `${note("Your claim on this profile is waiting for admin approval. We'll email you when it's approved.")}
+         <button data-action="withdraw-request" data-kind="claim" data-id="${escapeHtml(id.pendingClaim.id)}" class="ghost small">Withdraw claim</button>`
       : note("You already have a claim waiting for approval on another profile. You can only claim one player.");
   } else {
     inner = `${note(canEdit ? "Unclaimed — you can edit it because your club added this player. Once the player claims it, only they can." : "Unclaimed. Only the club that added this player can edit it until they claim it themselves.")}

@@ -2363,11 +2363,25 @@ it (009's rule: once they've claimed it, that's them), Remove from club only to
 members, and a scorecard opened from a profile never offers Edit match.
 - **Account → Player profile** (`renderMyPlayerCard`, home-account.js; its
   `ui.identity` is loaded by `render()` and reset on every `go-account`, so an
-  approved claim shows up): **My stats & matches** (`open-my-profile`, their
-  claimed profile, `ui.profile.from = "account"` so its back bar says Account),
-  the claim waiting for approval (named: `fetchMyPlayerIdentity` adds
-  `pendingClaim.name`), or **Find my profile** (`find-my-profile` → Premier →
-  Players). Hidden without a cloud client; offline it says it needs internet.
+  approved claim shows up): a row per profile — the claimed one (tagged, with
+  its merged names: `fetchMyPlayerIdentity` adds `myPlayer.aliases`), each
+  merge still waiting, or the claim waiting (named: `pendingClaim.name`,
+  `pendingMerges[].name`) — then **My stats & matches** (`open-my-profile`,
+  `ui.profile.from = "account"` so its back bar says Account); or **Find my
+  profile** (`find-my-profile` → Premier → Players). Hidden without a cloud
+  client; offline it says it needs internet.
+- **Unclaim / withdraw** (`supabase/023_unclaim_profile.sql`): the player's
+  own way out, no admin needed. **Unclaim this profile** (Account and the
+  profile's Ownership box, `askUnclaimProfile`, premier.js) →
+  `release_my_claim(_remove_contact)`: the profile goes back to unclaimed (the
+  adding club manages it again, 020's read-only clubs go), the confirmation's
+  required pick says whether the contact no & NIC are cleared first (default:
+  cleared, so the club isn't handed what the player gave when claiming), and
+  their pending merges into it are deleted; aliases stay. **Withdraw** on a
+  waiting claim or merge (`askWithdrawRequest`) → `withdraw_my_request(kind,
+  id)`, which deletes the caller's own *pending* row. Both are logged to
+  `admin_audit_log`; `refreshAfterOwnershipChange` reloads the identity, the
+  open profile and `ui.myClubs`. One person still holds one claimed profile.
 - **Premier → Players** is searchable (`[data-premier-search]`,
   `ui.premierPlayerQuery`, `premierPlayerRowsHtml`: word starts via
   `nameSearchHit` over each player's `searchKey` — name, nickname, `#jersey` —
