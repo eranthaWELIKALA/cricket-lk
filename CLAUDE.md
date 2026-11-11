@@ -2528,6 +2528,31 @@ sample data scored through the logged engine calls (made-up names, never real
 players). Re-run it (`npm run store-graphics` in `mobile/`) when a screen they
 show changes, like the tutorial shots.
 
+## Email worker (`worker/`, `supabase/022_email_worker.sql`)
+
+The database's own emails (claim/merge requests, 021) can go through **our
+own Cloudflare Worker on the free plan** instead of Resend or Brevo: it sends
+through a Gmail account's SMTP with an app password, so no domain is needed
+(Gmail allows ~500/day). It's the only server-side code we deploy, and it
+holds no data. 022 adds `email_provider = 'worker'` to `send_app_email`
+(021's body plus that branch: keep the two in step), posting Resend's request
+shape with `email_api_key` (Vault) as a Bearer token to `email_worker_url`
+(must be `https://`, else the email is skipped and logged).
+- `src/handler.js`: `POST /emails` only. The token must be ≥32 chars
+  (constant-time compare), one recipient, no CR/LF in subject or address,
+  size caps, per-IP `SEND_LIMIT`. **The From address is always `SMTP_USER`**;
+  only the display name is read from the request (`cleanDisplayName`).
+- `src/smtp.js`: a dependency-free SMTP client over `cloudflare:sockets`
+  (implicit TLS on 465, AUTH PLAIN, multipart/alternative, base64 bodies,
+  RFC 2047 headers, dot-stuffing, 20s timeout). `connect` is injected so
+  `npm test` (Node, fake server in `test/fake-smtp.js`) covers the whole
+  SMTP conversation. Errors never include the credentials.
+- Secrets (`wrangler secret put`): `SMTP_USER`, `SMTP_PASS`,
+  `EMAIL_WORKER_TOKEN`; never in `wrangler.toml` or the repo (`.dev.vars` is
+  gitignored). Logs carry an id and error code only, never an address.
+- Supabase's own auth emails don't use it: they go through the dashboard's
+  SMTP settings.
+
 ## Platform admin portal (`admin.html`, `supabase/011_admin_portal.sql`)
 
 A **separate page**, not a screen in `index.html`: desktop-first, online-only,

@@ -1,0 +1,30 @@
+name = "cricket-lk-worker"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+# No per-version preview addresses: one public address is enough.
+preview_urls = false
+
+[vars]
+# Gmail's SMTP server, implicit TLS. (Port 25 is blocked on Workers; 465 and
+# 587 aren't. This worker speaks implicit TLS, so keep 465.)
+SMTP_HOST = "smtp.gmail.com"
+SMTP_PORT = "465"
+# The From name when a request doesn't give one.
+FROM_NAME = "CricketLK"
+
+# Per-IP limit on requests (approximate, per Cloudflare location). Gmail's own
+# limit is about 500 emails a day; this just stops a flood early.
+[[ratelimits]]
+name = "SEND_LIMIT"
+namespace_id = "2001"
+  [ratelimits.simple]
+  limit = 30
+  period = 60
+
+# Secrets: set with `npx wrangler secret put <NAME>`, never commit them:
+#   SMTP_USER           the Gmail address the emails come from
+#   SMTP_PASS           that account's app password (myaccount.google.com/apppasswords)
+#   EMAIL_WORKER_TOKEN  a long random string (openssl rand -hex 32); the same value
+#                       goes in Supabase Vault as email_api_key (see README.md)
+# For `wrangler dev`, put them in .dev.vars (gitignored).
