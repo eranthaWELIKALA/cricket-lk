@@ -2128,6 +2128,38 @@ error says the link didn't work.
 Email templates live in `supabase/email-templates/` (pasted into the
 dashboard by hand).
 
+## Request emails (`supabase/021_request_emails.sql`)
+
+Claim and merge requests (009) send email from Postgres: a new claim emails
+every site admin (`admin_users`) and, as a heads-up, the admins of the
+player's `origin_club_id` (they lose their edit right when it's approved); a
+new merge emails the site admins; an approved claim or merge emails the
+player who asked. Nobody is emailed about their own request, a site admin who
+also runs that club gets one email, and only confirmed addresses are used.
+Rejections send nothing. It's all triggers (`email_on_request` on both request
+tables), so the app and `admin.html` didn't change, apart from "We'll email
+you when it's approved" on the pending-claim/merge lines.
+- **Sending**: `send_app_email` calls an email API with `pg_net` (async,
+  after commit): Resend (needs a verified domain) or Brevo (a single verified
+  sender is enough), picked by `app_settings.email_provider`. The API key is
+  in **Vault** (`email_api_key`), never a table; `app_settings` (from
+  address/name, `app_url` for links and the logo) has RLS with no policies.
+  Setup steps are in the file's header.
+- **It never breaks a request**: not set up, or the API call fails → the
+  request is saved as usual and `email_log` (site admins can read it) says
+  `skipped`/`error` and why. The provider's reply is in `net._http_response`.
+- **No client can send or list addresses**: every helper is revoked from
+  `anon`/`authenticated` (Supabase grants new functions to them by default).
+  Keep that if you add one — `send_app_email` with the project's key would be
+  an open relay.
+- Templates follow `supabase/email-templates`' rules (`email_html`, the auth
+  emails' look); only a player's / club's name is printed, escaped
+  (`email_escape`), never a claim note or display name. Links: `admin.html#claims`
+  / `#merges` for admins, `#/premier/players/<id>` for the player.
+- Checked in PGlite with stub `auth`, `vault` and `net` schemas (23 checks:
+  recipients, dedupe, escaping, both providers, approve/reject, a failing
+  API, client access refused).
+
 ## Deleted matches stay deleted (`supabase/015_deleted_matches.sql`)
 
 A match deleted in the cloud (the admin portal's Delete, the SQL editor, or a

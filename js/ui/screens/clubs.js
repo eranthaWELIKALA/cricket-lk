@@ -250,12 +250,12 @@ function renderOwnershipBlock(pr, d, canEdit){
       </form>`;
   } else if (id.myPlayer){
     inner = id.pendingMerges.some(m => m.from_player_id === d.id)
-      ? note("Your merge request for this profile is waiting for admin approval.")
+      ? note("Your merge request for this profile is waiting for admin approval. We'll email you when it's approved.")
       : `${note(`You've already claimed <b>${escapeHtml(id.myPlayer.name)}</b> — one person can only have one profile. If this one is also you, request a merge into it.`)}
          <button data-action="open-merge-form" class="ghost small">This is also me — request merge</button>`;
   } else if (id.pendingClaim){
     inner = id.pendingClaim.player_id === d.id
-      ? note("Your claim on this profile is waiting for admin approval.")
+      ? note("Your claim on this profile is waiting for admin approval. We'll email you when it's approved.")
       : note("You already have a claim waiting for approval on another profile. You can only claim one player.");
   } else {
     inner = `${note(canEdit ? "Unclaimed — you can edit it because your club added this player. Once the player claims it, only they can." : "Unclaimed. Only the club that added this player can edit it until they claim it themselves.")}

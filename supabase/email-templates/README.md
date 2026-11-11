@@ -9,6 +9,10 @@ SQL migrations.
 | `confirm-signup.html` | Confirm signup | Confirm your Cricket.lk account | Yes: sign up and "Resend email" |
 | `reset-password.html` | Reset password | Reset your Cricket.lk password | Not yet: there's no "Forgot password?" flow |
 
+Emails about claim and merge requests aren't auth emails: they're built and
+sent by the database (`supabase/021_request_emails.sql`, `email_html`), in the
+same look and under the same rules as these.
+
 **To update:** Supabase → Authentication → Emails → Templates → pick the
 template → paste the subject and the whole file → Save. If the editor is
 locked, turn on custom SMTP first. Send yourself one (see "Test it" below)
