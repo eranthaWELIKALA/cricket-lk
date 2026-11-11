@@ -227,12 +227,19 @@ function renderAuthMailCard(){
   if (!job) return "";
   const email = `<strong>${escapeHtml(job.email)}</strong>`;
   const what = job.kind === "signup" ? "Your sign-up" : "The confirmation email";
+  // Resend stays off for a while after each email (authResendWait, CLOUD);
+  // tickAuthCooldown counts it down in the DOM.
+  const resendBtn = label => {
+    const left = authCooldownLeft(job);
+    if (left > 0) startAuthCooldownTick();
+    return `<button type="button" data-action="auth-mail-send" class="ghost small" data-label="${escapeHtml(label)}"${left > 0 ? ` data-auth-cooldown disabled` : ""}>${escapeHtml(left > 0 ? authCooldownLabel(left) : label)}</button>`;
+  };
   let body;
   if (job.status === "waiting"){
-    const at = new Date(job.nextAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const at = new Date(job.nextAt).toLocaleTimeString([], job.shortWait ? { hour: "2-digit", minute: "2-digit", second: "2-digit" } : { hour: "2-digit", minute: "2-digit" });
     body = `
-      <p class="mvp-name">📮 Queued: email limit reached</p>
-      <p class="hint">We can only send a few emails an hour right now. ${what} for ${email} is queued, and we'll try again automatically at ${escapeHtml(at)}.
+      <p class="mvp-name">📮 ${job.shortWait ? "Queued: one email a minute" : "Queued: email limit reached"}</p>
+      <p class="hint">${job.shortWait ? "We can only send one email a minute to an address." : "We can only send a few emails an hour right now."} ${what} for ${email} is queued, and we'll try again automatically at ${escapeHtml(at)}.
         ${job.kind === "signup" ? "Keep this page open: closing it cancels the sign-up." : ""}</p>
       <button type="button" data-action="auth-mail-send" class="ghost small">Try now</button>
       <button type="button" data-action="auth-mail-cancel" class="link-btn">Cancel</button>`;
@@ -241,13 +248,13 @@ function renderAuthMailCard(){
   } else if (job.status === "sent"){
     body = `
       <p class="mvp-name">✉️ Check your inbox</p>
-      <p class="hint">We sent a confirmation link to ${email}. Open it, then sign in here. Can't find it? Check spam, or resend it.</p>
-      <button type="button" data-action="auth-mail-send" class="ghost small">Resend email</button>`;
+      <p class="hint">We sent a confirmation link to ${email}. Open it, then sign in here. Can't find it? It can take a minute or two: check spam, or resend it.</p>
+      ${resendBtn("Resend email")}`;
   } else if (job.status === "unconfirmed"){
     body = `
       <p class="mvp-name">✉️ Confirm your email first</p>
       <p class="hint">${email} hasn't been confirmed yet. Open the link we emailed you, or get a new one.</p>
-      <button type="button" data-action="auth-mail-send" class="ghost small">Resend confirmation email</button>`;
+      ${resendBtn("Resend confirmation email")}`;
   } else {
     body = `
       <p class="mvp-name">Couldn't send the email</p>
@@ -294,7 +301,7 @@ function renderMyPlayerCard(){
     <p>You're <b>${escapeHtml(id.myPlayer.name)}</b> on Cricket.lk.</p>
     <button data-action="open-my-profile" class="primary">My stats & matches</button>`;
   else if (id.pendingClaim) inner = `
-    <p class="hint">Your claim on <b>${escapeHtml(id.pendingClaim.name || "a profile")}</b> is waiting for a platform admin to approve it.</p>
+    <p class="hint">Your claim on <b>${escapeHtml(id.pendingClaim.name || "a profile")}</b> is waiting for a platform admin to approve it. We'll email you when it's approved.</p>
     <button data-action="open-my-profile" class="ghost">Open that profile</button>`;
   else inner = `
     <p class="hint">Play for a club? Find your profile to see your stats and matches, and claim it.</p>
@@ -386,9 +393,12 @@ function handleSignUpSubmit(e){
     options: { data: { display_name: displayName }, emailRedirectTo: authRedirectUrl() }
   }).then(({ data, error }) => {
     if (error && isAuthRateLimit(error)){
-      // The mailer's hourly limit: queue it and keep retrying (see authMail).
+      // The mailer's limit: queue it and keep retrying (see authMail). A
+      // "wait N seconds" (an email went to this address a moment ago) is
+      // retried after exactly that.
       cancelAuthMail();
-      queueAuthMail({ kind: "signup", email, displayName, password, status: "waiting" });
+      const secs = authRetryAfter(error);
+      queueAuthMail({ kind: "signup", email, displayName, password, status: "waiting" }, secs != null ? Math.max(1, secs) * 1000 : 0);
       render(); return;
     }
     if (error){ showFormError(form, error.message); return; }

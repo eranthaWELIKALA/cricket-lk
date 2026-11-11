@@ -2104,6 +2104,15 @@ failed. A queued sign-up keeps the password so it can retry, so **the job
 is memory-only, never stored**. Closing the tab drops it, and the card says
 so. Once the sign-up goes through, the password is dropped and the job
 becomes a resend. Like `session`, it's a top-level `let`, not a `ui` field.
+**Resend waits after each email** (`authResendWait`: 1 min, then 2, then 5;
+`job.sent`, `job.cooldownUntil`): the button is disabled with a "Resend in
+0:42" countdown, ticked in the DOM by `tickAuthCooldown` (no `render()`, so
+typing in the sign-in form isn't disturbed), and `sendAuthMail` ignores a tap
+meanwhile. Supabase also allows one email per address a minute and answers a
+sooner one with a 429 "only request this after N seconds" (`authRetryAfter`):
+for a resend that's just a countdown of N on the card, never the hourly
+"email limit reached" queue (it used to be shown as that, so Resend looked
+broken); a sign-up retries after exactly N (`job.shortWait`).
 Covered in `test.js`. A real fix for volume is custom SMTP in the Supabase
 dashboard, which needs no code change.
 

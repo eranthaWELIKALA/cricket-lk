@@ -980,9 +980,35 @@ async function main(){
     assert(win.__calls.length === 2 && job.status === "sent" && job.password === null, "the retry goes through and drops the password");
     assert(win.__view === "signIn" && /Check your inbox/.test(win.document.getElementById("app").textContent), "then it's 'check your inbox' on Sign in, with a resend");
 
+    const resendBtn = () => win.document.querySelector('#app [data-action="auth-mail-send"]');
+    assert(job.cooldownUntil - Date.now() > 55000 && resendBtn().disabled && /Resend in 0:(59|60)|Resend in 1:00/.test(resendBtn().textContent), "Resend is off for a minute after the email went out, with a countdown");
+    runInPage(`sendAuthMail()`);
+    await wait(20);
+    assert(win.__calls.length === 2, "...and tapping it meanwhile sends nothing");
+
+    runInPage(`authMail.cooldownUntil = Date.now() + 5000; tickAuthCooldown();`);
+    assert(resendBtn().disabled && resendBtn().textContent === "Resend in 0:05", "the countdown ticks in the DOM");
+    runInPage(`authMail.cooldownUntil = Date.now() - 1; tickAuthCooldown();`);
+    assert(!resendBtn().disabled && resendBtn().textContent === "Resend email", "after the wait Resend is back (no re-render needed)");
     runInPage(`sendAuthMail()`);
     await wait(20);
     assert(win.__calls[2][0] === "resend" && win.__calls[2][1] === "k@example.com", "Resend email re-sends the confirmation (no password needed)");
+    win.eval("window.__job = authMail");
+    assert(win.__job.sent === 2 && win.__job.cooldownUntil - Date.now() > 115000, "each resend waits longer: 1 min, then 2");
+
+    // The server's "one email a minute per address" is a countdown, not the hourly queue.
+    assert(win.authRetryAfter({ status: 429, message: "For security purposes, you can only request this after 42 seconds." }) === 42 && win.authRetryAfter({ message: "Email rate limit exceeded" }) === null, "the seconds to wait are read from the error");
+    assert(win.authResendWait(1) === 60000 && win.authResendWait(2) === 120000 && win.authResendWait(7) === 300000, "resend waits 1m, 2m, then 5m");
+    runInPage(`
+      supabaseClient.auth.resend = async args => { __calls.push(["resend", args.email]); return { data: {}, error: { status: 429, code: "over_email_send_rate_limit", message: "For security purposes, you can only request this after 42 seconds." } }; };
+      cancelAuthMail(); queueAuthMail({ kind: "resend", email: "k@example.com", status: "unconfirmed" }); render();
+      sendAuthMail();
+    `);
+    await wait(20);
+    win.eval("window.__job = authMail");
+    job = win.__job;
+    assert(job.status === "unconfirmed" && job.attempts === 0 && Math.abs(job.cooldownUntil - Date.now() - 42000) < 2000, "a resend that's too soon goes back to the card with a 42s countdown");
+    assert(resendBtn().disabled && /Resend in 0:4[12]/.test(resendBtn().textContent) && !/email limit reached/.test(win.document.getElementById("app").textContent), "...shown on the button, not as the hourly-limit queue");
     runInPage(`cancelAuthMail(); supabaseClient = window.__prevClient; state.view = "home"; render();`);
   }
 

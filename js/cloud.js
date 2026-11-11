@@ -1094,7 +1094,7 @@ async function cancelClubInvite(inviteId){
    the card says so. A top-level `let` like `session`, not a `ui` field,
    because `ui` is reset wholesale at times. One job at a time: it's the
    one person on the sign-up/sign-in screen. */
-let authMail = null;      // { kind: "signup"|"resend", email, displayName, password, status, attempts, nextAt, error }
+let authMail = null;      // { kind: "signup"|"resend", email, displayName, password, status, attempts, nextAt, error, sent, cooldownUntil }
 /* What happened when the app was opened from an auth email (finishAuthReturn):
    { view, icon, title, text }, shown on that view until dismissed, a sign-in
    or a sign-out. Memory only, like authMail. */
@@ -1102,6 +1102,43 @@ let authNotice = null;
 let authMailTimer = null;
 const AUTH_MAIL_MAX_TRIES = 12; // about 1h40m of retrying with authMailDelay
 
+/* Supabase sends at most one email per address a minute ("For security
+   purposes, you can only request this after 42 seconds."). That's not the
+   hourly limit: it's the seconds to wait, or null for any other error. */
+function authRetryAfter(err){
+  const m = err && /after (\d+) seconds?/i.exec(String(err.message || ""));
+  return m ? Number(m[1]) : null;
+}
+/* How long Resend stays off after an email went out: longer each time, so a
+   scorer tapping it again and again can't use up the hourly email limit.
+   `sent` = emails sent for this address so far (sign-up included). */
+const AUTH_RESEND_WAIT = [60, 120, 300]; // seconds
+function authResendWait(sent){
+  return AUTH_RESEND_WAIT[Math.max(0, Math.min(sent, AUTH_RESEND_WAIT.length) - 1)] * 1000;
+}
+/* Seconds before Resend can be tapped again (0 = now). */
+function authCooldownLeft(job, now){
+  return job && job.cooldownUntil ? Math.max(0, Math.ceil((job.cooldownUntil - (now || Date.now())) / 1000)) : 0;
+}
+function authCooldownLabel(secs){
+  return `Resend in ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+}
+/* Counts the Resend button down in the DOM (no render(), so typing in the
+   sign-in form isn't disturbed), and turns it back on at zero. */
+let authCooldownTimer = null;
+function tickAuthCooldown(){
+  const btns = document.querySelectorAll("[data-auth-cooldown]");
+  let running = false;
+  btns.forEach(b => {
+    const left = authCooldownLeft(authMail);
+    if (left > 0){ b.disabled = true; b.textContent = authCooldownLabel(left); running = true; }
+    else { b.disabled = false; b.textContent = b.dataset.label; b.removeAttribute("data-auth-cooldown"); }
+  });
+  if (!running){ clearInterval(authCooldownTimer); authCooldownTimer = null; }
+}
+function startAuthCooldownTick(){
+  if (!authCooldownTimer) authCooldownTimer = setInterval(tickAuthCooldown, 1000);
+}
 function isAuthRateLimit(err){
   if (!err) return false;
   return err.status === 429 || /rate.?limit|too many requests|only request this after/i.test(String(err.code || "") + " " + String(err.message || ""));
@@ -1113,11 +1150,13 @@ function isEmailNotConfirmed(err){
 function authMailDelay(attempts){
   return [1, 2, 5, 10][Math.max(0, Math.min(attempts, 4) - 1)] * 60000;
 }
-function queueAuthMail(job){
-  authMail = Object.assign({ attempts: 0, error: null, nextAt: 0 }, job);
-  if (authMail.status === "waiting") authMailBackoff(authMail);
+function queueAuthMail(job, waitMs){
+  authMail = Object.assign({ attempts: 0, error: null, nextAt: 0, sent: 0, cooldownUntil: 0 }, job);
+  if (authMail.status === "sent"){ authMail.sent = Math.max(1, authMail.sent); authMail.cooldownUntil = Date.now() + authResendWait(authMail.sent); }
+  if (authMail.status === "waiting") authMailBackoff(authMail, waitMs);
 }
-function authMailBackoff(job){
+/* waitMs: the server said how long (authRetryAfter); otherwise authMailDelay. */
+function authMailBackoff(job, waitMs){
   job.attempts++;
   if (job.attempts >= AUTH_MAIL_MAX_TRIES){
     job.status = "failed"; job.password = null;
@@ -1125,12 +1164,14 @@ function authMailBackoff(job){
     return;
   }
   job.status = "waiting";
-  job.nextAt = Date.now() + authMailDelay(job.attempts);
+  job.nextAt = Date.now() + (waitMs || authMailDelay(job.attempts));
+  job.shortWait = !!waitMs;
   clearTimeout(authMailTimer);
   authMailTimer = setTimeout(sendAuthMail, job.nextAt - Date.now());
 }
 function cancelAuthMail(){
   clearTimeout(authMailTimer);
+  clearInterval(authCooldownTimer); authCooldownTimer = null;
   authMail = null;
 }
 /* Where an auth email's link brings the user back: this page, without the
@@ -1148,7 +1189,10 @@ function authRedirectUrl(){
 async function sendAuthMail(){
   const job = authMail;
   if (!job || !supabaseClient || job.status === "sending") return;
+  // Resend is off for a while after each email (authResendWait).
+  if ((job.status === "sent" || job.status === "unconfirmed") && authCooldownLeft(job) > 0) return;
   clearTimeout(authMailTimer);
+  const before = job.status;
   job.status = "sending"; job.error = null;
   render();
   let res;
@@ -1162,11 +1206,18 @@ async function sendAuthMail(){
   if (!error){
     // From here on "Resend email" only needs the address.
     job.status = "sent"; job.kind = "resend"; job.password = null; job.displayName = null; job.attempts = 0;
+    job.sent = (job.sent || 0) + 1; job.cooldownUntil = Date.now() + authResendWait(job.sent);
     const newSession = res.data && res.data.session;
     if (newSession){ authMail = null; completeSignIn(newSession); return; }
     if (state.view === "signUp"){ state.view = "signIn"; save(); }
+  } else if (authRetryAfter(error) != null && job.kind === "resend"){
+    // Too soon after the last email to this address: nothing was sent, so
+    // Resend just counts down the seconds the server asked for.
+    job.status = before === "unconfirmed" ? "unconfirmed" : "sent";
+    job.cooldownUntil = Date.now() + Math.max(1, authRetryAfter(error)) * 1000;
   } else if (isAuthRateLimit(error) || isNetworkError(error, isOnline())){
-    authMailBackoff(job);
+    const secs = authRetryAfter(error);
+    authMailBackoff(job, secs != null ? Math.max(1, secs) * 1000 : 0);
   } else {
     job.status = "failed"; job.password = null; job.error = friendlyError(error.message);
   }
