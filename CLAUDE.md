@@ -310,8 +310,8 @@ match (never touches the input) rebuilt by `replayInnings`:
   worked out again (`live`/`innings_break`/`complete` + `matchResult`).
 
 UI (`js/ui/match/edit-ball.js`): ball by ball's chips are `edit-ball` buttons
-when `ballEditAllowed(match)` (`state.match`, not forfeited/result only, not
-away) — from the live scorecard sheet (⋯ → Edit an earlier ball, or the
+when `ballEditAllowed(match)` (`state.match`, not result only, not away;
+a forfeited match too, see "Editing a forfeited match") — from the live scorecard sheet (⋯ → Edit an earlier ball, or the
 innings break's "Full scorecard · fix a ball"; `ui.liveScorecard` now holds the
 status it was opened in, so an innings ending still closes it) or Result's
 full scorecard. `ui.ballEdit` is an overlay sheet (back closes it); the
@@ -358,8 +358,8 @@ out / out of overs / reached the target needs a ball edited) drops the log's
 innings** (the chase was played against a total that isn't final). Offered as
 `reopen-innings` (`askReopenInnings`, snapshotted) in ⋯ Match options, on the
 innings break and on Result (`renderGoBackRow`, which also shows Undo —
-`undoLabel`: last ball / forfeit / last change — when the newest innings
-can't be reopened). **The archive follows a match that stops being finished**:
+`undoLabel`: last ball / forfeit / last change / "Put the forfeit back" —
+when the newest innings can't be reopened, or after a forfeit taken back). **The archive follows a match that stops being finished**:
 reopen or Undo off a finished match sets `match.reopenedFrom` (its archive id)
 instead of `archivedId`; the entry keeps the old result meanwhile, and when the
 match finishes again `maybeArchiveCompletedMatch` replaces that entry in place
@@ -370,8 +370,8 @@ result in history (its cancel sheet says so). `reopenedFrom` is in
 `MATCH_CARRY_FIELDS`.
 
 **Editing a finished match from history.** The completed-match sheet has
-**✎ Edit match** for a match archived on this device (not result-only or
-forfeited; `historyEditBlocked` — with another match on screen it says to
+**✎ Edit match** for a match archived on this device (not result-only, a
+forfeited one included; `historyEditBlocked` — with another match on screen it says to
 finish that first). `openMatchFromHistory(id)` puts it back as `state.match`
 (`archivedId` = its id, `editingFromHistory: true`) on its Result screen with
 ball by ball open, logs restored by `matchWithLogs`, so every tool above works
@@ -672,9 +672,9 @@ normally ends.
 `askForfeit()` passes the two teams as the confirmation's `choices`, so
 picking a team and confirming are deliberately two separate taps rather
 than firing on the first tap — unlike the wicket modal's simple types,
-a forfeit is only walked back by Result's "Undo forfeit" (`pushSnapshot()`
-runs first; see "Reopening an innings & Undo after it ends"), and only until
-the scorer leaves Result. `forfeitTeamLine()`
+a forfeit is walked back by Result's "Undo forfeit" (`pushSnapshot()`
+runs first; see "Reopening an innings & Undo after it ends") until the scorer
+leaves Result, and after that by Change the forfeit (below). `forfeitTeamLine()`
 (next to it) reports each team as `"Batting · R-W"` (the current,
 in-progress innings), `"Bowling · R-W[ all out]"` (a team that has a
 past, completed innings — including at the break, where they're
@@ -682,6 +682,36 @@ prospectively bowling next), or `"Yet to bat"` (no `innings` entry for
 that team key at all) — this one function covers every point
 `forfeitMatch` can fire from, so don't special-case "at the break"
 separately from "mid-second-innings."
+
+**Editing a forfeited match.** A forfeited match is edited like any finished
+one — ball edits (edit / add / remove), name later, change a player, set the
+final score, from Result or later from history — and **the forfeit stays**:
+`settleMatchStatus` keeps a forfeited match `complete` with its forfeit
+result, an innings the forfeit cut short stays where it was left (ball by ball
+gives its short over a `+`, not "· now"), and a first innings that's no longer
+over just means the forfeit came during it (an empty 2nd innings is dropped).
+**One exception:** a change that ends the *chase* on its own — target reached,
+all out, overs used up — means the match was decided before the forfeit, so
+`dropOverruledForfeit` (ENGINE, tested; called by `replayMatch` and
+`setScoresByHand` before settling) removes `forfeited`/`forfeitedBy`, the
+result comes from the scores, and a note says why (shown in the preview and
+the review). Set the final score in a forfeited match (`keepOpen` in
+`applyScoreByHand`) doesn't end an innings the forfeit cut short, and refuses
+a side that never batted (`inningsBegun`); its sheet reads "At the forfeit" /
+"Didn't bat" and has no "carry on scoring" box. Reopening an innings waits
+until the forfeit is taken back (`reopenInningsError`). `rebuildInningsFromScorecard`
+also rebuilds an innings in progress (who had come in, who was bowling), for
+a forfeited match whose kept log has gone.
+
+**Change the forfeit** (`renderGoBackRow`'s `change-forfeit` →
+`askChangeForfeit`, sheets.js; shown on Result for a forfeited match unless
+"Undo forfeit" is the Undo) is the shared confirmation with two `choices`:
+**Nobody: carry on the match** → `changeForfeit(match, null)` (ENGINE, tested)
+puts it back where the forfeit stopped it (live / innings break / opening,
+`settleMatchStatus`), with `reopenedFrom` like a reopen, so history keeps the
+forfeit until it finishes again; **{other side} forfeited** →
+`changeForfeit(match, key)`, applied with `applyBallEdit` (archive replaced in
+place, player of the match again). Both snapshotted.
 
 ## Super over (`js/ui/match/super-over.js`)
 
@@ -955,7 +985,7 @@ remove club player, delete tournament team, discard unsaved team edits,
 move a player between tournament teams, new club player vs guest in the team builder,
 end/reopen a tournament,
 delete guest team/player, delete match/tournament/points/club presets, change or
-remove an earlier ball, add a ball, set the final score by hand, reopen an
+remove an earlier ball, add a ball, set the final score by hand, change the forfeit, reopen an
 innings, replace a wrongly picked player. **Don't add
 `window.confirm()` or "tap again to confirm" buttons** — use `askConfirm`.
 The wicket sheet's Confirm button is data entry, not a confirmation, and
@@ -1107,7 +1137,7 @@ view it was opened on, is an overlay (back closes it), and is opened from
 tournament fixtures, Home's Recent matches and club Stats' match list. For a
 match archived on this device it also offers **✎ Edit match** (see "Editing a
 finished match from history"), and otherwise says why not (`historyEditBlocked`:
-another phone, result only, forfeited, a match on screen) — except when opened
+another phone, result only, a match on screen) — except when opened
 from a tournament's public page or a player profile (`ui.matchDetail.view`
 `publicTournament`/`playerProfile`): those are view only, no Edit match and no
 "why not" line, even for a match this phone scored. For a club match it

@@ -31,9 +31,10 @@ function openEditBalls(){
 }
 
 /* Only the match on this device, while it's being scored or on its Result
-   screen -- an archived match from a list (ui.matchDetail) is never edited. */
+   screen -- an archived match from a list (ui.matchDetail) is never edited.
+   A forfeited match too: it stays forfeited (settleMatchStatus, ENGINE). */
 function ballEditAllowed(match){
-  return !!(match && match === state.match && !match.forfeited && !match.resultOnly && !ui.awayFromMatch);
+  return !!(match && match === state.match && !match.resultOnly && !ui.awayFromMatch);
 }
 
 function ballEditEvent(match, idx, seq){
@@ -457,7 +458,6 @@ function replaceArchivedMatch(id, next){
 function historyEditBlocked(m){
   if (!m || !m.id) return "none";
   if (m.resultOnly) return "This result was entered by hand, so there are no balls to edit.";
-  if (m.forfeited) return "A forfeited match can't be edited.";
   if (!state.matchHistory[m.id]) return "This match was scored on another phone, so it can only be edited on that one.";
   if (state.match) return "Finish or leave the match on screen first, then come back to edit this one.";
   return null;
@@ -484,9 +484,11 @@ async function takeNewerCloudCopy(id){
     cloud = data && data.data;
   } catch (_){ return false; }
   if (!cloud || !Array.isArray(cloud.innings)) return false;
-  const card = x => canonicalJson([x.teamA, x.teamB, x.result, x.motm || null, x.innings, x.superOvers || null]);
+  const card = x => canonicalJson([x.teamA, x.teamB, x.result, x.motm || null, x.innings, x.superOvers || null, !!x.forfeited, x.forfeitedBy || null]);
   if (card(cloud) === card(local)) return false;
-  state.matchHistory[id] = Object.assign({}, local, { teamA: cloud.teamA, teamB: cloud.teamB, result: cloud.result, motm: cloud.motm, innings: cloud.innings, superOvers: cloud.superOvers });
+  state.matchHistory[id] = Object.assign({}, local, { teamA: cloud.teamA, teamB: cloud.teamB, result: cloud.result, motm: cloud.motm, innings: cloud.innings, superOvers: cloud.superOvers,
+    forfeited: cloud.forfeited, forfeitedBy: cloud.forfeitedBy });
+  if (!cloud.forfeited){ delete state.matchHistory[id].forfeited; delete state.matchHistory[id].forfeitedBy; }
   const store = matchLogStore();
   delete store[id];
   DB.save(MATCH_LOGS_KEY, store);
@@ -687,8 +689,9 @@ function readScoreSetForm(m, form){
   for (let i = 0; i < 2; i++){
     const inn = m.innings[i];
     const raw = k => String(fd.get(`${k}${i}`) || "").trim();
+    if (m.forfeited && !inningsBegun(inn)){ scores.push(null); continue; }
     if (!inn && !raw("runs") && !raw("wkts") && !raw("overs")){ scores.push(null); continue; }
-    if (inn && !inn.complete && fd.get(`goon${i}`)){
+    if (inn && !inn.complete && !m.forfeited && fd.get(`goon${i}`)){
       const same = raw("runs") === String(inn.runs) && raw("wkts") === String(inn.wickets) && parseOversInput(raw("overs"), bpo) === inn.legalBalls;
       if (!same) return { error: `To carry on scoring ${teamName(m, inn.battingTeam)}'s innings from a new score, use ⋯ Match options → Catch up the score.` };
       scores.push(null); continue;
@@ -696,7 +699,8 @@ function readScoreSetForm(m, form){
     const num = v => /^\d+$/.test(v) ? parseInt(v, 10) : NaN;
     const s = { runs: num(raw("runs")), wickets: num(raw("wkts")), balls: parseOversInput(raw("overs"), bpo) };
     if (s.balls === null) s.balls = NaN;
-    const same = inn && inn.complete && s.runs === inn.runs && s.wickets === inn.wickets && s.balls === inn.legalBalls;
+    // (an innings a forfeit cut short is left as it is too, when its score is)
+    const same = inn && (inn.complete || m.forfeited) && s.runs === inn.runs && s.wickets === inn.wickets && s.balls === inn.legalBalls;
     scores.push(same ? null : s);
   }
   return { scores };
@@ -734,7 +738,12 @@ function renderScoreSetModal(m){
     const inn = m.innings[i];
     const team = teamName(m, i === 0 ? i0.battingTeam : i0.bowlingTeam);
     const val = (v) => inn ? `value="${v}"` : "";
-    const status = !inn ? "Yet to bat" : inn.complete ? "Innings over" : "Batting now";
+    const status = !inn ? "Yet to bat" : inn.complete ? "Innings over" : m.forfeited ? "At the forfeit" : "Batting now";
+    // A forfeited match: the side that never batted has no score to set.
+    if (m.forfeited && !inningsBegun(inn)) return `
+      <fieldset class="score-set-inn">
+        <legend><b>${escapeHtml(team)}</b> <span class="hint">Didn't bat: the match was forfeited first</span></legend>
+      </fieldset>`;
     return `
       <fieldset class="score-set-inn">
         <legend><b>${escapeHtml(team)}</b> <span class="hint">${status}${inn ? ` · now <span class="n">${inningsScoreText(inn)}</span>` : ""}${i === 1 && inn && inn.target != null ? ` · target ${inn.target}` : ""}</span></legend>
@@ -743,7 +752,7 @@ function renderScoreSetModal(m){
           <label>Wickets<input name="wkts${i}" inputmode="numeric" pattern="[0-9]*" maxlength="2" ${val(inn ? inn.wickets : "")}></label>
           <label>Overs<input name="overs${i}" inputmode="decimal" maxlength="5" placeholder="19.4" ${val(inn ? oversDisplay(inn.legalBalls || 0, bpo) : "")}></label>
         </div>
-        ${inn && !inn.complete ? `<label class="check-row"><input type="checkbox" name="goon${i}"> Not over yet: carry on scoring this innings</label>` : ""}
+        ${inn && !inn.complete && !m.forfeited ? `<label class="check-row"><input type="checkbox" name="goon${i}"> Not over yet: carry on scoring this innings</label>` : ""}
         ${!inn ? `<p class="hint">Leave blank if they haven't batted yet.</p>` : ""}
       </fieldset>`;
   }).join("");
@@ -755,6 +764,7 @@ function renderScoreSetModal(m){
           <button type="button" data-action="close-score-set" class="sheet-close" aria-label="Close">✕</button>
         </div>
         ${m.oversLimit != null ? `<p class="hint">Overs out of ${m.oversLimit}.</p>` : ""}
+        ${m.forfeited ? `<p class="hint">Forfeited: each score is where that innings stood when the match stopped.</p>` : ""}
         <form id="score-set-form" data-nav-ignore>
           ${rows}
           <div class="form-error">${ss.error ? escapeHtml(ss.error) : ""}</div>

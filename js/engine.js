@@ -448,9 +448,10 @@ function isLegalEvent(ev){
 
 /* Is ball `seq` of innings `idx` editable? Only balls in the log (not ones
    from an app version without the log, or from before a score it typed in),
-   only in a match that wasn't forfeited or entered as a result only. */
+   only in a match that wasn't entered as a result only. A forfeited match's
+   balls can be edited too: the forfeit stays (see settleMatchStatus). */
 function editableBall(match, idx, seq){
-  const inn = match && !match.forfeited && !match.resultOnly && match.innings[idx];
+  const inn = match && !match.resultOnly && match.innings[idx];
   if (!inn || !inn.log) return null;
   return inn.log.find(a => a.t === "ball" && a.ev.seq === seq) || null;
 }
@@ -670,10 +671,12 @@ function replayMatch(match, change, supply){
         return { error: "That would mean the first innings isn't over, but the chase has already started." };
       }
       m.innings.length = 1;
-      notes.push("The first innings isn't over any more, so scoring goes back to it.");
+      notes.push(m.forfeited ? "The first innings isn't over any more, so the forfeit now comes during it."
+        : "The first innings isn't over any more, so scoring goes back to it.");
       break;
     }
   }
+  notes.push(...dropOverruledForfeit(m));
   settleMatchStatus(m);
   markCaughtUp(m);
   return { match: m, notes, added };
@@ -728,8 +731,12 @@ function ballShiftNotes(oldInn, newInn, anonymous){
   return notes;
 }
 
-// The status (and result) worked out again from the innings as they now are.
+/* The status (and result) worked out again from the innings as they now are.
+   A forfeit ends the match wherever it came, so a forfeited match stays
+   finished with its result -- an innings it cut short stays as it was left
+   (or ends, if a change now ends it), and the side yet to bat stays so. */
 function settleMatchStatus(m){
+  if (m.forfeited){ m.status = "complete"; return; }
   const last = currentInnings(m);
   if (last.complete){
     if (m.innings.length === 1){ m.status = "innings_break"; m.result = null; }
@@ -738,6 +745,22 @@ function settleMatchStatus(m){
     m.status = last.batting.order.length ? "live" : "opening";
     m.result = null;
   }
+}
+
+/* A change to a forfeited match can leave the chase over on its own -- the
+   target reached, all out, the overs used up -- before the team forfeited:
+   the match was decided by then, so the forfeit goes and the result comes
+   from the scores (settleMatchStatus). Returns the note saying so, or []
+   while the forfeit stands. Only the chase can do it: a first innings that
+   ends just means the forfeit came at the break. */
+function dropOverruledForfeit(m){
+  const i2 = m.forfeited ? m.innings[1] : null;
+  if (!i2 || !i2.complete) return [];
+  const chaser = teamName(m, i2.battingTeam), who = teamName(m, m.forfeitedBy);
+  const how = { target: `${chaser} now reach the target`, allout: `${chaser} are now all out`,
+    overs: `${possessive(chaser)} overs now run out` }[i2.completeReason] || `${possessive(chaser)} innings is now over`;
+  delete m.forfeited; delete m.forfeitedBy;
+  return [`${how} before the forfeit, so the match was already over: ${possessive(who)} forfeit no longer counts, and the result comes from the scores.`];
 }
 
 /* Every ball of an innings in order, the way ball by ball numbers them:
@@ -914,6 +937,13 @@ function rebuildInningsFromScorecard(match, idx){
     sendIn(r);
     logAction(r, { t: "end" }); r.complete = true; r.completeReason = "closed";
   }
+  // An innings a forfeit cut short: who had come in, who was bowling and
+  // who was on strike when it stopped.
+  if (!inn.complete && !r.complete){
+    if (inn.batting.order.length > r.batting.order.length && !sendIn(r)) return null;
+    if (inn.bowler && !r.bowler && (r.striker || r.nonStriker) && r.lastOverBowler !== inn.bowler) setBowler(r, inn.bowler);
+    if (inn.striker && r.striker === inn.nonStriker && r.nonStriker === inn.striker) swapStrikeByHand(r);
+  }
   return inningsScorecardKey(r) === inningsScorecardKey(inn) ? r : null;
 }
 
@@ -927,7 +957,8 @@ function rebuildInningsFromScorecard(match, idx){
    needs a ball edited instead. Returns { match, notes } (a copy) or { error }. */
 function reopenInningsError(match, idx){
   const inn = match && match.innings[idx];
-  if (!inn || match.forfeited || match.resultOnly) return "This innings can't be reopened.";
+  if (!inn || match.resultOnly) return "This innings can't be reopened.";
+  if (match.forfeited) return "This match was forfeited: take the forfeit back first.";
   if (!inn.complete) return "This innings isn't over.";
   const why = { allout: "they were all out", overs: "the overs ran out", target: "the target was reached" }[inn.completeReason];
   if (why) return `${possessive(teamName(match, inn.battingTeam))} innings ended because ${why}. To change that, edit a ball.`;
@@ -964,11 +995,18 @@ function reopenInnings(match, idx){
    the first innings, and a chase left alone is replayed against the new one.
    A changed total isn't credited to anyone (players keep only what they were
    credited with), and like a catch-up the match is marked match.caughtUp.
+   In a forfeited match the score is where each innings stood at the forfeit:
+   one it cut short isn't ended (unless the score ends it), and a side that
+   never batted can't be given one. A chase it now ends was over before the
+   forfeit, which then goes (dropOverruledForfeit).
    Returns { match, notes } -- a copy, the input isn't touched -- or { error }. */
 function scoreByHandError(match, scores){
-  if (match.forfeited || match.resultOnly) return "This match's score can't be set here.";
+  if (match.resultOnly) return "This match's score can't be set here.";
   const i0 = match.innings[0];
   if (!scores[0] && !scores[1]) return "Nothing has changed yet.";
+  for (let i = 0; i < 2; i++){
+    if (match.forfeited && scores[i] && !inningsBegun(match.innings[i])) return `${teamName(match, i === 0 ? i0.battingTeam : i0.bowlingTeam)} didn't bat before the forfeit.`;
+  }
   if (scores[1] && !scores[0] && !i0.complete) return `Set ${teamName(match, i0.battingTeam)}'s score first: their innings isn't over.`;
   const firstRuns = scores[0] ? scores[0].runs : i0.runs;
   const bpo = match.ballsPerOver || i0.ballsPerOver || 6;
@@ -989,10 +1027,15 @@ function scoreByHandError(match, scores){
   }
   return null;
 }
-function applyScoreByHand(inn, s){
+// Has anything happened in this innings yet (a batter in, a ball, a score)?
+function inningsBegun(inn){
+  return !!inn && !!(inn.batting.order.length || inn.legalBalls || inn.runs || inn.wickets || inn.overs.length || inn.currentOverEvents.length);
+}
+// `keepOpen`: an innings a forfeit cut short stays where it was left.
+function applyScoreByHand(inn, s, keepOpen){
   const same = inn.runs === s.runs && inn.wickets === s.wickets && inn.legalBalls === s.balls;
   if (!same) setScoreStep(inn, s);
-  if (!inn.complete){ logAction(inn, { t: "end" }); inn.complete = true; inn.completeReason = "closed"; }
+  if (!inn.complete && !keepOpen){ logAction(inn, { t: "end" }); inn.complete = true; inn.completeReason = "closed"; }
 }
 
 /* --- a score typed in part way: set by hand, or caught up ---
@@ -1086,7 +1129,8 @@ function setScoresByHand(match, scores){
   const m = JSON.parse(JSON.stringify(match));
   const notes = [];
   const i0 = m.innings[0];
-  if (scores[0]) applyScoreByHand(i0, scores[0]);
+  const keepOpen = i => !!match.forfeited && !!match.innings[i] && !match.innings[i].complete;
+  if (scores[0]) applyScoreByHand(i0, scores[0], keepOpen(0));
   if (scores[1] || m.innings[1]){
     if (!m.innings[1]) startSecondInnings(m);
     const i2 = m.innings[1], target = i0.runs + 1;
@@ -1106,8 +1150,9 @@ function setScoresByHand(match, scores){
         notes.push(...res.notes);
       }
     }
-    if (scores[1]) applyScoreByHand(m.innings[1], scores[1]);
+    if (scores[1]) applyScoreByHand(m.innings[1], scores[1], keepOpen(1));
   }
+  notes.push(...dropOverruledForfeit(m));
   settleMatchStatus(m);
   if (match.status === "complete" && m.status !== "complete"){
     return { error: `With that score ${teamName(m, m.innings[1].battingTeam)}'s chase wouldn't be over. Set their score too.` };
@@ -1567,6 +1612,25 @@ function forfeitMatch(match, forfeitingTeamKey){
   match.forfeitedBy = forfeitingTeamKey;
   match.status = "complete";
   match.result = `${teamName(match, winnerKey)} won — ${teamName(match, forfeitingTeamKey)} forfeited the ${match.superOverOf ? "super over" : "match"}`;
+}
+
+/* A forfeit put right later: `team` "A"/"B" is the side that forfeited
+   instead, or null when nobody did -- the match goes back to where the
+   forfeit stopped it (live, the innings break, or an opening sheet) and
+   scoring carries on from there. Returns { match } (a copy) or { error }. */
+function changeForfeitError(match, team){
+  if (!match || !match.forfeited) return "This match wasn't forfeited.";
+  if (team && team === match.forfeitedBy) return `${teamName(match, team)} already forfeited it.`;
+  return null;
+}
+function changeForfeit(match, team){
+  const err = changeForfeitError(match, team);
+  if (err) return { error: err };
+  const m = JSON.parse(JSON.stringify(match));
+  if (team){ forfeitMatch(m, team); return { match: m }; }
+  delete m.forfeited; delete m.forfeitedBy;
+  settleMatchStatus(m);
+  return { match: m };
 }
 
 /* True once anything at all has been recorded -- a delivery, an extra, or
@@ -2311,7 +2375,7 @@ function chosenSpells(inn, name, overs){
 }
 function replacePickError(match, spec){
   const inn = match && match.innings[spec.inn];
-  if (!inn || match.forfeited || match.resultOnly || match.anonymous) return "This player can't be changed here.";
+  if (!inn || match.resultOnly || match.anonymous) return "This player can't be changed here.";
   const from = spec.from;
   if (isUnnamedPlayer(from)) return "Name an unnamed player by tapping their name.";
   if (!inn.log) return "This innings was scored with an older version of the app, so its players can't be changed one by one.";

@@ -103,8 +103,9 @@ function renderOpeningModal(match){
 }
 
 /* Forfeit goes through the shared confirmation sheet, with the two teams as
-   `choices`: picking a team and confirming are two separate taps -- a
-   forfeit has no working undo (the Result screen has no Undo control). */
+   `choices`: picking a team and confirming are two separate taps. Result's
+   Undo forfeit walks it back; later, Change the forfeit (askChangeForfeit)
+   takes it back or names the other side. */
 function askForfeit(){
   const m = state.match;
   if (!m || m.status === "complete") return;
@@ -137,6 +138,50 @@ function forfeitTeamLine(match, teamKey){
   if (inn === currentInnings(match) && !inn.complete) return `Batting · ${scoreStr}`;
   const allOut = inn.complete && inn.completeReason === "allout";
   return `Bowling · ${scoreStr}${allOut ? " all out" : ""}`;
+}
+
+/* A forfeit put right later: Result's "Change the forfeit" (a forfeited
+   match on screen, also one opened from match history). Two choices, like
+   End innings' forfeit question: nobody forfeited after all -- the match goes
+   back to where it stopped and scoring carries on (like reopening an innings:
+   match history keeps the forfeit until it finishes again, `reopenedFrom`) --
+   or the other side forfeited, and only the result changes (applied like a
+   ball edit: the archive entry is replaced in place, player of the match
+   worked out again). changeForfeit (ENGINE) does it on a copy; snapshotted,
+   so Undo walks it back. */
+function askChangeForfeit(){
+  const m = state.match;
+  if (!m || !m.forfeited || !ballEditAllowed(m)) return;
+  const other = m.forfeitedBy === "A" ? "B" : "A";
+  const back = changeForfeit(m, null).match;
+  const cur = currentInnings(back);
+  const bat = teamName(back, cur.battingTeam), bowl = teamName(back, cur.bowlingTeam);
+  const where = back.status === "live" ? `${bat} bat on from ${inningsScoreText(cur)}`
+    : back.status === "innings_break" ? `Innings break: ${bowl} need ${cur.runs + 1} to win`
+    : back.status === "opening" ? (cur.target != null ? `${bat} start the chase, needing ${cur.target}` : `${bat} start batting`)
+    : back.result || "";
+  askConfirm({
+    title: "Change the forfeit?", icon: "🚩", tone: "primary",
+    body: `<p>Now: <b>${escapeHtml(m.result || "")}</b></p><p><b>Who forfeited?</b></p>`
+      + `${m.archivedId ? `<p class="hint">If nobody did, match history keeps the forfeit until the match finishes again.</p>` : ""}`
+      + `<p class="hint">Undo puts it back the way it was.</p>`,
+    choices: [
+      { value: "none", label: "Nobody: carry on the match", sub: where },
+      { value: other, label: `${teamName(m, other)} forfeited`, sub: `${teamName(m, m.forfeitedBy)} win` }
+    ],
+    confirmLabel: choice => choice === other ? "Change result" : "Carry on the match",
+    onConfirm: choice => {
+      const res = changeForfeit(state.match, choice === "none" ? null : choice);
+      if (res.error) return { error: res.error };
+      const next = res.match;
+      if (next.status === "complete"){ applyBallEdit(m, next); return; }
+      pushSnapshot();
+      if (m.archivedId){ next.reopenedFrom = m.archivedId; delete next.archivedId; }
+      state.match = next;
+      ui.pickDismissed = null; ui.liveScorecard = false; ui.showFullScorecard = false; ui.pendingExtra = null; resetWicketUi();
+      save();
+    }
+  });
 }
 
 /* Live screen + new-batsman/new-bowler sheets: close the innings by hand

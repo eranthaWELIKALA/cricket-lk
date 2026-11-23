@@ -107,6 +107,7 @@ document.addEventListener("click", (e) => {
   else if (action === "runout-runs"){ ui.runoutRuns = parseInt(btn.dataset.runs, 10); render(); }
   else if (action === "resume-match"){ ui.awayFromMatch = false; render(); }
   else if (action === "open-forfeit") askForfeit();
+  else if (action === "change-forfeit") askChangeForfeit();
   else if (action === "open-match-menu"){ ui.matchMenu = "menu"; ui.squadError = null; render(); }
   else if (action === "match-menu-view"){ ui.matchMenu = btn.dataset.view; ui.squadError = null; render(); }
   else if (action === "close-match-menu"){ ui.matchMenu = null; ui.squadError = null; render(); }

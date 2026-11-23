@@ -712,6 +712,88 @@ async function main(){
     assert(!win.inningsCutShort(currentInnings(m4)), "no overs limit: ending by hand is how the innings ends, not cut short");
   }
 
+  // --- 18b. a forfeited match can still be edited: the forfeit stays, unless the chase now ends first ---
+  {
+    const play = (m, ev) => { recordBall(currentInnings(m), ev); afterBall(m); };
+    const seqs = (m, i) => m.innings[i].log.filter(a => a.t === "ball").map(a => a.ev.seq);
+    // Lions 12-0 (2 ov); Tigers 8-0 after 4 balls of the chase (need 13), then forfeit.
+    const chase = forfeiter => {
+      const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 2, playersPerSide: 3, battingFirst: "A" });
+      win.openInnings(currentInnings(m), "A1", "A2", "B1"); m.status = "live";
+      for (let i = 0; i < 6; i++) play(m, { kind: "run", runs: 2 });
+      win.setBowler(currentInnings(m), "B2");
+      for (let i = 0; i < 6; i++) play(m, { kind: "run", runs: 0 });
+      startSecondInnings(m); win.openInnings(currentInnings(m), "B3", "B4", "A3"); m.status = "live";
+      for (let i = 0; i < 4; i++) play(m, { kind: "run", runs: 2 });
+      if (forfeiter) forfeitMatch(m, forfeiter);
+      return m;
+    };
+    const m = chase("B");
+    assert(win.editableBall(m, 1, seqs(m, 1)[0]) && win.editableBall(m, 0, seqs(m, 0)[0]), "a forfeited match's balls are editable, in both innings");
+    let r = win.replayMatch(m, { inn: 1, seq: seqs(m, 1)[0], ev: { kind: "run", runs: 4 } });
+    assert(r.match && r.match.status === "complete" && r.match.forfeited && r.match.forfeitedBy === "B" && r.match.result === "Lions won — Tigers forfeited the match"
+      && r.match.innings[1].runs === 10 && !r.match.innings[1].complete && m.innings[1].runs === 8,
+      "a ball changed in the chase: 10-0 where it stopped, still forfeited, the original untouched");
+    r = win.replayMatch(m, [{ inn: 1, seq: seqs(m, 1)[0], ev: { kind: "run", runs: 6 } }, { inn: 1, seq: seqs(m, 1)[1], ev: { kind: "run", runs: 6 } }]);
+    assert(r.match && !r.match.forfeited && !r.match.forfeitedBy && r.match.result === "Tigers won by 2 wickets (1.3 overs left)" && r.match.innings[1].legalBalls === 3
+      && r.notes.some(t => /reach the target before the forfeit/.test(t) && /Tigers' forfeit no longer counts/.test(t)),
+      "the chase now gets there before the forfeit: the forfeit goes, the result comes from the scores, and a note says why");
+    r = win.replayMatch(m, [0, 1].map(k => ({ inn: 1, seq: seqs(m, 1)[k], ev: { kind: "wicket", wicketType: "bowled" } })), { batters: ["B5"] });
+    assert(r.match && !r.match.forfeited && r.match.result === "Lions won by 12 runs" && r.notes.some(t => /all out before the forfeit/.test(t)),
+      "...and so does a chase that's now all out first");
+    r = win.replayMatch(m, [0, 1, 2].map(k => ({ inn: 0, seq: seqs(m, 0)[k], ev: { kind: "run", runs: 0 } })));
+    assert(r.match && r.match.innings[1].target === 7 && /Tigers won by 2 wickets/.test(r.match.result) && !r.match.forfeited,
+      "a first-innings change that brings the target within the chase's reach does too");
+    const byA = chase("A");
+    r = win.replayMatch(byA, [0, 1].map(k => ({ inn: 1, seq: seqs(byA, 1)[k], ev: { kind: "run", runs: 6 } })));
+    assert(r.match && /Tigers won by 2 wickets/.test(r.match.result) && r.notes.some(t => /Lions' forfeit no longer counts/.test(t)), "whichever side forfeited");
+    assert(/chase has already started/.test(win.replayMatch(m, { inn: 0, seq: seqs(m, 0)[11], ev: null }).error || ""), "a started chase still needs its first innings over");
+    // forfeited at the break, the 2nd innings opened but nothing scored: a first innings that isn't over any more takes the forfeit with it
+    const brk = chase(null); brk.innings.length = 1; brk.status = "innings_break"; startSecondInnings(brk); forfeitMatch(brk, "B");
+    r = win.replayMatch(brk, { inn: 0, seq: seqs(brk, 0)[11], ev: null });
+    assert(r.match && r.match.status === "complete" && r.match.forfeited && r.match.innings.length === 1 && !r.match.innings[0].complete
+      && r.notes.includes("The first innings isn't over any more, so the forfeit now comes during it."),
+      "at the break: a first innings that isn't over any more stays forfeited, the forfeit now during it");
+    // forfeited mid-first-innings: a missed ball added after the last one
+    const mid = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 2, playersPerSide: 11, battingFirst: "A" });
+    win.openInnings(currentInnings(mid), "A1", "A2", "B1"); mid.status = "live";
+    for (let i = 0; i < 4; i++) play(mid, { kind: "run", runs: 1 });
+    forfeitMatch(mid, "A");
+    r = win.replayMatch(mid, { inn: 0, seq: seqs(mid, 0)[3], ev: { kind: "run", runs: 4 }, insert: "after" });
+    assert(r.match && r.match.status === "complete" && r.match.result === "Tigers won — Lions forfeited the match" && r.match.innings[0].runs === 8 && r.match.innings[0].legalBalls === 5,
+      "forfeited mid-innings: a ball added after the last one, still forfeited");
+    // the final score set by hand: where each innings stood at the forfeit
+    let sh = win.setScoresByHand(m, [null, { runs: 10, wickets: 1, balls: 5 }]);
+    assert(sh.match && sh.match.forfeited && sh.match.result === "Lions won — Tigers forfeited the match" && !sh.match.innings[1].complete && sh.match.innings[1].runs === 10,
+      "a forfeited chase's score set by hand: still where the forfeit stopped it, not ended");
+    sh = win.setScoresByHand(m, [null, { runs: 14, wickets: 1, balls: 5 }]);
+    assert(sh.match && !sh.match.forfeited && /Tigers won by 1 wicket/.test(sh.match.result) && sh.notes.some(t => /forfeit no longer counts/.test(t)),
+      "...set past the target, the chase was over first: the result comes from the scores");
+    assert(/Tigers didn't bat before the forfeit/.test(win.setScoresByHand(brk, [null, { runs: 5, wickets: 0, balls: 3 }]).error || ""), "a side that never batted gets no score");
+    sh = win.setScoresByHand(mid, [{ runs: 20, wickets: 1, balls: 10 }, null]);
+    assert(sh.match && sh.match.forfeited && !sh.match.innings[0].complete && sh.match.innings[0].runs === 20, "a first innings the forfeit cut short: set, and left in progress");
+    // who forfeited, put right
+    let c = win.changeForfeit(m, "A");
+    assert(c.match && c.match.forfeitedBy === "A" && c.match.status === "complete" && c.match.result === "Tigers won — Lions forfeited the match" && m.forfeitedBy === "B",
+      "the other side forfeited instead: only the result changes (on a copy)");
+    c = win.changeForfeit(m, null);
+    assert(c.match && !c.match.forfeited && c.match.status === "live" && c.match.result === null && c.match.innings[1].runs === 8, "nobody forfeited: live again where it stopped");
+    assert(win.changeForfeit(brk, null).match.status === "opening" && win.changeForfeit(chase(null), null).error && win.changeForfeit(m, "B").error,
+      "...at the opening of the chase; and it refuses a match that wasn't forfeited, or the same side");
+    assert(/take the forfeit back first/.test(win.reopenInningsError(brk, 0) || ""), "reopening waits for the forfeit to be taken back");
+    // a player changed in a forfeited match
+    const rp = win.replacePick(m, { inn: 1, role: "batter", from: "B3", to: "B9" });
+    assert(rp.match && rp.match.innings[1].batting.order.includes("B9") && rp.match.forfeited, "a wrongly picked player can be replaced in a forfeited match");
+    // archived without its log: the innings the forfeit cut short is rebuilt, with who was in
+    const cut = chase(null);
+    const cutInn = currentInnings(cut);
+    play(cut, { kind: "wicket", wicketType: "bowled" }); win.sendInBatter(cutInn, "B5");
+    forfeitMatch(cut, "B");
+    const rb = win.rebuildInningsFromScorecard(win.archivedCopy(cut), 1);
+    assert(rb && win.inningsScorecardKey(rb) === win.inningsScorecardKey(cutInn) && rb.striker === cutInn.striker && rb.bowler === cutInn.bowler && rb.batting.order.includes("B5"),
+      "an innings a forfeit cut short is rebuilt from its scorecard, the batter who'd just come in included");
+  }
+
   // --- 19. freeHitOnNoBall toggle: a no-ball only grants a free hit when the preset says so ---
   {
     const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 11, battingFirst: "A", freeHitOnNoBall: false });
@@ -3399,6 +3481,115 @@ async function main(){
       handleBallClick(1); handleEndInnings();`);
     assert(!doc.querySelector('#confirm-root [data-action="confirm-pick"]') && !ok().disabled && /Tigers will need 2 to win/.test(sheet().textContent),
       "no overs limit: End innings asks only to confirm");
+    win.eval(`state.match = null; state.snapshots = []; state.matchHistory = {}; ui = defaultUi(); save(); render();`);
+  }
+
+  // --- UI: a forfeited match can be edited (on Result, and later from match history), and its forfeit changed ---
+  {
+    const doc = win.document;
+    const submit = id => doc.getElementById(id).dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    const sheet = () => doc.querySelector("#confirm-root .confirm-modal");
+    const ok = () => doc.querySelector('#confirm-root [data-action="confirm-ok"]');
+    const pick = v => doc.querySelector(`#confirm-root [data-action="confirm-pick"][data-value="${v}"]`).click();
+    const app = () => doc.getElementById("app");
+    // Lions 6-0 (1 ov); Tigers 3-0 after 0.3 of the chase (need 7), then Tigers forfeit.
+    win.eval(`
+      ui = defaultUi(); state.snapshots = []; state.matchHistory = {};
+      state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 1, playersPerSide: 11, battingFirst: "A" });
+      { const m = state.match;
+        openInnings(currentInnings(m), "Kusal", "Pathum", "Wanindu"); m.status = "live";
+        for (let i = 0; i < 6; i++) handleBallClick(1);
+        startSecondInnings(m); openInnings(currentInnings(m), "Babar", "Rizwan", "Dushmantha"); m.status = "live";
+        for (let i = 0; i < 3; i++) handleBallClick(1); }
+      askForfeit();`);
+    pick("B"); ok().click();
+    const id = win.eval("state.match.archivedId");
+    const entry = () => win.eval(`state.matchHistory["${id}"]`);
+    assert(id && entry().forfeited && entry().result === "Lions won — Tigers forfeited the match", "(setup) Tigers forfeited the chase at 3-0, archived");
+    assert(/Undo forfeit/.test(app().querySelector(".go-back-row").textContent) && !app().querySelector('[data-action="change-forfeit"]'),
+      "right after it, Result offers Undo forfeit (not Change the forfeit)");
+    doc.querySelector('#app [data-action="toggle-scorecard"]').click();
+    win.eval(`ui.scorecard = { inn: null, mode: "balls" }; render();`);
+    assert(doc.querySelectorAll('#app [data-action="edit-ball"]').length === 3, "Result: the forfeited chase's balls can be tapped to edit");
+    doc.querySelector('#app [data-action="finish-match"]').click();
+
+    // later, from match history
+    win.eval(`openMatchDetail("${id}")`);
+    assert(doc.querySelector('#modal-root [data-action="edit-archived-match"]') && !/can't be edited/.test(doc.getElementById("modal-root").textContent),
+      "its scorecard sheet in match history offers Edit match");
+    doc.querySelector('#modal-root [data-action="edit-archived-match"]').click();
+    assert(win.eval("state.match.forfeited && state.match.editingFromHistory && state.match.status === 'complete'") && doc.querySelectorAll('#app [data-action="edit-ball"]').length === 3,
+      "Edit match: Result, forfeited, every ball of the chase editable");
+    const plus = doc.querySelector('#app [data-action="add-ball"]');
+    assert(plus && plus.dataset.label === "0.3" && !/· now/.test(app().querySelector(".ball-by-ball").textContent),
+      "the over the forfeit cut short isn't 'now', and ends in a + for a missed ball");
+    assert(app().querySelector('[data-action="change-forfeit"]') && !app().querySelector('.go-back-row [data-action="undo"]'), "from history: Change the forfeit, no Undo yet");
+
+    // a ball changed: still forfeited, the archive entry follows
+    doc.querySelector('#app [data-action="edit-ball"][data-label="0.1"]').click();
+    doc.querySelector('#modal-root [data-field="runs"][data-value="2"]').click();
+    submit("ball-edit-form");
+    assert(/3-0 \(0\.3\) → 4-0 \(0\.3\)/.test(sheet().textContent) && !/Result:/.test(sheet().textContent), "review: Tigers 3-0 → 4-0, the result stays");
+    ok().click();
+    assert(entry().innings[1].runs === 4 && entry().forfeited && entry().result === "Lions won — Tigers forfeited the match" && Object.keys(win.eval("state.matchHistory")).length === 1,
+      "saved: the archive entry (same id) has 4-0 and is still forfeited");
+
+    // a ball that takes them past the target: the forfeit goes
+    doc.querySelector('#app [data-action="edit-ball"][data-label="0.2"]').click();
+    doc.querySelector('#modal-root [data-field="runs"][data-value="4"]').click();
+    assert(/Tigers won by 10 wickets/.test(doc.querySelector("#modal-root .ball-edit-modal").textContent) && /forfeit no longer counts/.test(doc.querySelector("#modal-root .ball-edit-modal").textContent),
+      "the preview says Tigers now win, and why the forfeit goes");
+    submit("ball-edit-form"); ok().click();
+    assert(!entry().forfeited && /Tigers won by 10 wickets/.test(entry().result) && !app().querySelector('[data-action="change-forfeit"]'), "saved: the result comes from the scores");
+    const undo = app().querySelector('.go-back-row [data-action="undo"]');
+    assert(undo && /Undo last change/.test(undo.textContent), "Undo is offered for it");
+    undo.click();
+    assert(entry().forfeited && entry().innings[1].runs === 4, "Undo: forfeited again, in the archive too");
+
+    // the other side forfeited instead
+    app().querySelector('[data-action="change-forfeit"]').click();
+    assert(/Who forfeited\?/.test(sheet().textContent) && ok().disabled && [...doc.querySelectorAll('#confirm-root [data-action="confirm-pick"]')].map(b => b.dataset.value).join() === "none,A",
+      "Change the forfeit: nobody, or Lions instead");
+    assert(/Tigers bat on from 4-0 \(0\.3\)/.test(sheet().textContent), "'nobody' says where the match picks up");
+    pick("A");
+    assert(ok().textContent.trim() === "Change result", "Lions picked → Change result");
+    ok().click();
+    assert(entry().forfeitedBy === "A" && entry().result === "Tigers won — Lions forfeited the match" && win.eval("state.match.status") === "complete" && Object.keys(win.eval("state.matchHistory")).length === 1,
+      "Lions forfeited instead: the same archive entry, the result changed");
+    win.eval("handleUndo()");
+    assert(entry().forfeitedBy === "B", "(Undo puts Tigers' forfeit back)");
+
+    // nobody forfeited: the chase carries on, and finishing it replaces the same entry
+    app().querySelector('[data-action="change-forfeit"]').click();
+    assert(/match history keeps the forfeit/.test(sheet().textContent), "the sheet says history keeps the forfeit until it finishes again");
+    pick("none");
+    assert(ok().textContent.trim() === "Carry on the match", "nobody → Carry on the match");
+    ok().click();
+    assert(win.eval("state.match.status") === "live" && !win.eval("state.match.forfeited") && win.eval("state.match.reopenedFrom") === id && entry().forfeited,
+      "live again from 4-0 (0.3), tied to its archive entry, which keeps the forfeit meanwhile");
+    win.eval("handleUndo()");
+    assert(win.eval("state.match.forfeited") && win.eval("state.match.archivedId") === id && win.eval("state.match.status") === "complete", "Undo: back to the forfeit");
+    app().querySelector('[data-action="change-forfeit"]').click(); pick("none"); ok().click();
+    win.eval(`handleBallClick(1); handleBallClick(0); handleBallClick(0);`);
+    assert(win.eval("state.match.status") === "complete" && win.eval("state.match.archivedId") === id && entry().result === "Lions won by 1 run" && !entry().forfeited
+      && Object.keys(win.eval("state.matchHistory")).length === 1, "finished on the scores: Lions won by 1 run, in the same archive entry");
+    doc.querySelector('#app [data-action="finish-match"]').click();
+
+    // Set the final score, forfeited at the break (Tigers never batted)
+    win.eval(`
+      ui = defaultUi(); state.snapshots = []; state.matchHistory = {};
+      state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 1, playersPerSide: 11, battingFirst: "A" });
+      { const m = state.match; openInnings(currentInnings(m), "Kusal", "Pathum", "Wanindu"); m.status = "live";
+        for (let i = 0; i < 4; i++) handleBallClick(1); }
+      pushSnapshot(); forfeitMatch(state.match, "A"); maybeArchiveCompletedMatch(state.match); save();
+      ui.scoreSet = { error: null }; render();`);
+    const ss = doc.querySelector("#modal-root .score-set-modal");
+    assert(ss && /At the forfeit/.test(ss.textContent) && !ss.querySelector('input[name^="goon"]') && /Didn't bat: the match was forfeited first/.test(ss.textContent) && !ss.querySelector('input[name="runs1"]'),
+      "Set the final score: Lions 'at the forfeit' (no carry-on box), Tigers didn't bat (no boxes)");
+    ss.querySelector('input[name="runs0"]').value = "9";
+    submit("score-set-form"); ok().click();
+    assert(win.eval("state.match.forfeited") && win.eval("state.match.innings[0].runs") === 9 && !win.eval("state.match.innings[0].complete")
+      && win.eval(`state.matchHistory[state.match.archivedId].innings[0].runs`) === 9, "set to 9: still forfeited mid-innings, archive replaced");
     win.eval(`state.match = null; state.snapshots = []; state.matchHistory = {}; ui = defaultUi(); save(); render();`);
   }
 

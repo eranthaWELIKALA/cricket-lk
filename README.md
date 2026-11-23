@@ -52,7 +52,10 @@ final result. Beyond a single match, it also supports:
   innings, at the break) and declare the other team the winner. Counts
   toward tournament standings (points, and net run rate for the runs and
   overs played up to the forfeit) and archived stats. Ending an innings
-  with overs and wickets still left asks whether a team forfeited.
+  with overs and wickets still left asks whether a team forfeited. A
+  forfeited match can still be edited (balls, names, the score at the
+  forfeit), and **Change the forfeit** on its Result takes it back (the
+  match carries on from where it stopped) or names the other side.
 - **Stats & MVP** — all-time and per-tournament batting/bowling/fielding
   leaderboards listing every player, sortable by any column, a **Records**
   tab (most runs/fours/sixes/ducks/wickets/maidens/wides/no-balls/catches/
@@ -165,6 +168,11 @@ fully offline, no permissions. It's built from this code; see
   by one from what was kept, or from the scorecard rebuilt ball by ball;
   matches from much older app versions, whose balls don't say who faced, can
   only have their final score set.
+- **A forfeit stands through an edit, unless the chase now ends first.**
+  Editing a forfeited match keeps the forfeit and its result. But if a change
+  means the side chasing reached the target, was all out or used up its overs
+  before the forfeit, the match was already decided: the forfeit is dropped
+  and the result comes from the scores (the review says so first).
 - **Only an innings ended by hand can be reopened.** End innings (or a score
   set by hand) can be taken back at the break, during the chase (which is
   cleared) or on Result; an innings that was all out, ran out of overs or

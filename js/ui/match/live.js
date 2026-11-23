@@ -257,6 +257,7 @@ function undoLabel(m){
   const prev = state.snapshots[state.snapshots.length - 1];
   if (!prev || !m) return null;
   if (m.forfeited && !prev.forfeited) return "Undo forfeit";
+  if (!m.forfeited && prev.forfeited && m.status !== "complete") return "Put the forfeit back";
   if (prev.status === m.status) return "Undo last change";
   return "Undo last ball";
 }

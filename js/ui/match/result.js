@@ -142,7 +142,8 @@ function renderBallByBall(match, inn){
   const editable = ballEditAllowed(match) && !!inn.log;
   const idx = match.innings.indexOf(inn);
   const overs = inn.overs.map(o => ({ bowler: o.bowler, events: o.events, gap: o.gap, part: !!o.partial }));
-  if (inn.currentOverEvents.length) overs.push({ bowler: inn.bowler, events: inn.currentOverEvents, live: !inn.complete });
+  // (an over a forfeit cut short isn't being bowled: it can take a missed ball, like one ended by hand)
+  if (inn.currentOverEvents.length) overs.push({ bowler: inn.bowler, events: inn.currentOverEvents, live: !inn.complete && match.status !== "complete" });
   if (!overs.length) return `<p class="hint">No balls bowled yet.</p>`;
   // Over numbers come from the legal balls before each over: after a catch-up
   // gap the next over can start part way through (it shows as "part").
@@ -535,10 +536,16 @@ function renderResult(match){
 function renderGoBackRow(match){
   if (match !== state.match) return "";
   const reopen = reopenableInnings(match);
-  const undo = reopen[0] !== match.innings.length - 1 ? undoLabel(match) : null;
-  if (!reopen.length && !undo) return "";
+  // (a forfeit just taken back at the break is a step of its own, not the innings' end)
+  const undoText = undoLabel(match);
+  const undo = reopen[0] !== match.innings.length - 1 || undoText === "Put the forfeit back" ? undoText : null;
+  // A forfeit put right later (from history, or after another change): take
+  // it back or name the other side. Right after it, Undo forfeit says it.
+  const forfeit = match.forfeited && ballEditAllowed(match) && undo !== "Undo forfeit";
+  if (!reopen.length && !undo && !forfeit) return "";
   return `<div class="go-back-row">
     ${reopen.map(i => `<button type="button" data-action="reopen-innings" data-inn="${i}" class="ghost small">↺ Reopen ${escapeHtml(possessive(teamName(match, match.innings[i].battingTeam)))} innings</button>`).join("")}
+    ${forfeit ? `<button type="button" data-action="change-forfeit" class="ghost small">↺ Change the forfeit</button>` : ""}
     ${undo ? `<button type="button" data-action="undo" class="ghost small">↶ ${undo}</button>` : ""}
   </div>`;
 }
