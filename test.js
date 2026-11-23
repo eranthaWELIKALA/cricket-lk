@@ -659,7 +659,7 @@ async function main(){
     assert(m.innings.length === 1, "a first-innings forfeit never creates a second innings");
   }
 
-  // --- 18. forfeit mid-second-innings: counts for standings points but not NRR ---
+  // --- 18. forfeit mid-second-innings: counts for standings points, and for NRR as far as it was played ---
   {
     const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 1, playersPerSide: 11, battingFirst: "A" });
     let inn = currentInnings(m);
@@ -671,7 +671,7 @@ async function main(){
     inn = currentInnings(m);
     win.ensureBatsman(inn, "T1"); win.ensureBatsman(inn, "T2"); win.ensureBowler(inn, "B2");
     inn.striker = "T1"; inn.nonStriker = "T2"; inn.bowler = "B2";
-    recordBall(inn, { kind: "run", runs: 1 });
+    recordBall(inn, { kind: "run", runs: 2 });
     forfeitMatch(m, "B");
     assert(m.status === "complete" && m.forfeited && m.forfeitedBy === "B", "second-innings forfeit is recorded");
     assert(m.result === "Lions won — Tigers forfeited the match", `forfeit result text correct, got: ${m.result}`);
@@ -681,7 +681,35 @@ async function main(){
     const byName = Object.fromEntries(standings.map(t => [t.name, t]));
     assert(byName.Lions.won === 1 && byName.Lions.points === 2, "the non-forfeiting team gets a win and full points");
     assert(byName.Tigers.lost === 1 && byName.Tigers.points === 0, "the forfeiting team gets a loss");
-    assert(byName.Lions.nrr === 0 && byName.Tigers.nrr === 0, "a forfeited match doesn't contribute to NRR");
+    // Lions 6 off 1 over, Tigers 2 off 1 ball (0.1 over) when they forfeited.
+    assert(byName.Lions.runsFor === 6 && byName.Lions.oversFor === 1 && byName.Tigers.runsFor === 2 && Math.abs(byName.Tigers.oversFor - 1 / 6) < 1e-9,
+      "a forfeited match counts each innings' runs and the overs faced up to the forfeit");
+    assert(Math.abs(byName.Lions.nrr - (6 - 12)) < 1e-9 && Math.abs(byName.Tigers.nrr - (12 - 6)) < 1e-9,
+      `NRR is worked out from the overs played: ${byName.Lions.nrr}, ${byName.Tigers.nrr}`);
+
+    // Bowled out, then forfeited at the break: the all-out innings counts its full quota.
+    const m2 = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 2, battingFirst: "A" });
+    const i1 = currentInnings(m2);
+    win.ensureBatsman(i1, "A1"); win.ensureBatsman(i1, "A2"); win.ensureBowler(i1, "B1");
+    i1.striker = "A1"; i1.nonStriker = "A2"; i1.bowler = "B1";
+    recordBall(i1, { kind: "run", runs: 4 }); afterBall(m2);
+    recordBall(i1, { kind: "wicket", runs: 0, wicketType: "bowled" }); afterBall(m2);
+    assert(m2.status === "innings_break" && i1.completeReason === "allout", "(setup) all out after 2 balls");
+    forfeitMatch(m2, "B");
+    const s2 = Object.fromEntries(computeStandings([m2], tPreset).map(t => [t.name, t]));
+    assert(s2.Lions.runsFor === 4 && s2.Lions.oversFor === 5 && s2.Tigers.runsAgainst === 4 && s2.Tigers.oversAgainst === 5 && s2.Tigers.oversFor === 0,
+      "forfeited at the break: the all-out innings counts its full 5 overs, the side yet to bat adds nothing");
+
+    // End innings asks about a forfeit only when overs and wickets are left.
+    const m3 = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 2, playersPerSide: 11, battingFirst: "A" });
+    const i3 = currentInnings(m3);
+    assert(win.inningsCutShort(i3), "a fresh innings with an overs limit is cut short if ended");
+    i3.legalBalls = 12;
+    assert(!win.inningsCutShort(i3), "...but not with every over bowled");
+    i3.legalBalls = 3; i3.wickets = 10;
+    assert(!win.inningsCutShort(i3), "...nor all out");
+    const m4 = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: null, playersPerSide: 11, battingFirst: "A" });
+    assert(!win.inningsCutShort(currentInnings(m4)), "no overs limit: ending by hand is how the innings ends, not cut short");
   }
 
   // --- 19. freeHitOnNoBall toggle: a no-ball only grants a free hit when the preset says so ---
@@ -3311,6 +3339,67 @@ async function main(){
 
     win.eval(`session = window.__prevSession; supabaseClient = window.__prevClient; state.activeClubId = null;
       ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
+  // --- UI: End innings with overs and wickets left asks whether a team forfeited ---
+  {
+    const doc = win.document;
+    const sheet = () => doc.querySelector("#confirm-root .confirm-modal");
+    const ok = () => doc.querySelector('#confirm-root [data-action="confirm-ok"]');
+    const pick = v => doc.querySelector(`#confirm-root [data-action="confirm-pick"][data-value="${v}"]`).click();
+    win.eval(`
+      ui = defaultUi(); state.snapshots = []; state.matchHistory = {};
+      state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 2, playersPerSide: 11, battingFirst: "A" });
+      openInnings(currentInnings(state.match), "Kusal", "Pathum", "Wanindu"); state.match.status = "live";
+      for (let i = 0; i < 3; i++) handleBallClick(1);
+      handleEndInnings();`);
+    const values = [...doc.querySelectorAll('#confirm-root [data-action="confirm-pick"]')].map(b => b.dataset.value);
+    assert(values.join() === "end,A,B" && /Did a team forfeit\?/.test(sheet().textContent) && /1\.3 overs and 10 wickets left/.test(sheet().textContent),
+      "End innings at 0.3 of 2 overs asks: no forfeit, Lions or Tigers forfeited");
+    assert(/Tigers need 4 to win/.test(sheet().textContent) && ok().disabled, "'No forfeit' says what follows; nothing happens until one is picked");
+    pick("end");
+    assert(!ok().disabled && ok().textContent.trim() === "End innings", "No forfeit → End innings");
+    ok().click();
+    assert(win.eval("state.match.status") === "innings_break" && !win.eval("state.match.forfeited") && win.eval("state.match.innings[0].completeReason") === "closed",
+      "No forfeit just closes the innings");
+    win.eval(`handleUndo();`);
+    assert(win.eval("state.match.status") === "live", "(Undo brings it back)");
+    win.eval(`handleEndInnings();`);
+    pick("A");
+    assert(ok().textContent.trim() === "End match", "a team picked → End match");
+    ok().click();
+    const id = win.eval("state.match.archivedId");
+    assert(win.eval("state.match.forfeited") && win.eval("state.match.forfeitedBy") === "A" && win.eval("state.match.status") === "complete"
+      && win.eval("state.match.result") === "Tigers won — Lions forfeited the match" && id && win.eval(`!!state.matchHistory["${id}"]`),
+      "Lions forfeited: the match ends as a forfeit and is archived");
+    const table = Object.fromEntries(win.eval(`computeStandings(Object.values(state.matchHistory), { pointsForWin: 2, pointsForTie: 1, pointsForLoss: 0, useNRR: true })`).map(t => [t.name, t]));
+    assert(table.Tigers.points === 2 && table.Lions.runsFor === 3 && table.Lions.oversFor === 0.5 && table.Tigers.runsAgainst === 3,
+      "its standings: Tigers get the win, and Lions' 3 off 0.3 overs count for NRR");
+
+    // In the chase, "No forfeit" shows the result the scores give.
+    win.eval(`
+      ui = defaultUi(); state.snapshots = []; state.matchHistory = {};
+      state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 1, playersPerSide: 11, battingFirst: "A" });
+      { const m = state.match;
+        openInnings(currentInnings(m), "Kusal", "Pathum", "Wanindu"); m.status = "live";
+        for (let i = 0; i < 6; i++) handleBallClick(1);
+        startSecondInnings(m); openInnings(currentInnings(m), "Babar", "Rizwan", "Dushmantha"); m.status = "live";
+        handleBallClick(1); handleBallClick(1); }
+      handleEndInnings();`);
+    assert(/End the match now\?/.test(sheet().textContent) && /Lions won by 4 runs/.test(sheet().textContent), "chase cut short: 'No forfeit' shows Lions won by 4 runs");
+    pick("end");
+    assert(ok().textContent.trim() === "End match", "...and ends the match");
+    win.eval(`ui.confirm = null;`);
+
+    // No overs limit: closing by hand is normal, so it doesn't ask.
+    win.eval(`
+      ui = defaultUi(); state.snapshots = [];
+      state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: null, playersPerSide: 11, battingFirst: "A" });
+      openInnings(currentInnings(state.match), "Kusal", "Pathum", "Wanindu"); state.match.status = "live";
+      handleBallClick(1); handleEndInnings();`);
+    assert(!doc.querySelector('#confirm-root [data-action="confirm-pick"]') && !ok().disabled && /Tigers will need 2 to win/.test(sheet().textContent),
+      "no overs limit: End innings asks only to confirm");
+    win.eval(`state.match = null; state.snapshots = []; state.matchHistory = {}; ui = defaultUi(); save(); render();`);
   }
 
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);

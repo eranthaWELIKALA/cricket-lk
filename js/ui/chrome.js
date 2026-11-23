@@ -119,7 +119,8 @@ function loadingHtml(text){
      confirmLabel, cancelLabel ("Cancel"), busyLabel, icon, tone ("danger" |
      "primary")
    - choices: optional [{ value, label, sub }] to pick one of first (forfeit:
-     which team) -- the confirm button stays disabled until one is picked
+     which team) -- the confirm button stays disabled until one is picked;
+     confirmLabel may then be a function of the choice (null before a pick)
    - onConfirm(choice): return nothing to close, { error } to stay open with
      that message, or a Promise of either (the sheet shows busyLabel)
    - onCancel(): optional
@@ -133,6 +134,7 @@ function askConfirm(opts){
 function renderConfirmModal(){
   const c = ui.confirm;
   const needChoice = !!(c.choices && c.choices.length && c.choice == null);
+  const okLabel = typeof c.confirmLabel === "function" ? c.confirmLabel(c.choice) : c.confirmLabel;
   return `
     <div class="modal-backdrop">
       <div class="modal confirm-modal${c.tone === "danger" ? " danger" : ""}" data-keep-scroll="confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
@@ -148,7 +150,7 @@ function renderConfirmModal(){
         ${c.error ? `<p class="form-error">${escapeHtml(c.error)}</p>` : ""}
         <div class="confirm-actions">
           <button type="button" data-action="confirm-cancel" class="ghost" ${c.busy ? "disabled" : ""}>${escapeHtml(c.cancelLabel)}</button>
-          <button type="button" data-action="confirm-ok" class="primary${c.tone === "danger" ? " danger-confirm" : ""}" ${c.busy || needChoice ? "disabled" : ""}>${escapeHtml(c.busy ? c.busyLabel : c.confirmLabel)}</button>
+          <button type="button" data-action="confirm-ok" class="primary${c.tone === "danger" ? " danger-confirm" : ""}" ${c.busy || needChoice ? "disabled" : ""}>${escapeHtml(c.busy ? c.busyLabel : okLabel)}</button>
         </div>
       </div>
     </div>`;

@@ -113,7 +113,7 @@ function askForfeit(){
   const order = cur.battingTeam === "A" ? ["A", "B"] : ["B", "A"];
   askConfirm({
     title: "Forfeit this match?", icon: "🚩",
-    body: `<p>The match ends now at <b class="n">${cur.runs}-${cur.wickets} (${oversDisplay(cur.legalBalls, cur.ballsPerOver)})</b> and the other team wins. No margin is worked out, and this innings is left out of net run rate.</p><p><b>Which team forfeits?</b></p>`,
+    body: `<p>The match ends now at <b class="n">${cur.runs}-${cur.wickets} (${oversDisplay(cur.legalBalls, cur.ballsPerOver)})</b> and the other team wins. No margin is worked out; net run rate counts the overs played so far.</p><p><b>Which team forfeits?</b></p>`,
     choices: order.map(key => ({ value: key, label: teamName(m, key), sub: forfeitTeamLine(m, key) })),
     confirmLabel: "End match",
     onConfirm: team => {

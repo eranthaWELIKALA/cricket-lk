@@ -1857,6 +1857,14 @@ function canEndInningsByHand(inn){
   return !inn.complete && (inn.oversLimit == null || inn.maxWickets == null);
 }
 
+/* An innings being closed by hand with overs and wickets still to come, so
+   End innings asks whether a team forfeited. With no overs limit, closing
+   by hand is how an innings normally ends, so it doesn't count as short. */
+function inningsCutShort(inn){
+  return !!inn && !inn.complete && inn.oversLimit != null
+    && inn.legalBalls < inn.oversLimit * inn.ballsPerOver && !isAllOut(inn);
+}
+
 /* --- cross-match aggregation: MVP/MOTM, leaderboards, standings ---
    Pure functions over one or more completed matches, kept DOM-free like
    the rest of the engine so they're directly unit-testable.
@@ -2008,6 +2016,15 @@ function pickMatchMOTM(match, preset){
   return ranked.length ? ranked[0].name : null;
 }
 
+/* The overs an innings counts for net run rate: the overs it faced, or its
+   full quota when it was bowled out (the standard convention) or a result
+   only left them blank. null = it can't be counted (blank overs and no
+   overs limit), which keeps the whole match out of NRR. */
+function nrrOvers(inn, ballsPerOver){
+  if (inn.oversLimit != null && (inn.completeReason === "allout" || inn.legalBalls == null)) return inn.oversLimit;
+  return inn.legalBalls == null ? null : inn.legalBalls / (ballsPerOver || 6);
+}
+
 function computeStandings(matches, tournamentPreset){
   const teams = {};
   function ensureTeam(name){
@@ -2016,13 +2033,24 @@ function computeStandings(matches, tournamentPreset){
       runsFor: 0, oversFor: 0, runsAgainst: 0, oversAgainst: 0
     });
   }
+  function foldNrr(match){
+    const faced = match.innings.map(inn => nrrOvers(inn, match.ballsPerOver));
+    if (faced.includes(null)) return;
+    match.innings.forEach((inn, n) => {
+      const bt = ensureTeam(teamName(match, inn.battingTeam));
+      const bwt = ensureTeam(teamName(match, inn.bowlingTeam));
+      bt.runsFor += inn.runs; bt.oversFor += faced[n];
+      bwt.runsAgainst += inn.runs; bwt.oversAgainst += faced[n];
+    });
+  }
   matches.forEach(match => {
     const nameA = teamName(match, "A"), nameB = teamName(match, "B");
     if (match.forfeited){
-      // Counts for points, but deliberately excluded from NRR — the
-      // innings that were played (if any) weren't played to a finish,
-      // so folding their runs/overs in would skew run rate.
+      // Counts for points, and for NRR as far as it was played: every
+      // innings started counts the runs and overs it had when the match
+      // was forfeited (an innings in progress, its overs faced so far).
       ensureTeam(nameA); ensureTeam(nameB);
+      foldNrr(match);
       ensureTeam(nameA).played += 1; ensureTeam(nameB).played += 1;
       const winner = teamName(match, match.forfeitedBy === "A" ? "B" : "A");
       const loser = winner === nameA ? nameB : nameA;
@@ -2034,19 +2062,10 @@ function computeStandings(matches, tournamentPreset){
     const [i1, i2] = match.innings;
     if (!i2 || !i2.complete) return; // only fully-played two-innings matches count
     ensureTeam(nameA); ensureTeam(nameB);
-    const bpo = match.ballsPerOver || 6;
     // A result-only match may leave overs blank (legalBalls null): that
     // innings counts its full quota, like all out -- or, with no overs limit,
-    // the match stays out of NRR altogether.
-    const faced = match.innings.map(inn =>
-      inn.oversLimit != null && (inn.completeReason === "allout" || inn.legalBalls == null) ? inn.oversLimit
-        : inn.legalBalls == null ? null : inn.legalBalls / bpo);
-    if (!faced.includes(null)) match.innings.forEach((inn, n) => {
-      const bt = ensureTeam(teamName(match, inn.battingTeam));
-      const bwt = ensureTeam(teamName(match, inn.bowlingTeam));
-      bt.runsFor += inn.runs; bt.oversFor += faced[n];
-      bwt.runsAgainst += inn.runs; bwt.oversAgainst += faced[n];
-    });
+    // the match stays out of NRR altogether (nrrOvers).
+    foldNrr(match);
     ensureTeam(nameA).played += 1; ensureTeam(nameB).played += 1;
     // A tie settled by a super over is a win and a loss (its runs stay out of NRR).
     const winnerKey = matchWinnerKey(match);

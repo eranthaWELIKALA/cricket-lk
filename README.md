@@ -50,7 +50,9 @@ final result. Beyond a single match, it also supports:
   tie goes to one, so Result leads with it.
 - **Forfeits** — end a match at any point (before it even starts, mid-
   innings, at the break) and declare the other team the winner. Counts
-  toward tournament standings (points, not NRR) and archived stats.
+  toward tournament standings (points, and net run rate for the runs and
+  overs played up to the forfeit) and archived stats. Ending an innings
+  with overs and wickets still left asks whether a team forfeited.
 - **Stats & MVP** — all-time and per-tournament batting/bowling/fielding
   leaderboards listing every player, sortable by any column, a **Records**
   tab (most runs/fours/sixes/ducks/wickets/maidens/wides/no-balls/catches/
@@ -183,7 +185,9 @@ fully offline, no permissions. It's built from this code; see
   always override the pick by hand on the result screen.
 - **Net run rate follows the standard convention** that a team bowled
   all out counts its full overs quota (not the fewer overs it actually
-  faced) — the usual real-world rule, applied without exception.
+  faced) — the usual real-world rule, applied without exception. A
+  forfeited match counts each innings as it stood at the forfeit (the
+  overs actually faced, unless it was all out).
 - **Single device, no live sync.** State lives in that browser's
   storage (`localStorage`, or in-memory if storage is unavailable).
   Two phones scoring the same match won't see each other's balls, and a

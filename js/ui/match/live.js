@@ -130,7 +130,10 @@ function renderExtraRunsModal(inn){
 }
 
 /* Asks first: closing the 1st innings lands on the innings break and closing
-   the 2nd ends the match. Either can be taken back (Reopen innings, Undo). */
+   the 2nd ends the match. Either can be taken back (Reopen innings, Undo).
+   Cut short with overs and wickets left (inningsCutShort), it also asks
+   whether a team forfeited: "No forfeit" ends the innings as above, a team
+   ends the match as a forfeit (forfeitMatch, like ⋯ → Forfeit). */
 function handleEndInnings(){
   const m = state.match;
   const inn = m && currentInnings(m);
@@ -139,19 +142,37 @@ function handleEndInnings(){
   if (!inn || inn.complete) return;
   ui.matchMenu = null;
   const last = m.innings.length === 2;
+  const bat = teamName(m, inn.battingTeam), bowl = teamName(m, inn.bowlingTeam);
   const score = `${inn.runs}-${inn.wickets} (${oversDisplay(inn.legalBalls, inn.ballsPerOver)})`;
+  const endLabel = last ? "End match" : "End innings";
+  const finish = apply => { pushSnapshot(); apply(); maybeArchiveCompletedMatch(state.match); save(); };
+  const title = last ? "End the match now?" : "End this innings?";
+  if (!inningsCutShort(inn)){
+    askConfirm({
+      title, icon: "⏹",
+      body: `<p>${escapeHtml(bat)} finish on <b class="n">${score}</b>. ${last
+        ? "The result is worked out from the scores as they stand."
+        : `${escapeHtml(bowl)} will need <b class="n">${inn.runs + 1}</b> to win.`}</p>`,
+      confirmLabel: endLabel,
+      onConfirm: () => finish(() => endInnings(state.match))
+    });
+    return;
+  }
+  const ballsLeft = inn.oversLimit * inn.ballsPerOver - inn.legalBalls;
+  const wktsLeft = inn.maxWickets != null ? inn.maxWickets - inn.wickets : null;
+  const left = `${oversDisplay(ballsLeft, inn.ballsPerOver)} overs${wktsLeft != null ? ` and ${wktsLeft} wicket${wktsLeft === 1 ? "" : "s"}` : ""} left`;
+  let ifNot = `${bowl} need ${inn.runs + 1} to win`;
+  if (last){ const p = JSON.parse(JSON.stringify(m)); endInnings(p); ifNot = p.result; }
   askConfirm({
-    title: last ? "End the match now?" : "End this innings?", icon: "⏹",
-    body: `<p>${escapeHtml(teamName(m, inn.battingTeam))} finish on <b class="n">${score}</b>. ${last
-      ? "The result is worked out from the scores as they stand."
-      : `${escapeHtml(teamName(m, inn.bowlingTeam))} will need <b class="n">${inn.runs + 1}</b> to win.`}</p>`,
-    confirmLabel: last ? "End match" : "End innings",
-    onConfirm: () => {
-      pushSnapshot();
-      endInnings(state.match);
-      maybeArchiveCompletedMatch(state.match);
-      save();
-    }
+    title, icon: "⏹",
+    body: `<p>${escapeHtml(bat)} stop at <b class="n">${score}</b>, with ${left}.</p><p><b>Did a team forfeit?</b></p>`,
+    choices: [
+      { value: "end", label: "No forfeit", sub: ifNot },
+      { value: inn.battingTeam, label: `${bat} forfeited`, sub: `${bowl} win` },
+      { value: inn.bowlingTeam, label: `${bowl} forfeited`, sub: `${bat} win` }
+    ],
+    confirmLabel: choice => choice && choice !== "end" ? "End match" : endLabel,
+    onConfirm: choice => finish(() => choice === "end" ? endInnings(state.match) : forfeitMatch(state.match, choice))
   });
 }
 

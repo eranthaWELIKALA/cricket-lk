@@ -649,11 +649,25 @@ so it can interrupt any of them at any time. Two consequences worth remembering 
 - `renderResult` guards `match.innings[1]` before rendering its
   scorecard (`match.innings[1] ? renderInningsSummary(...) : ""`) — a
   first-innings forfeit means it doesn't exist. Don't remove that guard.
-- `computeStandings` handles `match.forfeited` matches in a completely
-  separate branch: they count for played/won/lost/points, but are
-  **excluded** from the NRR accumulation (partial, forcibly-ended
-  innings would skew it). If you change how standings fold in normal
+- `computeStandings` handles `match.forfeited` matches in a separate
+  branch: they count for played/won/lost/points, and for NRR **as far as
+  the match got** — every innings started adds its runs and the overs it
+  had faced at the forfeit (an innings in progress, its overs so far; an
+  all-out one, its full quota as usual). Both branches fold NRR through
+  `foldNrr`/`nrrOvers`, so the conventions can't drift apart; a side yet
+  to bat adds nothing. If you change how standings fold in normal
   matches, check the forfeited branch still makes sense alongside it.
+
+**End innings asks whether a team forfeited** when the innings is cut short
+(`inningsCutShort(inn)`, ENGINE, tested: an overs limit, overs and wickets
+left). `handleEndInnings`' confirmation then has three required `choices`:
+**No forfeit** (sub: the target, or in the chase the result the scores give,
+worked out on a copy) → `endInnings` as before; **{batting side} forfeited**
+/ **{bowling side} forfeited** → `forfeitMatch`, the same as ⋯ → Forfeit
+(Result's Undo forfeit walks it back). The button reads End innings / End
+match to match the pick (`confirmLabel` as a function of the choice). With
+no overs limit it only confirms: ending by hand is how such an innings
+normally ends.
 
 `askForfeit()` passes the two teams as the confirmation's `choices`, so
 picking a team and confirming are deliberately two separate taps rather
@@ -932,7 +946,8 @@ into its own `#confirm-root` layer **above every other sheet** — the sheet
 underneath stays in the DOM (typed input included) while it asks. Options: `title`, `body` (trusted
 HTML — escape names), `confirmLabel`/`cancelLabel`/`busyLabel`, `icon`,
 `tone` (`"danger"` default, `"primary"`), optional `choices` (a required pick
-before confirm is enabled — forfeit's team), `onConfirm(choice)` (return
+before confirm is enabled — forfeit's team; `confirmLabel` may then be a
+function of the pick, null before one), `onConfirm(choice)` (return
 nothing to close, `{ error }` to stay open with a message, or a Promise of
 either — the sheet shows `busyLabel` meanwhile) and `onCancel`. Esc cancels.
 It currently covers: end innings, toss restart, forfeit, cancel match,
