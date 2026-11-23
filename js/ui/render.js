@@ -32,7 +32,10 @@ function render(){
     && ui.publicTournamentLoading !== ui.publicTournamentId) loadPublicTournament(ui.publicTournamentId);
   // Account's Player profile card: who the viewer is on the platform (their
   // claimed profile, or a claim waiting). Reset on each visit (go-account).
-  if (state.view === "account" && session && supabaseClient && !needsInternet() && !ui.identity && !ui.identityLoading){
+  // A tournament's My stats tab, and the You on a player's own leaderboard
+  // rows (club and Premier Stats too), need it as well.
+  const IDENTITY_VIEWS = ["account", "clubTournamentDashboard", "publicTournament", "clubStats", "premierStats"];
+  if (IDENTITY_VIEWS.includes(state.view) && session && supabaseClient && !needsInternet() && !ui.identity && !ui.identityLoading){
     ui.identityLoading = true;
     fetchMyPlayerIdentity().catch(() => {}).then(() => {
       ui.identityLoading = false;
@@ -228,6 +231,9 @@ function render(){
   // A completed match's scorecard sheet belongs to the screen it was opened on.
   const mdValid = !!(ui.matchDetail && ui.matchDetail.view === state.view && (!inProgress || away));
   if (ui.matchDetail && !mdValid) ui.matchDetail = null;
+  // A player's figures (a leaderboard name, "Your stats"): the scorecard sheet can open over it.
+  const psValid = !!(ui.playerStats && ui.playerStats.view === state.view && (!inProgress || away));
+  if (ui.playerStats && !psValid) ui.playerStats = null;
   // "Enter result only" (tournament dashboards) belongs to the view it was opened on.
   const resultEntryOpen = !!(ui.resultEntry && ui.resultEntry.view === state.view && (!inProgress || away)
     && (state.view === "tournamentDashboard" || (state.view === "clubTournamentDashboard" && ui.clubTournament)));
@@ -267,6 +273,8 @@ function render(){
     modalHtml = renderTournamentTeamModal();
   } else if (mdValid){
     modalHtml = renderMatchDetailModal();
+  } else if (psValid){
+    modalHtml = renderPlayerStatsModal();
   } else if (resultEntryOpen){
     modalKey = "result-entry";   // keep typed scores across background re-renders
     modalHtml = renderResultEntryModal();
@@ -332,6 +340,7 @@ function render(){
   }
   showBoardAboveSheet();
   focusLatestBalls();
+  showActiveTabs();
   // The DOM was just replaced: put the tapped button's spinner back.
   if (activity.shown || document.querySelector(".is-loading")) applyActivity();
   if (liveMoment) playLiveMoment();

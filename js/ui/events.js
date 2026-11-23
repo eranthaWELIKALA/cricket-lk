@@ -206,6 +206,19 @@ document.addEventListener("click", (e) => {
     // A club has no dashboard of its own: it's Home, acting as that club.
     state.activeClubId = btn.dataset.id; state.view = "home"; save(); render(); // render() loads it
   }
+  else if (action === "open-player-stats") openPlayerStats(btn.dataset.name);
+  else if (action === "close-player-stats") closePlayerStats();
+  // "My profile" on the player stats sheet or a tournament's My stats tab:
+  // the full profile, its back bar returning to the screen it came from.
+  else if (action === "open-my-profile-from-stats"){
+    const self = myPlayerSelf();
+    if (!self) return;
+    const from = { view: state.view, label: btn.dataset.title || "Back" };
+    ui.playerStats = null;
+    openPlayerProfile("premier", self.id, self.name);
+    ui.profile.from = from;
+    state.view = "playerProfile"; render(); // render() loads it (loadPlayerProfile)
+  }
   else if (action === "open-player-profile"){
     openPlayerProfile(btn.dataset.scope, btn.dataset.id, btn.dataset.name);
     state.view = "playerProfile"; render(); // render() loads it (loadPlayerProfile)

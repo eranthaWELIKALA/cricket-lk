@@ -61,8 +61,8 @@ function handleClubTournamentSetupSubmit(e){
    (leaderboards, with their own sub-tabs). ui.tournamentTab picks the tab;
    opening a tournament resets it to "overview". */
 const TOURNAMENT_TABS = [["overview", "Overview"], ["teams", "Teams"], ["fixtures", "Fixtures"], ["stats", "Stats"]];
-function tournamentTab(ended, list){
-  const tabs = tournamentTabs(ended, list);
+function tournamentTab(ended, list, mine){
+  const tabs = tournamentTabs(ended, list, mine);
   return tabs.some(([id]) => id === ui.tournamentTab) ? ui.tournamentTab : tabs[0][0];
 }
 /* The Overview/Fixtures actions: start a scored match, record a result only,
@@ -123,8 +123,9 @@ function renderClubTournamentDashboard(){
   if (!t) return `<div class="screen tournament">${renderBackBar(escapeHtml(clubName) || "Home", "home")}${loadingHtml()}</div>`;
   const p = t.tournament_preset || {};
   const ended = !!p.endedAt;
-  const tab = tournamentTab(ended);
   const matches = tournamentRowMatches(t.matches);
+  const mine = myStatsIn(matches);
+  const tabs = tournamentTabs(ended, null, mine), tab = tournamentTab(ended, null, mine);
   const startBtn = `<button data-action="go-club-tournament-match-setup" class="primary">Start match</button>`;
   // A club the user only plays for (supabase/020): everything to see, nothing to change.
   const canEdit = clubCanEdit(t.organizer_club_id);
@@ -137,7 +138,7 @@ function renderClubTournamentDashboard(){
       <div class="tournament-links">
         <button type="button" data-action="share-tournament-link" class="ghost small">${ICON_LINK} Share link</button>
       </div>
-      ${tabsHtml("switch-tournament-tab", tournamentTabs(ended), tab, ended ? "main-tabs many" : "main-tabs")}
+      ${tabsHtml("switch-tournament-tab", tabs, tab, tournamentTabsClass(tabs))}
       ${tab === "summary" ? renderTournamentSummary(tournamentContext()) : ""}
       ${tab === "overview" ? `
         ${matches.length ? renderStandingsTable(computeStandings(matches, p), p.useNRR) : `<p class="hint">No matches yet.</p>`}
@@ -145,7 +146,8 @@ function renderClubTournamentDashboard(){
         ${actions(matches.length, true)}` : ""}
       ${tab === "teams" ? renderTournamentTeams(t, canEdit) : ""}
       ${tab === "fixtures" ? `${actions(0, false)}<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches, canEdit && !ended ? "No matches yet — start one above." : "No matches yet.")}` : ""}
-      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, clubPointsPreset(t.organizer_club_id)), { points: clubPointsPreset(t.organizer_club_id), where: "the club's Presets", matches }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
+      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, clubPointsPreset(t.organizer_club_id)), { points: clubPointsPreset(t.organizer_club_id), where: "the club's Presets", matches, title: t.name }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
+      ${tab === "me" ? renderMyStatsTab(matches, clubPointsPreset(t.organizer_club_id), t.name) : ""}
     </div>
   `;
 }
@@ -550,7 +552,14 @@ async function quickSplitTeams(){
    (tournamentSummary, ENGINE), shareable as an image. Reopening clears it. */
 const ICON_SHARE = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>`;
 const ICON_LINK = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>`;
-function tournamentTabs(ended, list){ const tabs = list || TOURNAMENT_TABS; return ended ? [["summary", `${ICON_SHARE} Summary`], ...tabs] : tabs; }
+/* `mine`: the signed-in player played in it (myStatsIn), so it gets their own
+   My stats tab, last: their figures stay out of the tabs about everyone. */
+function tournamentTabs(ended, list, mine){
+  const tabs = [...(ended ? [["summary", `${ICON_SHARE} Summary`]] : []), ...(list || TOURNAMENT_TABS), ...(mine ? [["me", "My stats"]] : [])];
+  return tabs;
+}
+// Five tabs or more scroll sideways rather than squeeze.
+function tournamentTabsClass(tabs){ return tabs.length > 4 ? "main-tabs many" : "main-tabs"; }
 
 /* Who's viewing: guest tournaments live in state.tournaments, club ones in
    ui.clubTournament, a shared link's in ui.publicTournament. Returns what the
@@ -804,8 +813,9 @@ function renderPublicTournament(){
       ${pt.error ? `<button type="button" data-action="refresh-public-tournament" class="primary">Try again</button>` : ""}
     </div>`;
   const p = pt.preset, ended = !!p.endedAt;
-  const tabs = tournamentTabs(ended, PUBLIC_TOURNAMENT_TABS), tab = tournamentTab(ended, PUBLIC_TOURNAMENT_TABS);
   const matches = tournamentRowMatches(pt.matches);
+  const mine = myStatsIn(matches);
+  const tabs = tournamentTabs(ended, PUBLIC_TOURNAMENT_TABS, mine), tab = tournamentTab(ended, PUBLIC_TOURNAMENT_TABS, mine);
   const latest = [...matches].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)).slice(0, 3);
   const member = (ui.myClubs || []).some(c => c.id === pt.clubId);
   const manageLabel = clubCanEdit(pt.clubId) ? "Manage" : "Open in club";
@@ -820,13 +830,14 @@ function renderPublicTournament(){
         <button type="button" data-action="refresh-public-tournament" class="ghost small">↻ Refresh</button>
         ${member ? `<button type="button" data-action="manage-public-tournament" class="ghost small">${manageLabel}</button>` : ""}
       </div>
-      ${tabsHtml("switch-tournament-tab", tabs, tab, ended ? "main-tabs many" : "main-tabs")}
+      ${tabsHtml("switch-tournament-tab", tabs, tab, tournamentTabsClass(tabs))}
       ${tab === "summary" ? renderTournamentSummary(tournamentContext()) : ""}
       ${tab === "overview" ? (matches.length
         ? `${renderStandingsTable(computeStandings(matches, p), p.useNRR)}<h3 class="section-label">Latest results</h3>${renderFixtureList(latest)}`
         : `<p class="hint">No matches yet.</p>`) : ""}
       ${tab === "fixtures" ? `<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches)}` : ""}
-      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, pt.points), { points: pt.points, matches }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
+      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, pt.points), { points: pt.points, matches, title: pt.name }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
+      ${tab === "me" ? renderMyStatsTab(matches, pt.points, pt.name) : ""}
       <p class="hint public-note">${pt.refreshError ? escapeHtml(pt.refreshError) : `Read only · updated ${escapeHtml(updated)}`}</p>
     </div>`;
 }

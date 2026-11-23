@@ -1217,8 +1217,9 @@ match out of NRR). Its scorecard sheet shows the totals only
 `tournament_preset.endedAt` — saved with the `tournament.update` outbox op
 (`updateClubTournament`; the jsonb is members-updatable, so no migration).
 An ended tournament gets a **Summary** tab first (`tournamentTabs(ended)`;
-`ui.tournamentTab = null` falls back to the first tab, and the five tabs
-scroll sideways, `.main-tabs.many`) and hides the start/result buttons.
+`ui.tournamentTab = null` falls back to the first tab, and five tabs or more
+scroll sideways, `.main-tabs.many` via `tournamentTabsClass`, with
+`showActiveTabs()` after each render scrolling the one that's on into view) and hides the start/result buttons.
 Summary = `tournamentSummary` (ENGINE, tested: final table, champion or joint
 top, totals, MVP, most runs/wickets/dismissals, best innings/bowling, highest
 total) plus "Share results" — `renderTournamentCanvas` through
@@ -1245,7 +1246,7 @@ table, latest 3 results, start button), **Teams** (`teamCardHtml`: cards
 collapsed to name + count, tap to show players — `ui.expandedTeamId`; club
 edit/delete buttons stay on the card), **Fixtures** (start a match + every
 completed match via `renderFixtureList`, tap → scorecard sheet) and
-**Stats**. `renderLeaderboards(totals, { points, where, matches })` shows one table
+**Stats**. `renderLeaderboards(totals, { points, where, matches, title })` shows one table
 at a time behind its own MVP / Batting / Bowling / Fielding / Records sub-tabs
 (`ui.statsTab`, one row that shares the width) — everywhere it's used; with
 `points: null` (Premier) the MVP tab isn't there, and Records needs `matches`
@@ -1259,6 +1260,36 @@ sideways inside their card (`.table-scroll`, never the page) with the player
 column pinned, and keep their scroll across the re-sort. The player profile has **Profile / Stats / Matches** tabs (`ui.profile.tab`, so
 it resets with each profile). All of them use `tabsHtml(action, tabs,
 active, cls)` (common.js); `main-tabs` makes a top-level row equal-width.
+
+**A player's own figures (stats.js).** Every leaderboard name is a button
+(`open-player-stats`, `.name-btn`) opening the **player stats sheet**
+(`renderPlayerStatsModal`, `ui.playerStats = { view, name, names, self,
+matches, points, title }`): that player over the matches the leaderboard was
+counted from (`statsScope`, set by `renderLeaderboards` from `opts.matches` /
+`opts.title` — every caller passes a title: the tournament's or club's name,
+"All-time", "Premier"). It shows the profile's batting / bowling / fielding
+tiles (`careerStatsHtml`, clubs.js, shared with the profile's Stats tab),
+where they rank (`playerRanks`, ENGINE, tested: MVP points, runs, wickets as
+"#2 of 14", equal values sharing a place) and match by match
+(`playerMatchRowHtml`, shared with the profile's Matches tab; each row opens
+the scorecard sheet *over* it — `renderMatchDetailModal` comes first in
+`render()`, and `closeTopOverlay` closes it first). It's a snapshot that
+belongs to the view it was opened on, like `ui.matchDetail`. **The signed-in
+player** with a claimed profile (`myPlayerSelf()`: `ui.identity.myPlayer`, or
+the copy `fetchMyPlayerIdentity` keeps in the read cache, `cache.myPlayer`, so
+it works offline) has their rows tagged **You** (`td.lb-me`), and their own
+sheet counts every name merged into their profile ("Also counted: played as
+…") and has **My profile** (`open-my-profile-from-stats`, `data-title` → the
+Premier profile, `ui.profile.from = { view, label }` so its back bar returns
+there). **Personal figures have a tab of their own**: a club tournament and its
+public page add **My stats** last (`tournamentTabs(ended, list, mine)`, `mine`
+= `myStatsIn(matches)`: they played in it; tab id `"me"`) with the same body
+as the sheet (`playerStatsBodyHtml`, shared) plus My profile —
+`renderMyStatsTab`. Overview and Stats carry nothing personal beyond the You
+tags. `render()` loads `ui.identity` on `IDENTITY_VIEWS` (Account, the club
+tournament dashboard, the public tournament page, club and Premier Stats).
+No claimed profile, or they didn't play in it: no My stats tab (a chosen one
+falls back to the first tab), names still open.
 
 ## Public tournament links (`supabase/017_public_tournament_points.sql`)
 

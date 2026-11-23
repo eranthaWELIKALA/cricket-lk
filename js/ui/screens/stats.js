@@ -78,6 +78,7 @@ function sortLeaderboard(rows, table, sort){
 }
 function leaderboardTable(table, totals){
   const cols = LEADERBOARD_COLUMNS[table];
+  const self = myPlayerSelf();
   const rows = totals.filter(LEADERBOARD_ROWS[table] || (() => true));
   if (!rows.length) return `<p class="hint">${table === "bowl" ? "Nobody has bowled yet." : "Nobody has batted yet."}</p>`;
   const sort = leaderboardSort(table);
@@ -87,7 +88,11 @@ function leaderboardTable(table, totals){
     return `<th scope="col" class="${c.key === "name" ? "lb-name" : ""}" aria-sort="${on ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}"><button type="button" data-action="stats-sort" data-table="${table}" data-key="${c.key}" class="sort-btn${on ? " on" : ""}" title="${c.title}" aria-label="Sort by ${c.title.toLowerCase()}">${c.label}${on ? `<span class="sort-arrow" aria-hidden="true">${sort.dir === "asc" ? "▲" : "▼"}</span>` : ""}</button></th>`;
   }).join("");
   const body = sortLeaderboard(rows, table, sort).map((t, i) => `<tr>${cols.map(c => {
-    if (c.key === "name") return `<td class="lb-name">${ranked ? `<span class="lb-rank">${i + 1}</span>` : ""}${escapeHtml(t.name)}</td>`;
+    // The name opens that player's figures over these matches (the player stats sheet).
+    if (c.key === "name"){
+      const me = isMyName(self, t.name);
+      return `<td class="lb-name${me ? " lb-me" : ""}">${ranked ? `<span class="lb-rank">${i + 1}</span>` : ""}<button type="button" data-action="open-player-stats" data-name="${escapeHtml(t.name)}" class="name-btn lb-name-btn">${escapeHtml(t.name)}</button>${me ? `<span class="you-tag">You</span>` : ""}</td>`;
+    }
     const v = c.text ? c.text(t) : c.value(t);
     return `<td class="${c.key === sort.key ? "on" : ""}">${c.strong ? `<b>${v}</b>` : v}</td>`;
   }).join("")}</tr>`).join("");
@@ -162,10 +167,15 @@ function renderRecords(matches){
 
 /* `opts.points`: the points preset `totals` were counted with -- null
    (Premier) leaves the MVP table out; `opts.where` says where it's changed.
-   `opts.matches` (the matches `totals` came from) adds the Records tab. */
+   `opts.matches` (the matches `totals` came from) adds the Records tab, and
+   lets a name be tapped for that player's figures over them; `opts.title`
+   names those matches on that sheet ("Summer Cup", "KICC"). The signed-in
+   player's own rows are tagged You; their full figures have a place of their
+   own (a tournament's My stats tab, renderMyStatsTab). */
 function renderLeaderboards(totals, opts){
   const o = opts || {};
   const points = o.points || null;
+  statsScope = { matches: o.matches || [], points, title: o.title || "" };
   const tabs = [...(points ? [["mvp", "MVP"]] : []), ["bat", "Batting"], ["bowl", "Bowling"], ["field", "Fielding"], ...(o.matches ? [["records", "Records"]] : [])];
   const tab = tabs.some(([k]) => k === ui.statsTab) ? ui.statsTab : tabs[0][0];
   if (tab === "records") return `${tabsHtml("stats-tab", tabs, tab, "stats-tabs")}${renderRecords(o.matches)}`;
@@ -188,7 +198,119 @@ function renderStatsScreen(){
     <div class="screen stats">
       ${renderBackBar("Home", "home")}
       <h1>📊 All-time stats</h1>
-      ${matches.length ? renderLeaderboards(aggregatePlayerStats(matches, points), { points, where: "Presets → MVP points", matches }) : `<p class="hint">Play and finish a match to see stats here.</p>`}
+      ${matches.length ? renderLeaderboards(aggregatePlayerStats(matches, points), { points, where: "Presets → MVP points", matches, title: "All-time" }) : `<p class="hint">Play and finish a match to see stats here.</p>`}
     </div>
   `;
+}
+
+/* --- one player's figures over the matches a screen shows ---
+   Tap a name in any leaderboard (a tournament's Stats, a club's, Premier's,
+   the guest's) and this sheet shows that player over the same matches:
+   batting / bowling / fielding (careerStatsHtml, the profile's tiles), where
+   they rank for MVP points, runs and wickets (playerRanks, ENGINE), and every
+   match they played, each opening its scorecard. ui.playerStats = { view,
+   name, names, self, matches, points, title } -- a snapshot taken when it's
+   opened, belonging to the view it was opened on (like ui.matchDetail, which
+   can open on top of it). For the signed-in player's own claimed profile
+   (myPlayerSelf) every name it has played under counts, and the sheet links
+   to the full profile. A tournament shows the same for that player in a tab
+   of its own, My stats (renderMyStatsTab). */
+let statsScope = null;   // { matches, points, title } of the leaderboards on screen
+
+/* The signed-in viewer's claimed profile: { id, name, names } (names = the
+   name plus any merged into it, the spellings matches may hold), or null.
+   ui.identity once loaded; until then (and offline) the copy kept in the
+   read cache by fetchMyPlayerIdentity. */
+function myPlayerSelf(){
+  if (!session || !supabaseClient) return null;
+  const cache = cacheFor();
+  const me = ui.identity ? ui.identity.myPlayer : cache && cache.myPlayer;
+  if (!me || !me.id || !me.name) return null;
+  return { id: me.id, name: me.name, names: [me.name, ...(me.aliases || [])] };
+}
+function isMyName(self, name){
+  const key = (name || "").trim().toLowerCase();
+  return !!self && !!key && self.names.some(n => n.toLowerCase() === key);
+}
+
+function openPlayerStats(name, scope){
+  const sc = scope || statsScope;
+  if (!sc || !name) return;
+  const self = myPlayerSelf();
+  const mine = isMyName(self, name);
+  ui.playerStats = { view: state.view, name: mine ? self.name : name, names: mine ? self.names : [name], self: mine ? self : null,
+    matches: sc.matches, points: sc.points, title: sc.title };
+  render();
+}
+function closePlayerStats(){
+  ui.playerStats = null;
+  render();
+}
+
+/* Where a player stands: "MVP #2 of 14", "Runs #1 of 12", "Wickets #5 of 9". */
+function playerRankPills(ranks, withPoints){
+  const pill = (r, label) => r ? `<span class="tag-pill">${label} #${r.place} of ${r.of}</span>` : "";
+  return (withPoints ? pill(ranks.points, "MVP") : "") + pill(ranks.runs, "Runs") + pill(ranks.wickets, "Wickets");
+}
+
+/* Has the signed-in player (their claimed profile, any name merged into it)
+   played in these matches? Then a tournament gets its My stats tab. */
+function myStatsIn(matches){
+  const self = myPlayerSelf();
+  return !!(self && matches && matches.length && playerMatchLines(self.names, matches).length);
+}
+
+/* One player's figures over a set of matches: { name, names, self, matches,
+   points, title } (ui.playerStats, or the signed-in player's for My stats).
+   Who they played for, any merged names counted, the profile's tiles with
+   where they rank, and match by match. */
+function playerStatsBodyHtml(ps){
+  const career = playerCareer(ps.names, ps.matches, ps.points);
+  const lines = playerMatchLines(ps.names, ps.matches);
+  const ranks = playerRanks(ps.names, aggregatePlayerStats(ps.matches, ps.points));
+  // Who they played for, when it's one side or two (a club's many practice-day sides would only be noise).
+  const sides = [...new Set(lines.filter(l => l.team).map(l => teamName(l.match, l.team)))];
+  const where = [ps.title, sides.length && sides.length <= 2 ? `for ${sides.join(" and ")}` : ""].filter(Boolean).join(" · ");
+  const also = ps.self ? ps.self.names.filter(n => n !== ps.self.name && lines.some(l => playerMatchLines([n], [l.match]).length)) : [];
+  return `
+    ${where ? `<p class="muted player-stats-where">${escapeHtml(where)}</p>` : ""}
+    ${also.length ? `<p class="hint">Also counted: played as ${also.map(escapeHtml).join(", ")}.</p>` : ""}
+    ${career ? careerStatsHtml(career, !!ps.points, playerRankPills(ranks, !!ps.points)) : `<p class="hint">No figures for this player here yet.</p>`}
+    ${lines.length ? `<h3 class="section-label">Match by match</h3><div class="fixtures">${lines.map(l => playerMatchRowHtml(l, matchDateText(l.match))).join("")}</div>` : ""}`;
+}
+function myProfileButtonHtml(title, cls){
+  return `<button type="button" data-action="open-my-profile-from-stats" data-title="${escapeHtml(title || "")}" class="ghost${cls ? " " + cls : ""}">My profile</button>`;
+}
+
+/* A tournament's My stats tab (club page and shared link): the signed-in
+   player's own figures in it -- the same as their sheet, on a tab of its own
+   so the tournament's other tabs stay about everyone. */
+function renderMyStatsTab(matches, points, title){
+  const self = myPlayerSelf();
+  if (!self) return "";
+  statsScope = { matches, points, title: title || "" };
+  return `
+    <div class="my-stats-tab">
+      <h2 class="my-stats-head">${escapeHtml(self.name)} <span class="you-tag">You</span></h2>
+      ${playerStatsBodyHtml({ name: self.name, names: self.names, self, matches, points, title })}
+      ${myProfileButtonHtml(title, "my-stats-profile")}
+    </div>`;
+}
+
+function renderPlayerStatsModal(){
+  const ps = ui.playerStats;
+  return `
+    <div class="modal-backdrop">
+      <div class="modal player-stats-modal" data-keep-scroll="player-stats" role="dialog" aria-modal="true" aria-label="${escapeHtml(ps.name)}: stats">
+        <div class="wicket-modal-head">
+          <h2>${escapeHtml(ps.name)}${ps.self ? ` <span class="you-tag">You</span>` : ""}</h2>
+          <button type="button" data-action="close-player-stats" class="sheet-close" aria-label="Close">✕</button>
+        </div>
+        ${playerStatsBodyHtml(ps)}
+        <div class="sheet-actions">
+          ${ps.self ? myProfileButtonHtml(ps.title) : ""}
+          <button type="button" data-action="close-player-stats" class="ghost">Close</button>
+        </div>
+      </div>
+    </div>`;
 }

@@ -64,7 +64,11 @@ final result. Beyond a single match, it also supports:
   auto-computed Man-of-the-Match (per match, overridable on the result
   screen) and MVP (per tournament). MVP points come from a **points
   preset** a guest or club can edit (built-ins: Club, Classic, Fantasy T20,
-  IPL MVP); Premier shows stats only.
+  IPL MVP); Premier shows stats only. Tap any player in a leaderboard for
+  their figures over those matches (batting, bowling, fielding, where they
+  rank, match by match). A signed-in player with a claimed profile gets a
+  **My stats** tab of their own on the tournaments they played in (the
+  shared link page too), and their own rows tagged **You**.
 - **Share & export** — save/share the scorecard as a PNG image, or
   export it as a PDF via the browser's print dialog. Both are
   dependency-free (no external libraries).

@@ -273,39 +273,19 @@ function renderPlayerProfile(){
   const isClub = pr.scope === "club";
   const back = isClub ? renderBackBar("Players", "clubPlayers")
     : pr.from === "account" ? renderBackBar("Account", "account")
+    : pr.from && pr.from.view ? renderBackBar(escapeHtml(pr.from.label), pr.from.view)
     : renderBackBar("Premier players", "premierPlayers");
   const d = pr.data;
-  const f1 = n => n == null ? "—" : n.toFixed(1);
-  const stat = (label, value) => `<div class="stat-tile"><span class="n stat-num">${value}</span><span class="stat-label">${label}</span></div>`;
   // Two separate tiers (club matches / Premier matches), never merged -- and
   // inside each, batting / bowling / fielding are separate sections too.
-  const grid = tiles => `<div class="stat-grid">${tiles.join("")}</div>`;
-  const hs = c => c.highScore ? `${c.highScore.runs}${c.highScore.out ? "" : "*"}` : "—";
   // MVP points only in a club-opened profile's club tier, counted with that
   // club's points preset: Premier uses no points, and a Premier-opened
   // profile's club tier mixes clubs whose points differ.
   const statsBlock = (title, career, emptyHint, note, showPoints) => {
     if (!career) return `<h3 class="section-label">${title}</h3><p class="hint">${emptyHint}</p>`;
-    const batting = career.innings > 0
-      ? grid([stat("Innings", career.innings), stat("Runs", career.runs), stat("Balls", career.balls),
-              stat("Highest", hs(career)), stat("Average", f1(career.average)), stat("Strike rate", f1(career.strikeRate)),
-              stat("Not outs", career.notOuts), stat("Ducks", career.ducks), stat("4s", career.fours),
-              stat("6s", career.sixes), stat("50s", career.fifties), stat("100s", career.hundreds)])
-      : `<p class="hint">Hasn't batted yet.</p>`;
-    const bowling = career.bowlInnings > 0
-      ? grid([stat("Innings", career.bowlInnings), stat("Overs", oversDisplay(career.legalBalls, 6)), stat("Maidens", career.maidens),
-              stat("Runs", career.runsConceded), stat("Wickets", career.wickets), stat("Best", career.best ? `${career.best.wickets}/${career.best.runs}` : "—"),
-              stat("Average", f1(career.bowlAverage)), stat("Economy", f1(career.economy)), stat("Strike rate", f1(career.bowlStrikeRate))])
-      : `<p class="hint">Hasn't bowled yet.</p>`;
-    const fielding = career.fieldDismissals > 0
-      ? grid([stat("Catches", career.catches), stat("Stumpings", career.stumpings), stat("Run-outs", career.runouts), stat("Dismissals", career.fieldDismissals)])
-      : `<p class="hint">No catches, stumpings or run-outs yet.</p>`;
     return `
       <h3 class="section-label">${title}</h3>
-      <div class="tier-summary"><span class="tag-pill">${career.matches} match${career.matches === 1 ? "" : "es"}</span>${showPoints ? `<span class="tag-pill gold">${pointsNum(career.points)} MVP pts</span>` : ""}</div>
-      <h4 class="stat-sub">Batting</h4>${batting}
-      <h4 class="stat-sub">Bowling</h4>${bowling}
-      <h4 class="stat-sub">Fielding</h4>${fielding}
+      ${careerStatsHtml(career, showPoints)}
       ${note ? `<p class="hint">${note}</p>` : ""}
     `;
   };
@@ -398,6 +378,57 @@ function renderPlayerProfile(){
   `;
 }
 
+/* One career's figures (playerCareer): a matches / MVP points line (plus
+   `pills`, more of the same), then Batting, Bowling and Fielding, each as its
+   own tiles or a line saying they haven't yet. Shared by a profile's Stats
+   tab and the player stats sheet (stats.js). */
+function careerStatsHtml(career, showPoints, pills){
+  const f1 = n => n == null ? "—" : n.toFixed(1);
+  const stat = (label, value) => `<div class="stat-tile"><span class="n stat-num">${value}</span><span class="stat-label">${label}</span></div>`;
+  const grid = tiles => `<div class="stat-grid">${tiles.join("")}</div>`;
+  const hs = c => c.highScore ? `${c.highScore.runs}${c.highScore.out ? "" : "*"}` : "—";
+  const batting = career.innings > 0
+    ? grid([stat("Innings", career.innings), stat("Runs", career.runs), stat("Balls", career.balls),
+            stat("Highest", hs(career)), stat("Average", f1(career.average)), stat("Strike rate", f1(career.strikeRate)),
+            stat("Not outs", career.notOuts), stat("Ducks", career.ducks), stat("4s", career.fours),
+            stat("6s", career.sixes), stat("50s", career.fifties), stat("100s", career.hundreds)])
+    : `<p class="hint">Hasn't batted yet.</p>`;
+  const bowling = career.bowlInnings > 0
+    ? grid([stat("Innings", career.bowlInnings), stat("Overs", oversDisplay(career.legalBalls, 6)), stat("Maidens", career.maidens),
+            stat("Runs", career.runsConceded), stat("Wickets", career.wickets), stat("Best", career.best ? `${career.best.wickets}/${career.best.runs}` : "—"),
+            stat("Average", f1(career.bowlAverage)), stat("Economy", f1(career.economy)), stat("Strike rate", f1(career.bowlStrikeRate))])
+    : `<p class="hint">Hasn't bowled yet.</p>`;
+  const fielding = career.fieldDismissals > 0
+    ? grid([stat("Catches", career.catches), stat("Stumpings", career.stumpings), stat("Run-outs", career.runouts), stat("Dismissals", career.fieldDismissals)])
+    : `<p class="hint">No catches, stumpings or run-outs yet.</p>`;
+  return `
+    <div class="tier-summary"><span class="tag-pill">${career.matches} match${career.matches === 1 ? "" : "es"}</span>${showPoints ? `<span class="tag-pill gold">${pointsNum(career.points)} MVP pts</span>` : ""}${pills || ""}</div>
+    <h4 class="stat-sub">Batting</h4>${batting}
+    <h4 class="stat-sub">Bowling</h4>${bowling}
+    <h4 class="stat-sub">Fielding</h4>${fielding}`;
+}
+
+/* One match of playerMatchLines as a row that opens its scorecard: the
+   teams, the result, the player's own line ("For Lions · 42 (28) · 1/14
+   (2.0)") and `where` (club or Premier, the date). */
+function playerMatchRowHtml(l, where){
+  const m = l.match;
+  const mine = playerMatchLineText(l);
+  return `
+    <button type="button" data-action="open-match-detail" data-id="${escapeHtml(m.id || "")}" class="fixture-row fixture-open">
+      <span class="fixture-main">
+        <b>${escapeHtml(m.teamA)} v ${escapeHtml(m.teamB)}</b>
+        <span class="fixture-result">${escapeHtml(m.result || "")}</span>
+        ${mine ? `<span class="profile-match-line">${l.team ? `For ${escapeHtml(teamName(m, l.team))} · ` : ""}${escapeHtml(mine)}</span>` : ""}
+        ${where ? `<span class="muted profile-match-where">${escapeHtml(where)}</span>` : ""}
+      </span>
+      <span class="fixture-meta"><span class="chevron">›</span></span>
+    </button>`;
+}
+function matchDateText(m){
+  return m.completedAt ? new Date(m.completedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
+}
+
 /* A profile's Matches tab: every match the Stats tab counts (the same club
    and Premier matches), newest first, each with the player's own line --
    tap one for its scorecard. View only: a scorecard opened from a profile
@@ -411,18 +442,7 @@ function renderProfileMatches(pr, names, clubMatches, premierMatches){
   return `<div class="fixtures">${lines.map(l => {
     const m = l.match;
     const premier = premierMatches.includes(m);
-    const where = [premier ? "Premier" : clubName(m), m.completedAt ? new Date(m.completedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : ""].filter(Boolean).join(" · ");
-    const mine = playerMatchLineText(l);
-    return `
-    <button type="button" data-action="open-match-detail" data-id="${escapeHtml(m.id || "")}" class="fixture-row fixture-open">
-      <span class="fixture-main">
-        <b>${escapeHtml(m.teamA)} v ${escapeHtml(m.teamB)}</b>
-        <span class="fixture-result">${escapeHtml(m.result || "")}</span>
-        ${mine ? `<span class="profile-match-line">${l.team ? `For ${escapeHtml(teamName(m, l.team))} · ` : ""}${escapeHtml(mine)}</span>` : ""}
-        ${where ? `<span class="muted profile-match-where">${escapeHtml(where)}</span>` : ""}
-      </span>
-      <span class="fixture-meta"><span class="chevron">›</span></span>
-    </button>`;
+    return playerMatchRowHtml(l, [premier ? "Premier" : clubName(m), matchDateText(m)].filter(Boolean).join(" · "));
   }).join("")}</div>`;
 }
 
@@ -609,7 +629,7 @@ function renderClubStats(){
     const points = clubPointsPreset(club.id);
     // The full match list lives here (Home shows the latest 3).
     return matches.length
-      ? renderLeaderboards(aggregatePlayerStats(matches, points), { points, where: "the club's Presets", matches })
+      ? renderLeaderboards(aggregatePlayerStats(matches, points), { points, where: "the club's Presets", matches, title: club.name || currentClubName() })
         + renderRecentMatches("Matches", recentMatchesFor(matches, matches.length))
       : `<p class="hint">Play and finish a club match to see stats here.</p>`;
   });

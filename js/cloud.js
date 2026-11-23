@@ -208,7 +208,7 @@ function describeOp(op){
 }
 
 let outbox = DB.load(OUTBOX_KEY) || [];         // [{ id, kind, args, userId, createdAt, attempts, failed, error }]
-let cloudCache = DB.load(CLOUD_CACHE_KEY) || null; // { userId, profile, isAdmin, myClubs, clubs: {id: snapshot}, tournaments: {id: snapshot} }
+let cloudCache = DB.load(CLOUD_CACHE_KEY) || null; // { userId, profile, isAdmin, myClubs, clubs: {id: snapshot}, tournaments: {id: snapshot}, myPlayer }
 let syncState = { running: false, lastSyncAt: null };
 function saveOutbox(){ DB.save(OUTBOX_KEY, outbox); }
 function saveCloudCache(){ DB.save(CLOUD_CACHE_KEY, cloudCache); }
@@ -1317,6 +1317,9 @@ async function fetchMyPlayerIdentity(){
   pendingMerges.forEach(m => { m.name = nameOf(m.from_player_id); });
   if (myPlayer) myPlayer.aliases = aliases;
   ui.identity = { myPlayer, pendingClaim, pendingMerges };
+  // Kept for offline: a player's "Your stats" on a cached tournament (myPlayerSelf).
+  const cache = !mine.error && cacheFor();
+  if (cache){ cache.myPlayer = myPlayer ? { id: myPlayer.id, name: myPlayer.name, aliases } : null; saveCloudCache(); }
 }
 
 async function fetchPlayerAliases(playerId){

@@ -11,6 +11,18 @@ function tabsHtml(action, tabs, active, cls){
   return `<div class="tab-row${cls ? " " + cls : ""}" role="tablist">${tabs.map(([id, label]) =>
     `<button type="button" data-action="${action}" data-tab="${id}" role="tab" aria-selected="${id === active}" class="tab-btn ${id === active ? "active" : ""}">${label}</button>`).join("")}</div>`;
 }
+/* A row of tabs that scrolls sideways (.main-tabs.many) starts at its left
+   edge after every render; scroll it just enough to show the tab that's on
+   (a tournament's My stats is last). Called at the end of render(). */
+function showActiveTabs(){
+  document.querySelectorAll("#app .tab-row.main-tabs.many").forEach(row => {
+    const on = row.querySelector(".tab-btn.active");
+    if (!on) return;
+    const r = on.getBoundingClientRect(), box = row.getBoundingClientRect();
+    if (r.right > box.right) row.scrollLeft += r.right - box.right;
+    else if (r.left < box.left) row.scrollLeft -= box.left - r.left;
+  });
+}
 
 /* --- THEME: a user's chosen accent/accent-2 hex (state.branding — no
    longer editable in the UI, but still honored for any pre-existing

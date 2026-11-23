@@ -3593,6 +3593,117 @@ async function main(){
     win.eval(`state.match = null; state.snapshots = []; state.matchHistory = {}; ui = defaultUi(); save(); render();`);
   }
 
+  // --- a player's performance over a screen's matches: tap a name in a leaderboard; a tournament's My stats tab ---
+  {
+    const totals = [
+      { name: "Kusal", points: 10, runs: 30, innings: 2, wickets: 0, bowlInnings: 0 },
+      { name: "Babar", points: 20, runs: 10, innings: 1, wickets: 3, bowlInnings: 2 },
+      { name: "kusal mendis", points: 15, runs: 5, innings: 1, wickets: 1, bowlInnings: 1 },
+      { name: "Shaheen", points: 4, runs: 0, innings: 0, wickets: 1, bowlInnings: 2 }];
+    let r = win.playerRanks(["Kusal Mendis", "Kusal"], totals);
+    assert(JSON.stringify(r) === JSON.stringify({ points: { place: 1, of: 3 }, runs: { place: 1, of: 2 }, wickets: { place: 2, of: 3 } }),
+      "playerRanks folds every name (any case): 25 pts 1st of 3, 35 runs 1st of 2 batters, 1 wicket 2nd of 3 bowlers");
+    r = win.playerRanks("Shaheen", totals);
+    assert(r.points.place === 4 && r.points.of === 4 && r.runs === null && r.wickets.place === 2 && r.wickets.of === 3,
+      "last for points; one wicket, level with Kusal Mendis's, shares 2nd place; no runs, no runs rank");
+    assert(JSON.stringify(win.playerRanks("Nobody", totals)) === JSON.stringify({ points: null, runs: null, wickets: null }), "someone not in the table has no ranks");
+
+    const doc = win.document;
+    const sheet = () => doc.querySelector("#modal-root .player-stats-modal");
+    win.eval(`
+      window.__prev = { client: supabaseClient, session, cache: cloudCache, fetchPlayerProfile, fetchPlayerAliases, fetchPlayerMatches, fetchMyPlayerIdentity };
+      { const mk = (id, opener, when) => {
+          const mm = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 1, playersPerSide: 11, battingFirst: "A" });
+          openInnings(currentInnings(mm), opener, "Pathum", "Shaheen"); mm.status = "live";
+          [4, 1, 1, 6, 0, 1].forEach(r => { recordBall(currentInnings(mm), { kind: "run", runs: r }); afterBall(mm); });
+          startSecondInnings(mm); openInnings(currentInnings(mm), "Babar", "Rizwan", "Wanindu"); mm.status = "live";
+          [1, 0, { kind: "wicket", wicketType: "caught", fielder: opener }, 1, 0, 0].forEach(r => { recordBall(currentInnings(mm), typeof r === "number" ? { kind: "run", runs: r } : r);
+            if (pendingBatsmanSlot(currentInnings(mm))) sendInBatter(currentInnings(mm), "Fakhar"); afterBall(mm); });
+          mm.id = id; mm.completedAt = when; mm.clubId = "c1"; mm.tournamentId = "t1";
+          return { id, data: JSON.parse(JSON.stringify(archivedCopy(mm))) }; };
+        // Kusal Mendis opens in one match, and plays as "Kusal" (a name merged into his profile) in the other.
+        window.__rows = [mk("pm1", "Kusal Mendis", 1000), mk("pm2", "Kusal", 2000)]; }
+      ui = defaultUi(); state.match = null; state.view = "publicTournament"; ui.publicTournamentId = "t1"; ui.myClubs = [];
+      ui.publicTournament = { id: "t1", name: "Summer Cup", clubName: "KICC", clubId: "c1", preset: { pointsForWin: 2 }, matches: __rows, points: DEFAULT_POINTS_PRESETS[0], loadedAt: Date.now() };
+      session = { user: { id: "u1" } }; supabaseClient = {};
+      ui.identity = { myPlayer: { id: "k1", name: "Kusal Mendis", aliases: ["Kusal"] }, pendingClaim: null, pendingMerges: [] };
+      render();`);
+    const tabIds = () => [...doc.querySelectorAll('#app [data-action="switch-tournament-tab"]')].map(b => b.dataset.tab).join();
+    assert(tabIds() === "overview,fixtures,stats,me" && doc.querySelector('#app [data-tab="me"]').textContent.trim() === "My stats"
+      && !doc.querySelector("#app .tab-row.main-tabs.many"), "a signed-in player who played in the tournament gets a My stats tab of their own, last (four tabs still share the width)");
+    assert(!doc.querySelector("#app .my-stats-tab") && !doc.querySelector("#app .you-tag"), "Overview stays about everyone: nothing personal on it");
+    win.eval(`ui.tournamentTab = "stats"; render();`);
+    const meRows = [...doc.querySelectorAll("#app td.lb-me")].map(td => td.querySelector(".lb-name-btn").textContent);
+    assert(!doc.querySelector("#app .my-stats-tab") && meRows.sort().join() === "Kusal,Kusal Mendis" && doc.querySelectorAll("#app td.lb-me .you-tag").length === 2,
+      "Stats: no personal section, just both of his names' rows tagged You");
+    doc.querySelector('#app [data-tab="me"]').click();
+    const tabEl = () => doc.querySelector("#app .my-stats-tab");
+    const runs = win.eval(`playerCareer(["Kusal Mendis", "Kusal"], ui.publicTournament.matches.map(r => r.data), DEFAULT_POINTS_PRESETS[0]).runs`);
+    assert(tabEl() && /Kusal Mendis/.test(tabEl().querySelector("h2").textContent) && tabEl().querySelector("h2 .you-tag") && /Summer Cup · for Lions/.test(tabEl().textContent)
+      && /Also counted: played as Kusal/.test(tabEl().textContent),
+      "My stats: his name tagged You, the tournament and his side, and the merged name it counted");
+    const runTile = [...tabEl().querySelectorAll(".stat-tile")].find(t => t.querySelector(".stat-label").textContent === "Runs");
+    assert(runTile && runTile.querySelector(".stat-num").textContent === String(runs) && /2 matches/.test(tabEl().textContent) && /MVP #\d+ of \d+/.test(tabEl().textContent)
+      && /Catches/.test(tabEl().textContent), `batting, bowling and fielding over both matches (${runs} runs), with where he ranks`);
+    const rows = tabEl().querySelectorAll('[data-action="open-match-detail"]');
+    assert(rows.length === 2 && rows[0].dataset.id === "pm2" && /For Lions/.test(rows[0].textContent) && tabEl().querySelector('[data-action="open-my-profile-from-stats"]'),
+      "match by match, newest first, each his own line; and a way to his full profile");
+    rows[0].click();
+    assert(doc.querySelector("#modal-root .scorecard-modal"), "a match opens its scorecard");
+    win.eval("closeTopOverlay()");
+    // His own name in the table opens the same figures as a sheet.
+    win.eval(`ui.tournamentTab = "stats"; render();`);
+    doc.querySelector('#app td.lb-me .lb-name-btn[data-name="Kusal Mendis"]').click();
+    assert(sheet() && sheet().querySelector("h2 .you-tag") && /Also counted: played as Kusal/.test(sheet().textContent) && sheet().querySelectorAll('[data-action="open-match-detail"]').length === 2,
+      "his own row's name opens his sheet, every name of his counted");
+    sheet().querySelectorAll('[data-action="open-match-detail"]')[0].click();
+    assert(doc.querySelector("#modal-root .scorecard-modal") && !sheet(), "a match opens its scorecard over the sheet");
+    win.eval("closeTopOverlay()");
+    assert(sheet() && !doc.querySelector("#modal-root .scorecard-modal"), "closing (or back) returns to the sheet");
+    win.eval("closeTopOverlay()");
+    win.eval(`fetchPlayerProfile = async () => ({ data: { id: "k1", name: "Kusal Mendis", claimed_by: "u1" } });
+      fetchPlayerAliases = async () => ["Kusal"]; fetchPlayerMatches = async () => ({ rows: [] }); fetchMyPlayerIdentity = async () => {}; ui.premier = { premierMatches: [] };
+      ui.tournamentTab = "me"; render();`);
+    tabEl().querySelector('[data-action="open-my-profile-from-stats"]').click();
+    const back = doc.querySelector("#app .back-bar");
+    assert(win.eval("state.view") === "playerProfile" && win.eval("ui.profile.id") === "k1" && back && /Summer Cup/.test(back.textContent) && back.dataset.view === "publicTournament",
+      "My profile opens his full profile, its back bar returning to the tournament");
+    await wait(10);
+    // (this test page's history is wherever earlier tests left it, so go to the bar's target directly)
+    win.eval(`goToView("publicTournament")`);
+    assert(win.eval("state.view") === "publicTournament" && tabEl(), "...and back on the tournament, on his My stats tab");
+
+    // Any name can be tapped: another player's sheet, no You and no profile link.
+    win.eval(`ui.tournamentTab = "stats"; render();`);
+    doc.querySelector('#app .lb-name-btn[data-name="Babar"]').click();
+    assert(sheet() && /Babar/.test(sheet().querySelector("h2").textContent) && !sheet().querySelector(".you-tag") && !sheet().querySelector('[data-action="open-my-profile-from-stats"]')
+      && sheet().querySelectorAll('[data-action="open-match-detail"]').length === 2 && /for Tigers/.test(sheet().textContent),
+      "another player's name opens their own figures in this tournament");
+    win.eval("closeTopOverlay()");
+    assert(!sheet(), "back closes it");
+
+    // Not signed in (or no claimed profile): no My stats tab (a chosen one falls back to Overview), no You -- names still open.
+    win.eval(`ui.tournamentTab = "me"; ui.identity = { myPlayer: null, pendingClaim: null, pendingMerges: [] }; render();`);
+    assert(tabIds() === "overview,fixtures,stats" && doc.querySelector('#app [data-tab="overview"].active') && !tabEl(), "without a claimed profile: no My stats tab, and it falls back to Overview");
+    win.eval(`ui.tournamentTab = "stats"; render();`);
+    assert(!doc.querySelector("#app td.lb-me") && doc.querySelector("#app .lb-name-btn"), "...no You row, names still tappable");
+    // A claimed profile that didn't play in it: no tab either.
+    win.eval(`ui.identity = { myPlayer: { id: "z1", name: "Someone Else", aliases: [] }, pendingClaim: null, pendingMerges: [] }; render();`);
+    assert(!tabIds().includes("me"), "a claimed player who didn't play in it gets no My stats tab");
+    // Offline before the identity loaded: the copy kept in the read cache.
+    win.eval(`cloudCache = null; cacheFor().myPlayer = { id: "k1", name: "Kusal Mendis", aliases: ["Kusal"] }; ui.identity = null; ui.identityLoading = true; render();`);
+    assert(tabIds().endsWith(",me"), "offline, the claimed profile kept in the read cache still gives My stats");
+
+    // The guest's own stats: the same sheet, nobody signed in.
+    win.eval(`supabaseClient = __prev.client; session = __prev.session; cloudCache = __prev.cache; ui = defaultUi();
+      state.matchHistory = {}; __rows.forEach(r => { const a = JSON.parse(JSON.stringify(r.data)); delete a.clubId; state.matchHistory[a.id] = a; });
+      state.view = "stats"; render();`);
+    doc.querySelector('#app .lb-name-btn[data-name="Pathum"]').click();
+    assert(sheet() && /All-time/.test(sheet().textContent) && sheet().querySelectorAll('[data-action="open-match-detail"]').length === 2, "guest Stats: a name opens that player's all-time figures");
+    win.eval(`fetchPlayerProfile = __prev.fetchPlayerProfile; fetchPlayerAliases = __prev.fetchPlayerAliases; fetchPlayerMatches = __prev.fetchPlayerMatches; fetchMyPlayerIdentity = __prev.fetchMyPlayerIdentity;
+      state.matchHistory = {}; ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }

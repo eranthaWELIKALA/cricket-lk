@@ -1443,6 +1443,30 @@ function playerMatchLineText(line){
   return parts.join(" · ");
 }
 
+/* Where one player stands among aggregatePlayerStats `totals` -- every
+   spelling in `nameOrNames` folded into one, like playerCareer: MVP points,
+   runs and wickets, each { place, of } (place = 1 + how many others have
+   more, so equal values share it; `of` counts the players in that table:
+   everyone for points, those who batted for runs, those who bowled for
+   wickets), or null where they have none. */
+function playerRanks(nameOrNames, totals){
+  const keys = new Set((Array.isArray(nameOrNames) ? nameOrNames : [nameOrNames])
+    .map(n => (n || "").trim().toLowerCase()).filter(Boolean));
+  const mine = totals.filter(t => keys.has(t.name.toLowerCase()));
+  const others = totals.filter(t => !keys.has(t.name.toLowerCase()));
+  const rank = (value, inTable) => {
+    const v = mine.reduce((sum, t) => sum + value(t), 0);
+    if (!(v > 0)) return null;
+    const pool = others.filter(inTable);
+    return { place: 1 + pool.filter(t => value(t) > v).length, of: pool.length + 1 };
+  };
+  return {
+    points: rank(t => t.points || 0, () => true),
+    runs: rank(t => t.runs, t => t.innings > 0),
+    wickets: rank(t => t.wickets, t => t.bowlInnings > 0)
+  };
+}
+
 /* One player's career line, folded from whatever matches the caller passes
    (a club's matches for a club profile, Premier matches for Premier) --
    matched by name, case-insensitive, since matches store names not ids.

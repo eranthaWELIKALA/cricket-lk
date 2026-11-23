@@ -532,7 +532,7 @@ function renderTournamentDashboard(){
           players: tm.playerIds.map(pid => state.players[pid]).filter(Boolean).map(pl => ({ name: pl.name })) })).join("")}</div>
 ` : ""}
       ${tab === "fixtures" ? (ended ? `${ENDED_NOTE}<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches)}` : renderTournamentFixtures(matches, teams)) : ""}
-      ${tab === "stats" ? renderTournamentStats(matches) : ""}
+      ${tab === "stats" ? renderTournamentStats(matches, t.name) : ""}
     </div>
   `;
 }
@@ -578,14 +578,14 @@ function renderTournamentFixtures(matches, teams){
     <h3 class="section-label">Completed matches</h3>${renderFixtureList(matches)}`;
 }
 
-function renderTournamentStats(matches){
+function renderTournamentStats(matches, title){
   const points = guestPointsPreset();
   const totals = aggregatePlayerStats(matches, points);
   if (!totals.length) return `<p class="hint">No stats yet.</p>`;
   const mvp = totals[0].points > 0 ? totals[0] : null;
   return `
     ${mvp ? `<div class="mvp-callout"><span class="mvp-label">Tournament MVP</span><span class="mvp-name">${escapeHtml(mvp.name)}</span><span class="mvp-points">${pointsNum(mvp.points)} pts</span></div>` : ""}
-    ${renderLeaderboards(totals, { points, where: "Presets → MVP points", matches })}
+    ${renderLeaderboards(totals, { points, where: "Presets → MVP points", matches, title })}
   `;
 }
 
