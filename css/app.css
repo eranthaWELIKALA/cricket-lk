@@ -1563,6 +1563,12 @@ button.chip.chip-add:hover, button.chip.chip-add:focus-visible{ outline:2px soli
 .ball-edit-kinds.fill-choices button{ padding:8px 12px; }
 .ball-edit-kinds.fill-choices button .sub{ display:block; font-size:.72rem; font-weight:600; color:var(--muted); margin-top:2px; }
 .edit-match-btn{ width:100%; margin-bottom:8px; font-weight:800; }
+/* Ball edit: who faced it (not a wicket, so not red) and who bowled the over. */
+.faced-picker .end-tile.active{ background:rgba(var(--accent-2-rgb),.16); border-color:var(--accent-2); }
+.faced-picker .end-tile.active .role{ color:var(--accent-2); }
+.faced-picker .end-tile{ height:auto; min-height:58px; padding:8px 12px; text-align:left; }
+.ball-edit-kinds.bowler-choices{ grid-template-columns:1fr 1fr; }
+.faced-picker .end-tile .n, .ball-edit-kinds.bowler-choices button{ max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 /* --- retiring a batter (retired hurt / not out): not a wicket, so not red --- */
 .extra-wicket-btn.retire-btn{ border-color:var(--line-strong); background:var(--panel-2); color:var(--text); }

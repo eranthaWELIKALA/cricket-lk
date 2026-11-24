@@ -3704,6 +3704,92 @@ async function main(){
       state.matchHistory = {}; ui = defaultUi(); state.view = "home"; save(); render();`);
   }
 
+  // --- a ball edit can say who faced it and who bowled its over ---
+  {
+    const doc = win.document;
+    // Over 1 (K1): Dilo 1, Sajith 2, Sajith 1, Dilo 0, Dilo 0, Dilo 1 -> Dilo on strike for over 2.
+    const start = () => {
+      const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A" });
+      const inn = currentInnings(m);
+      win.openInnings(inn, "Dilo", "Sajith", "K1"); m.status = "live";
+      const play = ev => { recordBall(inn, ev); afterBall(m); };
+      [1, 2, 1, 0, 0, 1].forEach(r => play({ kind: "run", runs: r }));
+      win.setBowler(inn, "K2");
+      return { m, inn, play };
+    };
+    const seqOf = (inn, n) => inn.log.filter(a => a.t === "ball")[n].ev.seq;
+
+    // Sajith really faced 1.1-1.3 (0, 6, out caught); the app had Dilo there, then
+    // gave Dilo's later runs to Sajith.
+    const { m, inn, play } = start();
+    play({ kind: "run", runs: 0 }); play({ kind: "run", runs: 6 }); play({ kind: "wicket", wicketType: "caught", fielder: "K1" });
+    win.sendInBatter(inn, "Nuwan");
+    play({ kind: "run", runs: 1 }); play({ kind: "run", runs: 4 }); play({ kind: "run", runs: 0 });
+    win.setBowler(inn, "K1"); play({ kind: "run", runs: 2 });
+    assert(inn.batting.stats.Dilo.runs === 8 && inn.batting.stats.Dilo.out && inn.batting.stats.Sajith.runs === 7, "(as scored: Dilo out for 8, Sajith 7 not out)");
+    let r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 6), ev: { kind: "run", runs: 0 }, swapEnds: true });
+    let ri = r.match && r.match.innings[0];
+    assert(ri && ri.batting.stats.Sajith.runs === 9 && ri.batting.stats.Sajith.balls === 5 && ri.batting.stats.Sajith.howOut === "c K1 b K2"
+      && ri.batting.stats.Dilo.runs === 6 && ri.batting.stats.Dilo.balls === 6 && !ri.batting.stats.Dilo.out
+      && ri.fallOfWickets[0].batsman === "Sajith" && ri.runs === inn.runs && ri.wickets === 1 && ri.striker === "Nuwan" && ri.nonStriker === "Dilo",
+      "the other batter faced it: from that ball on the two swap -- Sajith faced the 0 and the 6 and was caught, Dilo is not out with the runs after it");
+    assert(r.notes.some(t => /^From ball 1\.1 on, Sajith and Dilo swap places/.test(t)) && !r.notes.some(t => /another bowler/.test(t)), "...and a note says so");
+    assert(win.swapEndsSpan(inn.log, seqOf(inn, 0)).until === "end" && win.swapEndsSpan(inn.log, seqOf(inn, 9)) && !win.swapEndsSpan(inn.log, 999),
+      "swapEndsSpan finds the ball, and covers the rest of the innings");
+
+    // The same with the over's bowler put right too (K3, not K2), in one change.
+    assert(!win.overBowlerLocked(m, 0, seqOf(inn, 6)) && /two overs in a row/.test(win.overBowlerError(m, 0, seqOf(inn, 6), "K1"))
+      && /already plays for Lions/.test(win.overBowlerError(m, 0, seqOf(inn, 6), "Nuwan")) && win.overBowlerError(m, 0, seqOf(inn, 6), "K2") === null,
+      "an over's bowler: not someone who bowled the over before or after it, nor a batter");
+    r = win.replayMatch(m, { inn: 0, seq: seqOf(inn, 6), ev: { kind: "run", runs: 0 }, swapEnds: true, bowler: "K3" });
+    ri = r.match && r.match.innings[0];
+    assert(ri && !ri.bowling.stats.K2 && ri.bowling.stats.K3.legalBalls === 6 && ri.bowling.stats.K3.runs === 11 && ri.bowling.stats.K3.wickets === 1
+      && ri.batting.stats.Sajith.howOut === "c K1 b K3" && ri.overs[1].bowler === "K3" && ri.bowling.stats.K1.legalBalls === 7,
+      "...and another bowler for that over: the over's figures and wicket move to K3");
+    assert(r.notes.includes("Over 2 is now K3's, not K2's.") && !r.notes.some(t => /another bowler's over/.test(t)), "...said once, not as balls moving between overs");
+
+    // Noticed mid-over and swapped by hand: the fix stops there.
+    const s2 = start();
+    s2.play({ kind: "run", runs: 0 }); s2.play({ kind: "run", runs: 0 });
+    win.swapStrikeByHand(s2.inn);
+    s2.play({ kind: "run", runs: 4 });
+    const span = win.swapEndsSpan(s2.inn.log, seqOf(s2.inn, 6));
+    assert(span.until === "swap" && span.last === seqOf(s2.inn, 7), "a strike swap by hand while the same two are in ends the swap");
+    r = win.replayMatch(s2.m, { inn: 0, seq: seqOf(s2.inn, 6), ev: { kind: "run", runs: 0 }, swapEnds: true });
+    ri = r.match && r.match.innings[0];
+    assert(ri && ri.batting.stats.Sajith.balls === 5 && ri.batting.stats.Sajith.runs === 7 && ri.batting.stats.Dilo.balls === 4 && ri.batting.stats.Dilo.runs === 2
+      && r.notes.some(t => /^From ball 1\.1 to 1\.2, .*swapped back by hand/.test(t)), "...so Sajith faced 1.1-1.3 and the balls after the swap stay as they were");
+
+    // The sheet: Who faced it? + Over 2 bowled by, previewed, saved, undone.
+    win.state.match = JSON.parse(JSON.stringify(m)); win.state.snapshots = [];
+    win.eval(`ui = defaultUi(); state.match.squads = { A: ["Dilo", "Sajith", "Nuwan", "A4"], B: ["K1", "K2", "K3", "K4"] }; render();`);
+    win.openBallEdit(0, seqOf(inn, 6), "1.1");
+    const sheet = () => doc.querySelector("#modal-root .ball-edit-modal");
+    const tileFor = (field, value) => sheet().querySelector(`[data-action="ball-edit-set"][data-field="${field}"][data-value="${value}"]`);
+    assert(tileFor("faced", "striker").classList.contains("active") && /Dilo/.test(tileFor("faced", "striker").textContent) && /Sajith/.test(tileFor("faced", "nonStriker").textContent),
+      "the edit sheet asks who faced it: the batter recorded on strike, or the one at the other end");
+    assert(/Over 2 bowled by/.test(sheet().textContent) && tileFor("bowler", "K2").classList.contains("active") && !tileFor("bowler", "K1") && !tileFor("bowler", "K3") && tileFor("bowlerOther", "1"),
+      "...and who bowled the over: its bowler, this innings' others who could have (not K1, who bowled either side of it), or someone else");
+    tileFor("faced", "nonStriker").click();
+    assert(/swap places/.test(sheet().querySelector(".ball-edit-context").textContent) && /Sajith/.test(sheet().querySelector(".ball-edit-context").textContent)
+      && /9 \(5\) c K1 b K2/.test(sheet().querySelector(".ball-edit-context").textContent), "picking the other batter previews it: the note and each batter's new line");
+    tileFor("bowlerOther", "1").click();
+    const opts = [...sheet().querySelectorAll('.combo-opt')].map(o => o.dataset.name).join();
+    assert(opts === "K3,K4", "Someone else: a box listing the rest of the bowling side (" + opts + ")");
+    doc.querySelector('#ball-edit-form input[name="bowlerName"]').value = "K4";
+    doc.getElementById("ball-edit-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(/Over 2 is now K4's/.test(doc.querySelector("#confirm-root").textContent) && /Sajith/.test(doc.querySelector("#confirm-root").textContent), "Review asks first, with the bowler typed in");
+    doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    const li = currentInnings(win.state.match);
+    assert(li.batting.stats.Sajith.howOut === "c K1 b K4" && !li.batting.stats.Dilo.out && li.bowling.stats.K4.wickets === 1 && !win.eval("ui.ballEdit"), "saved: the scorecard follows");
+    win.eval("handleUndo()");
+    assert(currentInnings(win.state.match).batting.stats.Dilo.out, "Undo brings the old version back");
+    win.openBallEdit(0, seqOf(inn, 6), "1.1");
+    doc.getElementById("ball-edit-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(/Nothing has changed yet/.test(sheet().textContent), "with nothing changed, it still says so");
+    win.eval(`ui = defaultUi(); state.match = null; state.snapshots = []; save(); render();`);
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }

@@ -349,6 +349,33 @@ leave an innings short (`removalChoices().blocked`; "Just remove it" is then
 disabled and the over is picked). The form for an added ball reads who was
 where from a replay with a dot ball in its place (`ballEditSubject`).
 
+**Who faced it, who bowled it.** In edit mode (not "no names") the sheet also
+asks **Who faced it?** (the two batters the log has at the crease: "As
+recorded" / "Other end", `d.faced`) and **Over N bowled by** (the over's
+bowler, this innings' other bowlers `overBowlerError` allows, or **Someone
+else** → a search-select, `d.bowlerOther`/`bowlerTyped`). `ballEditPlayers`
+turns them into the change's `swapEnds: true` / `bowler: name`, which
+`replayMatch` applies to the log before the ball change (`applyPickChanges`,
+ENGINE, tested), so they combine with a new run value in one replay:
+- **`swapEnds`** is for batters at the wrong ends (the one who should have
+  faced the new over was at the other end). The app kept them where the laws
+  put them, so from that ball on everything it recorded for one — balls, a
+  wicket, a retirement, a return — was the other's: `swapEndsInLog` swaps the
+  two names in every later log entry, and "who faced each ball is pinned"
+  then puts the right one on strike. `swapEndsSpan` stops it at a hand swap
+  (⇅) while those two are still in together (the scorer put it right there)
+  or at a score step (typed from the game itself). It works on names, not
+  ends: don't turn it into a strike swap, which the pin would just undo.
+- **`bowler`** moves that one over (`ballSpell`: its `bowlerSpells` entry) with
+  `renameBowlerSpells`, the log rewrite Change a player's bowler path uses too
+  (`replacePick`; `bowlerOversError` is its shared check: side, two overs in a
+  row; `overBowlerLocked`: a bowler from `logBase` or a catch-up isn't
+  changeable). `ballShiftNotes` leaves those balls out of "now count in
+  another bowler's over" (`rebowled`).
+The preview and review list each batter's / bowler's line before → after
+(`playerChangeLines`) when either is changed, and the notes say how far the
+swap went. A typed bowler is registered on save (`registerMatchPlayer`).
+
 **Reopening an innings & Undo after it ends.** An innings ended by hand
 (`completeReason: "closed"` — End innings, the pick sheets' button, finish
 match, a score set by hand) can be taken back: `reopenInnings(match, idx)`

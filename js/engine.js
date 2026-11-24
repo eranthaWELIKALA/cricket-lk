@@ -616,7 +616,10 @@ function replayInnings(inn, actions, supply, anonymous){
 }
 
 /* The match with one ball changed: change = { inn: index, seq, ev } (ev =
-   the new recordBall event; null removes the ball). Later innings are run
+   the new recordBall event; null removes the ball). An edited ball can also
+   say who faced it and who bowled its over: `swapEnds: true` (the batters
+   were the other way round from this ball on, swapEndsSpan) and `bowler`
+   (the over was theirs). Later innings are run
    again too when the target moves. `supply` = { batters: [], bowlers: [] }:
    names for slots the log can't fill (see replayInnings' `need`). Returns
    { match, notes } -- a new object, the input isn't touched -- or { need }
@@ -636,11 +639,17 @@ function replayMatch(match, change, supply){
   let next = ballSeqMax(m.innings[first]);
   const plan = changes.map(c => c.insert ? Object.assign({}, c, { newSeq: ++next }) : c);
   const added = plan.filter(c => c.insert).map(c => c.newSeq);
+  let bowled = new Set();
   for (let idx = first; idx < m.innings.length; idx++){
     const inn = m.innings[idx];
     let actions = inn.log || [];
     if (idx === first){
-      actions = applyBallChanges(actions, plan);
+      // who faced / who bowled first (they find balls by their recorded place)
+      const picks = applyPickChanges(inn, actions, plan);
+      if (picks.error) return { error: picks.error };
+      notes.push(...picks.notes);
+      bowled = picks.bowled;
+      actions = applyBallChanges(picks.log, plan);
     } else {
       const target = m.innings[0].runs + 1;
       if (inn.target === target) break;
@@ -661,7 +670,7 @@ function replayMatch(match, change, supply){
     if (idx === first){
       const there = new Set(inningsBalls(res.inn).map(b => b.seq));
       if (added.some(q => !there.has(q))) return { error: "The innings is already over before that point, so a ball can't be added there." };
-      notes.push(...ballShiftNotes(inn, res.inn, !!m.anonymous), ...scoreGapNotes(inn, res.inn));
+      notes.push(...ballShiftNotes(inn, res.inn, !!m.anonymous, bowled), ...scoreGapNotes(inn, res.inn));
     }
     m.innings[idx] = res.inn;
     notes.push(...res.notes);
@@ -708,7 +717,7 @@ function ballSeqMax(inn){
    that now have another number ("3.5 is now 3.4") and balls that now count
    in another bowler's over. A legal ball added or taken out moves every
    later ball until another change moves them back. */
-function ballShiftNotes(oldInn, newInn, anonymous){
+function ballShiftNotes(oldInn, newInn, anonymous, rebowled){
   const now = new Map(inningsBalls(newInn).map(b => [b.seq, b]));
   const common = inningsBalls(oldInn).filter(b => now.has(b.seq));
   const moved = common.filter(b => now.get(b.seq).label !== b.label);
@@ -722,7 +731,8 @@ function ballShiftNotes(oldInn, newInn, anonymous){
   }
   if (!anonymous){
     const lc = n => (n || "").toLowerCase();
-    const switched = common.filter(b => b.bowler && now.get(b.seq).bowler && lc(b.bowler) !== lc(now.get(b.seq).bowler));
+    // (not the balls of an over given to another bowler on purpose: `rebowled`)
+    const switched = common.filter(b => b.bowler && now.get(b.seq).bowler && lc(b.bowler) !== lc(now.get(b.seq).bowler) && !(rebowled && rebowled.has(b.seq)));
     if (switched.length){
       const b = switched[0];
       notes.push(`${switched.length} ball${switched.length === 1 ? " now counts" : "s now count"} in another bowler's over (${b.label} was ${b.bowler}'s, now ${now.get(b.seq).bowler}'s).`);
@@ -2416,17 +2426,158 @@ function replacePickError(match, spec){
     return null;
   }
   if (!inn.bowling.order.includes(from)) return `${from} didn't bowl in this innings.`;
+  return bowlerOversError(match, inn, from, to, chosenSpells(inn, from, spec.overs));
+}
+// Why `spells` (bowlerSpells) of `from` can't be `to`'s instead, or null.
+function bowlerOversError(match, inn, from, to, spells){
   if (inn.logBase && inn.logBase.bowling.order.includes(from)) return `${from} bowled before this innings' balls were kept, so their overs can't be changed here.`;
   const conflict = playerSideConflict(match, to, inn.bowlingTeam);
   if (conflict) return conflict;
-  const spells = chosenSpells(inn, from, spec.overs);
   if (!spells.length) return "Pick at least one over.";
+  const key = to.toLowerCase();
   const keys = new Set(spells.map(sp => sp.key));
   const seq = overBowlerSequence(inn).map((n, k) => keys.has(k) ? to : n);
   for (let i = 1; i < seq.length; i++){
     if (seq[i] && seq[i - 1] && seq[i].toLowerCase() === key && seq[i - 1].toLowerCase() === key) return `${to} would bowl two overs in a row.`;
   }
   return null;
+}
+// The log entry that put `from` on for a spell (bowlerSpells): the last
+// bowler pick before its first ball. -1 when a score caught up or set by
+// hand (or another pick, or a ball) comes first: that over's bowler wasn't picked.
+function spellPickIndex(log, from, sp){
+  let j = (sp.seqs.length ? log.findIndex(a => a.t === "ball" && a.ev.seq === sp.seqs[0]) : log.length) - 1;
+  for (; j >= 0; j--){
+    const a = log[j];
+    if ((a.t === "bowl" && a.name === from) || (a.t === "open" && a.bowler === from)) return j;
+    if (a.t === "bowl" || a.t === "open" || a.t === "ball" || isScoreStep(a)) return -1;
+  }
+  return -1;
+}
+/* The log with `from`'s spells (bowlerSpells) bowled by `to` instead: the
+   pick before each one and its balls' `bowler`, plus a catch-up's figures
+   when every over of theirs moves (`every`). { log } (new entries, the input
+   isn't touched) or { error }. */
+function renameBowlerSpells(log, from, to, spells, every){
+  const sw = n => n === from ? to : n;
+  const picks = new Set(), balls = new Set();
+  for (const sp of spells){
+    sp.seqs.forEach(q => balls.add(q));
+    const j = spellPickIndex(log, from, sp);
+    if (j < 0) return { error: `Over ${sp.number}'s bowler came from a score caught up or set by hand, so it can't be changed here.` };
+    picks.add(j);
+  }
+  return { log: log.map((a, j) => {
+    if (picks.has(j)) return Object.assign({}, a, a.t === "open" ? { bowler: to } : { name: to });
+    if (a.t === "ball" && balls.has(a.ev.seq)) return Object.assign({}, a, { bowler: sw(a.bowler) });
+    if (every && a.t === "catchup"){
+      const d = a.data;
+      return Object.assign({}, a, { data: Object.assign({}, d, { bowlerNow: sw(d.bowlerNow), lastOver: sw(d.lastOver),
+        bowlers: (d.bowlers || []).map(b => b.name === from ? Object.assign({}, b, { name: to }) : b),
+        batters: (d.batters || []).map(b => b.bowler === from ? Object.assign({}, b, { bowler: to }) : b) }) });
+    }
+    return a;
+  }) };
+}
+
+/* --- who faced a ball, who bowled its over (the ball edit sheet) ---
+   The over ball `seq` was bowled in, as recorded: { name (its bowler), spell
+   (that over in bowlerSpells) }, or null. */
+function ballSpell(inn, seq){
+  const ctx = ballContext(inn, seq);
+  const name = ctx && ctx.over.bowler;
+  const spell = name ? bowlerSpells(inn, name).find(sp => sp.seqs.includes(seq)) : null;
+  return spell ? { name, spell } : null;
+}
+// Why ball `seq`'s over can't be given to another bowler at all, or null.
+function overBowlerLocked(match, idx, seq){
+  const inn = match && !match.resultOnly && !match.anonymous ? match.innings[idx] : null;
+  const sp = inn && inn.log ? ballSpell(inn, seq) : null;
+  if (!sp) return "This over's bowler can't be changed here.";
+  if (inn.logBase && inn.logBase.bowling.order.includes(sp.name)) return `${sp.name} bowled before this innings' balls were kept, so this over's bowler can't be changed here.`;
+  if (spellPickIndex(inn.log, sp.name, sp.spell) < 0) return `Over ${sp.spell.number}'s bowler came from a score caught up or set by hand, so it can't be changed here.`;
+  return null;
+}
+// Why ball `seq`'s over can't have been bowled by `to`, or null (also when
+// `to` is who bowled it already).
+function overBowlerError(match, idx, seq, to){
+  const locked = overBowlerLocked(match, idx, seq);
+  if (locked) return locked;
+  const inn = match.innings[idx], sp = ballSpell(inn, seq);
+  const name = unnamedTarget(match, to);
+  if (!name) return "Enter who bowled the over.";
+  if (isUnnamedPlayer(name)) return "Pick a real name.";
+  if (name.toLowerCase() === sp.name.toLowerCase()) return null;
+  return bowlerOversError(match, inn, sp.name, name, [sp.spell]);
+}
+
+/* The batters on ball `seq` were at each other's ends: the one recorded on
+   strike was really at the other end, from that ball on. Since the app kept
+   them where the laws put them, everything it recorded for one after that
+   -- their balls, a wicket, a retirement, coming back -- was the other's,
+   until the scorer put it right: a strike swap by hand while those two were
+   still in together, or a score typed in (that came from the game itself).
+   { a, b (striker, non-striker as recorded), from, to (log indexes, `to`
+   not included), until ("end" | "swap" | "score"), last (the last ball's id
+   it covers) }, or null when the ball hasn't two batters at the crease. */
+function swapEndsSpan(log, seq){
+  const from = log.findIndex(a => a.t === "ball" && a.ev.seq === seq);
+  const at = log[from];
+  if (from < 0 || !at.striker || !at.nonStriker) return null;
+  let together = true, to = log.length, until = "end", last = seq;
+  for (let j = from + 1; j < log.length; j++){
+    const a = log[j];
+    if (isScoreStep(a)){ to = j; until = "score"; break; }
+    if (a.t === "swap" && together){ to = j; until = "swap"; break; }
+    if (a.t === "bat" || a.t === "retire" || a.t === "alone") together = false;
+    if (a.t === "ball") last = a.ev.seq;
+  }
+  return { a: at.striker, b: at.nonStriker, from, to, until, last };
+}
+// The log with the two batters' names swapped over `span` (swapEndsSpan).
+// Each ball's recorded ends then put the right one on strike (replayInnings).
+function swapEndsInLog(log, span){
+  const sw = n => n === span.a ? span.b : n === span.b ? span.a : n;
+  return log.map((a, j) => {
+    if (j < span.from || j >= span.to) return a;
+    if (a.t === "ball") return Object.assign({}, a, { striker: sw(a.striker), nonStriker: sw(a.nonStriker) });
+    if (a.t === "bat" || a.t === "retire") return Object.assign({}, a, { name: sw(a.name) });
+    return a;
+  });
+}
+/* A ball edit's player changes, made in the log before it's replayed (see
+   replayMatch): `swapEnds` (swapEndsSpan) and `bowler` (that ball's over was
+   theirs). Only on a ball that's edited, not one added or removed.
+   { log, notes, bowled (ids of the balls whose bowler was changed on
+   purpose) } or { error }. */
+function applyPickChanges(inn, log, plan){
+  const notes = [], bowled = new Set();
+  const label = q => { const b = ballContext(inn, q); return b ? b.label : "?"; };
+  for (const c of plan){
+    if (c.insert || !c.ev) continue;
+    if (c.bowler){
+      const sp = ballSpell(inn, c.seq);
+      if (!sp) return { error: "This over's bowler can't be changed here." };
+      if (c.bowler.toLowerCase() !== sp.name.toLowerCase()){
+        const r = renameBowlerSpells(log, sp.name, c.bowler, [sp.spell], bowlerSpells(inn, sp.name).length === 1);
+        if (r.error) return r;
+        log = r.log;
+        sp.spell.seqs.forEach(q => bowled.add(q));
+        notes.push(`Over ${sp.spell.number} is now ${c.bowler}'s, not ${sp.name}'s.`);
+      }
+    }
+    if (c.swapEnds){
+      const span = swapEndsSpan(log, c.seq);
+      if (!span) return { error: "There weren't two batters in on this ball." };
+      log = swapEndsInLog(log, span);
+      const where = span.until === "end" ? `From ball ${label(c.seq)} on`
+        : span.last === c.seq ? `On ball ${label(c.seq)}` : `From ball ${label(c.seq)} to ${label(span.last)}`;
+      const why = span.until === "swap" ? " (they were swapped back by hand after that)"
+        : span.until === "score" ? " (the score typed in after that says who was where)" : "";
+      notes.push(`${where}, ${span.b} and ${span.a} swap places: what was recorded for one is now the other's${why}.`);
+    }
+  }
+  return { log, notes, bowled };
 }
 // `from` -> `to` in every string and key that is exactly `from`.
 function renameExact(v, from, to){
@@ -2458,30 +2609,9 @@ function replacePick(match, spec){
     inn.logBase = renameExact(inn.logBase, from, to);
   } else {
     const spells = chosenSpells(inn, from, spec.overs);
-    const every = spells.length === bowlerSpells(inn, from).length;
-    const picks = new Set(), balls = new Set();
-    for (const sp of spells){
-      sp.seqs.forEach(q => balls.add(q));
-      // the entry that put them on for this over: the last bowler pick before its first ball
-      let j = (sp.seqs.length ? log.findIndex(a => a.t === "ball" && a.ev.seq === sp.seqs[0]) : log.length) - 1;
-      for (; j >= 0; j--){
-        const a = log[j];
-        if ((a.t === "bowl" && a.name === from) || (a.t === "open" && a.bowler === from)) break;
-        if (a.t === "bowl" || a.t === "open" || a.t === "ball" || isScoreStep(a)){ j = -1; break; }
-      }
-      if (j < 0) return { error: `Over ${sp.number}'s bowler came from a score caught up or set by hand, so it can't be changed here.` };
-      picks.add(j);
-    }
-    log.forEach((a, j) => {
-      if (picks.has(j)){ if (a.t === "open") a.bowler = to; else a.name = to; }
-      else if (a.t === "ball" && balls.has(a.ev.seq)) a.bowler = sw(a.bowler);
-      else if (every && a.t === "catchup"){
-        const d = a.data;
-        a.data = Object.assign({}, d, { bowlerNow: sw(d.bowlerNow), lastOver: sw(d.lastOver),
-          bowlers: (d.bowlers || []).map(b => b.name === from ? Object.assign({}, b, { name: to }) : b),
-          batters: (d.batters || []).map(b => b.bowler === from ? Object.assign({}, b, { bowler: to }) : b) });
-      }
-    });
+    const r = renameBowlerSpells(log, from, to, spells, spells.length === bowlerSpells(inn, from).length);
+    if (r.error) return { error: r.error };
+    log = r.log;
   }
   const res = replayInnings(inn, log, { batters: [], bowlers: [] }, !!m.anonymous);
   if (res.error) return { error: res.error };

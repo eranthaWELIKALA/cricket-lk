@@ -58,6 +58,10 @@ const { setup, BASE } = require('./cap-lib.js');
   await tap('#modal-root [data-action="scorecard-mode"][data-tab="balls"]'); await shot('17-ball-by-ball');
   // Tap a ball: change it, remove it, or add a missed ball next to it.
   await tap('#modal-root [data-action="edit-ball"][data-label="0.4"]'); await shot('17b-edit-ball');
+  // Further down the same sheet: who faced it, who bowled the over, add / remove.
+  await tap('#modal-root [data-action="ball-edit-set"][data-field="faced"][data-value="nonStriker"]');
+  await p.evaluate(() => { const m = document.querySelector('#modal-root .modal'); m.scrollTop = m.scrollHeight; });
+  await shot('17c-who-faced');
   await tap('#modal-root [data-action="close-ball-edit"]');
   await run('ui.liveScorecard=false; render();');
   // finish the innings quickly, then the break
