@@ -294,7 +294,9 @@ function renderPlayerProfile(){
   // -- before 019 -- only the clubs the viewer belongs to.
   const everyClub = pr.clubScope === "all";
   const clubLabel = isClub ? (currentClubName() || "club") : everyClub ? "all clubs" : "your clubs";
-  const names = [pr.name, ...(pr.aliases || [])];
+  // This player: matches that recorded their id, and (matches from before ids)
+  // their name or a former one, unless another player there has it too.
+  const names = statsWho(pr.id, [pr.name, ...(pr.aliases || [])]);
   const premierMatches = ui.premier ? ui.premier.premierMatches.map(m => m.data).filter(Boolean) : [];
   const clubBlock = statsBlock(
     `Club matches · ${escapeHtml(clubLabel)}`, playerCareer(names, clubMatches, isClub ? clubPointsPreset(ui.currentClubId) : null),
@@ -433,9 +435,9 @@ function matchDateText(m){
    and Premier matches), newest first, each with the player's own line --
    tap one for its scorecard. View only: a scorecard opened from a profile
    never offers Edit match (renderMatchDetailModal). */
-function renderProfileMatches(pr, names, clubMatches, premierMatches){
+function renderProfileMatches(pr, who, clubMatches, premierMatches){
   if (clubMatches === undefined || !ui.premier) return loadingHtml();
-  const lines = playerMatchLines(names, [...clubMatches, ...premierMatches]);
+  const lines = playerMatchLines(who, [...clubMatches, ...premierMatches]);
   if (!lines.length) return `<p class="hint">No matches for this player yet.</p>`;
   const clubName = m => (pr.clubNames && pr.clubNames[m.id])
     || (m.clubId && ((ui.myClubs || []).find(c => c.id === m.clubId) || {}).name) || "";
@@ -629,7 +631,7 @@ function renderClubStats(){
     const points = clubPointsPreset(club.id);
     // The full match list lives here (Home shows the latest 3).
     return matches.length
-      ? renderLeaderboards(aggregatePlayerStats(matches, points), { points, where: "the club's Presets", matches, title: club.name || currentClubName() })
+      ? renderLeaderboards(aggregatePlayerStats(matches, points, statsOpts()), { points, where: "the club's Presets", matches, title: club.name || currentClubName() })
         + renderRecentMatches("Matches", recentMatchesFor(matches, matches.length))
       : `<p class="hint">Play and finish a club match to see stats here.</p>`;
   });
@@ -692,7 +694,34 @@ function handleClubAddPlayerSubmit(e){
   ui.clubAddMessage = null;
   const submit = form.querySelector('button[type="submit"]');
   if (submit) submit.disabled = true;   // no double-add on a slow network
-  addPlayerToClub(ui.currentClubId, name, { phone, nic, details }).then(result => {
+  const clubId = ui.currentClubId;
+  const done = () => {
+    if (ui.premier) fetchPremierData();
+    render();
+    fetchClubDetail(clubId).then(render);
+  };
+  // "Which Kasun Perera?" (supabase/025): a name already on the platform is
+  // asked about first -- one of them joins the roster as they are, or someone
+  // new is added with the same name. Offline, or before 025: as before.
+  findPlayersNamed(name, clubId).then(rows => {
+    if (!rows || !rows.length){ addNew({}); return; }
+    if (submit) submit.disabled = false;
+    askIsThisHim(name, rows, { where: "on the platform", clubName: currentClubName(),
+      note: phone || nic || playerHasDetails(details) ? "The details you typed are saved only for someone new." : "",
+      onPick: pick => {
+        if (pick.someoneNew) return addNew({ someoneNew: true });
+        ui.playerModal = null;
+        if (pick.row && pick.row.on_roster){ ui.clubAddMessage = `${pick.row.name} is already in your club.`; render(); return; }
+        return addExistingPlayerToClub(clubId, pick.id, pick.row ? pick.row.name : name).then(res => {
+          if (res && res.error) return { error: res.error };
+          ui.clubAddMessage = `${pick.row ? pick.row.name : name} added to your club, as they are on the platform.`;
+          done();
+        });
+      } });
+  });
+  function addNew(extra){
+  if (submit) submit.disabled = true;
+  addPlayerToClub(clubId, name, Object.assign({ phone, nic, details }, extra)).then(result => {
     if (submit) submit.disabled = false;
     // "Added, but couldn't save ..." means the roster row exists already --
     // close the sheet (re-submitting would just hit "already on the platform").
@@ -707,10 +736,9 @@ function handleClubAddPlayerSubmit(e){
     } else ui.clubAddMessage = `${name} added.`;
     // A brand-new name also just became a global (Premier) player -- refresh
     // that list too if it was already loaded, so it doesn't show stale.
-    if (ui.premier) fetchPremierData();
-    render();
-    fetchClubDetail(ui.currentClubId).then(render);
+    done();
   });
+  }
 }
 
 function handleClubInviteAdminSubmit(e){

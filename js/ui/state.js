@@ -117,9 +117,11 @@ function load(){
       if (cloudCache) saveCloudCache();
       state.clubResultsReset202610 = state.clubResultsReset20261013 = true; save();
     }
+    if (!state.guestIdsLinked){ linkGuestMatchPlayerIds(state); state.guestIdsLinked = true; save(); }
     applyTheme(); return;
   }
   state = migrateLegacy() || defaultState();
+  linkGuestMatchPlayerIds(state); state.guestIdsLinked = true;
   state.clubDataReset202609 = true;   // nothing from before the wipe to purge on a fresh/legacy install
   state.clubResultsReset202610 = state.clubResultsReset20261013 = true;
   applyTheme();
@@ -132,6 +134,27 @@ function pushSnapshot(){
 }
 
 /* --- teams & players (persistent, swappable rosters; name autocomplete) --- */
+/* Once per device: guest matches scored before player ids get them stored
+   (match.playerIds) -- each name that's exactly one guest player on this
+   phone. Read-time linking (player-ids.js) already counts them; storing them
+   keeps them linked if that player is later renamed or removed, or a second
+   player of that name is added. Names it can't tell stay unlinked (they still
+   count by name). Club matches are linked by the database (supabase/025). */
+function linkGuestMatchPlayerIds(st){
+  const idx = playerNameIndex(Object.values(st.players || {}));
+  const link = m => {
+    if (!m || m.clubId || m.anonymous || !Array.isArray(m.innings)) return;
+    matchPlayerNames(m).forEach(label => {
+      if (isUnnamedPlayer(label) || matchPlayerId(m, label)) return;
+      const ids = idx[String(label).trim().toLowerCase()];
+      if (ids && ids.length === 1) setMatchPlayerId(label, ids[0], m);
+    });
+  };
+  Object.values(st.matchHistory || {}).forEach(link);
+  link(st.match);
+  (st.snapshots || []).forEach(link);
+}
+
 function findOrCreatePlayer(name){
   const trimmed = (name || "").trim();
   const existing = Object.values(state.players).find(p => p.name.toLowerCase() === trimmed.toLowerCase());
@@ -169,10 +192,11 @@ function matchPresetChoices(){
   return own.length || !loaded ? own : DEFAULT_MATCH_PRESETS;
 }
 
+// Labels: a second player of a name is "Name (2)" (labelledPlayers, player-ids.js).
 function suggestionPlayerNames(){
   const clubId = activeMatchClubId();
-  if (!clubId) return allPlayerNames();
-  return ui.club && ui.club.id === clubId ? ui.club.roster.map(p => p.name) : [];
+  if (!clubId) return labelledPlayers(Object.values(state.players)).map(p => p.label);
+  return ui.club && ui.club.id === clubId ? labelledPlayers(ui.club.roster).map(p => p.label) : [];
 }
 function suggestionTeamNames(){
   const clubId = activeSetupClubId();
@@ -186,28 +210,61 @@ function suggestionTeamNames(){
    the club roster + global players (best effort, like syncMatchToCloud; the
    match itself is safe locally either way) and into the cached roster so the
    suggestions update straight away. */
-function registerMatchPlayer(name, teamKey){
+/* Also records who the name is (match.playerIds, see player-ids.js): the
+   guest player, the roster player (a "Name (2)" label is the second player
+   of that name), a tournament visitor's "guest:" key, or -- when the add
+   comes back from the server, or with a temp id while offline -- the new
+   club or platform player. `pick`: the answer to "Is this him?"
+   (confirmUnlisted): { id, row } an existing platform player (who joins the
+   roster when it's the club's side), or { someoneNew: true }. */
+function registerMatchPlayer(name, teamKey, pick){
   const trimmed = (name || "").trim();
   if (!trimmed || isUnnamedPlayer(trimmed)) return;   // a placeholder isn't a player
-  if (state.match && isGuestInMatch(state.match, trimmed)) return; // guests are never stored
-  const clubId = activeMatchClubId();
-  if (!clubId){ findOrCreatePlayer(trimmed); return; }
   const m = state.match;
-  const onRoster = ui.club && ui.club.id === clubId ? ui.club.roster.find(p => p.name.toLowerCase() === trimmed.toLowerCase()) : null;
-  if (onRoster && onRoster.id) return;   // already a club player (lent to visitors or not) -- nothing to store
+  if (m && isGuestInMatch(m, trimmed)){ setMatchPlayerId(trimmed, guestPlayerKey(trimmed)); return; } // guests are never stored
+  if (!pick && matchPlayerId(m, trimmed)) return;   // known already (a squad player, or named before)
+  const clubId = activeMatchClubId();
+  if (!clubId){
+    const p = pick && pick.id ? state.players[pick.id] : playerByLabel(Object.values(state.players), trimmed) || findOrCreatePlayer(trimmed);
+    if (p) setMatchPlayerId(trimmed, p.id);
+    return;
+  }
+  const visitorSide = m.matchType === "friendly" && teamKey === "B";
+  if (pick && pick.id){
+    setMatchPlayerId(trimmed, pick.id);
+    // A platform player picked for the club's own side joins its roster.
+    const shown = (pick.row && pick.row.name) || trimmed;
+    if (!visitorSide && ui.club && ui.club.id === clubId && !ui.club.roster.some(p => p.id === pick.id)){
+      ui.club.roster.push({ id: pick.id, name: shown });
+      if (supabaseClient && session) addExistingPlayerToClub(clubId, pick.id, shown).catch(() => {});
+    }
+    return;
+  }
+  const someoneNew = !!(pick && pick.someoneNew);
+  const onRoster = !someoneNew && ui.club && ui.club.id === clubId ? playerByLabel(ui.club.roster, trimmed) : null;
+  if (onRoster && onRoster.id){ setMatchPlayerId(trimmed, onRoster.id); return; }   // already a club player (lent to visitors or not) -- nothing to store
   // A visiting tournament team's own people are guests: a name typed for that
   // side that isn't in its squad is never stored (a squad name that isn't a
   // guest was added as a club player in Switch players, so it joins below).
   if (m.matchType !== "friendly" && isVisitingSide(m, teamKey)
-      && !((m.squads && m.squads[teamKey]) || []).some(n => n.toLowerCase() === trimmed.toLowerCase())) return;
+      && !((m.squads && m.squads[teamKey]) || []).some(n => n.toLowerCase() === trimmed.toLowerCase())){
+    setMatchPlayerId(trimmed, guestPlayerKey(trimmed));
+    return;
+  }
   // A friendly's visiting side (team B) isn't the home club's people: they
   // still become global players, but stay off this club's roster.
-  const visitor = m.matchType === "friendly" && teamKey === "B";
-  if (!visitor && ui.club && ui.club.id === clubId && !onRoster){
-    ui.club.roster.push({ id: null, name: trimmed });
-  }
-  // Queued if offline (submitCloudOp) -- syncs with everything else.
-  if (supabaseClient && session) (visitor ? addGlobalPlayer(trimmed, clubId) : addPlayerToClub(clubId, trimmed)).catch(() => {});
+  const visitor = visitorSide;
+  const rosterEntry = !visitor && ui.club && ui.club.id === clubId && !onRoster ? { id: null, name: trimmed } : null;
+  if (rosterEntry) ui.club.roster.push(rosterEntry);
+  // Queued if offline (submitCloudOp) -- syncs with everything else. The id
+  // that comes back (a temp one while queued) is this name's in the match.
+  const extra = someoneNew ? { someoneNew: true } : undefined;
+  if (supabaseClient && session) (visitor ? addGlobalPlayer(trimmed, clubId, extra) : addPlayerToClub(clubId, trimmed, extra)).then(res => {
+    const id = res && res.id;
+    if (!id) return;
+    if (rosterEntry && !rosterEntry.id) rosterEntry.id = id;
+    if (state.match && state.match.clubId === clubId && matchPlayerNames(state.match).has(trimmed) && setMatchPlayerId(trimmed, id)) save();
+  }).catch(() => {});
 }
 
 function createTeam(name){
@@ -218,8 +275,23 @@ function createTeam(name){
 
 function deleteTeam(teamId){ delete state.teams[teamId]; }
 
-function addPlayerToTeam(teamId, name){
-  const player = findOrCreatePlayer(name);
+// A new guest player even when the name is taken: "someone new" (askIsThisHim).
+function createGuestPlayer(name){
+  const player = { id: genId("player"), name: (name || "").trim() };
+  state.players[player.id] = player;
+  return player;
+}
+// This phone's players called `name` (any case), as askIsThisHim rows.
+function guestPlayersNamed(name){
+  const k = (name || "").trim().toLowerCase();
+  return Object.values(state.players).filter(p => p.name.trim().toLowerCase() === k).map(p => {
+    const teams = Object.values(state.teams).filter(t => (t.playerIds || []).includes(p.id)).map(t => t.name);
+    return { id: p.id, name: p.name, note: teams.length ? teams.join(", ") : "No team" };
+  });
+}
+
+function addPlayerToTeam(teamId, name, playerId){
+  const player = playerId && state.players[playerId] ? state.players[playerId] : findOrCreatePlayer(name);
   const team = state.teams[teamId];
   if (team && !team.playerIds.includes(player.id)) team.playerIds.push(player.id);
   return player;

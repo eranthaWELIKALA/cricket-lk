@@ -338,7 +338,7 @@ async function main(){
     j1.batting.stats.Star = { runs: 40, balls: 30, fours: 4, sixes: 0, out: true, howOut: "bowled b Ace" };
     j1.batting.stats["S. Star"] = { runs: 30, balls: 20, fours: 2, sixes: 1, out: false, howOut: null };
     const both = win.playerCareer(["Star", "s. star"], [m2, m3]);
-    assert(both.innings === 4 && both.runs === 63 + 102 + 40 + 30 && both.matches === 3, "career folds every alias's matches and innings together");
+    assert(both.innings === 4 && both.runs === 63 + 102 + 40 + 30 && both.matches === 2, "career folds every alias's matches and innings together (a match with both names counts once)");
     assert(both.highScore.runs === 102 && both.hundreds === 1, "merged career keeps the best single innings across names");
     assert(both.notOuts === 2 && Math.abs(both.average - (both.runs / 2)) < 1e-9, "merged average is recomputed over combined dismissals, not averaged from the parts");
     assert(win.playerCareer(["Nobody", "Star"], [m2]).runs === 165 && win.playerCareer(["Nobody", "Nope"], [m2]) === null, "unknown aliases are ignored; no appearances under any name is still null");
@@ -4112,6 +4112,229 @@ async function main(){
     doc.getElementById("ball-edit-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
     assert(/Nothing has changed yet/.test(sheet().textContent), "with nothing changed, it still says so");
     win.eval(`ui = defaultUi(); state.match = null; state.snapshots = []; save(); render();`);
+  }
+
+  // --- player ids: the key every cross-match figure counts by; old matches still count, and add up with new ones ---
+  {
+    const quick = (batA, batB, bowlA, bowlB, ids, when, extra) => {
+      const mm = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 1, playersPerSide: 11, battingFirst: "A" });
+      win.openInnings(currentInnings(mm), batA[0], batA[1], bowlB); mm.status = "live";
+      [4, 1, 6, { kind: "wide", runs: 0 }, { kind: "wicket", wicketType: "caught", fielder: batB[0] }, 2, 1].forEach(r => {
+        const inn = currentInnings(mm);
+        if (inn.complete) return;
+        recordBall(inn, typeof r === "number" ? { kind: "run", runs: r } : r);
+        if (win.pendingBatsmanSlot(inn)) win.sendInBatter(inn, batA[2]);
+        afterBall(mm);
+      });
+      win.startSecondInnings(mm); win.openInnings(currentInnings(mm), batB[0], batB[1], bowlA); mm.status = "live";
+      [1, 1, 0, 2].forEach(r => { recordBall(currentInnings(mm), { kind: "run", runs: r }); afterBall(mm); });
+      win.endInnings(mm);
+      mm.id = "pid" + when; mm.completedAt = when;
+      if (ids) mm.playerIds = ids;
+      return Object.assign(mm, extra || {});
+    };
+    const doc = win.document;
+    const PTS = win.eval("DEFAULT_POINTS_PRESETS[0]");
+    const FIELDS = ["runs", "balls", "fours", "sixes", "innings", "notOuts", "wickets", "legalBalls", "runsConceded", "maidens", "dots", "catches", "runouts", "stumpings"];
+    const byLabel = ms => win.aggregatePlayerStats(ms, PTS, { keyOf: (m, l) => "L:" + l, link: false });
+
+    // 1. No ids anywhere (every match before this change): the same figures as before, name for name.
+    const plain = [quick(["Kusal", "Pathum", "Charith"], ["Babar", "Rizwan"], "Wanindu", "Shaheen", null, 1),
+      quick(["Kusal", "Charith", "Dasun"], ["Babar", "Fakhar"], "Maheesh", "Shaheen", null, 2)];
+    const before = byLabel(plain), after = win.aggregatePlayerStats(plain, PTS);
+    assert(after.length === before.length && before.every(o => {
+      const n = after.find(t => t.key === win.nameKey(o.name));
+      return n && n.name === o.name && n.matches === o.matches && n.points === o.points && FIELDS.every(f => n[f] === o[f]);
+    }), "matches without ids: every player's figures are exactly what they were, counted by name");
+
+    // 2. Two people called Kasun Perera, two ids: never added up. Old unlinked matches: joined only when one player has the name.
+    const A = "p-aaaa", B = "p-bbbb", D = "p-dddd", K = "p-kkkk";
+    const ms = [
+      quick(["Kasun Perera", "Pathum", "Dilshan"], ["Babar", "Rizwan"], "K. Mendis", "Shaheen", { "Kasun Perera": A, Dilshan: D, "K. Mendis": K }, 10),
+      quick(["Kasun Perera", "Charith", "Dasun"], ["Babar", "Fakhar"], "Kusal Mendis", "Shaheen", { "Kasun Perera": B, "Kusal Mendis": K }, 11),
+      quick(["Kasun Perera", "Dilshan", "Dasun"], ["Babar", "Rizwan"], "Wanindu", "Shaheen", null, 12),   // before ids: Kasun is A or B? Dilshan can only be D
+      quick(["Dilshan", "Pathum", "Charith"], ["Babar", "Rizwan"], "Kusal Mendis", "Shaheen", null, 13)];
+    const opts = { nameOf: id => ({ [K]: "Kusal Mendis" })[id] || null };
+    const totals = win.aggregatePlayerStats(ms, PTS, opts);
+    const tA = totals.find(t => t.key === A), tB = totals.find(t => t.key === B), tName = totals.find(t => t.key === win.nameKey("Kasun Perera"));
+    const one = label => byLabel([ms[["pid10", "pid11", "pid12", "pid13"].indexOf(label.m)]]).find(t => t.name === label.n);
+    assert(tA && tB && tA.runs === one({ m: "pid10", n: "Kasun Perera" }).runs && tB.runs === one({ m: "pid11", n: "Kasun Perera" }).runs && tA.matches === 1 && tB.matches === 1,
+      "two Kasun Pereras with their own ids are two players, each with only their own runs");
+    assert(tName && tName.runs === one({ m: "pid12", n: "Kasun Perera" }).runs && tName.names.join() === "Kasun Perera",
+      "a Kasun Perera from before ids, with two players of that name about, stays on its own line (counted by name, as before)");
+    const tD = totals.find(t => t.key === D);
+    assert(tD && tD.matches === 3 && tD.runs === ["pid10", "pid12", "pid13"].reduce((s, id) => s + (one({ m: id, n: "Dilshan" }) || { runs: 0 }).runs, 0) && !totals.some(t => t.key === win.nameKey("Dilshan")),
+      "Dilshan's old matches (no ids) join his id: one player of that name, so old and new add up");
+    const tK = totals.find(t => t.key === K);
+    assert(tK && tK.name === "Kusal Mendis" && tK.names.sort().join() === "K. Mendis,Kusal Mendis" && tK.matches === 3,
+      "a renamed player is one line under their current name, every name they played under counted");
+
+    // The proof: the new totals are the old per-name totals, regrouped -- nothing lost, nothing counted twice.
+    const keyOf = win.linkedKeyOf(ms);
+    const sums = {};
+    ms.forEach(m => byLabel([m]).forEach(o => {
+      const k = keyOf(m, o.name);
+      const s = sums[k] || (sums[k] = Object.assign({ points: 0, ids: new Set() }, Object.fromEntries(FIELDS.map(f => [f, 0]))));
+      FIELDS.forEach(f => { s[f] += o[f]; });
+      s.points += o.points; s.ids.add(m.id);
+    }));
+    assert(Object.keys(sums).length === totals.length && totals.every(t => {
+      const s = sums[t.key];
+      return s && FIELDS.every(f => s[f] === t[f]) && Math.abs(s.points - t.points) < 1e-9 && s.ids.size === t.matches;
+    }), "every player's totals are exactly the sum of the per-name figures counted into them");
+
+    // One player's career and matches (a profile, a player's sheet): by id, and old matches by name only when it's unambiguous.
+    const cA = win.playerCareer(win.playerWho(A, ["Kasun Perera"]), ms), cD = win.playerCareer(win.playerWho(D, ["Dilshan"]), ms);
+    assert(cA.runs === tA.runs && cA.matches === 1 && cD.runs === tD.runs && cD.matches === 3,
+      "a profile counts its own id's matches, plus old ones by name when nobody else has the name");
+    assert(win.playerMatchLines(win.playerWho(B, ["Kasun Perera"]), ms).map(l => l.match.id).join() === "pid11"
+      && win.playerMatchLines(win.playerWho(K, ["Kusal Mendis", "K. Mendis"]), ms).map(l => l.labels.join()).sort().join("|") === "K. Mendis|Kusal Mendis|Kusal Mendis",
+      "match by match follows the id too, and says which name each match has");
+    assert(win.playerCareer("Dilshan", plain.concat(ms)) && win.playerCareer(["Kusal", "kusal"], plain).matches === 2, "a name or names still work as before ids");
+    const rec = win.computeRecords(ms, opts).find(g => g.key === "bat").records.find(r => r.key === "runs");
+    assert(rec.entries.length && rec.entries.every(e => e.key && totals.find(t => t.key === e.key).runs === e.value)
+      && new Set(rec.entries.map(e => e.key)).size === rec.entries.length && rec.entries[0].key === D && rec.entries[0].value === tD.runs,
+      "records count per player (key): Dilshan's old and new matches make his most runs");
+
+    // In the app: names entered in a match record their ids.
+    win.eval(`window.__players = state.players; state.players = { g1: { id: "g1", name: "Kusal" } };
+      state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A" }); state.snapshots = []; ui = defaultUi();
+      openInnings(currentInnings(state.match), "Kusal", "Pathum", "Shaheen"); state.match.status = "live";
+      ["Kusal", "Pathum", "Shaheen"].forEach((n, i) => registerMatchPlayer(n, i < 2 ? "A" : "B"));`);
+    const ids = win.state.match.playerIds;
+    const pathum = Object.values(win.state.players).find(p => p.name === "Pathum");
+    assert(ids.Kusal === "g1" && pathum && ids.Pathum === pathum.id && ids.Shaheen && ids.Shaheen !== ids.Pathum,
+      "a guest match records each name's guest player id (a new name gets a new guest player)");
+    assert(win.restartMatch(win.state.match, "B").playerIds.Kusal === "g1", "a toss restart keeps the ids");
+    win.eval(`ui.club = { id: "c1", roster: [{ id: "p-11", name: "Kusal Mendis" }] };
+      state.match = createMatch({ teamA: "Reds", teamB: "Blues", oversLimit: 5, playersPerSide: 6, battingFirst: "A" }); state.match.clubId = "c1"; state.match.guestNames = ["Amal"];
+      openInnings(currentInnings(state.match), "Kusal Mendis", "Amal", "Bowler X"); state.match.status = "live";
+      registerMatchPlayer("Kusal Mendis", "A"); registerMatchPlayer("Amal", "A");`);
+    assert(win.state.match.playerIds["Kusal Mendis"] === "p-11" && win.state.match.playerIds.Amal === "guest:amal",
+      "a club match records the roster player's id, and a tournament visitor's guest key");
+    win.eval(`state.match.playerIds["Bowler X"] = "tmp:123"; state.matchHistory.__x = { id: "__x", innings: [], playerIds: { Z: "tmp:123" } }; remapTempId("tmp:123", "p-99");`);
+    assert(win.state.match.playerIds["Bowler X"] === "p-99" && win.state.matchHistory.__x.playerIds.Z === "p-99", "a temp id (a club player added offline) is swapped for the real one in matches too, once the add syncs");
+    assert(JSON.stringify(win.withoutTempIds({ a: "p-1", b: "tmp:9", c: "guest:x" })) === JSON.stringify({ a: "p-1", c: "guest:x" }), "a temp id never goes to the cloud");
+    win.eval(`delete state.matchHistory.__x; ui.club = null;`);
+
+    // Leaderboards: two guest players with one name are two rows, each opening their own figures.
+    win.eval(`state.match = null; state.snapshots = []; ui = defaultUi();
+      state.players = { g1: { id: "g1", name: "Kasun Perera" }, g2: { id: "g2", name: "Kasun Perera" } };
+      window.__history = state.matchHistory; state.matchHistory = {}; state.view = "stats";`);
+    const g10 = quick(["Kasun Perera", "Pathum", "Dilshan"], ["Babar", "Rizwan"], "Wanindu", "Shaheen", { "Kasun Perera": "g1" }, 20);
+    const g11 = quick(["Kasun Perera", "Charith", "Dasun"], ["Babar", "Fakhar"], "Wanindu", "Shaheen", { "Kasun Perera": "g2" }, 21);
+    win.state.matchHistory = { [g10.id]: g10, [g11.id]: g11 };
+    win.eval(`ui.statsTab = "bat"; render();`);
+    const kRows = [...doc.querySelectorAll('#app [data-action="open-player-stats"]')].filter(b => b.textContent === "Kasun Perera");
+    assert(kRows.length === 2 && kRows.map(b => b.dataset.key).sort().join() === "g1,g2", "the batting table has two Kasun Perera rows, one per player");
+    kRows.find(b => b.dataset.key === "g2").click();
+    const want = byLabel([g11]).find(t => t.name === "Kasun Perera");
+    assert(win.state.view === "stats" && win.eval("ui.playerStats.key") === "g2" && new RegExp(`\\b${want.runs}\\b`).test(doc.querySelector("#modal-root .player-stats-modal").textContent)
+      && win.playerCareer(win.eval("playerStatsWho(ui.playerStats)"), [g10, g11]).runs === want.runs, "tapping the second opens that player's own figures");
+    win.eval(`ui.playerStats = null; state.players = window.__players; state.matchHistory = window.__history; state.view = "home"; save(); render();`);
+
+    // Two Ravis on the list, only one of whom played in the linked match: an old unlinked "Ravi" is neither's.
+    win.eval(`window.__players = state.players; state.players = { r1: { id: "r1", name: "Ravi" }, r2: { id: "r2", name: "Ravi" } };`);
+    win.__amb = [quick(["Ravi", "Pathum", "Charith"], ["Babar", "Rizwan"], "Wanindu", "Shaheen", { Ravi: "r2" }, 40),
+      quick(["Ravi", "Dasun", "Charith"], ["Babar", "Rizwan"], "Wanindu", "Shaheen", null, 41)];
+    const ravis = JSON.parse(win.eval(`JSON.stringify(aggregatePlayerStats(window.__amb, null, statsOpts()).filter(t => t.names.includes("Ravi")).map(t => [t.key, t.matches]).sort())`));
+    assert(JSON.stringify(ravis) === JSON.stringify([["name:ravi", 1], ["r2", 1]]) && win.eval(`playerCareer(statsWho("r2", ["Ravi"]), window.__amb).matches`) === 1
+      && win.eval(`playerCareer(statsWho("r1", ["Ravi"]), window.__amb)`) === null,
+      "with two Ravis on the list, an old unlinked Ravi joins neither (it stays on its own line), even when only one of them played elsewhere");
+    win.eval(`state.players = window.__players; delete window.__amb;`);
+
+    // Guest matches from before ids get them stored once, on load (only names that are one guest player).
+    const old = quick(["Dasun", "Kasun Perera", "Pathum"], ["Babar", "Rizwan"], "Wanindu", "Shaheen", null, 30);
+    win.eval(`window.__keep = JSON.stringify(state);`);
+    const saved = JSON.parse(win.eval("window.__keep"));
+    Object.assign(saved, { guestIdsLinked: false, matchHistory: { [old.id]: old },
+      players: { g7: { id: "g7", name: "Dasun" }, g8: { id: "g8", name: "Kasun Perera" }, g9: { id: "g9", name: "kasun perera" }, g10: { id: "g10", name: "Wanindu" } } });
+    win.DB.save(win.STORAGE_KEY, saved);
+    win.eval("load()");
+    const linked = win.state.matchHistory[old.id].playerIds || {};
+    assert(win.state.guestIdsLinked === true && linked.Dasun === "g7" && linked.Wanindu === "g10" && !linked["Kasun Perera"] && !linked.Babar,
+      "on load, an old guest match gets each name's guest player id; two players of a name, or none, stay unlinked");
+    win.eval(`state = JSON.parse(window.__keep); save(); render();`);
+  }
+
+  // --- player ids, phase 2: "Which Kasun Perera?", and two players of one name in a match ---
+  {
+    const doc = win.document;
+    const tick = () => new Promise(r => setTimeout(r, 0));
+    const confirm = () => doc.querySelector("#confirm-root");
+    const pickChoice = v => doc.querySelector(`#confirm-root [data-action="confirm-pick"][data-value="${v}"]`).click();
+    const ok = () => doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    assert(win.labelledPlayers([{ name: "Kasun" }, { name: "Ravi" }, { name: "kasun" }]).map(p => p.label).join() === "Kasun,Ravi,kasun (2)",
+      "a second player of a name is labelled 'Name (2)' in a match (a list without shared names is unchanged)");
+    const sq = win.squadsWithIds([{ id: "a", name: "Kasun Perera" }, { id: "g", name: "Amal", guest: true }], [{ id: "b", name: "Kasun Perera" }, { id: "a", name: "Kasun Perera" }]);
+    assert(sq.A.join() === "Kasun Perera,Amal" && sq.B.join() === "Kasun Perera (2)" && sq.playerIds["Kasun Perera"] === "a" && sq.playerIds["Kasun Perera (2)"] === "b"
+      && sq.guestNames.join() === "Amal", "two squads: each player a label of their own and their id; a guest is marked by label; nobody twice");
+    const q = win.coalesceOp([{ kind: "roster.add", userId: "u", args: { clubId: "c", name: "Kasun" } }], { kind: "roster.add", userId: "u", args: { clubId: "c", name: "kasun" } });
+    const q2 = win.coalesceOp(q, { kind: "roster.add", userId: "u", args: { clubId: "c", name: "Kasun", someoneNew: true } });
+    assert(q.length === 1 && q2.length === 2, "a repeat offline add of a name is dropped, but 'someone new' with that name is kept");
+
+    // A guest team with two Kasun Pereras: both in the match, each with their own id.
+    win.eval(`window.__keepGuest = JSON.stringify({ players: state.players, teams: state.teams });
+      state.players = { k1: { id: "k1", name: "Kasun Perera" }, k2: { id: "k2", name: "Kasun Perera" }, p1: { id: "p1", name: "Pathum" }, s1: { id: "s1", name: "Shaheen" } };
+      state.teams = { ta: { id: "ta", name: "Lions", playerIds: ["k1", "k2", "p1"] }, tb: { id: "tb", name: "Tigers", playerIds: ["s1"] } };
+      state.match = null; state.snapshots = []; ui = defaultUi(); state.view = "matchSetup"; render();`);
+    const setup = doc.getElementById("match-setup-form");
+    setup.querySelector('[name="teamA"]').value = "Lions"; setup.querySelector('[name="teamB"]').value = "Tigers";
+    setup.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(win.state.match.squads.A.join() === "Kasun Perera,Kasun Perera (2),Pathum" && win.state.match.playerIds["Kasun Perera (2)"] === "k2" && win.state.match.playerIds["Kasun Perera"] === "k1",
+      "match setup: the second Kasun Perera is 'Kasun Perera (2)' in this match, and each label is tied to its player");
+    const pickOpen = n => doc.querySelector(`#modal-root [data-action="opening-pick"][data-name="${n}"]`).click();
+    pickOpen("Kasun Perera (2)"); pickOpen("Kasun Perera"); pickOpen("Shaheen");
+    doc.getElementById("opening-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    const live1 = currentInnings(win.state.match);
+    assert(live1.striker === "Kasun Perera (2)" && live1.nonStriker === "Kasun Perera" && win.state.match.playerIds["Kasun Perera (2)"] === "k2" && win.state.match.playerIds["Kasun Perera"] === "k1",
+      "both Kasun Pereras open the batting, each counted as themselves");
+    win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); state.view = "players"; render();`);
+
+    // The guest Players screen: a name already on the list asks first; 'someone new' makes a second player.
+    const addForm = () => doc.getElementById("add-global-player-form");
+    addForm().querySelector('[name="name"]').value = "Pathum";
+    addForm().dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(/Which Pathum\?/.test(confirm().textContent) && /Someone new/.test(confirm().textContent), "adding a name already on the list asks: the same player, or someone new");
+    pickChoice("__new"); ok();
+    assert(Object.values(win.state.players).filter(p => p.name === "Pathum").length === 2, "someone new: a second Pathum, with an id of his own");
+    win.eval(`{ const k = JSON.parse(window.__keepGuest); state.players = k.players; state.teams = k.teams; } state.view = "home"; save(); render();`);
+
+    // A club: the add-player sheet asks when the platform already has the name.
+    win.eval(`window.__calls = []; window.__keepFns = { findPlayersNamed, addPlayerToClub, addExistingPlayerToClub, fetchClubDetail, client: supabaseClient };
+      findPlayersNamed = async () => [{ id: "x1", name: "Kasun Perera", origin_club: "Club2", on_roster: false, city: "Kandy" }];
+      addPlayerToClub = async (c, n, ex) => { __calls.push(["new", n, !!(ex && ex.someoneNew)]); return { ok: true, id: "x9", created: true }; };
+      addExistingPlayerToClub = async (c, id, n) => { __calls.push(["existing", id, n]); return { ok: true }; };
+      fetchClubDetail = async () => {};
+      ui = defaultUi(); ui.currentClubId = "c1"; ui.club = { id: "c1", name: "KICC", roster: [{ id: "d1", name: "Dilshan" }], matches: [], presets: { match: [], tournament: [] } };`);
+    const clubAdd = name => {
+      const f = doc.createElement("form");
+      f.innerHTML = `<input name="name" value="${name}"><button type="submit">Add</button>`;
+      win.handleClubAddPlayerSubmit({ preventDefault(){}, target: f });
+    };
+    clubAdd("Kasun Perera"); await tick(); await tick();
+    assert(/Which Kasun Perera\?/.test(confirm().textContent) && /Added by Club2/.test(confirm().textContent) && /Kandy/.test(confirm().textContent),
+      "club add: the platform's Kasun Perera is shown with what tells him apart (the club that added him, his city)");
+    pickChoice("x1"); ok(); await tick(); await tick();
+    assert(JSON.stringify(win.__calls) === JSON.stringify([["existing", "x1", "Kasun Perera"]]), "'same player': that player joins the roster as they are -- nobody new is made");
+    clubAdd("Kasun Perera"); await tick(); await tick();
+    pickChoice("__new"); ok(); await tick(); await tick();
+    assert(JSON.stringify(win.__calls[1]) === JSON.stringify(["new", "Kasun Perera", true]), "'someone new': a new player with the same name (add_player_to_club _new)");
+
+    // A club match: a typed name the roster doesn't have, but the platform does, asks too -- and the match records who it was.
+    win.eval(`supabaseClient = {}; ui.club.roster = [{ id: "d1", name: "Dilshan" }, { id: "p1", name: "Pathum" }];
+      state.match = createMatch({ teamA: "Reds", teamB: "Blues", oversLimit: 5, playersPerSide: 6, battingFirst: "A" }); state.match.clubId = "c1"; state.match.matchType = "practice";
+      state.snapshots = []; openInnings(currentInnings(state.match), "Dilshan", "Pathum", "Bowler B"); state.match.status = "live";
+      recordBall(currentInnings(state.match), { kind: "wicket", wicketType: "bowled" }); afterBall(state.match); render();`);
+    const bf = doc.getElementById("new-batsman-form");
+    win.submitNewBatsman("Kasun Perera", bf); await tick(); await tick();
+    assert(/Which Kasun Perera\?/.test(confirm().textContent) && /For Reds/.test(confirm().textContent), "a club match: typing a name the platform has asks which player it is");
+    pickChoice("x1"); ok(); await tick();
+    const li = currentInnings(win.state.match);
+    assert(li.striker === "Kasun Perera" && win.state.match.playerIds["Kasun Perera"] === "x1" && win.eval(`ui.club.roster.some(p => p.id === "x1")`),
+      "picked: he comes in, the match records his id, and he joins the club's roster");
+    win.eval(`({ findPlayersNamed, addPlayerToClub, addExistingPlayerToClub, fetchClubDetail } = window.__keepFns); supabaseClient = window.__keepFns.client;
+      state.match = null; state.snapshots = []; ui = defaultUi(); state.view = "home"; save(); render();`);
   }
 
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);

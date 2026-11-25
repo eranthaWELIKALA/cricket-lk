@@ -556,7 +556,9 @@ async function takeNewerCloudCopy(id){
   const card = x => canonicalJson([x.teamA, x.teamB, x.result, x.motm || null, x.innings, x.superOvers || null, !!x.forfeited, x.forfeitedBy || null]);
   if (card(cloud) === card(local)) return false;
   state.matchHistory[id] = Object.assign({}, local, { teamA: cloud.teamA, teamB: cloud.teamB, result: cloud.result, motm: cloud.motm, innings: cloud.innings, superOvers: cloud.superOvers,
-    forfeited: cloud.forfeited, forfeitedBy: cloud.forfeitedBy });
+    forfeited: cloud.forfeited, forfeitedBy: cloud.forfeitedBy,
+    // who each name is: the cloud's (it may have linked more, supabase/025), over this phone's
+    playerIds: Object.assign({}, local.playerIds, cloud.playerIds) });
   if (!cloud.forfeited){ delete state.matchHistory[id].forfeited; delete state.matchHistory[id].forfeitedBy; }
   const store = matchLogStore();
   delete store[id];

@@ -205,9 +205,11 @@ function renderNameCombo(label, inputAttrs, names){
 }
 /* The roster row behind a name in the current club match/setup (nickname,
    jersey), or null -- guest-mode players have neither. */
+// Each entry under its label in a match ("Name (2)" for a second player of a name).
 function currentRoster(){
   const clubId = activeSetupClubId();
-  return clubId && ui.club && ui.club.id === clubId ? ui.club.roster : [];
+  const roster = clubId && ui.club && ui.club.id === clubId ? ui.club.roster : [];
+  return labelledPlayers(roster).map(p => p.label === p.name ? p : Object.assign({}, p, { name: p.label }));
 }
 function rosterEntryFor(name){
   const key = (name || "").trim().toLowerCase();

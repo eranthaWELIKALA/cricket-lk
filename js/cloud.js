@@ -116,9 +116,9 @@ function coalesceOp(queue, op){
     if (pendingNew) return queue.filter(o => !(o.kind === saveKind && o.args.id === a.id && !o.failed));
     queue = queue.filter(o => !(o.kind === saveKind && o.args.id === a.id && !o.failed));
   }
-  if (op.kind === "roster.add" || op.kind === "global.add"){
+  if ((op.kind === "roster.add" || op.kind === "global.add") && !a.someoneNew){
     const key = (a.name || "").trim().toLowerCase();
-    if (queue.some(o => same(o) && o.args.clubId === a.clubId && (o.args.name || "").trim().toLowerCase() === key)) return queue;
+    if (queue.some(o => same(o) && !o.args.someoneNew && o.args.clubId === a.clubId && (o.args.name || "").trim().toLowerCase() === key)) return queue;
   }
   // A match edited after it was archived: the newest copy replaces the queued one.
   if (op.kind === "match"){
@@ -145,7 +145,7 @@ function overlayClubData(club, ops){
       ["match", "tournament", "points"].forEach(k => { c.presets[k] = (c.presets[k] || []).filter(p => p.id !== a.id); });
     } else if (o.kind === "roster.add"){
       const key = a.name.trim().toLowerCase();
-      if (!c.roster.some(p => p.name && p.name.toLowerCase() === key)){
+      if (a.someoneNew ? !c.roster.some(p => p.id && p.id === a.tempId) : !c.roster.some(p => p.name && p.name.toLowerCase() === key)){
         const d = a.details || {};
         c.roster.push({ id: a.tempId || null, name: a.name.trim(), nickname: d.nickname || null, jersey_no: parseJerseyNo(d.jersey_no), pending: true });
       }
@@ -353,7 +353,10 @@ const OP_HANDLERS = {
     const { error } = await supabaseClient.from("matches").upsert({
       id: a.id, club_id: a.clubId, match_type: a.matchType || "practice", level: "local",
       opponent_name: a.opponentName || null, tournament_id: a.tournamentId || null,
-      created_by: op.userId, data: a.data, played_at: a.playedAt
+      // A temp id still here (its add failed) never reaches the cloud: that name
+      // counts by name until the database links it.
+      created_by: op.userId, data: a.data && a.data.playerIds ? Object.assign({}, a.data, { playerIds: withoutTempIds(a.data.playerIds) }) : a.data,
+      played_at: a.playedAt
     });
     return { error };
   },
@@ -425,7 +428,7 @@ const OP_HANDLERS = {
     return { error };
   },
   "roster.add": async a => {
-    const { data, error } = await supabaseClient.rpc("add_player_to_club", { _club_id: a.clubId, _name: a.name.trim() });
+    const { data, error } = await supabaseClient.rpc("add_player_to_club", Object.assign({ _club_id: a.clubId, _name: a.name.trim() }, a.someoneNew ? { _new: true } : {}));
     if (error) return { error: cloudSqlMissing(error, "supabase/005_add_player_to_club.sql") ? { message: cloudSqlMissing(error, "supabase/005_add_player_to_club.sql"), code: error.code } : error };
     // Before 009 the RPC returned a bare uuid (and the caller always owned the row).
     const id = data && typeof data === "object" ? data.id : data;
@@ -452,16 +455,18 @@ const OP_HANDLERS = {
     return data && data.length ? {} : (a.mustExist ? { error: "Couldn't remove this player — only this club's admins can." } : {});
   },
   "global.add": async a => {
-    let { error } = await supabaseClient.rpc("ensure_global_player", { _name: a.name.trim(), _club_id: a.clubId || null });
-    if (error && error.code === "PGRST202") ({ error } = await supabaseClient.rpc("ensure_global_player", { _name: a.name.trim() }));
-    return { error };
+    let { data, error } = await supabaseClient.rpc("ensure_global_player", Object.assign({ _name: a.name.trim(), _club_id: a.clubId || null }, a.someoneNew ? { _new: true } : {}));
+    if (error && error.code === "PGRST202") ({ data, error } = await supabaseClient.rpc("ensure_global_player", { _name: a.name.trim() }));
+    // The visitor's platform id (a uuid; older servers may return nothing).
+    const id = data && typeof data === "object" ? data.id : data;
+    return error ? { error } : { id: typeof id === "string" ? id : null };
   }
 };
 /* A roster add that was queued offline got a temp id; once the server hands
    back the real one, rewrite every reference (later queued ops, caches,
    the open team editor) so nothing ever stores the temp id in the cloud. */
 function afterOpSucceeded(op, res){
-  if (op.kind === "roster.add" && op.args.tempId && res.id) remapTempId(op.args.tempId, res.id);
+  if ((op.kind === "roster.add" || op.kind === "global.add") && op.args.tempId && res.id) remapTempId(op.args.tempId, res.id);
 }
 function remapTempId(from, to){
   // In place (not a new array): syncNow may be part-way through the queue.
@@ -470,6 +475,13 @@ function remapTempId(from, to){
   if (ui.club) ui.club = replaceIdDeep(ui.club, from, to);
   if (ui.clubTournament) ui.clubTournament = replaceIdDeep(ui.clubTournament, from, to);
   if (ui.tournamentTeamEdit) ui.tournamentTeamEdit = replaceIdDeep(ui.tournamentTeamEdit, from, to);
+  // Matches on this device that recorded the player under the temp id (match.playerIds).
+  if (typeof state !== "undefined" && state){
+    if (state.match) state.match = replaceIdDeep(state.match, from, to);
+    if (state.snapshots) state.snapshots = state.snapshots.map(snap => replaceIdDeep(snap, from, to));
+    if (state.matchHistory) state.matchHistory = replaceIdDeep(state.matchHistory, from, to);
+    if (typeof save === "function") save();
+  }
 }
 
 /* Replay this user's queue in order. Stops at the first network failure (it
@@ -1027,13 +1039,15 @@ async function addPlayerToClub(clubId, name, extras){
     return { error: "Contact number and NIC need an internet connection. Clear them to add the player offline, and fill them in later from the profile." };
   }
   const tempId = TEMP_ID_PREFIX + newUuid();
+  const someoneNew = !!(extras && extras.someoneNew);
   const args = { clubId, name: trimmed, tempId, details: extras && extras.details ? extras.details : null };
+  if (someoneNew) args.someoneNew = true;   // a different person with a name that's taken (supabase/025)
   if (phone || nic) Object.assign(args, { phone: phone || "", nic: nic || "" });
   const res = await submitCloudOp("roster.add", args);
   if (res.error) return { error: res.error };
   if (res.queued){
-    // Already queued for this name? Reuse that op's temp id.
-    const prev = outbox.find(o => o.kind === "roster.add" && !o.failed && o.args.clubId === clubId && o.args.name.toLowerCase() === trimmed.toLowerCase());
+    // Already queued for this name? Reuse that op's temp id (never for someone new: that's another person).
+    const prev = someoneNew ? null : outbox.find(o => o.kind === "roster.add" && !o.failed && !o.args.someoneNew && o.args.clubId === clubId && o.args.name.toLowerCase() === trimmed.toLowerCase());
     return { ok: true, queued: true, id: prev ? prev.args.tempId : tempId };
   }
   if (res.partial) return { error: res.partial, id: res.id, created: res.created };
@@ -1186,11 +1200,34 @@ async function updatePlayerProfile(playerId, phone, nic){
    visitors, who aren't on the home club's roster. The club is passed so a
    brand-new visitor is attributed to the club that first recorded them (and
    that club can edit the profile until the player claims it). */
-async function addGlobalPlayer(name, clubId){
+/* A friendly's visitor on the platform (ensure_global_player). Returns
+   { ok, id }: their platform id, or a temp id while it's queued offline
+   (remapTempId swaps it once the add syncs), or no id from an older server. */
+/* "Is this him?" (supabase/025): everyone on the platform a name could be --
+   that name or a former one -- with public details, the club that first
+   added them, and (for a member of `clubId`) whether they're on its roster.
+   null when it can't be asked: offline, signed out of the cloud, or 025 not
+   run yet -- the add then reuses an existing player of that name, as before. */
+async function findPlayersNamed(name, clubId){
+  const trimmed = (name || "").trim();
+  if (!trimmed || !supabaseClient || needsInternet()) return null;
+  try {
+    const { data, error } = await supabaseClient.rpc("find_players_named", { _name: trimmed, _club_id: clubId || null });
+    return error ? null : (data || []);
+  } catch (_){ return null; }
+}
+async function addGlobalPlayer(name, clubId, opts){
   const trimmed = (name || "").trim();
   if (!trimmed) return;
-  const res = await submitCloudOp("global.add", { name: trimmed, clubId: clubId || null });
-  return res.error ? { error: res.error } : { ok: true };
+  const tempId = TEMP_ID_PREFIX + newUuid();
+  const someoneNew = !!(opts && opts.someoneNew);
+  const res = await submitCloudOp("global.add", Object.assign({ name: trimmed, clubId: clubId || null, tempId }, someoneNew ? { someoneNew: true } : {}));
+  if (res.error) return { error: res.error };
+  if (res.queued){
+    const prev = someoneNew ? null : outbox.find(o => o.kind === "global.add" && !o.failed && !o.args.someoneNew && (o.args.clubId || null) === (clubId || null) && o.args.name.toLowerCase() === trimmed.toLowerCase());
+    return { ok: true, queued: true, id: prev && prev.args.tempId ? prev.args.tempId : tempId };
+  }
+  return { ok: true, id: res.id || null };
 }
 
 /* The few cloud actions that can't work offline (they need the server to

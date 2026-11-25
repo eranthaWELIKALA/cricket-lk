@@ -1494,13 +1494,13 @@ function playerLabel(p){
 /* A player's matches, newest first, each with their own line in it: what
    they scored (`bat`: runs, balls, out), took (`bowl`: wickets, runs,
    legalBalls, ballsPerOver) and held (`field`: catches, runouts, stumpings),
-   and the side they played for (`team`: "A"/"B"). Same name matching as
-   playerCareer (every spelling in `nameOrNames`, case-insensitive), and the
-   same matches left out ("no names" ones). A match listed twice (the local
-   archive and the cloud copy) counts once. Feeds a profile's Matches tab. */
-function playerMatchLines(nameOrNames, matches){
-  const keys = new Set((Array.isArray(nameOrNames) ? nameOrNames : [nameOrNames])
-    .map(n => (n || "").trim().toLowerCase()).filter(Boolean));
+   and the side they played for (`team`: "A"/"B"), and the name(s) it has
+   for them there (`labels`). `who` as in playerCareer
+   (playerWho, a name, names, or a test), and the same matches
+   left out ("no names" ones). A match listed twice (the local archive and
+   the cloud copy) counts once. Feeds a profile's Matches tab. */
+function playerMatchLines(who, matches){
+  const test = playerTestFor(who, matches);
   const seen = new Set();
   const lines = [];
   matches.forEach(m => {
@@ -1508,7 +1508,8 @@ function playerMatchLines(nameOrNames, matches){
     if (m.id && seen.has(m.id)) return;
     // Every spelling found counts, like playerCareer (two of them in one
     // innings add up there too).
-    const mine = list => (list || []).filter(n => keys.has(String(n).toLowerCase()));
+    const labels = new Set();
+    const mine = list => (list || []).filter(n => test(m, n) && labels.add(n));
     let bat = null, bowl = null, field = null, team = null;
     m.innings.forEach(inn => {
       mine(inn.batting.order).forEach(bn => {
@@ -1532,7 +1533,7 @@ function playerMatchLines(nameOrNames, matches){
     });
     if (!bat && !bowl && !field) return;
     if (m.id) seen.add(m.id);
-    lines.push({ match: m, bat, bowl, field, team });
+    lines.push({ match: m, bat, bowl, field, team, labels: [...labels] });
   });
   return lines.sort((a, b) => (b.match.completedAt || 0) - (a.match.completedAt || 0));
 }
@@ -1549,17 +1550,23 @@ function playerMatchLineText(line){
   return parts.join(" · ");
 }
 
-/* Where one player stands among aggregatePlayerStats `totals` -- every
-   spelling in `nameOrNames` folded into one, like playerCareer: MVP points,
+/* Where one player stands among aggregatePlayerStats `totals` -- `who`: their
+   key, or a test on a total (t => bool), or names (every spelling folded
+   into one, like playerCareer): MVP points,
    runs and wickets, each { place, of } (place = 1 + how many others have
    more, so equal values share it; `of` counts the players in that table:
    everyone for points, those who batted for runs, those who bowled for
    wickets), or null where they have none. */
-function playerRanks(nameOrNames, totals){
-  const keys = new Set((Array.isArray(nameOrNames) ? nameOrNames : [nameOrNames])
-    .map(n => (n || "").trim().toLowerCase()).filter(Boolean));
-  const mine = totals.filter(t => keys.has(t.name.toLowerCase()));
-  const others = totals.filter(t => !keys.has(t.name.toLowerCase()));
+function playerRanks(who, totals){
+  let isMe;
+  if (typeof who === "function") isMe = who;
+  else if (typeof who === "string" && totals.some(t => t.key === who)) isMe = t => t.key === who;
+  else {
+    const keys = new Set((Array.isArray(who) ? who : [who]).map(n => String(n == null ? "" : n).trim().toLowerCase()).filter(Boolean));
+    isMe = t => keys.has(t.name.toLowerCase());
+  }
+  const mine = totals.filter(isMe);
+  const others = totals.filter(t => !isMe(t));
   const rank = (value, inTable) => {
     const v = mine.reduce((sum, t) => sum + value(t), 0);
     if (!(v > 0)) return null;
@@ -1574,54 +1581,27 @@ function playerRanks(nameOrNames, totals){
 }
 
 /* One player's career line, folded from whatever matches the caller passes
-   (a club's matches for a club profile, Premier matches for Premier) --
-   matched by name, case-insensitive, since matches store names not ids.
-   `nameOrNames` may be an array: a profile's own name plus the aliases left
-   behind by approved merges (supabase/009), so stats recorded under an old
-   spelling still count. `preset`: the points preset for `points`. */
-function playerCareer(nameOrNames, matches, preset){
-  matches = matches.filter(m => !playerStatsExcluded(m));
-  const names = (Array.isArray(nameOrNames) ? nameOrNames : [nameOrNames]);
-  const seen = new Set();
-  const careers = [];
-  names.forEach(n => {
-    const key = (n || "").trim().toLowerCase();
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    const c = singleNameCareer(key, matches, preset);
-    if (c) careers.push(c);
-  });
-  return careers.length ? mergeCareers(careers) : null;
+   (a club's matches for a club profile, Premier matches for Premier).
+   `who`: playerWho(id, names, keyOf) -- labels linked to their id, and
+   unlinked ones by name (playerTestFor) -- or, as before ids, a name
+   or names (a profile's own name plus the aliases left behind by renames and
+   merges, supabase/009 and 013), matched case-insensitively. Every label of
+   theirs in a match counts towards one line, and the match once. `preset`:
+   the points preset for `points`. */
+function playerCareer(who, matches, preset){
+  const test = playerTestFor(who, matches);
+  const ME = "\u0000me";
+  const t = aggregatePlayerStats(matches, preset, { keyOf: (m, label) => test(m, label) ? ME : nameKey(label), link: false })
+    .find(x => x.key === ME);
+  return t ? mergeCareers([careerFromTotal(t)]) : null;
 }
-
-function singleNameCareer(key, matches, preset){
-  const t = aggregatePlayerStats(matches, preset).find(x => x.name.toLowerCase() === key);
-  if (!t) return null;
-  // Per-innings extras aggregatePlayerStats doesn't keep: highest score,
-  // 50s/100s/ducks, bowling innings and best bowling.
-  let highScore = null, fifties = 0, hundreds = 0, ducks = 0, bowlInnings = 0, best = null;
-  matches.forEach(m => m.innings.forEach(inn => {
-    const bn = inn.batting.order.find(n => n.toLowerCase() === key);
-    if (bn){
-      const b = inn.batting.stats[bn];
-      if (!highScore || b.runs > highScore.runs || (b.runs === highScore.runs && !b.out && highScore.out)) highScore = { runs: b.runs, out: !!b.out };
-      if (b.runs >= 100) hundreds++; else if (b.runs >= 50) fifties++;
-      if (b.out && b.runs === 0) ducks++;
-    }
-    const wn = inn.bowling.order.find(n => n.toLowerCase() === key);
-    if (wn){
-      const w = inn.bowling.stats[wn];
-      if (w.legalBalls > 0 || w.wickets > 0){
-        bowlInnings++;
-        if (!best || w.wickets > best.wickets || (w.wickets === best.wickets && w.runs < best.runs)) best = { wickets: w.wickets, runs: w.runs };
-      }
-    }
-  }));
+// The career fields of an aggregatePlayerStats total (mergeCareers adds the ratios).
+function careerFromTotal(t){
   return {
     matches: t.matches, points: t.points,
     innings: t.innings, notOuts: t.notOuts, runs: t.runs, balls: t.balls, fours: t.fours, sixes: t.sixes,
-    highScore, fifties, hundreds, ducks,
-    bowlInnings, wickets: t.wickets, legalBalls: t.legalBalls, runsConceded: t.runsConceded, maidens: t.maidens, best,
+    highScore: t.highScore, fifties: t.fifties, hundreds: t.hundreds, ducks: t.ducks,
+    bowlInnings: t.bowlInnings, wickets: t.wickets, legalBalls: t.legalBalls, runsConceded: t.runsConceded, maidens: t.maidens, best: t.best,
     catches: t.catches, runouts: t.runouts, stumpings: t.stumpings
   };
 }
@@ -1776,7 +1756,7 @@ function matchHasStarted(match){
    was scored (the UI warns and snapshots first, so Undo can bring it back).
    UI-only extras that recordBall never reads (club, match type, squads,
    visitor name) are carried over so the restart is the same fixture. */
-const MATCH_CARRY_FIELDS = ["clubId", "matchType", "squads", "guestNames", "visitingSides", "opponentName", "anonymous", "reopenedFrom", "editingFromHistory", "superOverOf"];
+const MATCH_CARRY_FIELDS = ["clubId", "matchType", "squads", "guestNames", "visitingSides", "opponentName", "anonymous", "reopenedFrom", "editingFromHistory", "superOverOf", "playerIds"];
 function restartMatch(match, battingFirst){
   const i1 = match.innings[0];
   const fresh = createMatch({
@@ -1880,7 +1860,7 @@ function createSuperOver(parent, parentId){
     presetId: parent.presetId, presetName: parent.presetName, tournamentId: parent.tournamentId,
     freshBowlersFirst: parent.freshBowlersFirst
   });
-  ["clubId", "matchType", "guestNames", "visitingSides", "opponentName", "anonymous"].forEach(k => {
+  ["clubId", "matchType", "guestNames", "visitingSides", "opponentName", "anonymous", "playerIds"].forEach(k => {
     if (parent[k] !== undefined) so[k] = JSON.parse(JSON.stringify(parent[k]));
   });
   const squads = parent.anonymous ? null : superOverSquads(parent);
@@ -2124,22 +2104,113 @@ function inningsBowlerExtras(inn){
 }
 function fieldDismissals(t){ return t.catches + t.runouts + (t.stumpings || 0); }
 
+/* --- who a scorecard name is: player ids ---
+   Inside one match players are labelled by name: a label is unique in its
+   match (playerSideConflict), and the innings, the log and the scorecard all
+   use it. Across matches a player is their id: `match.playerIds` maps each
+   label to it ({ [label]: id } -- a club roster / platform player's uuid, a
+   guest-list id on this device, or "guest:<name>" for a tournament's
+   visitors), filled as names are entered (registerMatchPlayer). Every figure
+   that counts a player over several matches (leaderboards, MVP, records,
+   profiles, tournament bests) groups by `playerKey`: the stored id, else the
+   caller's `resolve` (the club roster / guest list a match belongs to), else
+   the name ("name:<lowercase>"), so a match scored before ids still counts,
+   by name, exactly as it did. Two people with the same name are two ids, so
+   they never add up; an unlinked old label joins the one player in the same
+   set of matches with that name (linkedKeyOf), never one of two. */
+function nameKey(label){ return "name:" + String(label == null ? "" : label).trim().toLowerCase(); }
+function isNameKey(key){ return typeof key === "string" && key.slice(0, 5) === "name:"; }
+function matchPlayerId(match, label){
+  const ids = match && match.playerIds;
+  return ids && label != null && Object.prototype.hasOwnProperty.call(ids, label) && ids[label] ? ids[label] : null;
+}
+function playerKey(match, label, resolve){
+  return matchPlayerId(match, label) || (resolve && resolve(match, label)) || nameKey(label);
+}
+/* The key function a set of matches is counted with: `keyOf(match, label)`
+   (default: stored ids, then names). An unlinked label ("name:" key) whose
+   name was linked to exactly one id somewhere in these matches is that id,
+   so a player's old matches and new ones add up; with two ids sharing the
+   name it stays on its own (which of them it was can't be known) -- and so
+   it does when `keyOf.ambiguous(match, label)` says the name is two players
+   the caller knows of (a roster with two Ravis, only one of whom played
+   here). */
+function linkedKeyOf(matches, keyOf){
+  const base = keyOf || ((m, label) => playerKey(m, label));
+  const amb = base.ambiguous || null;
+  const idsByName = {};
+  matches.forEach(m => {
+    if (!m || !Array.isArray(m.innings) || playerStatsExcluded(m)) return;
+    matchPlayerNames(m).forEach(label => {
+      const k = base(m, label);
+      if (isNameKey(k)) return;
+      const n = nameKey(label);
+      (idsByName[n] || (idsByName[n] = new Set())).add(k);
+    });
+  });
+  const keyFn = (m, label) => {
+    const k = base(m, label);
+    if (!isNameKey(k) || (amb && amb(m, label))) return k;
+    const ids = idsByName[k];
+    return ids && ids.size === 1 ? [...ids][0] : k;
+  };
+  keyFn.idsByName = idsByName;   // name key -> the ids it's linked to in these matches
+  keyFn.ambiguous = amb;
+  return keyFn;
+}
+/* `who` -- one player, for a profile or a player's sheet: playerWho(id, names,
+   keyOf), or (as before ids) a name or a list of names (a profile's own name
+   and its aliases; any case), or a test (match, label) => bool. */
+function playerWho(id, names, keyOf){ return { id: id || null, names: names || [], keyOf: keyOf || null }; }
+function playerTest(who){
+  if (typeof who === "function") return who;
+  const keys = new Set((Array.isArray(who) ? who : [who]).map(n => String(n == null ? "" : n).trim().toLowerCase()).filter(Boolean));
+  return (m, label) => keys.has(String(label).trim().toLowerCase());
+}
+/* `who` as a test over `matches`. For playerWho: a label linked to their id
+   is them, one linked to another id isn't (even with the same name), and an
+   unlinked one is them by name (`names`, as before ids) -- unless another
+   player in these matches has that name too, or keyOf.ambiguous knows of
+   one: then which of them it was can't be known, and it's left out of both
+   (it still counts, by name, in the leaderboards). */
+function playerTestFor(who, matches){
+  if (!who || typeof who !== "object" || Array.isArray(who)) return playerTest(who);
+  const linked = linkedKeyOf(matches, who.keyOf);
+  const byName = playerTest(who.names);
+  return (m, label) => {
+    const k = linked(m, label);
+    if (!isNameKey(k)) return !!who.id && k === who.id;
+    return !linked.idsByName[k] && !(linked.ambiguous && linked.ambiguous(m, label)) && byName(m, label);
+  };
+}
+
 function emptyPlayerTotal(name){
   return {
-    name, runs: 0, balls: 0, fours: 0, sixes: 0, notOuts: 0, innings: 0,
+    name, key: name, names: [], runs: 0, balls: 0, fours: 0, sixes: 0, notOuts: 0, innings: 0,
     highScore: null, fifties: 0, hundreds: 0, ducks: 0,
     wickets: 0, legalBalls: 0, runsConceded: 0, maidens: 0, dots: 0, bowlInnings: 0, best: null,
     catches: 0, runouts: 0, stumpings: 0, points: 0, matches: 0
   };
 }
 
-function foldInningsIntoTotals(totals, inn, preset){
+/* `keyOf(label)`: what a label is counted under (playerKey; default the label
+   itself, one match's MOTM). The total shows its latest label (`at`: the
+   match's time) and keeps every label folded into it in `names`. */
+function foldInningsIntoTotals(totals, inn, preset, keyOf, at){
   const extras = inningsBowlerExtras(inn);
+  const when = at || 0;
+  const totalFor = name => {
+    const k = keyOf ? keyOf(name) : name;
+    const t = totals[k] || (totals[k] = Object.assign(emptyPlayerTotal(name), { key: k, nameAt: when }));
+    if (!t.names.includes(name)) t.names.push(name);
+    if (when >= t.nameAt){ t.name = name; t.nameAt = when; }
+    return t;
+  };
   // Placeholders ("Bat ?1") aren't people until they're named.
   inn.batting.order.forEach(name => {
     if (isUnnamedPlayer(name)) return;
     const s = inn.batting.stats[name];
-    const t = totals[name] || (totals[name] = emptyPlayerTotal(name));
+    const t = totalFor(name);
     t.runs += s.runs; t.balls += s.balls; t.fours += s.fours; t.sixes += s.sixes;
     t.innings += 1;
     if (!s.out) t.notOuts += 1;
@@ -2153,7 +2224,7 @@ function foldInningsIntoTotals(totals, inn, preset){
     if (isUnnamedPlayer(name)) return;
     const b = inn.bowling.stats[name];
     const x = extras[name] || { dots: 0, bowledLbw: 0 };
-    const t = totals[name] || (totals[name] = emptyPlayerTotal(name));
+    const t = totalFor(name);
     t.wickets += b.wickets; t.legalBalls += b.legalBalls; t.runsConceded += b.runs; t.maidens += b.maidens; t.dots += x.dots;
     if (b.legalBalls > 0 || b.wickets > 0){
       t.bowlInnings += 1;
@@ -2163,7 +2234,7 @@ function foldInningsIntoTotals(totals, inn, preset){
   });
   inn.fielding.order.forEach(name => {
     const f = inn.fielding.stats[name];
-    const t = totals[name] || (totals[name] = emptyPlayerTotal(name));
+    const t = totalFor(name);
     t.catches += f.catches; t.runouts += f.runouts; t.stumpings += f.stumpings || 0;
     t.points = roundPoints(t.points + calcPlayerPoints(null, null, f, preset));
   });
@@ -2190,13 +2261,31 @@ function playerStatsExcluded(match){
   return !!(match && match.anonymous);
 }
 
-function aggregatePlayerStats(matches, preset){
+/* Every player's totals over `matches`, one per player key (see "who a
+   scorecard name is"). opts: { keyOf(match, label) -- the key (default:
+   stored ids, then names; unlinked labels joined to the one id with that
+   name by linkedKeyOf), nameOf(key) -- the name to show for an id (the
+   roster's current one), else the latest label }. Each total has `key` and
+   `names` (every label counted in it). A player's match counts once even
+   when two of their labels are in it. `link: false` takes keyOf as it is. */
+function aggregatePlayerStats(matches, preset, opts){
+  const o = opts || {};
+  const counted = matches.filter(match => match && !playerStatsExcluded(match));
+  const keyOf = o.link === false && o.keyOf ? o.keyOf : linkedKeyOf(counted, o.keyOf);
   const totals = {};
-  matches.filter(match => !playerStatsExcluded(match)).forEach(match => {
-    match.innings.forEach(inn => foldInningsIntoTotals(totals, inn, preset));
-    matchPlayerNames(match).forEach(name => { if (totals[name]) totals[name].matches += 1; });
+  counted.forEach(match => {
+    const key = label => keyOf(match, label);
+    const at = match.completedAt || match.createdAt || 0;
+    match.innings.forEach(inn => foldInningsIntoTotals(totals, inn, preset, key, at));
+    new Set([...matchPlayerNames(match)].map(key)).forEach(k => { if (totals[k]) totals[k].matches += 1; });
   });
-  return Object.values(totals).sort((a, b) => b.points - a.points);
+  const list = Object.values(totals);
+  list.forEach(t => {
+    delete t.nameAt;
+    const shown = o.nameOf && !isNameKey(t.key) ? o.nameOf(t.key) : null;
+    if (shown) t.name = shown;
+  });
+  return list.sort((a, b) => b.points - a.points);
 }
 
 function pickMatchMOTM(match, preset){
@@ -3232,9 +3321,9 @@ function commentaryBookends(match, idx){
    Everything the Summary tab and its share image show, from the completed
    matches: final table, champion/runner-up, totals and the top performers.
    `pointsPreset` is the MVP points preset (see calcPlayerPoints). */
-function tournamentSummary(matches, preset, pointsPreset){
+function tournamentSummary(matches, preset, pointsPreset, opts){
   const standings = computeStandings(matches, preset);
-  const totals = aggregatePlayerStats(matches, pointsPreset);
+  const totals = aggregatePlayerStats(matches, pointsPreset, opts);
   const top = (key, min) => { const t = [...totals].sort((a, b) => b[key] - a[key])[0]; return t && t[key] >= (min || 1) ? t : null; };
   let highestTotal = null, bestInnings = null, bestBowling = null, runs = 0, wickets = 0, sixes = 0;
   matches.forEach(m => m.innings.forEach(inn => {
@@ -3288,13 +3377,17 @@ function recordPlaces(entries, dir){
   sorted.forEach((e, i) => { e.place = i && sorted[i - 1].value === e.value ? sorted[i - 1].place : i + 1; });
   return sorted.filter(e => e.place <= RECORDS_TOP);
 }
-function computeRecords(matches){
-  const totals = aggregatePlayerStats(matches);
-  const byName = {};
-  totals.forEach(t => { byName[t.name] = t; });
+/* opts: aggregatePlayerStats' { keyOf, nameOf } -- career tallies are per
+   player (key), so two people with one name are two entries. */
+function computeRecords(matches, opts){
+  const totals = aggregatePlayerStats(matches, null, opts);
+  const counted = matches.filter(m => m && !playerStatsExcluded(m));
+  const keyOf = linkedKeyOf(counted, opts && opts.keyOf);
+  const byKey = {};
+  totals.forEach(t => { byKey[t.key] = t; });
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
   // A career tally; `over` says what it was made in, [count, words] (fewer ranks first among equals).
-  const most = (value, over) => recordPlaces(totals.map(t => { const [n, detail] = over(t); return { name: t.name, value: value(t), sub: -n, detail }; })
+  const most = (value, over) => recordPlaces(totals.map(t => { const [n, detail] = over(t); return { name: t.name, key: t.key, value: value(t), sub: -n, detail }; })
     .filter(e => e.value > 0));
   const batInns = t => [t.innings, `${t.innings} innings`];
   const bowlInns = t => [t.bowlInnings, `${t.bowlInnings} innings`];
@@ -3327,7 +3420,7 @@ function computeRecords(matches){
       if (!evs.length) return;
       const over = Math.floor(balls / bpo) + 1;
       const bowler = o.bowler && !isUnnamedPlayer(o.bowler) ? o.bowler : null;
-      const bump = k => { const x = bowled[bowler] || (bowled[bowler] = { wides: 0, noBalls: 0 }); x[k] += 1; };
+      const bump = k => { const pk = keyOf(m, bowler); const x = bowled[pk] || (bowled[pk] = { wides: 0, noBalls: 0, name: bowler }); x[k] += 1; };
       let runs = 0;
       const byBatter = {};
       evs.forEach(ev => {
@@ -3345,9 +3438,9 @@ function computeRecords(matches){
       });
     });
   }));
-  const bowledMost = k => recordPlaces(Object.keys(bowled).filter(n => bowled[n][k] > 0).map(n => {
-    const inns = byName[n] ? byName[n].bowlInnings : 0;
-    return { name: n, value: bowled[n][k], sub: -inns, detail: `${inns} innings` };
+  const bowledMost = k => recordPlaces(Object.keys(bowled).filter(pk => bowled[pk][k] > 0).map(pk => {
+    const t = byKey[pk], inns = t ? t.bowlInnings : 0;
+    return { name: t ? t.name : bowled[pk].name, key: pk, value: bowled[pk][k], sub: -inns, detail: `${inns} innings` };
   }));
   return [
     { key: "bat", title: "Batting", records: [

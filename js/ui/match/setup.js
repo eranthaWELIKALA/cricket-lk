@@ -113,14 +113,17 @@ function handleMatchSetupSubmit(e){
   const f = new FormData(e.target);
   let teamA = (f.get("teamA") || "").trim() || "Team A";
   let teamB = (f.get("teamB") || "").trim() || "Team B";
-  let squads = null, guestNames = [], visitingSides = [];
+  // Squads come with who each player is (squadsWithIds: a label per player,
+  // "Name (2)" for a second player of a name, and the id behind it).
+  let squads = null, guestNames = [], visitingSides = [], squadIds = null;
   if (f.get("teamAId")){
     const saved = (ui.clubTournament && ui.clubTournament.teams) || [];
     const ta = saved.find(t => t.id === f.get("teamAId")), tb = saved.find(t => t.id === f.get("teamBId"));
     if (!ta || !tb || ta.id === tb.id){ showFormError(e.target, "Pick two different teams."); return; }
     teamA = ta.name; teamB = tb.name;
-    squads = { A: ta.players.map(p => p.name), B: tb.players.map(p => p.name) };
-    guestNames = [...ta.players, ...tb.players].filter(p => p.guest).map(p => p.name);
+    const sq = squadsWithIds(ta.players, tb.players);
+    squads = { A: sq.A, B: sq.B }; squadIds = sq.playerIds;
+    guestNames = sq.guestNames;
     visitingSides = [ta.visiting && "A", tb.visiting && "B"].filter(Boolean);
   } else if (!(ui.currentClubId && ui.clubMatchSetupType)){
     // Guest match: a name that matches a saved guest team brings its players
@@ -128,8 +131,8 @@ function handleMatchSetupSubmit(e){
     const saved = n => Object.values(state.teams).find(t => t.name.toLowerCase() === n.toLowerCase());
     const ta = saved(teamA), tb = saved(teamB);
     if (ta) teamA = ta.name; if (tb) teamB = tb.name;   // the saved spelling
-    const A = guestTeamSquad(ta, state.players), B = guestTeamSquad(tb, state.players);
-    if (A.length || B.length) squads = { A, B };
+    const sq = squadsWithIds(guestTeamPlayers(ta), guestTeamPlayers(tb));
+    if (sq.A.length || sq.B.length){ squads = { A: sq.A, B: sq.B }; squadIds = sq.playerIds; }
   }
   const oversLimit = parseOptionalLimit(f.get("overs"), 1);
   const playersPerSide = parseOptionalLimit(f.get("players"), 2);
@@ -165,9 +168,10 @@ function handleMatchSetupSubmit(e){
     if (guestNames.length) state.match.guestNames = guestNames;
     if (visitingSides.length) state.match.visitingSides = visitingSides;   // isVisitingSide
   } else if (squads) state.match.squads = squads;
+  if (squads && squadIds) state.match.playerIds = squadIds;
   // "No names": render() fills every slot (fillAnonymousSlots), so there are
   // no squads or guests to keep apart.
-  if (f.get("anonymous") === "on"){ state.match.anonymous = true; delete state.match.squads; delete state.match.guestNames; }
+  if (f.get("anonymous") === "on"){ state.match.anonymous = true; delete state.match.squads; delete state.match.guestNames; delete state.match.playerIds; }
   state.snapshots = [];
   save(); render();
 }

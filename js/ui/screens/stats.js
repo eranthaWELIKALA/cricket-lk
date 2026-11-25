@@ -90,8 +90,8 @@ function leaderboardTable(table, totals){
   const body = sortLeaderboard(rows, table, sort).map((t, i) => `<tr>${cols.map(c => {
     // The name opens that player's figures over these matches (the player stats sheet).
     if (c.key === "name"){
-      const me = isMyName(self, t.name);
-      return `<td class="lb-name${me ? " lb-me" : ""}">${ranked ? `<span class="lb-rank">${i + 1}</span>` : ""}<button type="button" data-action="open-player-stats" data-name="${escapeHtml(t.name)}" class="name-btn lb-name-btn">${escapeHtml(t.name)}</button>${me ? `<span class="you-tag">You</span>` : ""}</td>`;
+      const me = isMyTotal(self, t);
+      return `<td class="lb-name${me ? " lb-me" : ""}">${ranked ? `<span class="lb-rank">${i + 1}</span>` : ""}<button type="button" data-action="open-player-stats" data-key="${escapeHtml(t.key || "")}" data-name="${escapeHtml(t.name)}" class="name-btn lb-name-btn">${escapeHtml(t.name)}</button>${me ? `<span class="you-tag">You</span>` : ""}</td>`;
     }
     const v = c.text ? c.text(t) : c.value(t);
     return `<td class="${c.key === sort.key ? "on" : ""}">${c.strong ? `<b>${v}</b>` : v}</td>`;
@@ -149,7 +149,7 @@ function recordCardHtml(r){
   </div>`;
 }
 function renderRecords(matches){
-  const groups = computeRecords(matches)
+  const groups = computeRecords(matches, statsOpts())
     .map(g => Object.assign({}, g, { records: g.records.filter(r => r.entries.length) }))
     .filter(g => g.records.length);
   if (!groups.length) return `<p class="hint">No records yet.</p>`;
@@ -198,7 +198,7 @@ function renderStatsScreen(){
     <div class="screen stats">
       ${renderBackBar("Home", "home")}
       <h1>📊 All-time stats</h1>
-      ${matches.length ? renderLeaderboards(aggregatePlayerStats(matches, points), { points, where: "Presets → MVP points", matches, title: "All-time" }) : `<p class="hint">Play and finish a match to see stats here.</p>`}
+      ${matches.length ? renderLeaderboards(aggregatePlayerStats(matches, points, statsOpts()), { points, where: "Presets → MVP points", matches, title: "All-time" }) : `<p class="hint">Play and finish a match to see stats here.</p>`}
     </div>
   `;
 }
@@ -232,13 +232,30 @@ function isMyName(self, name){
   const key = (name || "").trim().toLowerCase();
   return !!self && !!key && self.names.some(n => n.toLowerCase() === key);
 }
+/* A leaderboard total that's the signed-in player: their id, or -- a line
+   counted by name (matches from before ids) -- one of their names. */
+function isMyTotal(self, t){
+  if (!self || !t) return false;
+  if (t.key && !isNameKey(t.key)) return t.key === self.id;
+  return (t.names && t.names.length ? t.names : [t.name]).some(n => isMyName(self, n));
+}
+// Who a player's sheet / My stats is about (statsWho): the signed-in player, or one leaderboard line.
+function playerStatsWho(ps){
+  if (ps.self) return statsWho(ps.self.id, ps.self.names);
+  return statsWho(ps.key && !isNameKey(ps.key) ? ps.key : null, ps.names);
+}
 
-function openPlayerStats(name, scope){
+/* `key`: the leaderboard line's (a player id, or "name:…" for a name counted
+   before ids); its name and every name it was counted under come from the
+   totals over the same matches. */
+function openPlayerStats(key, scope, name){
   const sc = scope || statsScope;
-  if (!sc || !name) return;
+  if (!sc || (!key && !name)) return;
+  const t = aggregatePlayerStats(sc.matches, sc.points, statsOpts()).find(x => key ? x.key === key : x.name === name);
   const self = myPlayerSelf();
-  const mine = isMyName(self, name);
-  ui.playerStats = { view: state.view, name: mine ? self.name : name, names: mine ? self.names : [name], self: mine ? self : null,
+  const mine = t ? isMyTotal(self, t) : isMyName(self, name);
+  ui.playerStats = { view: state.view, key: t ? t.key : null, name: mine ? self.name : t ? t.name : name,
+    names: mine ? self.names : t ? t.names : [name], self: mine ? self : null,
     matches: sc.matches, points: sc.points, title: sc.title };
   render();
 }
@@ -257,7 +274,7 @@ function playerRankPills(ranks, withPoints){
    played in these matches? Then a tournament gets its My stats tab. */
 function myStatsIn(matches){
   const self = myPlayerSelf();
-  return !!(self && matches && matches.length && playerMatchLines(self.names, matches).length);
+  return !!(self && matches && matches.length && playerMatchLines(statsWho(self.id, self.names), matches).length);
 }
 
 /* One player's figures over a set of matches: { name, names, self, matches,
@@ -265,13 +282,18 @@ function myStatsIn(matches){
    Who they played for, any merged names counted, the profile's tiles with
    where they rank, and match by match. */
 function playerStatsBodyHtml(ps){
-  const career = playerCareer(ps.names, ps.matches, ps.points);
-  const lines = playerMatchLines(ps.names, ps.matches);
-  const ranks = playerRanks(ps.names, aggregatePlayerStats(ps.matches, ps.points));
+  const who = playerStatsWho(ps);
+  const career = playerCareer(who, ps.matches, ps.points);
+  const lines = playerMatchLines(who, ps.matches);
+  const totals = aggregatePlayerStats(ps.matches, ps.points, statsOpts());
+  const self = ps.self;
+  const ranks = playerRanks(t => self ? isMyTotal(self, t) : t.key === ps.key, totals);
   // Who they played for, when it's one side or two (a club's many practice-day sides would only be noise).
   const sides = [...new Set(lines.filter(l => l.team).map(l => teamName(l.match, l.team)))];
   const where = [ps.title, sides.length && sides.length <= 2 ? `for ${sides.join(" and ")}` : ""].filter(Boolean).join(" · ");
-  const also = ps.self ? ps.self.names.filter(n => n !== ps.self.name && lines.some(l => playerMatchLines([n], [l.match]).length)) : [];
+  // Every other name they're counted under here (a former name, a merged profile's).
+  const shown = (ps.name || "").trim().toLowerCase();
+  const also = [...new Set(lines.flatMap(l => l.labels || []))].filter(n => n.trim().toLowerCase() !== shown);
   return `
     ${where ? `<p class="muted player-stats-where">${escapeHtml(where)}</p>` : ""}
     ${also.length ? `<p class="hint">Also counted: played as ${also.map(escapeHtml).join(", ")}.</p>` : ""}
