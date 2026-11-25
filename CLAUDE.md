@@ -1218,7 +1218,13 @@ History rules — these are what make it work on phones:
   *replace*. Nothing is pushed at boot or while handling a back/forward press
   (`navApplying`). The old one-entry "trap" was armed on `pointerdown`, which
   isn't a gesture for touch — that's why back didn't work on phones.
-- **Opened straight onto a screen** (reload, relaunch, a link), the first tap
+- **Opening the app with no screen in the URL** (the home-screen icon, the
+  bare address: `start_url` has no hash) lands on **Home**, not on the
+  `state.view` it was last saved with (a tournament, say): `boot.js` sets
+  `state.view = "home"` when the route is `/`. A match in progress still comes
+  back (render() shows it whatever the view), and a URL that names a screen
+  (a reload, a link) still opens that screen.
+- **Opened straight onto a screen** (reload, a link), the first tap
   runs `ensureNavBase()`: that entry becomes Home and the screen is pushed on
   top, so back lands on Home instead of closing the app (matters mid-match).
 - **Replaced, never returned to:** setup screens and Result (`NAV_TRANSIENT`),

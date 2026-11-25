@@ -3691,6 +3691,34 @@ async function main(){
       state.match = null; state.snapshots = []; state.activeClubId = null; state.viewClubId = null; state.viewTournamentId = null; ui = defaultUi(); state.view = "home"; save(); render();`);
   }
 
+  // --- Opening the app: Home, not the screen it was last left on (a URL that names a screen still opens it) ---
+  {
+    const saved = (view, extra) => w => w.localStorage.setItem("cricket.lk.v2", JSON.stringify(Object.assign({
+      view, activeTournamentId: "t1", viewClubId: "c1", viewTournamentId: "ct1",
+      tournaments: { t1: { id: "t1", name: "Summer Cup", tournamentPresetId: null, teamIds: [], matchIds: [] } }
+    }, extra || {})));
+    const open = async (url, view, extra) => {
+      const d = new JSDOM(html, { runScripts: "dangerously", url, beforeParse: saved(view, extra) });
+      await wait(50);
+      return d.window;
+    };
+    let w = await open("http://localhost/", "tournamentDashboard");
+    assert(w.eval("state.view") === "home" && w.location.hash === "#/" && w.document.querySelector('#app [data-action="go-match-setup"]'),
+      "launched from the icon (no screen in the URL), the app opens on Home, not the guest tournament it was last on: " + w.location.hash);
+    w.close();
+    w = await open("http://localhost/index.html", "clubTournamentDashboard");
+    assert(w.eval("state.view") === "home" && w.location.hash === "#/", "...nor the club tournament it was last on");
+    w.close();
+    w = await open("http://localhost/#/tournaments/t1", "home");
+    assert(w.eval("state.view") === "tournamentDashboard" && /Summer Cup/.test(w.document.querySelector("#app").textContent),
+      "a URL that names a screen (a reload, a link) still opens it");
+    w.close();
+    const live = JSON.parse(JSON.stringify(win.createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A" })));
+    w = await open("http://localhost/", "tournamentDashboard", { match: live });
+    assert(w.location.hash === "#/live" && w.document.querySelector("#opening-form"), "a match in progress still comes back when the app opens: " + w.location.hash);
+    w.close();
+  }
+
   // --- Guest edition (the Android app, mobile/): the same page with the flag set, no cloud ---
   {
     const guestHtml = html.replace("<script>", '<script>window.CRICKET_LK_EDITION = "guest";</script><script>');

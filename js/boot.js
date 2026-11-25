@@ -5,10 +5,14 @@ load();
 // out of the URL before the router rewrites it (see takeAuthReturn).
 const authReturn = takeAuthReturn();
 // Page navigation (see ROUTES): number this entry, and let a URL that names a
-// screen (reload, shared link) pick what's shown.
+// screen (reload, shared link) pick what's shown. Launched with none -- the
+// home-screen icon, the bare address -- the app opens on Home, not on the
+// screen it was last left on (a tournament, say); a match in progress still
+// comes back, since render() shows it whatever the view.
 history.replaceState({ idx: 0 }, "", location.hash || "#/");
 navRoutes = [currentRoute()];
 if (currentRoute() !== "/") applyRoute(currentRoute());
+else state.view = "home";
 // ...except mid-match: a reload always lands back on the match (see "Navigation").
 ui.awayFromMatch = false;
 navApplying = true; render(); navApplying = false;
