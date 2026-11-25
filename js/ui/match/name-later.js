@@ -20,9 +20,14 @@ function closeNameLater(){
   render();
 }
 // Who the placeholder could be: everyone on that side it may still become.
-function nameLaterCandidates(m, entry){
+// `more`: the rest of the roster / guest list, outside the squads (pickPoolOthers).
+function nameLaterCandidates(m, entry, more){
   const inn = m.innings[entry.inn];
   const ok = n => !isUnnamedPlayer(n) && !nameUnnamedError(m, entry.name, n);
+  if (more){
+    const team = entry.role === "batter" ? inn.battingTeam : inn.bowlingTeam;
+    return pickCandidates(m, pickPoolOthers(team), entry.role === "batter" ? "batter" : "fielder", inn).filter(n => ok(n) && (entry.role === "batter" || !inn.bowling.order.includes(n)));
+  }
   if (entry.role === "batter") return pickCandidates(m, pickPool(inn.battingTeam), "batter", inn).filter(ok);
   const bowled = inn.bowling.order.filter(ok);
   const seen = new Set(bowled.map(n => n.toLowerCase()));
@@ -33,11 +38,14 @@ function renderNameLaterModal(m){
   const entry = unnamedPlayers(m).find(u => u.name === from);
   const inn = m.innings[entry.inn];
   const bpo = inn.ballsPerOver;
+  // A stand-in partner for the last man (batAloneInstead): who's really batting.
+  const aloneInstead = entry.role === "batter" && !batAloneInsteadError(m, from) ? (inn.striker === from ? inn.nonStriker : inn.striker) : null;
   let line, rows;
   if (entry.role === "batter"){
     const s = inn.batting.stats[from];
     line = `${s.runs} (${s.balls}) · ${batterStatusText(s)} · ${teamName(m, inn.battingTeam)}`;
-    rows = renderPickRows(m.squads ? "Yet to bat" : "Players", nameLaterCandidates(m, entry), "name-later-pick");
+    rows = renderPickRows(m.squads ? "Yet to bat" : "Players", nameLaterCandidates(m, entry), "name-later-pick")
+      + renderPickRows(othersSectionLabel(inn.battingTeam), nameLaterCandidates(m, entry, true), "name-later-pick");
   } else {
     const b = inn.bowling.stats[from];
     const overs = inn.overs.map((o, i) => o.bowler === from ? i + 1 : null).filter(Boolean);
@@ -50,7 +58,8 @@ function renderNameLaterModal(m){
         const s = inn.bowling.stats[n];
         return pickRowHtml(n, "name-later-pick", `${oversDisplay(s.legalBalls, bpo)}-${s.maidens}-${s.runs}-${s.wickets}`);
       }).join("")}</div>` : "")
-      + renderPickRows("Players", c.others, "name-later-pick");
+      + renderPickRows("Players", c.others, "name-later-pick")
+      + renderPickRows(othersSectionLabel(inn.bowlingTeam), nameLaterCandidates(m, entry, true), "name-later-pick");
   }
   return `
     <div class="modal-backdrop">
@@ -60,6 +69,11 @@ function renderNameLaterModal(m){
           <span class="end-badge">${escapeHtml(from)}</span>
         </div>
         <p class="hint n" style="margin-top:0;">${escapeHtml(line)}</p>
+        ${aloneInstead ? `
+          <button type="button" data-action="bat-alone-instead" data-name="${escapeHtml(from)}" class="ghost bat-alone-btn">
+            <span class="main">Nobody · ${escapeHtml(liveName(aloneInstead))} bats alone</span>
+            <span class="sub">${escapeHtml(from)} comes off</span>
+          </button>` : ""}
         <form id="name-later-form">
           <div class="form-error"></div>
           ${renderPickSearch("Save")}
@@ -97,6 +111,31 @@ function saveNameLater(typed, form){
     body: `<p>The scorecard, commentary and stats of this finished match will show <b>${escapeHtml(name)}</b> instead of ${escapeHtml(from)}.</p>`
       + (fresh ? `<p class="hint">${escapeHtml(name)} isn't on ${escapeHtml(teamName(m, side))}'s list yet: they'll be added as a new player.</p>` : ""),
     onConfirm: apply
+  });
+}
+/* Last man stands with nobody left, but a placeholder ("Bat ?1", or a "no
+   names" match's "Batter N") was sent in as a stand-in partner and the strike
+   swapped by hand: "Nobody · X bats alone" (batAloneInstead, ENGINE).
+   Offered on "Who was it?", in ⋯ Match options and, in a "no names" match,
+   on that batter's name. Asks first; Undo takes it back. */
+function askBatAloneInstead(name){
+  const m = state.match;
+  const res = batAloneInstead(m, name);
+  if (res.error) return;
+  ui.matchMenu = null;
+  const who = escapeHtml(liveName(res.survivor)), stand = escapeHtml(name);
+  askConfirm({
+    title: `${liveName(res.survivor)} bats alone?`, icon: "🏏", tone: "primary",
+    body: `<p>Nobody else was left to bat: ${stand} comes off, and ${who} has batted alone since ${stand} came in, on strike for every ball. The next wicket ends the innings.</p>
+      ${res.notes.map(t => `<p>${escapeHtml(t)}</p>`).join("")}
+      <p class="hint">Undo puts it back the way it was.</p>`,
+    confirmLabel: "Bat alone",
+    onConfirm: () => {
+      const again = batAloneInstead(state.match, name);
+      if (again.error) return { error: again.error };
+      applyBallEdit(state.match, again.match);
+      ui.nameLater = null;
+    }
   });
 }
 // A placeholder's name, as a button that opens the sheet (where naming is allowed).
@@ -160,9 +199,14 @@ function toggleReplaceOver(key){
   render();
 }
 // Who it could have been: everyone on that side the change works for.
-function replaceCandidates(m, rp){
+// `more`: the rest of the roster / guest list, outside the squads (pickPoolOthers).
+function replaceCandidates(m, rp, more){
   const inn = m.innings[rp.inn];
   const ok = n => !isUnnamedPlayer(n) && !replacePickError(m, { inn: rp.inn, role: rp.role, from: rp.name, to: n, overs: rp.overs });
+  if (more){
+    const team = rp.role === "batter" ? inn.battingTeam : inn.bowlingTeam;
+    return pickCandidates(m, pickPoolOthers(team), rp.role === "batter" ? "batter" : "fielder", inn).filter(n => ok(n) && (rp.role === "batter" || !inn.bowling.order.includes(n)));
+  }
   if (rp.role === "batter") return pickCandidates(m, pickPool(inn.battingTeam), "batter", inn).filter(ok);
   const bowled = inn.bowling.order.filter(ok);
   const seen = new Set(bowled.map(n => n.toLowerCase()));
@@ -179,7 +223,8 @@ function renderReplacePickModal(m){
   if (rp.role === "batter"){
     const s = inn.batting.stats[from];
     line = `${s.runs} (${s.balls}) · ${batterStatusText(s)} · ${teamName(m, inn.battingTeam)}`;
-    rows = renderPickRows(m.squads ? "Yet to bat" : "Players", replaceCandidates(m, rp), "replace-pick-to");
+    rows = renderPickRows(m.squads ? "Yet to bat" : "Players", replaceCandidates(m, rp), "replace-pick-to")
+      + renderPickRows(othersSectionLabel(inn.battingTeam), replaceCandidates(m, rp, true), "replace-pick-to");
   } else {
     line = `${bowlerFigs(inn.bowling.stats[from], bpo)} · ${teamName(m, inn.bowlingTeam)}`;
     const spells = bowlerSpells(inn, from);
@@ -190,7 +235,8 @@ function renderReplacePickModal(m){
     rows = !rp.overs.length ? `<p class="hint">Pick at least one over above.</p>` : (c.bowled.length ? `
       <div class="section-label">Already bowled</div>
       <div class="bowler-pick-list">${c.bowled.map(n => pickRowHtml(n, "replace-pick-to", bowlerFigs(inn.bowling.stats[n], bpo))).join("")}</div>` : "")
-      + renderPickRows("Players", c.others, "replace-pick-to");
+      + renderPickRows("Players", c.others, "replace-pick-to")
+      + renderPickRows(othersSectionLabel(inn.bowlingTeam), replaceCandidates(m, rp, true), "replace-pick-to");
   }
   return `
     <div class="modal-backdrop">
@@ -287,6 +333,11 @@ function askReplacePick(typed, form){
 // above where a pick can be changed (a placeholder's opens "Who was it?").
 function playerNameHtml(match, inn, role, name, shown){
   if (isUnnamedPlayer(name)) return unnamedNameHtml(match, name, shown);
+  // "No names", last man stands: the batter who came in can be taken off again
+  // (nobody else was left), so the one at the other end bats alone.
+  if (role === "batter" && match && match.anonymous && match === state.match && !batAloneInsteadError(match, name)){
+    return `<button type="button" data-action="bat-alone-instead" data-name="${escapeHtml(name)}" class="name-btn" aria-label="${escapeHtml(name)}: nobody else was left? The other batter bats alone">${escapeHtml(shown == null ? name : shown)}</button>`;
+  }
   const idx = match && match.innings ? match.innings.indexOf(inn) : -1;
   const text = escapeHtml(shown == null ? name : shown);
   if (idx < 0 || !inn.log || !canReplacePick(match)) return text;

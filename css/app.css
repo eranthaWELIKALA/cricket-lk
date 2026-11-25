@@ -165,6 +165,8 @@ button:disabled{opacity:.4;cursor:not-allowed;box-shadow:none;}
 .matchup-row{ display:flex; align-items:center; gap:6px; margin-top:7px; }
 .matchup-row .name{ flex-grow:1; font-size:.8rem; font-weight:700; }
 .matchup-row.muted .name{ color:var(--muted); font-weight:600; }
+/* last man stands, batting alone: the other end's row shows nothing (keeps its height) */
+.matchup-row.empty{ visibility:hidden; }
 .matchup-row .stat{ text-align:right; font-size:.8rem; color:var(--muted); font-variant-numeric:tabular-nums; }
 .matchup-row .stat.emph{ font-size:.9rem; font-weight:800; color:var(--text); }
 .matchup-marker{ flex-shrink:0; }

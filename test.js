@@ -836,6 +836,22 @@ async function main(){
 
     const off = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 3, battingFirst: "A" });
     assert(currentInnings(off).maxWickets === 2 && off.lastManStands === false, "without the rule, all out is players - 1");
+
+    // No players limit: the rule stays on, and waits for the scorer to say nobody's left.
+    const any = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: null, battingFirst: "A", lastManStands: true });
+    const ai = currentInnings(any);
+    win.openInnings(ai, "A1", "A2", "B1"); any.status = "live";
+    assert(any.lastManStands && ai.lastManStands && ai.maxWickets === null, "last man stands with no players limit is kept (no all out yet)");
+    recordBall(ai, { kind: "run", runs: 1 }); afterBall(any); recordBall(ai, { kind: "wicket", wicketType: "bowled" }); afterBall(any);
+    assert(win.pendingBatsmanSlot(ai) === "striker" && win.canBatAlone(ai) && win.batAlone(ai) && ai.maxWickets === 2 && ai.striker === "A1" && !win.pendingBatsmanSlot(ai),
+      "...a wicket asks for a batter, and Bat alone leaves A1 on strike with nobody asked for");
+    recordBall(ai, { kind: "run", runs: 1 }); afterBall(any);
+    assert(ai.striker === "A1" && ai.nonStriker === null, "...who keeps the strike after a single");
+    recordBall(ai, { kind: "wicket", wicketType: "bowled" }); afterBall(any);
+    assert(ai.complete && ai.completeReason === "allout" && any.status === "innings_break", "...and their wicket ends the innings, all out");
+    assert(win.conditionTagsFor(any).includes("last man stands")
+      && /last batter bats alone/.test(Object.fromEntries(win.describeMatchPreset({ ballsPerOver: 6, oversLimit: 5, playersPerSide: null, lastManStands: true })).Players),
+      "...and the presets say so");
   }
 
   // --- 21. no overs limit / no players limit ---
@@ -2897,6 +2913,46 @@ async function main(){
     assert(ri && ri.wickets === 3 && ri.complete && ri.batting.order.join() === "A1,A2,A3" && r.notes.some(t => /ends earlier/.test(t)),
       "a wicket added earlier brings the batting alone forward (no batter is asked for), and the innings ends sooner");
 
+    // No last man stands, a short side: that was the last man, so they're all out.
+    const s = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A" });
+    const si = currentInnings(s);
+    win.openInnings(si, "A1", "A2", "B1"); s.status = "live";
+    const sp = ev => { recordBall(si, ev); afterBall(s); };
+    assert(!win.canDeclareAllOut(si) && !win.canDeclareAllOut(inn), "all out needs a wicket and a batter to be asked for (and isn't for last man stands)");
+    sp({ kind: "run", runs: 1 }); sp({ kind: "wicket", wicketType: "bowled" });   // A2 out
+    win.sendInBatter(si, "A3");
+    sp({ kind: "run", runs: 2 }); sp({ kind: "wicket", wicketType: "caught", fielder: "B2" });   // A3 out
+    assert(si.maxWickets === 5 && win.canDeclareAllOut(si) && win.declareAllOut(si) && si.complete && si.completeReason === "allout" && si.maxWickets === 2
+      && win.isAllOut(si) && si.allOutByHand.maxWickets === 5, "declared all out: the side is the wickets so far, and the innings ends all out");
+    afterBall(s);
+    assert(s.status === "innings_break", "...on to the innings break");
+    const sseq = n => si.log.filter(a => a.t === "ball")[n].ev.seq;
+    let q = win.replayMatch(s, { inn: 0, seq: sseq(2), ev: { kind: "run", runs: 4 } });
+    assert(q.match && q.match.innings[0].completeReason === "allout" && q.match.innings[0].maxWickets === 2 && q.match.innings[0].runs === 5, "an edited ball replays the all out");
+    q = win.replayMatch(s, { inn: 0, seq: sseq(0), ev: { kind: "wicket", wicketType: "bowled" } });
+    let qi = q.match && q.match.innings[0];
+    assert(qi && qi.wickets === 2 && qi.complete && qi.completeReason === "allout" && qi.batting.order.join() === "A1,A2,A3" && q.notes.some(t => /ends earlier/.test(t)),
+      "a wicket added earlier brings the all out forward, and the innings ends sooner");
+    q = win.replayMatch(s, { inn: 0, seq: sseq(3), ev: { kind: "run", runs: 0 } });
+    qi = q.match && q.match.innings[0];
+    assert(qi && !qi.complete && qi.maxWickets === 5 && !qi.allOutByHand && q.match.status === "live" && q.notes.some(t => /isn't all out/.test(t)),
+      "the last wicket taken out: not all out any more, the innings is live again and the note says so");
+    q = win.reopenInnings(s, 0);
+    qi = q.match && q.match.innings[0];
+    assert(qi && !qi.complete && qi.maxWickets === 5 && !qi.allOutByHand && win.pendingBatsmanSlot(qi) === "striker" && qi.log[qi.log.length - 1].t !== "allout"
+      && q.match.status === "live", "all out by hand can be reopened: the side's size is back and a batter is asked for");
+    const rebuilt = win.rebuildInningsFromScorecard(JSON.parse(JSON.stringify(s)), 0);
+    assert(rebuilt && rebuilt.completeReason === "allout" && rebuilt.allOutByHand && rebuilt.allOutByHand.maxWickets === 5 && rebuilt.log.some(a => a.t === "allout"),
+      "an archived innings without its log is rebuilt with the all out");
+    // In the chase it ends the match.
+    win.startSecondInnings(s);
+    const ci = currentInnings(s);
+    win.openInnings(ci, "B1", "B2", "A1"); s.status = "live";
+    recordBall(ci, { kind: "run", runs: 1 }); afterBall(s); recordBall(ci, { kind: "wicket", wicketType: "lbw" }); afterBall(s);
+    assert(win.declareAllOut(ci), "the chasing side can be all out too");
+    afterBall(s);
+    assert(s.status === "complete" && /Lions won by 2 runs/.test(s.result), "...which ends the match: " + s.result);
+
     // A wrong pick, replaced: a batter for their innings, a bowler for chosen overs.
     const w = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A", ballsPerOver: 2 });
     const wi = currentInnings(w);
@@ -2958,8 +3014,12 @@ async function main(){
       openInnings(currentInnings(state.match), "A1", "A2", "B1"); state.match.status = "live"; render();`);
     doc.querySelector('#app [data-action="open-wicket"]').click();
     doc.querySelector('#modal-root [data-action="pick-wicket"][data-type="caught"]').click();
-    const chips = () => [...doc.querySelectorAll("#modal-root .fielder-row")].map(c => c.dataset.name);
+    const chips = () => [...doc.querySelectorAll("#modal-root .fielder-list")[0].querySelectorAll(".fielder-row")].map(c => c.dataset.name);
     assert(chips().join() === "B1,B2,B3" && !(doc.activeElement && doc.activeElement.matches("input")), "Caught lists the fielding side as rows, nothing focused");
+    const otherFielders = doc.querySelectorAll("#modal-root .fielder-list")[1];
+    assert(otherFielders && otherFielders.previousElementSibling.textContent === "Other players" && otherFielders.querySelector(".fielder-row")
+      && ![...otherFielders.querySelectorAll(".fielder-row")].some(c => /^[AB][123]$/.test(c.dataset.name)),
+      "...then everyone else on the players list, outside both squads, as 'Other players' (a sub fielder)");
     doc.querySelector('#modal-root .fielder-row[data-name="B3"]').click();
     assert(doc.querySelector('#modal-root .fielder-row.active[data-name="B3"]'), "a tapped row is ticked");
     const fbox = doc.getElementById("wicket-fielder");
@@ -2969,15 +3029,151 @@ async function main(){
     doc.querySelector('#modal-root .fielder-row[data-name="B2"]').click();
     doc.getElementById("wicket-fielder-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
     assert(live().wickets === 1 && live().batting.stats.A1.howOut === "c B2 b B1" && live().fielding.stats.B2.catches === 1, "Confirm credits the tapped fielder");
+    const listAlone = doc.querySelector('#modal-root #new-batsman-form [data-action="bat-alone"]');
+    assert(listAlone && listAlone.classList.contains("ghost") && !listAlone.nextElementSibling && doc.querySelectorAll('#modal-root [data-action="bat-alone"]').length === 1
+      && !doc.querySelector('#modal-root .sheet-actions [data-action="bat-alone"]') && !doc.querySelector('#modal-root [data-action="all-out"]'),
+      "last man stands, someone still listed: '… bats alone' is under the list, not in the button bar");
 
     // The new-batter sheet: with the squad used up, going on alone comes first.
     win.eval(`sendInBatter(currentInnings(state.match), "A3"); recordBall(currentInnings(state.match), { kind: "wicket", wicketType: "bowled" }); afterBall(state.match); render();`);
     const alone = doc.querySelector('#modal-root [data-action="bat-alone"]');
-    assert(alone && alone.classList.contains("primary") && /A2 bats on alone/.test(alone.textContent), "nobody left in the squad: '… bats on alone' is the first thing on the sheet");
+    assert(alone && alone.classList.contains("primary") && alone.textContent.replace(/\s+/g, " ").trim() === "A2 bats alone No one else to bat", "nobody left in the squad: 'A2 bats alone' is the first thing on the sheet");
     alone.click();
     assert(win.eval("battingAlone(currentInnings(state.match))") && live().striker === "A2" && !doc.querySelector("#modal-root #new-batsman-form")
-      && /Batting alone/.test(doc.querySelector("#app .matchup-card").textContent), "one tap: A2 bats on alone, and the board says so");
-    win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); save(); render();`);
+      && doc.querySelector("#app .matchup-row.empty") && doc.querySelector("#app .matchup-row.empty").textContent.trim() === "" && !/alone/i.test(doc.querySelector("#app .matchup-card").textContent),
+      "one tap: A2 bats alone, and the board's other batter row shows nothing");
+
+    // No last man stands: the new-batter sheet has All out, which asks first.
+    win.eval(`state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A" });
+      state.snapshots = []; ui = defaultUi();
+      openInnings(currentInnings(state.match), "A1", "A2", "B1"); state.match.status = "live";
+      recordBall(currentInnings(state.match), { kind: "run", runs: 3 }); afterBall(state.match);
+      pushSnapshot(); recordBall(currentInnings(state.match), { kind: "wicket", wicketType: "bowled" }); afterBall(state.match); render();`);
+    const listAllOut = doc.querySelector('#modal-root #new-batsman-form [data-action="all-out"]');
+    assert(listAllOut && listAllOut.classList.contains("ghost") && !doc.querySelector('#modal-root .sheet-actions [data-action="all-out"]')
+      && !doc.querySelector('#modal-root [data-action="end-innings"]') && doc.querySelectorAll("#modal-root .sheet-actions button").length === 2,
+      "after a wicket the new-batter sheet offers All out under the list (the button bar is just Undo · Pick later)");
+    listAllOut.click();
+    assert(/Lions all out\?/.test(doc.querySelector("#confirm-root").textContent) && /Tigers will need 4 to win/.test(doc.querySelector("#confirm-root").textContent)
+      && !live().complete, "it asks first, saying the target");
+    doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    assert(win.state.match.status === "innings_break" && live().completeReason === "allout" && !doc.querySelector("#modal-root #new-batsman-form"),
+      "confirmed: all out, on to the innings break");
+    assert(doc.querySelector('#app [data-action="reopen-innings"]'), "the innings break offers to reopen it");
+    win.eval(`handleUndo(); render();`);
+    assert(win.state.match.status === "live" && win.pendingBatsmanSlot(live()) === "striker" && !live().complete, "Undo takes it back to the new-batter sheet");
+    // A squad with nobody left: All out comes first.
+    win.eval(`state.match.squads = { A: ["A1", "A2"], B: ["B1", "B2"] }; render();`);
+    const topAllOut = doc.querySelector('#modal-root .modal > [data-action="all-out"]');
+    assert(topAllOut && topAllOut.classList.contains("primary") && /All out\s+No one else to bat/.test(topAllOut.textContent)
+      && doc.querySelectorAll('#modal-root [data-action="all-out"]').length === 1, "nobody left in the squad: 'all out' is the first thing on the sheet");
+    // No squad: the guest player list used up does the same.
+    win.eval(`window.__players = state.players; delete state.match.squads;
+      state.players = { p1: { id: "p1", name: "A1" }, p2: { id: "p2", name: "A2" } }; render();`);
+    assert(doc.querySelector('#modal-root .modal > [data-action="all-out"].primary'), "no squad, but every guest player on the list has batted: it comes first too");
+    win.eval(`state.players.p3 = { id: "p3", name: "A3" }; render();`);
+    assert(!doc.querySelector('#modal-root .modal > [data-action="all-out"]') && doc.querySelector('#modal-root #new-batsman-form [data-action="all-out"].ghost'),
+      "...and goes back under the list while someone's left to pick");
+    win.eval(`state.players = window.__players;`);
+
+    // Last man stands, but a "Bat ?1" was sent in as a stand-in and the strike swapped by hand: put it right.
+    win.eval(`state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A", lastManStands: true });
+      state.snapshots = []; ui = defaultUi();
+      { const inn = currentInnings(state.match); openInnings(inn, "A1", "A2", "B1"); state.match.status = "live";
+        recordBall(inn, { kind: "wicket", wicketType: "bowled" }); afterBall(state.match);   // A1 out, A2 at the other end
+        sendInBatter(inn, "Bat ?1");                                                          // the stand-in, on strike
+        recordBall(inn, { kind: "run", runs: 2 }); afterBall(state.match);                    // forgot to swap: Bat ?1 2 (1)
+        swapStrikeByHand(inn); recordBall(inn, { kind: "run", runs: 1 }); afterBall(state.match);
+        swapStrikeByHand(inn); recordBall(inn, { kind: "run", runs: 4 }); afterBall(state.match); }
+      render();`);
+    assert(win.batAloneInsteadName(win.state.match) === "Bat ?1" && win.batAloneInsteadError(win.state.match, "A2") && /isn't last man stands/.test(win.batAloneInsteadError(Object.assign({}, win.state.match, { innings: [Object.assign({}, live(), { lastManStands: false })] }), "Bat ?1")),
+      "the stand-in can be taken off (not the real batter, and only with last man stands)");
+    const bi = win.batAloneInstead(win.state.match, "Bat ?1");
+    const biInn = bi.match && bi.match.innings[0];
+    assert(biInn && !biInn.batting.stats["Bat ?1"] && biInn.batting.stats.A2.runs === 7 && biInn.batting.stats.A2.balls === 3 && biInn.striker === "A2" && biInn.nonStriker === null
+      && win.battingAlone(biInn) && biInn.maxWickets === 2 && biInn.runs === 7 && bi.notes.some(t => /Bat \?1's 2 \(1\) now count for A2/.test(t)),
+      "A2 has batted alone since: every ball is theirs (the 2 Bat ?1 'faced' too), the swaps are gone, A2 on strike");
+    doc.querySelector('#app [data-action="name-later"][data-name="Bat ?1"]').click();
+    const nobody = doc.querySelector('#modal-root [data-action="bat-alone-instead"][data-name="Bat ?1"]');
+    assert(nobody && /Nobody · A2 bats alone/.test(nobody.textContent), "'Who was it?' on Bat ?1 offers 'Nobody · A2 bats alone'");
+    nobody.click();
+    assert(/A2 bats alone\?/.test(doc.querySelector("#confirm-root").textContent) && live().batting.stats["Bat ?1"], "it asks first");
+    doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    assert(!live().batting.stats["Bat ?1"] && live().striker === "A2" && !doc.querySelector("#modal-root .modal")
+      && doc.querySelector("#app .matchup-row.empty"), "confirmed: Bat ?1 is gone and A2 bats alone (the other row blank)");
+    win.eval(`recordBall(currentInnings(state.match), { kind: "run", runs: 1 }); afterBall(state.match); render();`);
+    assert(live().striker === "A2" && live().nonStriker === null, "...who keeps the strike after a single");
+    win.eval(`handleUndo(); handleUndo(); render();`);
+    assert(live().batting.stats["Bat ?1"] && live().nonStriker === "Bat ?1", "Undo puts the stand-in back");
+    win.eval(`ui.matchMenu = "menu"; render();`);
+    assert(doc.querySelector('#modal-root [data-action="bat-alone-instead"][data-name="Bat ?1"]') && /A2 bats alone/.test(doc.querySelector("#modal-root").textContent),
+      "⋯ Match options offers it too");
+    win.eval(`ui.matchMenu = null; render();`);
+
+    // "No names", last man stands: the batter who came in is a button that takes them off again.
+    win.eval(`state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: null, battingFirst: "A", lastManStands: true });
+      state.match.anonymous = true; state.snapshots = []; ui = defaultUi(); render();
+      recordBall(currentInnings(state.match), { kind: "run", runs: 1 }); afterBall(state.match);
+      recordBall(currentInnings(state.match), { kind: "wicket", wicketType: "bowled" }); afterBall(state.match); render();`);
+    assert(live().nonStriker === "Batter 1" && live().striker === "Batter 3" && live().batting.stats["Batter 2"].out, "a 'no names' match fills the gap with Batter 3 at once");
+    const anonBtn = doc.querySelector('#app [data-action="bat-alone-instead"][data-name="Batter 3"]');
+    assert(anonBtn && !doc.querySelector('#app [data-action="bat-alone-instead"][data-name="Batter 1"]'), "Batter 3's name on the board is a button (Batter 1's isn't)");
+    anonBtn.click();
+    doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    assert(!live().batting.stats["Batter 3"] && live().striker === "Batter 1" && live().nonStriker === null && win.battingAlone(live()), "confirmed: Batter 1 bats alone");
+    win.eval(`render(); recordBall(currentInnings(state.match), { kind: "run", runs: 2 }); afterBall(state.match); render();`);
+    assert(live().nonStriker === null && !live().batting.stats["Batter 3"], "and no Batter 3 comes in after the next ball");
+    const anonSeq = live().log.find(a => a.t === "ball").ev.seq;
+    const anonEdit = win.replayMatch(win.state.match, { inn: 0, seq: anonSeq, ev: { kind: "run", runs: 4 } });
+    assert(anonEdit.match && win.battingAlone(anonEdit.match.innings[0]) && anonEdit.match.innings[0].runs === 6 && !anonEdit.match.innings[0].batting.stats["Batter 3"],
+      "an edited ball replays the batting alone in a 'no names' match");
+    win.eval(`recordBall(currentInnings(state.match), { kind: "wicket", wicketType: "bowled" }); afterBall(state.match); render();`);
+    assert(live().complete && live().completeReason === "allout" && win.state.match.status === "innings_break", "the lone batter's wicket ends the innings");
+
+    // The new-bowler sheet lists both groups; the match preset says which comes first.
+    const mf = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A", freshBowlersFirst: true });
+    assert(mf.freshBowlersFirst === true && win.restartMatch(mf, "B").freshBowlersFirst === true && createMatch({ teamA: "L", teamB: "T", battingFirst: "A" }).freshBowlersFirst === false,
+      "freshBowlersFirst is kept on the match (and through a toss restart); off by default");
+    assert(Object.fromEntries(win.describeMatchPreset({ ballsPerOver: 6, oversLimit: 5, playersPerSide: 6, freshBowlersFirst: true }))["New bowler"] === "Players yet to bowl are listed first."
+      && Object.fromEntries(win.describeMatchPreset({ ballsPerOver: 6, oversLimit: 5, playersPerSide: 6 }))["New bowler"] === "Players who've bowled are listed first.",
+      "the preset's ⓘ says which comes first");
+    const pf = doc.createElement("div");
+    pf.innerHTML = win.renderMatchPresetForm({ name: "Club", freshBowlersFirst: true });
+    assert(win.parseMatchPresetForm(new win.FormData(pf.querySelector("form"))).freshBowlersFirst === true
+      && !win.parseMatchPresetForm(new win.FormData((pf.innerHTML = win.renderMatchPresetForm({ name: "Club" }), pf.querySelector("form")))).freshBowlersFirst,
+      "the match preset form has the setting (guest and club presets share it)");
+    const bowlerSheet = fresh => {
+      win.eval(`state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A", ballsPerOver: 1, freshBowlersFirst: ${fresh} });
+        state.match.squads = { A: ["A1", "A2"], B: ["B1", "B2", "B3"] }; state.snapshots = []; ui = defaultUi();
+        { const inn = currentInnings(state.match); openInnings(inn, "A1", "A2", "B1"); state.match.status = "live";
+          recordBall(inn, { kind: "run", runs: 0 }); afterBall(state.match); setBowler(inn, "B2");
+          recordBall(inn, { kind: "run", runs: 0 }); afterBall(state.match); }
+        render();`);
+      return [...doc.querySelectorAll("#modal-root #new-bowler-form .section-label")].map(l => l.textContent.trim());
+    };
+    const byDefault = bowlerSheet(false);
+    assert(byDefault[0] === "Already bowled" && byDefault[1] === "Yet to bowl" && byDefault[2] === "Other players"
+      && doc.querySelector('#modal-root [data-action="pick-bowler"][data-name="B3"]') && doc.querySelector('#modal-root [data-action="pick-bowler"][data-name="B1"]'),
+      "new bowler: Already bowled, then Yet to bowl (B3), then players outside the squads: " + byDefault.join(" · "));
+    const freshFirst = bowlerSheet(true);
+    assert(freshFirst[0] === "Yet to bowl" && freshFirst[1] === "Other players" && freshFirst[2] === "Already bowled", "...or yet to bowl first when the preset says so: " + freshFirst.join(" · "));
+
+    // Players left out of a squad are still listed (they used to be reachable only by typing the exact name).
+    win.eval(`state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A" });
+      state.match.squads = { A: ["A1", "A2", "A3"], B: ["B1", "B2"] }; state.snapshots = []; ui = defaultUi();
+      window.__players = state.players; state.players = { x1: { id: "x1", name: "Late Comer" }, x2: { id: "x2", name: "B1" } };
+      { const inn = currentInnings(state.match); openInnings(inn, "A1", "A2", "B1"); state.match.status = "live";
+        recordBall(inn, { kind: "wicket", wicketType: "bowled" }); afterBall(state.match); sendInBatter(inn, "A3"); recordBall(inn, { kind: "run", runs: 1 }); afterBall(state.match); }
+      render();`);
+    win.eval(`recordBall(currentInnings(state.match), { kind: "wicket", wicketType: "bowled" }); afterBall(state.match); render();`);
+    assert(doc.querySelector('#modal-root #new-batsman-form [data-action="pick-batter"][data-name="Late Comer"]')
+      && [...doc.querySelectorAll("#modal-root .section-label")].some(l => l.textContent === "Other players")
+      && doc.querySelector('#modal-root .modal > [data-action="all-out"]'),
+      "new batter: the squad is used up (All out comes first), but Late Comer, outside the squads, is still listed");
+    win.eval(`ui.pickDismissed = pendingPickKey(state.match); ui.replacePick = { inn: 0, role: "batter", name: "A3" }; render();`);
+    assert(doc.querySelector('#modal-root [data-action="replace-pick-to"][data-name="Late Comer"]') && !doc.querySelector('#modal-root [data-action="replace-pick-to"][data-name="B1"]'),
+      "Wrong batter? lists Late Comer too (never a player from the other side)");
+    win.eval(`ui.replacePick = null; state.players = window.__players; state.match = null; state.snapshots = []; ui = defaultUi(); save(); render();`);
   }
 
   // --- Players who aren't club members: find, view (read only), claim ---
@@ -3827,7 +4023,7 @@ async function main(){
       && /9 \(5\) c K1 b K2/.test(sheet().querySelector(".ball-edit-context").textContent), "picking the other batter previews it: the note and each batter's new line");
     tileFor("bowlerOther", "1").click();
     const opts = [...sheet().querySelectorAll('.combo-opt')].map(o => o.dataset.name).join();
-    assert(opts === "K3,K4", "Someone else: a box listing the rest of the bowling side (" + opts + ")");
+    assert(/^K3,K4(,|$)/.test(opts) && !/K1|K2|Sajith/.test(opts), "Someone else: a box listing the rest of the bowling side first, then players outside the squads (" + opts + ")");
     doc.querySelector('#ball-edit-form input[name="bowlerName"]').value = "K4";
     doc.getElementById("ball-edit-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
     assert(/Over 2 is now K4's/.test(doc.querySelector("#confirm-root").textContent) && /Sajith/.test(doc.querySelector("#confirm-root").textContent), "Review asks first, with the bowler typed in");

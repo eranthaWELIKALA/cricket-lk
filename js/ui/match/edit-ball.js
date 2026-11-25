@@ -629,11 +629,11 @@ function renderBallEditModal(m){
   const isRunout = d.kind === "wicket" && d.wicketType === "runout";
   const needsFielder = d.kind === "wicket" && WICKET_FIELDER_TYPES.includes(d.wicketType) && !m.anonymous;
   const outAt = d.outEnd || d.endComingIn;
-  const fielderPool = pickPool(inn.bowlingTeam).filter(n => !playerSideConflict(m, n, inn.bowlingTeam));
+  const fielderPool = pickPoolAll(inn.bowlingTeam).filter(n => !playerSideConflict(m, n, inn.bowlingTeam));
   const needInn = be.need ? m.innings[be.need.inn] : null;
   const needPool = !be.need ? [] : be.need.kind === "batter"
-    ? pickPool(needInn.battingTeam).filter(n => !needInn.batting.order.some(x => x.toLowerCase() === n.toLowerCase()) && !playerSideConflict(m, n, needInn.battingTeam))
-    : [...needInn.bowling.order, ...pickPool(needInn.bowlingTeam)].filter((n, i, a) => a.indexOf(n) === i
+    ? pickPoolAll(needInn.battingTeam).filter(n => !needInn.batting.order.some(x => x.toLowerCase() === n.toLowerCase()) && !playerSideConflict(m, n, needInn.battingTeam))
+    : [...needInn.bowling.order, ...pickPoolAll(needInn.bowlingTeam)].filter((n, i, a) => a.indexOf(n) === i
       && (!be.need.last || n.toLowerCase() !== be.need.last.toLowerCase()) && !playerSideConflict(m, n, needInn.bowlingTeam));
   const choices = be.mode === "remove" ? removalChoices(m, be) : null;
   const fillTile = (value, label, sub, disabled) => `<button type="button" data-action="ball-edit-fill" data-value="${value}" class="${(be.fill || "") === value ? "active" : ""}" ${disabled ? "disabled" : ""}>${label}${sub ? `<span class="sub">${sub}</span>` : ""}</button>`;
@@ -689,7 +689,7 @@ function renderBallEditModal(m){
     if (!sp) return faced;
     const ok = n => !isUnnamedPlayer(n) && !overBowlerError(m, be.inn, be.seq, n);
     const others = inn.bowling.order.filter(n => n !== sp.name && ok(n));
-    const pool = pickCandidates(m, pickPool(inn.bowlingTeam), "fielder", inn).filter(n => ok(n) && !inn.bowling.order.some(x => x.toLowerCase() === n.toLowerCase()));
+    const pool = pickCandidates(m, pickPoolAll(inn.bowlingTeam), "fielder", inn).filter(n => ok(n) && !inn.bowling.order.some(x => x.toLowerCase() === n.toLowerCase()));
     const on = d.bowlerOther ? null : d.bowler || sp.name;
     return `${faced}
       <div class="section-label">Over ${sp.spell.number} bowled by</div>

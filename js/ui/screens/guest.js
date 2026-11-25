@@ -216,6 +216,7 @@ function renderMatchPresetForm(p, clubId){
       <label class="check-row"><input type="checkbox" name="requireFielderOnCatch" ${p.requireFielderOnCatch ? "checked" : ""}> Require catch taker</label>
       <label class="check-row"><input type="checkbox" name="requireFielderOnRunout" ${p.requireFielderOnRunout ? "checked" : ""}> Require run-out taker</label>
       <label class="check-row"><input type="checkbox" name="superOver" ${p.superOver ? "checked" : ""}> A tie goes to a super over</label>
+      <label class="check-row"><input type="checkbox" name="freshBowlersFirst" ${p.freshBowlersFirst ? "checked" : ""}> New bowler: list players yet to bowl first</label>
       <div class="action-row">
         <button type="submit" class="primary">Save preset</button>
         <button type="button" data-action="${clubId ? "club-cancel-preset-edit" : "cancel-preset-edit"}" class="ghost">Cancel</button>
@@ -276,7 +277,8 @@ function parseMatchPresetForm(f){
     freeHitOnNoBall: f.get("freeHitOnNoBall") === "on",
     requireFielderOnCatch: f.get("requireFielderOnCatch") === "on",
     requireFielderOnRunout: f.get("requireFielderOnRunout") === "on",
-    superOver: f.get("superOver") === "on"
+    superOver: f.get("superOver") === "on",
+    freshBowlersFirst: f.get("freshBowlersFirst") === "on"
   };
 }
 function parseTournamentPresetForm(f){
@@ -613,6 +615,7 @@ function handleTournamentStartMatchSubmit(e){
     lastManStands: matchPreset.lastManStands,
     requireFielderOnCatch: matchPreset.requireFielderOnCatch,
     requireFielderOnRunout: matchPreset.requireFielderOnRunout,
+    freshBowlersFirst: matchPreset.freshBowlersFirst,
     battingFirst, tossWinner: f.get("tossWinner"),
     presetId: matchPreset.id, presetName: matchPreset.name,
     tournamentId: t.id,

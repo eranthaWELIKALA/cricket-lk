@@ -264,7 +264,7 @@ always wins and ends the match immediately, even mid-over.
 Every change to an innings goes through a logging engine function, so it can
 be replayed: `openInnings` (openers), `recordBall` (each ball, given a `seq`
 id that its over event also carries), `sendInBatter` (fills whichever slot
-`pendingBatsmanSlot` says), `setBowler`, `batAlone` (last man stands, a short side), `swapStrikeByHand` (the live board's
+`pendingBatsmanSlot` says), `setBowler`, `batAlone` (last man stands, a short side), `declareAllOut` (a short side, the last man out), `swapStrikeByHand` (the live board's
 ⇅ Swap / Match options → Swap strike) and `endInnings`. They append to
 `inn.log` via `logAction`, which on its first call stores `inn.logBase` (the
 innings before that action: a fresh innings, or wherever an older match left
@@ -378,10 +378,11 @@ swap went. A typed bowler is registered on save (`registerMatchPlayer`).
 
 **Reopening an innings & Undo after it ends.** An innings ended by hand
 (`completeReason: "closed"` — End innings, the pick sheets' button, finish
-match, a score set by hand) can be taken back: `reopenInnings(match, idx)`
+match, a score set by hand) or all out by hand (`declareAllOut`, its
+`maxWickets` put back) can be taken back: `reopenInnings(match, idx)`
 (ENGINE, tested; `reopenInningsError` says why not — an innings that was all
 out / out of overs / reached the target needs a ball edited) drops the log's
-`end`, sets it live again from where it stopped and **clears any later
+`end` / `allout`, sets it live again from where it stopped and **clears any later
 innings** (the chase was played against a total that isn't final). Offered as
 `reopen-innings` (`askReopenInnings`, snapshotted) in ⋯ Match options, on the
 innings break and on Result (`renderGoBackRow`, which also shows Undo —
@@ -513,24 +514,53 @@ reads "Finish match" there and `afterBall` produces the result as usual.
 the on-screen buttons show. Never compare against these directly — use
 `isAllOut(inn)` / check `oversLimit != null` (`x >= null` is `true` in JS).
 `lastManStands` (preset + match flag, copied onto each innings) makes
-`maxWickets = playersPerSide`; one wicket short of that, `battingAlone(inn)`
+`maxWickets = playersPerSide` (with no players limit it's still kept: `maxWickets`
+stays null, so the side can't be bowled out until the scorer taps Bat alone,
+below); one wicket short of that, `battingAlone(inn)`
 is true, `pendingBatsmanSlot` asks for nobody, and the end of `recordBall`
 puts the lone batter back in `striker` with `nonStriker = null` — this runs
 *after* both unconditional swaps, it doesn't replace them. The run-out end
-picker hides the non-striker tile when that slot is empty. **A short side**
+picker hides the non-striker tile when that slot is empty, and the live
+board's non-striker row is left blank (`.matchup-row.empty`: hidden, keeps its
+height; no "Batting alone" text, on request). **A short side**
 (fewer players than the preset says, e.g. uneven teams on a club day) can go
 alone earlier: `batAlone(inn)` (ENGINE, tested; `canBatAlone`: last man
 stands, one batter at the crease, a slot waiting) is a logged `{t:"alone"}`
 that sets this innings' `maxWickets` to wickets + 1, so `battingAlone` holds,
 the survivor takes strike and the next wicket is all out (the wickets margin
-in `matchResult` follows). The new-batsman sheet offers it as **Nobody else
-to bat · X bats on alone** — first and primary when the side's squad has
-nobody left to bat, otherwise a ghost button under the list. `replayInnings`
-replays it, and pulls it forward (like a `bat` entry) when an edit makes a
-wicket fall earlier and no batter was entered to come in; `logBase` keeps the
-preset's `maxWickets`. `scoreByHandError` reads each innings' own
-`maxWickets`. Without last man stands, a squad with nobody left just shows End
-innings on that sheet. `matchResult`
+in `matchResult` follows). The new-batsman sheet offers it as **X bats alone**
+(sub-line "No one else to bat"; keep it that short): a ghost button under the list, or first and
+primary once nobody is left to pick (`noneLeft`: the side had a list — its
+squad, else the club roster / guest players, not a lend-only list — and
+everyone on it has batted). Not in the sheet's button bar (asked for: no
+four-button bar). `replayInnings` replays it, and pulls it forward (like a
+`bat` entry) when an edit makes a wicket fall earlier and no batter was
+entered to come in (not in a "no names" match, whose batters are made up as
+needed: there it stays put); `logBase` keeps the preset's `maxWickets`.
+**A stand-in partner put right**: a scorer who sent in a placeholder ("Bat ?1",
+or a "no names" match's "Batter N") instead and swapped the strike by hand can
+take it back with `batAloneInstead(match, name)` (ENGINE, tested;
+`batAloneInsteadError`: the innings being scored, last man stands, a
+placeholder at the crease whose `bat` is followed only by balls, swaps and
+bowlers): that `bat` becomes an `alone` and the innings is replayed, so the
+swaps no-op and any ball the stand-in "faced" is the survivor's. Offered
+(`askBatAloneInstead`, name-later.js; confirmed, through `applyBallEdit`) as
+"Nobody · X bats alone" on Who was it?, a ⋯ Match options row
+(`batAloneInsteadName`) and, in a "no names" match, the new batter's name on
+the board (`playerNameHtml`). `scoreByHandError` reads each innings' own
+`maxWickets`. **Without last man stands, the last man out ends it**:
+`declareAllOut(inn)` (ENGINE, tested; `canDeclareAllOut`: no last man stands,
+a wicket down, a batter slot waiting) is a logged `{t:"allout"}` that sets
+`maxWickets` to the wickets so far (the old value kept in `inn.allOutByHand`)
+and ends the innings `completeReason: "allout"`, so the scorecard, result,
+NRR's full quota and records treat it as any all out. The new-batsman sheet
+offers it as **All out** ("No one else to bat") in the same place as the bat
+alone button (`handleAllOut`, sheets.js: asks first, with the target or the
+result, then `afterBall`); on top, it replaces the End innings that sheet
+used to show once nobody was left. `replayInnings` replays it and pulls it forward
+like an `alone` (`stepAhead`); an edit that leaves two batters in drops it
+with a "Check it." note. It can be reopened (below) and is rebuilt from the
+scorecard (`rebuildInningsFromScorecard` reads `allOutByHand`). `matchResult`
 omits the wickets margin with no players limit and "overs left" with no
 overs limit.
 
@@ -568,7 +598,11 @@ existing as a feature.
 
 Match presets and tournament presets are separate, layered concerns:
 a **match preset** is playing conditions (`ballsPerOver`, `oversLimit`,
-`playersPerSide`, wide/no-ball config, fielder-required flags); a
+`playersPerSide`, wide/no-ball config, fielder-required flags) plus one
+display choice, `freshBowlersFirst` (the new-bowler sheet lists players yet
+to bowl before those who have; stored on the match by `createMatch`, kept by
+`restartMatch` and a super over, ticked in match setup's "New bowler"
+fieldset; club presets are jsonb, so no migration); a
 **tournament preset** just points at one match preset and adds
 points-table config (`pointsForWin/Tie/Loss`, `useNRR`). A tournament's
 matches all inherit its preset's match preset — there's no per-match
@@ -1259,7 +1293,9 @@ has an unticked "Score without player names" box → `match.anonymous`.
 `render()` calls `fillAnonymousSlots` (ENGINE) first: every empty slot gets
 a placeholder — "Batter N" in order, and each over's bowler "Over N" (one per
 over, so no figures are invented and the consecutive-overs rule can't trip) —
-so no name sheet ever opens. No squads, no fielder box, nothing registered to
+so no name sheet ever opens. (With last man stands the batter who just came
+in is a button — `batAloneInstead`, see "Optional limits" — for a side with
+nobody left.) No squads, no fielder box, nothing registered to
 guest players or a club roster, and these matches are skipped by
 `aggregatePlayerStats`, `pickMatchMOTM` and `playerCareer` (placeholders
 aren't people — `playerStatsExcluded`); team totals and standings count as
@@ -1658,13 +1694,24 @@ can't bypass it either). The previous over's bowler
 separately, struck through and disabled — don't just disable their row
 with the same styling as the others, the mockup (and the current CSS)
 deliberately makes it read as "not an option" rather than "option,
-temporarily off."
+temporarily off." **Both groups are always listed** — "Already bowled" and
+"Yet to bowl" (+ "Other club players") — in the order `match.freshBowlersFirst`
+says (the match preset's choice; off = already bowled first, as before).
 
 **The new-batsman / new-bowler sheets list players as one-tap rows** (no
 dropdown): a box on top filters the rows as you type (`applyPickFilter`, DOM
 only) and its button takes a name that isn't listed; the rows are
 `pickCandidates` (+ "Already bowled" with figures) and call
-`submitNewBatsman`/`submitNewBowler`, so every check applies. The list sits
+`submitNewBatsman`/`submitNewBowler`, so every check applies. **With squads,
+nobody is left out of the rows**: under the squad's section, everyone else on
+the list it came from (the club roster or guest players, outside both squads:
+a late arrival, a sub) is a section of its own — `pickPoolOthers`,
+`othersSectionLabel` ("Other club players" / "Other players" / "Lend a club
+player"), common.js. That goes for every row list: opening, new batter / bowler,
+fielder, Wrong batter? / Wrong bowler?, Who was it?. They used to be reachable
+only by typing the exact name. `noneLeft` (what puts "bats alone" / All out on
+top) still reads the squad only, and `confirmUnlisted` still asks about a typed
+name outside it. The list sits
 straight under the box; nothing is focused when a sheet opens (no keyboard
 until the scorer taps the box). **"Continue without naming"** (`pickUnnamed`,
 `renderUnnamedButton`: the first thing in the form, above the search box, one
@@ -1761,8 +1808,9 @@ fills the input — the form's own button still submits, so every check in
 `handleWicketFielderSubmit` applies. A name already typed or picked in
 another combo of the same form isn't offered (`updateCombo`).
 All DOM-only, never `render()`. Options
-come from `pickPool(teamKey)` (the side's squad → else the club roster /
-guest list; for a friendly's visitors that's the roster, to lend from) filtered by the pure
+come from `pickPoolAll(teamKey)` (the side's squad, then everyone else on the
+club roster / guest list, `pickPoolOthers`; with no squad just that list; for a
+friendly's visitors that's the roster, to lend from) filtered by the pure
 `pickCandidates(match, pool, role)` in ENGINE (tested): batters drop anyone
 out/at the crease, bowlers drop anyone who's already bowled (they keep their
 figure rows) and the last-over bowler, every role drops names already on the

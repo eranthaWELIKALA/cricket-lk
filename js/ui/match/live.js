@@ -445,8 +445,8 @@ function renderLive(match){
           <span class="stat" style="width:24px;">${strikerStats ? strikerStats.sixes : ""}</span>
           <span class="stat" style="width:46px;">${strikerStats ? sr(strikerStats) : ""}</span>
         </div>
-        <div class="matchup-row muted">
-          <span class="matchup-marker nonstriker"></span><span class="name">${alone ? "Batting alone" : slotName(inn.nonStriker, "Pick batsman", "batter")}</span>
+        <div class="matchup-row muted${alone ? " empty" : ""}"${alone ? ` aria-hidden="true"` : ""}>
+          <span class="matchup-marker nonstriker"></span><span class="name">${alone ? "&nbsp;" : slotName(inn.nonStriker, "Pick batsman", "batter")}</span>
           <span class="stat emph" style="width:34px;">${nonStrikerStats ? nonStrikerStats.runs + "*" : ""}</span>
           <span class="stat" style="width:30px;">${nonStrikerStats ? nonStrikerStats.balls : ""}</span>
           <span class="stat" style="width:24px;">${nonStrikerStats ? nonStrikerStats.fours : ""}</span>

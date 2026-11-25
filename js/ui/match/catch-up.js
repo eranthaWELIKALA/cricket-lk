@@ -125,8 +125,8 @@ function renderCatchUpModal(match){
   const d = ui.catchUp.draft;
   const esc = escapeHtml;
   const field = (label, name, value, extra) => `<label class="cu-field"><span>${label}</span><input name="${name}" value="${esc(value)}" inputmode="numeric" autocomplete="off" ${extra || ""}></label>`;
-  const batPool = pickCandidates(match, pickPool(inn.battingTeam), "batter");
-  const fieldPool = [...new Set([...inn.bowling.order, ...pickCandidates(match, pickPool(inn.bowlingTeam), "fielder")])];
+  const batPool = pickCandidates(match, pickPoolAll(inn.battingTeam), "batter");
+  const fieldPool = [...new Set([...inn.bowling.order, ...pickCandidates(match, pickPoolAll(inn.bowlingTeam), "fielder")])];
   const combo = (name, value, placeholder, pool, group) =>
     renderNameCombo("", `name="${name}" value="${esc(value)}" maxlength="24" placeholder="${placeholder}" data-combo-group="${group}"`, pool);
   const doneOut = inn.batting.order.filter(n => inn.batting.stats[n].out);
