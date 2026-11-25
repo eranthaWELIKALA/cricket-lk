@@ -26,18 +26,24 @@
 --      only fills names a match has no id for, never changes one, and drops
 --      a temporary id (a club player added offline, "tmp:...") if one slips
 --      through.
---   5. player_matches (019) finds a player's matches by id, plus older ones
+--   5. merging two profiles (011's merge_player_rows) also moves the
+--      merged-away profile's id in every match to the survivor; and an id of a
+--      player since deleted is dropped (and the name linked again by name).
+--   6. player_matches (019) finds a player's matches by id, plus older ones
 --      by name or alias where the match hasn't tied that name to anyone and
 --      no other player has that name (else it's nobody's: it can't be known).
---   6. rename_player allows a name another player has, unless that player is
+--   7. rename_player allows a name another player has, unless that player is
 --      on the same club roster (a club needs its names to tell them apart).
+--   8. For platform admins (the admin portal's Unlinked names): the names no
+--      player could be tied to, with who they could be, and a way to tie one
+--      name in one match to a player (with a reason, in the audit log).
 --
 -- Nothing private is exposed: find_players_named returns the public profile
 -- columns (players_public), a club's name, and a yes/no for your own roster.
 -- The linking functions can't be called from the app.
 --
 -- Requires 002, 009 (player_aliases), 010 (nickname, jersey_no), 011
--- (admin_log), 012, 013 and 019. Take a backup first. Safe to run twice.
+-- (admin_log, merge_player_rows), 012, 013 and 019. Take a backup first. Safe to run twice.
 
 -- ------------------------------------------- 1. two people, one name
 drop function if exists public.add_player_to_club(uuid, text);
@@ -156,6 +162,20 @@ revoke all on function public.find_players_named(text, uuid) from public;
 grant execute on function public.find_players_named(text, uuid) to anon, authenticated;
 
 -- ------------------------------------------- 3. who each name in a match is
+-- An id a match may keep: a tournament visitor's "guest:<name>", or a player
+-- who still exists (not a temp id, not a merged-away or deleted player).
+create or replace function public._valid_player_ref(_ref text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(_ref, '') <> '' and _ref not like 'tmp:%'
+     and (_ref like 'guest:%' or exists (select 1 from public.players p where p.id::text = _ref))
+$$;
+revoke all on function public._valid_player_ref(text) from public, anon, authenticated;
+
 -- The names in a match (batting, bowling, fielding), not placeholders ("Bat ?1").
 create or replace function public._match_labels(_data jsonb)
 returns text[]
@@ -202,7 +222,7 @@ begin
     from jsonb_array_elements_text(case when jsonb_typeof(_data -> 'guestNames') = 'array' then _data -> 'guestNames' else '[]'::jsonb end) g;
 
   foreach _l in array public._match_labels(_data) loop
-    continue when _have ? _l and coalesce(_have ->> _l, '') <> '' and (_have ->> _l) not like 'tmp:%';
+    continue when _have ? _l and public._valid_player_ref(_have ->> _l);
     _k := lower(btrim(_l));
     if _k = any(_guests) then
       _out := _out || jsonb_build_object(_l, 'guest:' || _k);
@@ -241,10 +261,12 @@ declare
   _ids jsonb;
 begin
   if new.data is null or jsonb_typeof(new.data) <> 'object' then return new; end if;
-  -- A temp id (a club player added offline whose add hadn't synced) never stays.
+  -- A temp id (a club player added offline whose add hadn't synced), or the
+  -- id of a player since merged away or deleted, never stays: that name is
+  -- linked again below, by name.
   select coalesce(jsonb_object_agg(e.key, e.value), '{}'::jsonb) into _ids
     from jsonb_each(case when jsonb_typeof(new.data -> 'playerIds') = 'object' then new.data -> 'playerIds' else '{}'::jsonb end) e
-    where jsonb_typeof(e.value) = 'string' and (e.value #>> '{}') <> '' and (e.value #>> '{}') not like 'tmp:%';
+    where jsonb_typeof(e.value) = 'string' and public._valid_player_ref(e.value #>> '{}');
   _ids := _ids || public._match_label_ids(new.club_id, jsonb_set(new.data, '{playerIds}', _ids));
   if _ids <> '{}'::jsonb or new.data ? 'playerIds' then
     new.data := jsonb_set(new.data, '{playerIds}', _ids);
@@ -294,10 +316,10 @@ begin
     club := m.club_name;
     played_at := m.played_at;
     names_in_match := coalesce(array_length(_labels, 1), 0);
-    had_ids := (select count(*) from unnest(_labels) l where _have ? l and (_have ->> l) not like 'tmp:%');
+    had_ids := (select count(*) from unnest(_labels) l where _have ? l and public._valid_player_ref(_have ->> l));
     newly_linked := (select count(*) from jsonb_object_keys(_add));
     left_unlinked := (select coalesce(array_agg(l order by l), '{}') from unnest(_labels) l
-                       where not (_have ? l and (_have ->> l) not like 'tmp:%') and not (_add ? l));
+                       where not (_have ? l and public._valid_player_ref(_have ->> l)) and not (_add ? l));
     return next;
   end loop;
 end;
@@ -353,6 +375,65 @@ $$;
 grant execute on function public._match_labels(jsonb) to anon, authenticated;
 revoke all on function public.player_matches(uuid) from public;
 grant execute on function public.player_matches(uuid) to anon, authenticated;
+
+-- ------------------------------------------- 5b. merging keeps matches pointing at the survivor
+-- 011's merge_player_rows, plus one step: matches that recorded the merged-away
+-- profile's id now say the survivor's (else they'd point at a deleted player).
+create or replace function public.merge_player_rows(_from uuid, _into uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  _from_name text;
+begin
+  if _from = _into then raise exception 'cannot merge a profile into itself'; end if;
+  select name into _from_name from public.players where id = _from and claimed_by is null;
+  if _from_name is null then raise exception 'the profile to merge is gone or has been claimed'; end if;
+  if not exists (select 1 from public.players where id = _into) then raise exception 'target profile not found'; end if;
+
+  -- name (and any aliases it had) now point at the surviving profile
+  update public.player_aliases set player_id = _into where player_id = _from;
+  insert into public.player_aliases (player_id, alias) values (_into, _from_name)
+    on conflict do nothing;
+
+  -- club roster entries move over
+  insert into public.club_rosters (club_id, player_id)
+    select club_id, _into from public.club_rosters where player_id = _from
+  on conflict do nothing;
+
+  -- matches: the merged-away profile's id becomes the survivor's
+  update public.matches m
+     set data = jsonb_set(m.data, '{playerIds}', (
+       select coalesce(jsonb_object_agg(e.key, case when e.value #>> '{}' = _from::text then to_jsonb(_into::text) else e.value end), '{}'::jsonb)
+       from jsonb_each(m.data -> 'playerIds') e))
+   where jsonb_typeof(m.data -> 'playerIds') = 'object'
+     and exists (select 1 from jsonb_each_text(m.data -> 'playerIds') e where e.value = _from::text);
+
+  -- fill blanks on the survivor from the merged profile
+  update public.players t set
+    phone        = coalesce(t.phone, f.phone),
+    nic          = coalesce(t.nic, f.nic),
+    batting_hand = coalesce(t.batting_hand, f.batting_hand),
+    bowling_arm  = coalesce(t.bowling_arm, f.bowling_arm),
+    bowling_type = coalesce(t.bowling_type, f.bowling_type),
+    is_keeper    = t.is_keeper or f.is_keeper,
+    city         = coalesce(t.city, f.city),
+    photo        = coalesce(t.photo, f.photo),
+    nickname     = coalesce(t.nickname, f.nickname),
+    jersey_no    = coalesce(t.jersey_no, f.jersey_no)
+  from public.players f
+  where t.id = _into and f.id = _from;
+
+  -- other pending requests about the merged profile are now moot
+  update public.merge_requests set status = 'rejected', reviewed_by = auth.uid(), reviewed_at = now()
+    where status = 'pending' and from_player_id = _from;
+
+  delete from public.players where id = _from;  -- cascades its roster rows / claim requests
+end;
+$$;
+revoke all on function public.merge_player_rows(uuid, uuid) from public, anon, authenticated;
 
 -- ------------------------------------------- 6. renaming to a name someone else has
 create or replace function public.rename_player(_player_id uuid, _name text)
@@ -424,3 +505,68 @@ end;
 $$;
 revoke all on function public.rename_player(uuid, text) from public;
 grant execute on function public.rename_player(uuid, text) to authenticated;
+
+-- ------------------------------------------- 8. the names left: linked by hand
+-- Platform admins only (the admin portal's "Unlinked names"). Every name in a
+-- match that isn't tied to a player -- two players of that name, or nobody --
+-- with the players it could be (that name, or a former one).
+create or replace function public.admin_unlinked_match_names()
+returns table (match_id text, club text, played_at timestamptz, teams text, name text, candidates jsonb)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then raise exception 'admin only'; end if;
+  return query
+    select m.id, c.name, m.played_at,
+           coalesce(m.data ->> 'teamA', '?') || ' v ' || coalesce(m.data ->> 'teamB', '?'),
+           l,
+           coalesce((
+             select jsonb_agg(jsonb_build_object('id', p.id, 'name', p.name, 'origin_club', oc.name,
+                      'on_roster', exists (select 1 from public.club_rosters r where r.club_id = m.club_id and r.player_id = p.id))
+                    order by p.created_at)
+             from public.players p left join public.clubs oc on oc.id = p.origin_club_id
+             where lower(p.name) = lower(btrim(l))
+                or exists (select 1 from public.player_aliases a where a.player_id = p.id and lower(a.alias) = lower(btrim(l)))
+           ), '[]'::jsonb)
+    from public.matches m
+    left join public.clubs c on c.id = m.club_id
+    cross join lateral unnest(public._match_labels(m.data)) l
+    where coalesce(m.data ->> 'anonymous', 'false') <> 'true'
+      and not (case when jsonb_typeof(m.data -> 'playerIds') = 'object' then m.data -> 'playerIds' else '{}'::jsonb end ? l
+               and public._valid_player_ref(m.data -> 'playerIds' ->> l))
+    order by m.played_at desc nulls last, m.id, l;
+end;
+$$;
+revoke all on function public.admin_unlinked_match_names() from public, anon;
+grant execute on function public.admin_unlinked_match_names() to authenticated;
+
+-- Ties `_name` in one match to a player (a reason is required; logged).
+create or replace function public.admin_link_match_player(_match_id text, _name text, _player_id uuid, _reason text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  _data jsonb;
+begin
+  if not public.is_admin() then raise exception 'admin only'; end if;
+  if nullif(btrim(_reason), '') is null then raise exception 'a reason is required'; end if;
+  select data into _data from public.matches where id = _match_id for update;
+  if _data is null then raise exception 'match not found'; end if;
+  if not (_name = any (public._match_labels(_data))) then raise exception '% doesn''t play in this match', _name; end if;
+  if not exists (select 1 from public.players where id = _player_id) then raise exception 'player not found'; end if;
+  update public.matches
+     set data = jsonb_set(data, '{playerIds}',
+       coalesce(case when jsonb_typeof(data -> 'playerIds') = 'object' then data -> 'playerIds' end, '{}'::jsonb)
+       || jsonb_build_object(_name, _player_id::text))
+   where id = _match_id;
+  perform public.admin_log('match_link_player', 'match', _match_id,
+    jsonb_build_object('name', _name, 'player_id', _player_id, 'reason', _reason));
+end;
+$$;
+revoke all on function public.admin_link_match_player(text, text, uuid, text) from public, anon;
+grant execute on function public.admin_link_match_player(text, text, uuid, text) to authenticated;

@@ -688,8 +688,13 @@ platform; aliases; tournament visitors `guest:<name>`) and reports the rest
 (dry run first); a trigger (`matches_link_player_ids`) does the same on every
 upload, never changes an id a match has, and drops `tmp:` ids; `player_matches`
 finds by id, plus old matches by name only when no other player has that name;
-`rename_player` allows a name another player has unless they share a club.
-Verified in PGlite on 001–024 + old data (28 checks, permissions included).
+`rename_player` allows a name another player has unless they share a club;
+`merge_player_rows` (011's, redefined) moves the merged-away profile's id in
+every match to the survivor, and an id of a player that no longer exists is
+dropped by the trigger/linker (`_valid_player_ref`) and linked again by name;
+`admin_unlinked_match_names()` / `admin_link_match_player(match, name, id,
+reason)` (platform admins: the portal's **Unlinked names**, logged). Verified
+in PGlite on 001–024 + old data (39 checks, permissions included).
 
 **"Which Kasun Perera?"** (`askIsThisHim`, player-ids.js: the shared
 confirmation with each candidate as a choice — what tells them apart: the club
@@ -712,8 +717,9 @@ waits when a lookup happens; otherwise it asks at once, as it always did.
 labels) and `squadsWithIds` (match setup / guest tournament matches: squads by
 label, `playerIds` for each, guests by label) — and `registerMatchPlayer` finds
 the player behind a label (`playerByLabel`). Lists with no shared names are
-exactly as before. Still to come: the admin portal by id, and a list of the
-names old matches couldn't link, to link by hand.
+exactly as before. The admin portal counts by id too (`careerFor(names, rows,
+id)`, `sharedMatches(…, idA, idB)` via `isPlayerLabel`), and its Unlinked names
+section ties the rest by hand.
 
 ## Stats & MVP
 
@@ -2840,11 +2846,13 @@ The page's `admin_users` check only picks which screen to show. If you add an
 admin feature, add an RPC that checks `is_admin()` and calls `admin_log(...)` —
 don't add a broad RLS policy for admins on a new table.
 
-Sections: Overview (counts), Claim requests, Merge requests (both show each
-profile side by side with a match record folded by name + aliases, and
-auto-flags: claimant already owns a profile, contact number match/mismatch,
-different NICs, and **both names in the same scorecard** — usually two
-different people), Players (search, edit contact/NIC via 007's
+Sections: Overview (counts), Claim requests, Merge requests, Unlinked names
+(supabase/025: names no player could be tied to, with who they could be — tie
+one to a player with a reason), and the rest below. Claims and merges show each
+profile side by side with a match record (by id, and unlinked names by name +
+aliases), and auto-flags: claimant already owns a profile, contact number
+match/mismatch, different NICs, and **both in the same scorecard** — usually
+two different people. Players (search, edit contact/NIC via 007's
 `update_player_profile`, release a claim, direct merge, delete unclaimed),
 Clubs (+ members), Matches (delete), Users & admins (grant/revoke platform
 admin; you can't remove yourself), Audit log.

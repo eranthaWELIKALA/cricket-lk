@@ -222,13 +222,20 @@ async function loadAliases(ids){
 }
 
 /* ------------------------------------------------------------- stats
-   A reviewer's summary of what a name (plus its merge aliases) has done,
-   folded from match data by case-insensitive name -- the same matching
-   index.html's playerCareer uses, since matches store names, not ids. This
-   is a review aid, not the leaderboard: MVP points aren't computed here. */
+   A reviewer's summary of what a player has done, folded from match data:
+   a name a match tied to this player's id (data.playerIds, supabase/025) is
+   them, one tied to another player isn't, and a name a match never tied to
+   anyone (scored before ids) counts by name or alias, case-insensitively --
+   as index.html counts them. A review aid, not the leaderboard: MVP points
+   aren't computed here. */
 function nameKeys(names){ return new Set(names.map(n => (n || "").trim().toLowerCase()).filter(Boolean)); }
+// Is `label` in match `m` this player (id, and their names for unlinked labels)?
+function isPlayerLabel(m, label, id, keys){
+  const linked = m && m.playerIds && m.playerIds[label];
+  return linked ? !!id && linked === id : keys.has(String(label).toLowerCase());
+}
 
-function careerFor(names, matchRows){
+function careerFor(names, matchRows, id){
   const keys = nameKeys(names);
   const c = { played: [], clubs: new Set(), innings: 0, notOuts: 0, runs: 0, balls: 0, fours: 0, sixes: 0, high: null,
               fifties: 0, hundreds: 0, ducks: 0, legalBalls: 0, runsConceded: 0, wickets: 0, maidens: 0, best: null,
@@ -239,7 +246,7 @@ function careerFor(names, matchRows){
     let played = false;
     m.innings.forEach(inn => {
       ((inn.batting && inn.batting.order) || []).forEach(n => {
-        if (!keys.has(String(n).toLowerCase())) return;
+        if (!isPlayerLabel(m, n, id, keys)) return;
         const b = inn.batting.stats[n]; played = true;
         c.innings++; c.runs += b.runs; c.balls += b.balls; c.fours += b.fours; c.sixes += b.sixes;
         if (!b.out) c.notOuts++;
@@ -248,13 +255,13 @@ function careerFor(names, matchRows){
         if (!c.high || b.runs > c.high.runs || (b.runs === c.high.runs && !b.out && c.high.out)) c.high = { runs: b.runs, out: !!b.out };
       });
       ((inn.bowling && inn.bowling.order) || []).forEach(n => {
-        if (!keys.has(String(n).toLowerCase())) return;
+        if (!isPlayerLabel(m, n, id, keys)) return;
         const w = inn.bowling.stats[n]; played = true;
         c.legalBalls += w.legalBalls; c.runsConceded += w.runs; c.wickets += w.wickets; c.maidens += w.maidens;
         if ((w.legalBalls > 0 || w.wickets > 0) && (!c.best || w.wickets > c.best.wickets || (w.wickets === c.best.wickets && w.runs < c.best.runs))) c.best = { wickets: w.wickets, runs: w.runs };
       });
       ((inn.fielding && inn.fielding.order) || []).forEach(n => {
-        if (!keys.has(String(n).toLowerCase())) return;
+        if (!isPlayerLabel(m, n, id, keys)) return;
         const f = inn.fielding.stats[n]; played = true;
         c.catches += f.catches; c.runouts += f.runouts;
       });
@@ -268,17 +275,18 @@ function careerFor(names, matchRows){
   return c;
 }
 
-/* Matches in which a name from each list appears. For a merge that's a red
-   flag: two names in one scorecard are usually two different people (and
-   index.html's career tally would count that match twice). */
-function sharedMatches(namesA, namesB, matchRows){
+/* Matches in which both players appear (by id, or an unlinked name of
+   theirs). For a merge that's a red flag: two of them in one scorecard are
+   usually two different people. */
+function sharedMatches(namesA, namesB, matchRows, idA, idB){
   const a = nameKeys(namesA), b = nameKeys(namesB);
   return matchRows.filter(row => {
     const m = row.data;
     if (!m || !Array.isArray(m.innings)) return false;
-    const seen = new Set();
-    m.innings.forEach(inn => ["batting", "bowling", "fielding"].forEach(k => ((inn[k] && inn[k].order) || []).forEach(n => seen.add(String(n).toLowerCase()))));
-    return [...a].some(x => seen.has(x)) && [...b].some(x => seen.has(x));
+    const labels = new Set();
+    m.innings.forEach(inn => ["batting", "bowling", "fielding"].forEach(k => ((inn[k] && inn[k].order) || []).forEach(n => labels.add(n))));
+    const has = (id, keys) => [...labels].some(n => isPlayerLabel(m, n, id, keys));
+    return has(idA, a) && has(idB, b);
   });
 }
 
@@ -363,7 +371,7 @@ function confirmDialog({ title, body, confirmLabel, danger, needReason, extraFie
 /* ------------------------------------------------------------- views */
 const NAV = [
   ["overview", "Overview"], ["claims", "Claim requests"], ["merges", "Merge requests"], ["players", "Players"],
-  ["clubs", "Clubs"], ["matches", "Matches"], ["users", "Users & admins"], ["audit", "Audit log"]
+  ["clubs", "Clubs"], ["matches", "Matches"], ["unlinked", "Unlinked names"], ["users", "Users & admins"], ["audit", "Audit log"]
 ];
 const counts = { claims: 0, merges: 0 };
 
@@ -521,17 +529,17 @@ const VIEWS = {
           </form>
         </div>
       </div>
-      <div class="card"><h3>Career (all clubs + Premier)</h3>${careerHtml(careerFor(names, matches))}</div>
+      <div class="card"><h3>Career (all clubs + Premier)</h3>${careerHtml(careerFor(names, matches, p.id))}</div>
       <h2>Admin actions</h2>
       <div class="card">
         ${p.claimed_by ? `
           <p>Claimed by ${userLine(users.get(p.claimed_by), p.claimed_by)}. Releasing the claim makes the profile unclaimed again (its adding club can edit it; the user can claim a different one).</p>
           <div class="actions"><button class="danger" data-action="release-claim" data-id="${esc(p.id)}" data-name="${esc(p.name)}">Release claim</button></div>
         ` : `
-          <p>Unclaimed profile. You can fold it into another profile (for duplicate spellings of one person) or delete it if it's junk. Match stats are stored by name and are never deleted.</p>
+          <p>Unclaimed profile. You can fold it into another profile (for duplicate spellings of one person) or delete it if it's junk. Matches are never deleted: merging moves this profile's matches to the one you keep (supabase/025).</p>
           <form class="inline" id="merge-search-form" data-id="${esc(p.id)}"><input name="q" value="${esc(term)}" placeholder="Find the profile to keep…" autocomplete="off"><button type="submit">Find</button></form>
           ${term ? (candidates.length ? `<table><tbody>${candidates.map(t => {
-            const shared = sharedMatches(names, [t.name], matches).length;
+            const shared = sharedMatches(names, [t.name], matches, p.id, t.id).length;
             return `<tr><td>${esc(playerLabel(t))}</td><td>${t.claimed_by ? `<span class="badge ok">Claimed</span>` : `<span class="badge">Unclaimed</span>`}</td>
               <td>${shared ? `<span class="badge bad">in ${shared} same match${shared === 1 ? "" : "es"}</span>` : ""}</td>
               <td><button data-action="direct-merge" data-from="${esc(p.id)}" data-from-name="${esc(p.name)}" data-into="${esc(t.id)}" data-into-name="${esc(t.name)}" data-shared="${shared}">Merge into this</button></td></tr>`;
@@ -575,6 +583,31 @@ const VIEWS = {
             <td class="small">${esc(r.level)} · ${esc(r.match_type)}</td>
             <td><button class="danger" data-action="delete-match" data-id="${esc(r.id)}" data-label="${esc(matchLabel(r))}">Delete</button></td></tr>`).join("")}</tbody>
       </table></div>`;
+  },
+
+  /* Names in matches no player could be tied to (supabase/025): two players
+     have that name, or nobody does. They still count by name in the app
+     until one is tied to a player here. */
+  async unlinked(){
+    let rows;
+    try { rows = await rpc("admin_unlinked_match_names"); }
+    catch (e){
+      if (sqlMissing(e)) return `<h1>Unlinked names</h1><div class="card warn">Run <b>supabase/025_player_ids.sql</b> in the Supabase SQL editor (after a backup), then <code>select * from public.link_match_player_ids(true);</code></div>`;
+      throw e;
+    }
+    const groups = new Map();
+    rows.forEach(r => { const k = r.name.trim().toLowerCase(); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
+    const who = c => `${c.name}${c.origin_club ? ` · ${c.origin_club}` : ""}${c.on_roster ? " · on this club's roster" : ""}`;
+    return `
+      <h1>Unlinked names</h1>
+      <p class="muted small">A name in a match that no player could be tied to: two players have that name, or nobody does. It still counts by name (its own line in the leaderboards, in nobody's profile). When you know who it was, tie it to them: their profile and stats pick the match up.</p>
+      ${rows.length ? [...groups.values()].map(list => `
+        <div class="card"><h3>${esc(list[0].name)} <span class="muted small">· ${list.length} match${list.length === 1 ? "" : "es"}</span></h3>
+          <table><tbody>${list.map(r => `
+            <tr><td>${fmtDate(r.played_at)}</td><td>${esc(r.teams)}<br><span class="muted small">${esc(r.club || "")}</span></td>
+              <td>${r.candidates.length ? r.candidates.map(c => `<button data-action="link-name" data-match="${esc(r.match_id)}" data-name="${esc(r.name)}" data-player="${esc(c.id)}" data-label="${esc(who(c))}">${esc(who(c))}</button> <a class="small" href="#player/${esc(c.id)}">profile</a>`).join("<br>")
+                : `<span class="muted small">No player has this name.</span>`}</td></tr>`).join("")}</tbody></table>
+        </div>`).join("") : `<div class="card"><p>Every name in every match is tied to a player.</p></div>`}`;
   },
 
   async users(search){
@@ -670,7 +703,7 @@ function claimCard(r, p, aliases, users, matches){
         </div>
       </div>
       ${flags.join("")}
-      ${p ? `<h3 style="margin-top:12px">Match record</h3>${careerHtml(careerFor([p.name, ...aliases], matches))}` : ""}
+      ${p ? `<h3 style="margin-top:12px">Match record</h3>${careerHtml(careerFor([p.name, ...aliases], matches, p.id))}` : ""}
       ${r.status === "pending" ? `<div class="actions">
         <button class="approve" data-action="approve-claim" data-id="${esc(r.id)}" data-name="${esc(p ? p.name : "")}" data-who="${esc(requester ? requester.email : "")}">Approve claim</button>
         <button class="danger" data-action="reject-claim" data-id="${esc(r.id)}" data-name="${esc(p ? p.name : "")}">Reject</button>
@@ -689,7 +722,7 @@ function mergeCard(r, players, aliases, users, matches){
     else if (from.claimed_by) flags.push(`<p class="flag bad">The duplicate has since been claimed — approval will fail.</p>`);
     if (into && into.claimed_by !== r.requested_by) flags.push(`<p class="flag bad">The requester no longer owns the profile to keep — approval will fail.</p>`);
     if (from && into){
-      const shared = sharedMatches(fromNames, intoNames, matches);
+      const shared = sharedMatches(fromNames, intoNames, matches, from.id, into.id);
       if (shared.length) flags.push(`<div class="flag bad">Both names appear in the same scorecard in ${shared.length} match${shared.length === 1 ? "" : "es"} — they are probably two different people.${matchListHtml(shared.slice(0, 10))}</div>`);
       else flags.push(`<p class="flag ok">The two names never appear in the same match.</p>`);
       const fp = digits(from.phone).slice(-9), ip = digits(into.phone).slice(-9);
@@ -701,8 +734,8 @@ function mergeCard(r, players, aliases, users, matches){
     <div class="card">
       <p class="muted small">Requested by ${userLine(requester, r.requested_by)} · ${fmtDate(r.created_at, true)}${r.note ? ` · “${esc(r.note)}”` : ""}${r.reviewed_at ? ` · ${esc(r.status)} ${fmtDate(r.reviewed_at, true)} by ${userLine(users.get(r.reviewed_by), r.reviewed_by)}` : ""}</p>
       <div class="cols">
-        <div><p class="muted small">MERGE AWAY (duplicate)</p>${profileKv(from, fromAl)}${from ? careerHtml(careerFor(fromNames, matches)) : ""}</div>
-        <div><p class="muted small">KEEP (requester's profile)</p>${profileKv(into, intoAl, into && users.get(into.claimed_by))}${into ? careerHtml(careerFor(intoNames, matches)) : ""}</div>
+        <div><p class="muted small">MERGE AWAY (duplicate)</p>${profileKv(from, fromAl)}${from ? careerHtml(careerFor(fromNames, matches, from.id)) : ""}</div>
+        <div><p class="muted small">KEEP (requester's profile)</p>${profileKv(into, intoAl, into && users.get(into.claimed_by))}${into ? careerHtml(careerFor(intoNames, matches, into.id)) : ""}</div>
       </div>
       ${flags.join("")}
       ${r.status === "pending" ? `<div class="actions">
@@ -758,6 +791,11 @@ const ACTIONS = {
       extraField: { label: `Type the name "${el.dataset.name}" to confirm`, mustEqual: el.dataset.name },
       body: `<p>Removes the profile and its club roster entries. Match scorecards are kept.</p>` });
     if (ok) act(async () => { await rpc("admin_delete_player", { _player_id: el.dataset.id, _reason: ok.reason }); location.hash = "#players"; }, "Profile deleted.");
+  },
+  async "link-name"(el){
+    const ok = await confirmDialog({ title: `Tie ${el.dataset.name} to this player?`, confirmLabel: "Tie to player", needReason: true,
+      body: `<p><b>${esc(el.dataset.name)}</b> in this match is <b>${esc(el.dataset.label)}</b>. Their profile and stats count the match from now on; the scorecard keeps the name as it was scored.</p>` });
+    if (ok) act(() => rpc("admin_link_match_player", { _match_id: el.dataset.match, _name: el.dataset.name, _player_id: el.dataset.player, _reason: ok.reason }), "Name tied to the player.", "matches");
   },
   async "delete-match"(el){
     const ok = await confirmDialog({ title: "Delete match?", confirmLabel: "Delete", danger: true, needReason: true,
