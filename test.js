@@ -3648,6 +3648,77 @@ async function main(){
       delete state.teams["so-ta"]; delete state.teams["so-tb"]; ui = defaultUi(); state.view = "home"; save(); render();`);
   }
 
+  // --- a club tournament is its organizer's: back bar, Acting as and its matches follow it, not the last club screen ---
+  {
+    const doc = win.document;
+    const tick = () => new Promise(r => setTimeout(r, 0));
+    win.eval(`state.match = null; state.snapshots = [];
+      window.__ctPrev = { session, client: supabaseClient, fetchT: fetchClubTournamentDetail, fetchC: fetchClubDetail, myClubs: fetchMyClubs };
+      session = { user: { id: "u1" } }; supabaseClient = {};
+      window.__clubs = {
+        wc: { id: "wc", name: "Weekend Cricket", roster: [], members: [], matches: [], tournaments: [{ id: "WT", name: "Weekend Cup" }], presets: { match: [], tournament: [] }, invites: [], deletedMatchIds: [] },
+        kc: { id: "kc", name: "KICC", roster: [], members: [], matches: [], tournaments: [{ id: "KT", name: "KICC Cup" }], presets: { match: [], tournament: [] }, invites: [], deletedMatchIds: [] } };
+      fetchClubDetail = async id => { ui.club = __clubs[id]; };
+      fetchMyClubs = async () => {};
+      fetchClubTournamentDetail = async id => { ui.clubTournament = { id, name: id === "WT" ? "Weekend Cup" : "KICC Cup", organizer_club_id: id === "WT" ? "wc" : "kc", tournament_preset: {}, matches: [], teams: [] }; };
+      ui = defaultUi(); ui.myClubs = [{ id: "kc", name: "KICC", role: "owner" }, { id: "wc", name: "Weekend Cricket", role: "owner" }];
+      ui.currentClubId = "kc";                       // a KICC screen was open last...
+      state.activeClubId = "wc"; ui.club = __clubs.wc; // ...then "Acting as" switched to Weekend Cricket
+      state.view = "home"; render();`);
+    doc.querySelector('#app [data-action="open-club-tournament"][data-id="WT"]').click();
+    await tick(); await tick();
+    const back = () => (doc.querySelector("#app .back-bar") || {}).textContent || "";
+    assert(/Weekend Cricket/.test(back()) && win.eval("state.activeClubId") === "wc" && win.eval("ui.currentClubId") === "wc" && win.location.hash === "#/clubs/wc/tournaments/WT",
+      "a Weekend Cricket tournament opened from Home: its back bar is Weekend Cricket's and Acting as stays on it: " + back().trim() + " " + win.location.hash);
+    // However it was reached (a link, back, a stale club id), the loaded tournament's organizer wins.
+    win.eval(`ui.currentClubId = "kc"; ui.currentTournamentId = "WT"; ui.clubTournament = null; state.view = "clubTournamentDashboard"; render();`);
+    await tick(); await tick();
+    assert(/Weekend Cricket/.test(back()) && win.eval("state.activeClubId") === "wc" && win.eval("ui.currentClubId") === "wc",
+      "a stale club id is put right once the tournament loads: " + back().trim());
+    doc.querySelector('#app .back-bar').click();
+    assert(win.eval("state.view") === "home" && win.eval("state.activeClubId") === "wc", "...and back lands on Weekend Cricket's Home");
+    // A match started from it is the organizer's, even if a stale club id slipped through.
+    win.eval(`ui.currentTournamentId = "WT"; ui.clubTournament = null; state.view = "clubTournamentDashboard"; render();`);
+    await tick(); await tick();
+    doc.querySelector('#app [data-action="go-club-tournament-match-setup"]').click();
+    const setupForm = doc.getElementById("match-setup-form");
+    setupForm.querySelector('[name="teamA"]').value = "Reds"; setupForm.querySelector('[name="teamB"]').value = "Blues";
+    win.eval(`ui.currentClubId = "kc";`);
+    setupForm.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(win.eval("state.match && state.match.clubId") === "wc" && win.eval("state.match.tournamentId") === "WT",
+      "a match started from Weekend Cricket's tournament is Weekend Cricket's, never the last club screen's: " + win.eval("state.match && state.match.clubId"));
+    win.eval(`({ session, client: supabaseClient, fetchT: fetchClubTournamentDetail, fetchC: fetchClubDetail, myClubs: fetchMyClubs } = window.__ctPrev);
+      state.match = null; state.snapshots = []; state.activeClubId = null; state.viewClubId = null; state.viewTournamentId = null; ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
+  // --- Opening the app: Home, not the screen it was last left on (a URL that names a screen still opens it) ---
+  {
+    const saved = (view, extra) => w => w.localStorage.setItem("cricket.lk.v2", JSON.stringify(Object.assign({
+      view, activeTournamentId: "t1", viewClubId: "c1", viewTournamentId: "ct1",
+      tournaments: { t1: { id: "t1", name: "Summer Cup", tournamentPresetId: null, teamIds: [], matchIds: [] } }
+    }, extra || {})));
+    const open = async (url, view, extra) => {
+      const d = new JSDOM(html, { runScripts: "dangerously", url, beforeParse: saved(view, extra) });
+      await wait(50);
+      return d.window;
+    };
+    let w = await open("http://localhost/", "tournamentDashboard");
+    assert(w.eval("state.view") === "home" && w.location.hash === "#/" && w.document.querySelector('#app [data-action="go-match-setup"]'),
+      "launched from the icon (no screen in the URL), the app opens on Home, not the guest tournament it was last on: " + w.location.hash);
+    w.close();
+    w = await open("http://localhost/index.html", "clubTournamentDashboard");
+    assert(w.eval("state.view") === "home" && w.location.hash === "#/", "...nor the club tournament it was last on");
+    w.close();
+    w = await open("http://localhost/#/tournaments/t1", "home");
+    assert(w.eval("state.view") === "tournamentDashboard" && /Summer Cup/.test(w.document.querySelector("#app").textContent),
+      "a URL that names a screen (a reload, a link) still opens it");
+    w.close();
+    const live = JSON.parse(JSON.stringify(win.createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A" })));
+    w = await open("http://localhost/", "tournamentDashboard", { match: live });
+    assert(w.location.hash === "#/live" && w.document.querySelector("#opening-form"), "a match in progress still comes back when the app opens: " + w.location.hash);
+    w.close();
+  }
+
   // --- Guest edition (the Android app, mobile/): the same page with the flag set, no cloud ---
   {
     const guestHtml = html.replace("<script>", '<script>window.CRICKET_LK_EDITION = "guest";</script><script>');
@@ -4023,7 +4094,7 @@ async function main(){
       state.matchHistory = {}; __rows.forEach(r => { const a = JSON.parse(JSON.stringify(r.data)); delete a.clubId; state.matchHistory[a.id] = a; });
       state.view = "stats"; render();`);
     doc.querySelector('#app .lb-name-btn[data-name="Pathum"]').click();
-    assert(sheet() && /All-time/.test(sheet().textContent) && sheet().querySelectorAll('[data-action="open-match-detail"]').length === 2, "guest Stats: a name opens that player's all-time figures");
+    assert(sheet() && /All time/.test(sheet().textContent) && sheet().querySelectorAll('[data-action="open-match-detail"]').length === 2, "guest Stats: a name opens that player's all-time figures");
     win.eval(`fetchPlayerProfile = __prev.fetchPlayerProfile; fetchPlayerAliases = __prev.fetchPlayerAliases; fetchPlayerMatches = __prev.fetchPlayerMatches; fetchMyPlayerIdentity = __prev.fetchMyPlayerIdentity;
       state.matchHistory = {}; ui = defaultUi(); state.view = "home"; save(); render();`);
   }
@@ -4335,6 +4406,112 @@ async function main(){
       "picked: he comes in, the match records his id, and he joins the club's roster");
     win.eval(`({ findPlayersNamed, addPlayerToClub, addExistingPlayerToClub, fetchClubDetail } = window.__keepFns); supabaseClient = window.__keepFns.client;
       state.match = null; state.snapshots = []; ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
+  // --- stats by month / year: a tournament's matches count on its start, a night game on the day before ---
+  {
+    const doc = win.document;
+    const at = (y, mo, d, h, mi) => new Date(y, mo, d, h, mi || 0).getTime();
+    const pk = (ts, kind) => win.statsPeriodKey(ts, kind || "month");
+    assert(pk(at(2026, 10, 15, 17)) === "2026-11" && pk(at(2026, 10, 1, 0, 40)) === "2026-10" && pk(at(2026, 10, 1, 5)) === "2026-11",
+      "stats dates: a match that finished before 5am counts on the day before (00:40 on 1 Nov is October's)");
+    assert(pk(at(2026, 0, 1, 3), "year") === "2025" && pk(at(2026, 0, 1, 3)) === "2025-12" && pk(null) === null, "...across a year end too; no time, no period");
+    assert(win.statsPeriodLabel("month", "2026-11") === "November 2026" && win.statsPeriodLabel("month", "2026-11", true) === "Nov 2026"
+      && win.statsPeriodLabel("year", "2026") === "2026" && win.statsPeriodLabel("all") === "All time", "period labels");
+
+    // Ann bats one ball for Lions in each; Bob bowls it.
+    const quick = (id, runs, when, tid) => {
+      const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 2, playersPerSide: 11, battingFirst: "A", tournamentId: tid || null });
+      win.openInnings(currentInnings(m), "Ann", "Cat", "Bob"); m.status = "live";
+      recordBall(currentInnings(m), { kind: "run", runs });
+      return Object.assign(m, { id, completedAt: when, status: "complete", result: "Lions won" });
+    };
+    const all = [
+      quick("a", 4, at(2026, 9, 18, 17)),
+      quick("b", 6, at(2026, 10, 1, 0, 40)),          // a night game: October's
+      quick("c", 2, at(2026, 10, 30, 21), "T"),       // the tournament starts on 30 Nov...
+      quick("d", 1, at(2026, 11, 1, 1, 10), "T"),     // ...runs past midnight...
+      quick("e", 3, at(2026, 11, 15, 15), "T"),       // ...and on into December: all November's
+      quick("f", 4, at(2026, 11, 20, 16)),
+      quick("g", 5, undefined)                         // no time: only in All time
+    ];
+    const starts = win.tournamentStartTimes(all);
+    assert(starts.T === at(2026, 10, 30, 21), "a tournament starts when its first match finished");
+    const periods = kind => win.statsPeriods(all, kind, starts).map(p => `${p.key}:${p.count}`).join(" ");
+    assert(periods("month") === "2026-12:1 2026-11:3 2026-10:2" && periods("year") === "2026:6", "periods, newest first, with their matches: " + periods("month"));
+    const ids = (kind, key) => win.matchesInPeriod(all, kind, key, starts).map(m => m.id).join("");
+    assert(ids("month", "2026-11") === "cde" && ids("month", "2026-12") === "f" && ids("month", "2026-10") === "ab" && ids("all") === "abcdefg",
+      "every match of a tournament is in the month it started, even one played weeks later; a 00:40 finish is the day before's");
+    const byMonth = win.playerByPeriod(["Ann"], all, "month", null, starts);
+    assert(byMonth.map(r => `${r.key}:${r.career.runs}`).join(" ") === "2026-12:4 2026-11:6 2026-10:10", "a player month by month: " + byMonth.map(r => r.key + ":" + r.career.runs).join(" "));
+    assert(byMonth.reduce((s, r) => s + r.career.runs, 0) + 5 === win.playerCareer(["Ann"], all, null).runs, "the months add up to the career (less the match with no time)");
+    const oct = win.matchesInPeriod(all, "month", "2026-10", starts);
+    const sum = win.statsSummary(oct, win.aggregatePlayerStats(oct, null));
+    assert(sum.matches === 2 && sum.runs === 10 && sum.wickets === 0 && sum.sixes === 1, "a period's headline numbers: " + JSON.stringify(sum));
+
+    // The Stats screen: the picker, the headline numbers, the podium.
+    const kept = win.eval(`({ client: supabaseClient })`);
+    win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); state.matchHistory = {}; state.view = "stats";`);
+    all.forEach(m => { win.state.matchHistory[m.id] = JSON.parse(JSON.stringify(m)); });
+    win.eval(`ui.statsTab = "bat"; render();`);
+    const q = sel => doc.querySelector("#app " + sel);
+    const txt = sel => (q(sel) || {}).textContent;
+    const kpis = () => [...doc.querySelectorAll("#app .kpi")].map(k => k.textContent.replace(/\s+/g, "")).join(" ");
+    const tap = sel => { q(sel).click(); };
+    assert([...doc.querySelectorAll('#app .period-kinds [data-action="stats-period"]')].map(b => b.textContent).join() === "All time,Yearly,Monthly"
+      && q('.period-kinds .on').textContent === "All time" && !q(".period-step"), "Stats offers All time / Yearly / Monthly, All time first");
+    assert(kpis() === "7Matches 25Runs 0Wickets 1Sixes", "all time: every match counts: " + kpis());
+    assert(txt(".podium-spot.s1 .podium-name") === "Ann" && q(".podium-crown") && txt(".podium-by") === "Runs" && txt(".podium-title") === "Top batters",
+      "the podium crowns the leader of the table, by its sort column");
+    tap('[data-action="stats-period"][data-kind="month"]');
+    assert(txt(".period-now") === "December 2026" && kpis() === "1Match 4Runs 0Wickets 0Sixes" && q(".period-arrow[aria-label^='Later']").disabled,
+      "Monthly opens on the newest month: " + txt(".period-now"));
+    tap(".period-arrow[aria-label^='Earlier']");
+    assert(txt(".period-now") === "November 2026" && kpis() === "3Matches 6Runs 0Wickets 0Sixes", "‹ steps back a month: the tournament's three matches");
+    assert(q("td.on b") && q("td.on b").textContent === "6" && q(".kpi-row.anim-new") && q(".podium-card.anim-new"), "the table counts that month only, and the new month animates in");
+    win.eval(`ui.statsSort.bat = { key: "sixes", dir: "desc" }; render();`);
+    assert(!q(".podium-card"), "a podium only shows players with something in its column (no sixes in November)");
+    tap(".period-arrow[aria-label^='Earlier']");
+    assert(txt(".period-now") === "October 2026" && txt(".podium-by") === "Sixes" && txt(".podium-spot.s1 .podium-val") === "16s", "sorted by sixes, October's podium: " + txt(".podium-spot.s1 .podium-val"));
+    win.eval(`ui.statsSort = {}; render();`);
+    tap('[data-action="stats-period"][data-kind="year"]');
+    assert(txt(".period-now") === "2026" && kpis() === "6Matches 20Runs 0Wickets 1Sixes", "Yearly stays in the year Monthly was showing");
+    tap('[data-action="stats-tab"][data-tab="mvp"]');
+    assert(txt(".podium-title") === "Player of the year", "a year's MVP podium is its player of the year");
+    tap('[data-action="stats-period"][data-kind="month"]');
+    assert(txt(".period-now") === "December 2026" && txt(".podium-title") === "Player of the month", "...a month's, its player of the month");
+    // A player's sheet over a period that spans months: month by month.
+    tap('[data-action="stats-period"][data-kind="all"]');
+    tap('.podium-spot.s1 .podium-btn');
+    const sheet = doc.querySelector("#modal-root .player-stats-modal");
+    const months = sheet ? [...sheet.querySelectorAll(".month-bar .month-name")].map(e => e.textContent).join() : "";
+    assert(months === "Dec 2026,Nov 2026,Oct 2026" && sheet.querySelector(".month-bar.best .month-name").textContent === "Oct 2026"
+      && sheet.querySelector(".player-stats-head .player-avatar.initials").textContent === "A", "the sheet shows month by month (best month marked) and the player's badge: " + months);
+    assert(/All time/.test(sheet.querySelector(".player-stats-where").textContent), "...over all time");
+    win.eval(`closePlayerStats()`);
+    tap('[data-action="stats-period"][data-kind="month"]');
+    tap('.podium-spot.s1 .podium-btn');
+    const sheet2 = doc.querySelector("#modal-root .player-stats-modal");
+    assert(!sheet2.querySelector(".month-bars") && /December 2026/.test(sheet2.querySelector(".player-stats-where").textContent), "a month's sheet is that month's, with no month by month");
+    win.eval(`closePlayerStats()`);
+    // Inside one tournament there's nothing to pick: its matches share its start.
+    const tHtml = win.eval(`renderTournamentStats(${JSON.stringify(all.filter(m => m.tournamentId))}, "Cup")`);
+    assert(!/period-kinds/.test(tHtml) && /kpi-row/.test(tHtml) && /Tournament MVP/.test(tHtml), "a tournament's Stats: no period picker, and the podium names the Tournament MVP");
+
+    // Photos: the leader's from players_public (memory only), else initials.
+    const uuid = "11111111-2222-4333-8444-555555555555", png = "data:image/png;base64,iVBORw0KGgo=";
+    assert(/initials[^>]*>AL</.test(win.playerAvatarHtml("name:ann lee", "Ann Lee")) && /initials[^>]*>K</.test(win.playerAvatarHtml(null, "Kusal (KM)")), "no photo: initials");
+    win.eval(`window.__photoCalls = []; supabaseClient = { from: () => ({ select: () => ({ in: (col, ids) => { window.__photoCalls.push(ids); return Promise.resolve({ data: ids.map(id => ({ id, photo: id === "${uuid}" ? "${png}" : null })) }); } }) }) };`);
+    win.wantPlayerPhotos([uuid, "name:ann", "guest:bob", uuid, "22222222-2222-4333-8444-555555555555"]);
+    win.wantPlayerPhotos([uuid]);
+    await wait(0);
+    assert(JSON.stringify(win.__photoCalls) === JSON.stringify([[uuid, "22222222-2222-4333-8444-555555555555"]]), "photos load once, for real player ids only: " + JSON.stringify(win.__photoCalls));
+    assert(new RegExp(`<img class="player-avatar podium-avatar" src="${png.replace(/[+/=.]/g, "\\$&")}"`).test(win.playerAvatarHtml(uuid, "Ann", "podium-avatar")), "a photo shows when the player has one");
+    win.eval(`playerPhotos["33333333-2222-4333-8444-555555555555"] = "data:image/svg+xml;base64,PHN2Zz4=";`);
+    assert(!/<img/.test(win.playerAvatarHtml("33333333-2222-4333-8444-555555555555", "Ann")), "only a safe image data URL is ever shown (safePhoto)");
+    win.eval(`supabaseClient = null; state.matchHistory = {}; ui = defaultUi(); state.view = "home"; save(); render();`);
+    win.__keepStatsClient = kept.client;
+    win.eval(`supabaseClient = window.__keepStatsClient;`);
   }
 
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);

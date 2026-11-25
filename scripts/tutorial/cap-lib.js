@@ -1,13 +1,13 @@
 /* Screenshots for tutorial.html (tutorial/img/*.jpg).
    Usage: serve the repo (python3 -m http.server 8765), `npm i -D playwright`
-   (+ `npx playwright install chromium`), then: node scripts/tutorial/cap1.js,
-   cap2.js, cap3.js. Supabase is blocked, so nothing touches the real cloud:
+   (+ `npx playwright install chromium`, or PW_CHANNEL=chrome to use the
+   installed Google Chrome), then: node scripts/tutorial/cap1.js, cap2.js, cap3.js. Supabase is blocked, so nothing touches the real cloud:
    club/Premier screens are drawn from sample data injected into the page. */
 const { chromium, devices } = require('playwright');
 const OUT = require('path').join(__dirname, '../../tutorial/img/');
 const BASE = process.env.BASE_URL || 'http://localhost:8765/';
 async function setup(){
-  const b = await chromium.launch();
+  const b = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const ctx = await b.newContext({ ...devices['iPhone 13'], viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   // Keep the real cloud out of it: no supabase-js -> no client, no fetches.
   await ctx.route(/supabase/, r => r.abort());

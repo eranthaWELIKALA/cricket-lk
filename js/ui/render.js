@@ -71,6 +71,14 @@ function render(){
       && (state.view !== "matchSetup" || ui.clubMatchSetupType) && !clubCanEdit(ui.currentClubId)){
     state.view = "home"; save();
   }
+  // A club tournament belongs to the club that organizes it, whichever club
+  // screen was open before (or a link said): its back bar, Start match, Enter
+  // result, roster and presets all follow the tournament once it's loaded.
+  const ct = ui.clubTournament;
+  if (!m && ct && ct.id === ui.currentTournamentId && ct.organizer_club_id && ui.currentClubId !== ct.organizer_club_id
+      && (state.view === "clubTournamentDashboard" || (state.view === "matchSetup" && ui.clubMatchSetupType === "tournament"))){
+    ui.currentClubId = ct.organizer_club_id;
+  }
   // Club screens read the user's role in the club (clubCanEdit) from
   // ui.myClubs, so a reload straight onto one loads it too.
   if (!m && CLUB_VIEWS.includes(state.view) && session && ui.myClubs === null && !ui.myClubsLoading){
@@ -193,6 +201,10 @@ function render(){
   const prevScore = sameScreen ? (root.querySelector(".score-n") || {}).textContent : null;
   const prevChips = sameScreen ? new Set([...root.querySelectorAll("[data-chip]")].map(c => c.dataset.chip)) : null;
   const prevTabs = sameScreen ? activeTabs(root) : null;
+  // Content that animates when it changes on the same screen (a stats podium
+  // for another month, say) carries data-anim-key; a key that wasn't there
+  // before gets .anim-new.
+  const prevAnimKeys = sameScreen ? new Set([...root.querySelectorAll("[data-anim-key]")].map(e => e.dataset.animKey)) : null;
   const menuWasOpen = !!root.querySelector(".side-menu");
   // A search box marked data-keep-focus keeps focus (and the caret) across a
   // re-render, so a background render while typing doesn't drop the keyboard.
@@ -210,6 +222,7 @@ function render(){
     if (score && score.textContent === prevScore) root.querySelector(".score-tile").classList.add("no-anim");
     root.querySelectorAll("[data-chip]").forEach(c => { if (prevChips.has(c.dataset.chip)) c.classList.add("no-anim"); });
     markTabSwitches(root, prevTabs);
+    root.querySelectorAll("[data-anim-key]").forEach(e => { if (!prevAnimKeys.has(e.dataset.animKey)) e.classList.add("anim-new"); });
   }
   if (menuWasOpen) root.querySelectorAll(".side-menu, .side-menu-backdrop").forEach(el => el.classList.add("no-anim"));
   restoreFormDrafts(root, appDrafts);

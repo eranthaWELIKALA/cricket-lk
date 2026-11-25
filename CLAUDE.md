@@ -782,6 +782,45 @@ an empty record is left out. Player records skip "no names" matches and
 placeholders, team totals count every match (result-only too). Career tallies
 render as two-up tiles, one-match records as rows that open their scorecard
 (`open-match-detail`, so the id must be findable by `findCompletedMatch`).
+
+**By month or year** (`ui.statsPeriod = { kind: "all"|"year"|"month", key,
+near }`, `statsPeriodFor` in stats.js). When a leaderboard's `matches` span more
+than one month, `renderLeaderboards` opens with a picker (All time / Yearly /
+Monthly, ‹ › between the periods that have matches; `near` keeps Monthly in the
+year Yearly showed) and narrows everything under it to that period: the
+headline numbers, the podium, the tables, Records and the player sheet (whose
+title becomes "KICC · November 2026"); `totals` is counted again over those
+matches. **A match's date is its tournament's start, not its own**
+(`matchStatsTime`, ENGINE, tested): every match of a tournament counts on the
+day its first match finished (`tournamentStartTimes`, over the screen's own
+matches — not `created_at`, which may be the night before), so a club day that
+runs past midnight, or a tournament that runs for weeks, stays in the month it
+began; a match outside a tournament counts when it finished. Either way a time
+before `STATS_DAY_START_HOUR` (5am) is the day before (`statsDayOf`; the player
+sheet's and profile's match dates, `matchDateText`, show that day too). A match
+with no `completedAt` is in All time only. So one tournament's matches all share
+a month and its Stats tab never shows the picker. `statsPeriods` /
+`matchesInPeriod` / `playerByPeriod` / `statsSummary` / `statsPeriodLabel` are
+the ENGINE side.
+
+**What a leaderboard shows** (stats.js): the headline numbers (`statsSummary`:
+matches, the runs and wickets of every innings, the players' sixes), then per
+table a **podium** (`podiumFor`/`podiumHtml`): the top three by the column the
+table is sorted by, always that column's best-first (flipping the table never
+makes a bottom three), only players with something in it, equal figures sharing
+a place, #1 in the middle with a crown. Its title is "Player of the month/year"
+on the MVP tab for a period, `opts.leader` ("Tournament MVP", which replaced the
+guest tournament's old `.mvp-callout`) otherwise. Under it the table: places 1–3
+wear medals and the sorted column a thin bar per figure (`leaderboardBars`; not
+for a low-is-best column or best bowling). The player sheet (and My stats) has
+the player's badge and, over more than one month, **Month by month**
+(`playerMonthsHtml`: MVP points, or runs where there are none, the best month in
+full colour). **Photos** (`playerAvatarHtml`): `players_public.photo` for a real
+player id (`wantPlayerPhotos`, cloud.js: one request for every table's top three,
+memory only — a photo is up to 80 KB, too big for the read cache — through
+`safePhoto`, never spinning the tapped button), else initials; guest players have
+none.
+
 `computeStandings`' NRR follows the standard convention that an
 all-out innings counts its full overs quota (not the fewer overs it
 actually took) — this is a simplification, not a bug, consistent with
@@ -1218,7 +1257,13 @@ History rules — these are what make it work on phones:
   *replace*. Nothing is pushed at boot or while handling a back/forward press
   (`navApplying`). The old one-entry "trap" was armed on `pointerdown`, which
   isn't a gesture for touch — that's why back didn't work on phones.
-- **Opened straight onto a screen** (reload, relaunch, a link), the first tap
+- **Opening the app with no screen in the URL** (the home-screen icon, the
+  bare address: `start_url` has no hash) lands on **Home**, not on the
+  `state.view` it was last saved with (a tournament, say): `boot.js` sets
+  `state.view = "home"` when the route is `/`. A match in progress still comes
+  back (render() shows it whatever the view), and a URL that names a screen
+  (a reload, a link) still opens that screen.
+- **Opened straight onto a screen** (reload, a link), the first tap
   runs `ensureNavBase()`: that entry becomes Home and the screen is pushed on
   top, so back lands on Home instead of closing the app (matters mid-match).
 - **Replaced, never returned to:** setup screens and Result (`NAV_TRANSIENT`),
@@ -1573,7 +1618,8 @@ ad hoc form already lives — it doesn't relocate the form itself.
 Home gained a "Recent matches" section (latest 3 of `state.matchHistory`
 by `completedAt`), which needs only existing data. Stats now leads with the MVP leaderboard
 (`.leaderboard.mvp`, gold-tinted, with Pts/M/Runs/Wkt/Fld columns and the
-points preset it was counted with, ⓘ). (Its "stored on this device" and
+points preset it was counted with, ⓘ), under its period picker, headline
+numbers and podium (see "By month or year" in "Stats & MVP"). (Its "stored on this device" and
 "archived matches only" footnotes went with the hint cleanup — see "Hints:
 only what isn't obvious".) `renderLeaderboards` is shared
 with the tournament Stats tab and club Stats, so they pick this up too.
@@ -1590,9 +1636,10 @@ something the app doesn't have (or would remove working behavior):
   and a live search field there would need its own handling — the one
   delegated `input` listener is scoped to the club add-player sheet's name
   field (see "Nickname, jersey no…" below), not a general search hook.
-- The All-time/tournament scope chips on Stats — Stats has no scope
-  state. (Highest score and best bowling *are* columns now: the totals
-  track them.)
+- The All-time/tournament scope chips on Stats — Stats scopes by *period*
+  instead (All time / Yearly / Monthly, `ui.statsPeriod`), not by
+  tournament: a tournament has its own Stats tab. (Highest score and best
+  bowling *are* columns now: the totals track them.)
 
 ## Theme & sound
 
@@ -1744,7 +1791,10 @@ Playwright taps wait about that). All of it is off under
 `prefers-reduced-motion` and in print, and `cap-lib.js` hides confetti and
 moments so tutorial shots never catch one. A new entrance animation follows
 the same rule: scope it to `.screen:not(.no-anim)`, or mark it `.no-anim` in
-`render()` when it was already on screen.
+`render()` when it was already on screen. Content that should animate again
+when it *changes* on the same screen (the stats podium and headline numbers for
+another period, tab or column) carries `data-anim-key`: after a same-screen
+render, an element whose key wasn't there before gets `.anim-new`.
 
 ## Editing dismissal types
 
@@ -2183,7 +2233,15 @@ The old `clubHome` view is gone; a saved `view: "clubHome"` or an old
 `#/clubs/<id>` link becomes Home acting as that club (top of `render()`).
 Every club view also sets `state.activeClubId` to its club, so its back bar
 ("Home", or the club's name on a tournament) lands on that club's Home even
-when it was reached by a link. Club presets are edited on
+when it was reached by a link. **A club tournament's club is its
+`organizer_club_id`**, never just whichever club screen was open last: "Acting
+as" only changes `state.activeClubId`, so `ui.currentClubId` can be another
+club's. Home's tournament rows pass their club (`data-club`), `render()` puts
+`ui.currentClubId` right once `ui.clubTournament` loads (dashboard and its
+match setup), and Start match / Enter result only take the club from the
+tournament. Before this, a tournament opened after switching clubs showed the
+old club's name on its back bar, switched Acting as back to it, and filed a
+match started there under that club. Club presets are edited on
 `clubPresets` with the *same* forms (`renderMatchPresetForm(p, clubId)` etc.)
 but their own actions (`club-*-preset`) and ui fields
 (`editingClub*Preset`), and saved with `saveClubPreset` (a club's tournament

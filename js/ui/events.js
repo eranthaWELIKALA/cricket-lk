@@ -134,6 +134,8 @@ document.addEventListener("click", (e) => {
   else if (action === "profile-tab" && ui.profile){ ui.profile.tab = btn.dataset.tab; render(); }
   else if (action === "toggle-team-card"){ ui.expandedTeamId = ui.expandedTeamId === btn.dataset.id ? null : btn.dataset.id; render(); }
   else if (action === "stats-tab"){ ui.statsTab = btn.dataset.tab; render(); }
+  // The leaderboards' period: All time / Yearly / Monthly, and ‹ › between them (statsPeriodFor).
+  else if (action === "stats-period"){ ui.statsPeriod = { kind: btn.dataset.kind, key: btn.dataset.key || null, near: btn.dataset.near || null }; render(); }
   // A column head: sort by it, best-first; again flips it. The table keeps
   // its sideways scroll across the re-render.
   else if (action === "stats-sort"){
@@ -269,6 +271,10 @@ document.addEventListener("click", (e) => {
     ui.clubTournamentSetupPresetId = btn.dataset.id; render();
   }
   else if (action === "open-club-tournament"){
+    // Its club is the one whose list it was in (Home acting as that club) -- not
+    // whichever club screen was open last: the "Acting as" switch doesn't change
+    // ui.currentClubId. render() checks it against the tournament once loaded.
+    if (btn.dataset.club) ui.currentClubId = btn.dataset.club;
     ui.currentTournamentId = btn.dataset.id; ui.clubTournament = null; ui.tournamentTeamEdit = null; ui.tournamentTeamError = null; ui.tournamentTab = null; ui.expandedTeamId = null; state.view = "clubTournamentDashboard"; render(); // render() loads it
   }
   else if (action === "new-tournament-team" && ui.clubTournament){
