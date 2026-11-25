@@ -1503,9 +1503,15 @@ button.record-row{ margin:0; background:none; border:0; border-radius:0; box-sha
 .band-block .band-body{ margin-top:8px; }
 .band-block:has(input[type=checkbox]:not(:checked)) .band-body{ display:none; }
 .band-min{ font-size:.78rem; }
-.band-row{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-top:6px; }
-.band-row input{ margin:0; padding:7px 8px; }
-.band-head{ font-size:.66rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+/* A row list (milestones, wicket hauls, rate bands): inputs, then a ✕. */
+.tier-block{ margin-top:10px; }
+.tier-title{ font-size:.74rem; font-weight:700; }
+.tier-row{ display:grid; grid-template-columns:1fr 1fr 38px; gap:6px; margin-top:6px; align-items:center; }
+.tier-row.band{ grid-template-columns:1fr 1fr 1fr 38px; }
+.tier-row input{ margin:0; padding:7px 8px; }
+.tier-row .tier-remove{ padding:7px 0; width:100%; margin:0; }
+.tier-head{ font-size:.66rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+.tier-list .tier-add{ margin-top:6px; padding:4px 0; font-size:.8rem; text-align:left; }
 .preset-row.in-use{ border-color:var(--accent-2); }
 .in-use-badge{ background:rgba(var(--accent-2-rgb),.16); border-color:var(--accent-2); color:var(--accent-2); }
 

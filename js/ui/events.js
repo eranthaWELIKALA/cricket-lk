@@ -404,7 +404,7 @@ document.addEventListener("click", (e) => {
   }
   else if (action === "cancel-preset-edit"){ ui.editingMatchPreset = null; ui.editingTournamentPreset = null; ui.editingPointsPreset = null; render(); }
   // MVP points presets: a new one starts from the built-in default's numbers.
-  else if (action === "new-points-preset"){ ui.editingPointsPreset = Object.assign({}, DEFAULT_POINTS_PRESETS[0], { id: null, name: "" }); render(); }
+  else if (action === "new-points-preset"){ ui.editingPointsPreset = Object.assign(JSON.parse(JSON.stringify(DEFAULT_POINTS_PRESETS[0])), { id: null, name: "" }); render(); }
   else if (action === "edit-points-preset"){ ui.editingPointsPreset = JSON.parse(JSON.stringify(state.pointsPresets[btn.dataset.id])); render(); }
   else if (action === "use-points-preset"){ state.pointsPresetId = btn.dataset.id; save(); render(); }
   else if (action === "delete-points-preset"){
@@ -424,6 +424,21 @@ document.addEventListener("click", (e) => {
     const cur = ui[key] || {}, tpl = DEFAULT_POINTS_PRESETS.find(t => t.id === btn.dataset.id);
     const typedName = (document.querySelector(`#${btn.dataset.club ? "club-" : ""}points-preset-form input[name="name"]`) || {}).value;
     if (tpl) ui[key] = Object.assign(JSON.parse(JSON.stringify(tpl)), { id: cur.id || null, name: (typedName || "").trim() || cur.name || tpl.name, inUse: cur.inUse });
+    render();
+  }
+  // A row added to or taken from one of the editor's lists (milestones,
+  // wicket hauls, rate bands; guest or club): the form as typed becomes the
+  // draft first, so nothing typed is lost when it's drawn again.
+  else if (action === "points-row-add" || action === "points-row-remove"){
+    const key = btn.dataset.club ? "editingClubPointsPreset" : "editingPointsPreset";
+    const form = btn.closest("form"), list = btn.dataset.list, cfg = POINTS_ROW_LISTS[list];
+    if (!form || !ui[key] || !cfg) return;
+    const draft = Object.assign(parsePointsPresetForm(new FormData(form), true), { id: ui[key].id || null, inUse: ui[key].inUse });
+    const rows = cfg.band ? draft[list].bands : draft[list];
+    if (action === "points-row-add") rows.push(cfg.band ? { from: null, below: null, pts: null } : { at: null, pts: null });
+    else rows.splice(Number(btn.dataset.i), 1);
+    form.dataset.submitted = "1"; // the draft carries the values now, not captureFormDrafts
+    ui[key] = draft;
     render();
   }
   else if (action === "club-new-match-preset"){ ui.editingClubMatchPreset = {}; render(); }
@@ -448,7 +463,7 @@ document.addEventListener("click", (e) => {
   else if (action === "club-new-tournament-preset"){ ui.editingClubTournamentPreset = {}; render(); }
   else if (action === "club-edit-tournament-preset"){ ui.editingClubTournamentPreset = Object.assign({}, clubPresetList("tournament", ui.currentClubId).find(p => p.id === btn.dataset.id)); render(); }
   else if (action === "club-cancel-preset-edit"){ ui.editingClubMatchPreset = null; ui.editingClubTournamentPreset = null; ui.editingClubPointsPreset = null; render(); }
-  else if (action === "club-new-points-preset"){ ui.editingClubPointsPreset = Object.assign({}, DEFAULT_POINTS_PRESETS[0], { id: null, name: "" }); render(); }
+  else if (action === "club-new-points-preset"){ ui.editingClubPointsPreset = Object.assign(JSON.parse(JSON.stringify(DEFAULT_POINTS_PRESETS[0])), { id: null, name: "" }); render(); }
   else if (action === "club-edit-points-preset"){ ui.editingClubPointsPreset = JSON.parse(JSON.stringify(clubPresetList("points", ui.currentClubId).find(p => p.id === btn.dataset.id) || {})); render(); }
   else if (action === "club-use-points-preset"){
     const clubId = ui.currentClubId;
