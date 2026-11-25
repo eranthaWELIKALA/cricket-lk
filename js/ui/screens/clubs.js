@@ -427,8 +427,9 @@ function playerMatchRowHtml(l, where){
       <span class="fixture-meta"><span class="chevron">›</span></span>
     </button>`;
 }
+// The day it was played: a match that finished before 5am is the evening before's (statsDayOf).
 function matchDateText(m){
-  return m.completedAt ? new Date(m.completedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
+  return m.completedAt ? statsDayOf(m.completedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
 }
 
 /* A profile's Matches tab: every match the Stats tab counts (the same club

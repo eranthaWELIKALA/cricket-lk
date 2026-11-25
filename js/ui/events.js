@@ -134,6 +134,8 @@ document.addEventListener("click", (e) => {
   else if (action === "profile-tab" && ui.profile){ ui.profile.tab = btn.dataset.tab; render(); }
   else if (action === "toggle-team-card"){ ui.expandedTeamId = ui.expandedTeamId === btn.dataset.id ? null : btn.dataset.id; render(); }
   else if (action === "stats-tab"){ ui.statsTab = btn.dataset.tab; render(); }
+  // The leaderboards' period: All time / Yearly / Monthly, and ‹ › between them (statsPeriodFor).
+  else if (action === "stats-period"){ ui.statsPeriod = { kind: btn.dataset.kind, key: btn.dataset.key || null, near: btn.dataset.near || null }; render(); }
   // A column head: sort by it, best-first; again flips it. The table keeps
   // its sideways scroll across the re-render.
   else if (action === "stats-sort"){

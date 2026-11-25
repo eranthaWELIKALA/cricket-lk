@@ -149,7 +149,7 @@ function renderClubTournamentDashboard(){
         ${canDelete ? `<button type="button" data-action="delete-tournament" class="ghost danger-text delete-tournament-btn">Delete tournament</button>` : ""}` : ""}
       ${tab === "teams" ? renderTournamentTeams(t, canEdit) : ""}
       ${tab === "fixtures" ? `${actions(0, false)}<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches, canEdit && !ended ? "No matches yet — start one above." : "No matches yet.")}` : ""}
-      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, clubPointsPreset(t.organizer_club_id), statsOpts()), { points: clubPointsPreset(t.organizer_club_id), where: "the club's Presets", matches, title: t.name }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
+      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, clubPointsPreset(t.organizer_club_id), statsOpts()), { points: clubPointsPreset(t.organizer_club_id), where: "the club's Presets", matches, title: t.name, leader: "Tournament MVP" }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
       ${tab === "me" ? renderMyStatsTab(matches, clubPointsPreset(t.organizer_club_id), t.name) : ""}
     </div>
   `;
@@ -858,7 +858,7 @@ function renderPublicTournament(){
         ? `${renderStandingsTable(computeStandings(matches, p), p.useNRR)}<h3 class="section-label">Latest results</h3>${renderFixtureList(latest)}`
         : `<p class="hint">No matches yet.</p>`) : ""}
       ${tab === "fixtures" ? `<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches)}` : ""}
-      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, pt.points, statsOpts()), { points: pt.points, matches, title: pt.name }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
+      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, pt.points, statsOpts()), { points: pt.points, matches, title: pt.name, leader: "Tournament MVP" }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
       ${tab === "me" ? renderMyStatsTab(matches, pt.points, pt.name) : ""}
       <p class="hint public-note">${pt.refreshError ? escapeHtml(pt.refreshError) : `Read only · updated ${escapeHtml(updated)}`}</p>
     </div>`;

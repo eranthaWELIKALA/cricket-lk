@@ -41,7 +41,7 @@ const LEADERBOARD_COLUMNS = {
     { key: "maidens", label: "Md", title: "Maidens", value: t => t.maidens },
     { key: "dots", label: "Dots", title: "Dot balls", value: t => t.dots },
     { key: "runsConceded", label: "R", title: "Runs conceded", value: t => t.runsConceded, best: "asc" },
-    { key: "best", label: "BB", title: "Best bowling", value: t => t.best ? t.best.wickets * 1000 - t.best.runs : null,
+    { key: "best", label: "BB", title: "Best bowling", bar: false, value: t => t.best ? t.best.wickets * 1000 - t.best.runs : null,
       text: t => t.best ? `${t.best.wickets}/${t.best.runs}` : "—" },
     { key: "bowlAverage", label: "Avg", title: "Bowling average", value: t => lbRatio(t.runsConceded, t.wickets), text: t => lbDec(lbRatio(t.runsConceded, t.wickets), 1), best: "asc" },
     { key: "economy", label: "Econ", title: "Economy (runs per 6 balls)", value: t => lbRatio(t.runsConceded, t.legalBalls / 6), text: t => lbDec(lbRatio(t.runsConceded, t.legalBalls / 6), 2), best: "asc" },
@@ -76,6 +76,14 @@ function sortLeaderboard(rows, table, sort){
   };
   return [...rows].sort((a, b) => { for (const [c, dir] of chain){ const r = cmp(c, dir, a, b); if (r) return r; } return 0; });
 }
+/* The sorted column carries a thin bar under each figure, the leader's full
+   width (a quantity sorted best-first only: not a ratio sorted low-first, not
+   best bowling), so a re-sort shows at a glance how far apart they are. */
+function leaderboardBars(rows, col){
+  if (!col || col.key === "name" || col.bar === false || col.best === "asc") return null;
+  const max = Math.max(0, ...rows.map(t => col.value(t) || 0));
+  return max > 0 ? t => Math.max(0, Math.round((col.value(t) || 0) / max * 100)) : null;
+}
 function leaderboardTable(table, totals){
   const cols = LEADERBOARD_COLUMNS[table];
   const self = myPlayerSelf();
@@ -83,6 +91,7 @@ function leaderboardTable(table, totals){
   if (!rows.length) return `<p class="hint">${table === "bowl" ? "Nobody has bowled yet." : "Nobody has batted yet."}</p>`;
   const sort = leaderboardSort(table);
   const ranked = sort.key !== "name";
+  const bar = leaderboardBars(rows, cols.find(c => c.key === sort.key));
   const head = cols.map(c => {
     const on = c.key === sort.key;
     return `<th scope="col" class="${c.key === "name" ? "lb-name" : ""}" aria-sort="${on ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}"><button type="button" data-action="stats-sort" data-table="${table}" data-key="${c.key}" class="sort-btn${on ? " on" : ""}" title="${c.title}" aria-label="Sort by ${c.title.toLowerCase()}">${c.label}${on ? `<span class="sort-arrow" aria-hidden="true">${sort.dir === "asc" ? "▲" : "▼"}</span>` : ""}</button></th>`;
@@ -91,12 +100,145 @@ function leaderboardTable(table, totals){
     // The name opens that player's figures over these matches (the player stats sheet).
     if (c.key === "name"){
       const me = isMyTotal(self, t);
-      return `<td class="lb-name${me ? " lb-me" : ""}">${ranked ? `<span class="lb-rank">${i + 1}</span>` : ""}<button type="button" data-action="open-player-stats" data-key="${escapeHtml(t.key || "")}" data-name="${escapeHtml(t.name)}" class="name-btn lb-name-btn">${escapeHtml(t.name)}</button>${me ? `<span class="you-tag">You</span>` : ""}</td>`;
+      return `<td class="lb-name${me ? " lb-me" : ""}">${ranked ? `<span class="lb-rank${i < 3 ? ` medal m${i + 1}` : ""}">${i + 1}</span>` : ""}<button type="button" data-action="open-player-stats" data-key="${escapeHtml(t.key || "")}" data-name="${escapeHtml(t.name)}" class="name-btn lb-name-btn">${escapeHtml(t.name)}</button>${me ? `<span class="you-tag">You</span>` : ""}</td>`;
     }
     const v = c.text ? c.text(t) : c.value(t);
-    return `<td class="${c.key === sort.key ? "on" : ""}">${c.strong ? `<b>${v}</b>` : v}</td>`;
+    const on = c.key === sort.key;
+    return `<td class="${on ? "on" : ""}${on && bar ? " bar" : ""}"${on && bar ? ` style="--bar:${bar(t)}%"` : ""}>${c.strong ? `<b>${v}</b>` : v}</td>`;
   }).join("")}</tr>`).join("");
   return `<div class="table-scroll"><table class="lb-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+/* --- the period filter: all time, a year, a month ---
+   ui.statsPeriod = { kind: "all"|"year"|"month", key, near }: key null (or
+   one these matches don't have) is the newest period with matches; `near`
+   (the period on screen when the kind changed) keeps Monthly in the year
+   Yearly was showing, and the other way round. A match's date is its
+   tournament's start (ENGINE, statsPeriodKey). Offered only when the matches
+   span more than one month -- so never inside one tournament, whose matches
+   all share its start. */
+const STATS_PERIOD_KINDS = [["all", "All time"], ["year", "Yearly"], ["month", "Monthly"]];
+function statsPeriodFor(matches){
+  const starts = tournamentStartTimes(matches);
+  const months = statsPeriods(matches, "month", starts);
+  const want = ui.statsPeriod || {};
+  const kind = months.length > 1 && (want.kind === "year" || want.kind === "month") ? want.kind : "all";
+  const out = { kind, key: null, label: "", offered: months.length > 1, matches };
+  if (kind === "all") return out;
+  const list = kind === "month" ? months : statsPeriods(matches, "year", starts);
+  let i = list.findIndex(p => p.key === want.key);
+  if (i < 0 && want.near) i = list.findIndex(p => p.key.slice(0, 4) === String(want.near).slice(0, 4));
+  if (i < 0) i = 0;
+  const key = list[i].key;
+  return Object.assign(out, { key, label: statsPeriodLabel(kind, key), older: list[i + 1] || null, newer: list[i - 1] || null,
+    matches: matchesInPeriod(matches, kind, key, starts) });
+}
+// 1,284 · 12.9K
+function statsCount(n){
+  return n >= 10000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, "")}K` : Number(n).toLocaleString("en-US");
+}
+/* The top of every leaderboard: the period picker (when offered) and the
+   period's headline numbers (statsSummary). */
+function statsOverviewHtml(period, totals){
+  const sum = statsSummary(period.matches, totals);
+  const tile = (n, label) => `<div class="kpi"><span class="kpi-n">${statsCount(n)}</span><span class="kpi-label">${label}</span></div>`;
+  const arrow = (p, dir) => `<button type="button" class="period-arrow" data-action="stats-period" data-kind="${period.kind}" data-key="${p ? p.key : ""}" ${p ? "" : "disabled"} aria-label="${dir === "older" ? "Earlier" : "Later"} ${period.kind === "year" ? "year" : "month"}${p ? `: ${statsPeriodLabel(period.kind, p.key)}` : ""}">${dir === "older" ? "‹" : "›"}</button>`;
+  return `
+    <section class="stats-overview">
+      ${period.offered ? `
+        <div class="period-kinds" role="tablist" aria-label="Period">${STATS_PERIOD_KINDS.map(([k, label]) =>
+          `<button type="button" role="tab" aria-selected="${k === period.kind}" data-action="stats-period" data-kind="${k}" data-near="${period.key || ""}" class="${k === period.kind ? "on" : ""}">${label}</button>`).join("")}</div>
+        ${period.kind !== "all" ? `
+          <div class="period-step">
+            ${arrow(period.older, "older")}
+            <div class="period-now" aria-live="polite"><b>${escapeHtml(period.label)}</b></div>
+            ${arrow(period.newer, "newer")}
+          </div>` : ""}` : ""}
+      <div class="kpi-row" data-anim-key="kpi:${period.kind}:${period.key || ""}">
+        ${tile(sum.matches, sum.matches === 1 ? "Match" : "Matches")}${tile(sum.runs, "Runs")}${tile(sum.wickets, "Wickets")}${tile(sum.sixes, "Sixes")}
+      </div>
+    </section>`;
+}
+
+/* --- the podium: a table's top three, by the column it's sorted by ---
+   Always that column's best-first (flipping the table's order doesn't turn it
+   into a bottom three), only players with something in it, equal figures
+   sharing a place. #1 stands in the middle, bigger, with their profile photo
+   when they have one (playerAvatarHtml). Tapping one opens their stats sheet. */
+const PODIUM_LEAD = { mvp: "Most valuable", bat: "Top batters", bowl: "Top bowlers", field: "Top fielders" };
+function podiumFor(table, totals){
+  const cols = LEADERBOARD_COLUMNS[table], sort = leaderboardSort(table);
+  const col = cols.find(c => c.key === (sort.key === "name" ? LEADERBOARD_ORDER[table][0] : sort.key));
+  const dir = col.best || "desc";
+  const rows = totals.filter(LEADERBOARD_ROWS[table] || (() => true));
+  const top = sortLeaderboard(rows, table, { key: col.key, dir })
+    .filter(t => { const v = col.value(t); return v != null && (dir === "asc" || v > 0); })
+    .slice(0, 3);
+  const better = (a, b) => dir === "asc" ? a < b : a > b;
+  const places = top.map(t => 1 + top.filter(o => better(col.value(o), col.value(t))).length);
+  return { col, top, places, byDefault: col.key === LEADERBOARD_ORDER[table][0] };
+}
+function podiumSub(table, t, key){
+  const n = (v, one, many) => `${v} ${v === 1 ? one : many}`;
+  const fld = [t.catches ? `${t.catches} ct` : "", t.stumpings ? `${t.stumpings} st` : "", t.runouts ? `${t.runouts} ro` : ""].filter(Boolean).join(", ");
+  const sr = t.balls ? (t.runs / t.balls * 100).toFixed(1) : null;
+  const econ = t.legalBalls ? (t.runsConceded / (t.legalBalls / 6)).toFixed(2) : null;
+  const facts = {
+    mvp: [["runs", t.runs ? n(t.runs, "run", "runs") : ""], ["wickets", t.wickets ? n(t.wickets, "wkt", "wkts") : ""],
+      ["dismissals", fld]],
+    bat: [["runs", n(t.runs, "run", "runs")], ["strikeRate", sr ? `SR ${sr}` : ""],
+      ["highScore", t.highScore ? `HS ${t.highScore.runs}${t.highScore.out ? "" : "*"}` : ""]],
+    bowl: [["wickets", n(t.wickets, "wkt", "wkts")], ["economy", econ ? `Econ ${econ}` : ""], ["best", t.best ? `BB ${t.best.wickets}/${t.best.runs}` : ""]],
+    field: [["catches", t.catches ? `${t.catches} ct` : ""], ["stumpings", t.stumpings ? `${t.stumpings} st` : ""], ["runouts", t.runouts ? `${t.runouts} ro` : ""], ["matches", n(t.matches, "match", "matches")]]
+  }[table];
+  // Each fact keeps its words together, so a narrow spot wraps only between facts.
+  const parts = facts.filter(([k, text]) => k !== key && text).slice(0, 2).map(f => f[1].replace(/ /g, "\u00a0"));
+  return parts.length ? parts.join(" · ") : n(t.matches, "match", "matches");
+}
+const PLACE_WORDS = ["", "first", "second", "third"];
+const CROWN_SVG = `<svg class="podium-crown" viewBox="0 0 24 16" aria-hidden="true"><path d="M2 14 L1 3 L7.5 8 L12 1 L16.5 8 L23 3 L22 14 Z"/></svg>`;
+function podiumHtml(table, totals, period, leader){
+  const p = podiumFor(table, totals);
+  if (!p.top.length) return "";
+  const self = myPlayerSelf();
+  const title = table === "mvp" && p.byDefault
+    ? (period.kind === "month" ? "Player of the month" : period.kind === "year" ? "Player of the year" : leader || PODIUM_LEAD.mvp)
+    : PODIUM_LEAD[table];
+  const spots = p.top.map((t, i) => {
+    const place = p.places[i], me = isMyTotal(self, t);
+    const v = p.col.text ? p.col.text(t) : pointsOrValue(p.col.value(t));
+    return `<li class="podium-spot s${i + 1} m${Math.min(place, 3)}${me ? " me" : ""}">
+      <button type="button" data-action="open-player-stats" data-key="${escapeHtml(t.key || "")}" data-name="${escapeHtml(t.name)}" class="podium-btn" aria-label="${escapeHtml(t.name)}, ${PLACE_WORDS[place]}: ${escapeHtml(String(v))} ${escapeHtml(p.col.title.toLowerCase())}">
+        ${place === 1 ? CROWN_SVG : ""}
+        ${playerAvatarHtml(t.key, t.name, "podium-avatar")}
+        <span class="podium-name">${escapeHtml(t.name)}</span>
+        ${me ? `<span class="you-tag">You</span>` : ""}
+        <span class="podium-val">${escapeHtml(String(v))}<small>${escapeHtml(p.col.label)}</small></span>
+        <span class="podium-sub">${escapeHtml(podiumSub(table, t, p.col.key))}</span>
+      </button>
+      <span class="podium-step" aria-hidden="true">${place}</span>
+    </li>`;
+  }).join("");
+  return `
+    <section class="podium-card" aria-label="${escapeHtml(title)}" data-anim-key="${escapeHtml(["podium", table, period.key || "", p.col.key, ...p.top.map(t => t.key)].join("|"))}">
+      <div class="podium-head"><span class="podium-title">${escapeHtml(title)}</span><span class="podium-by">${escapeHtml(p.col.title)}</span></div>
+      <ol class="podium n${p.top.length}">${spots}</ol>
+    </section>`;
+}
+function pointsOrValue(v){ return typeof v === "number" && !Number.isInteger(v) ? pointsNum(v) : v; }
+
+/* A player's round badge: their profile photo (club / Premier players with one,
+   wantPlayerPhotos) or their initials. `key`: the leaderboard line's key. */
+function playerInitials(name){
+  const words = String(name || "").replace(/\(.*?\)/g, "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "?";
+  return (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase();
+}
+function playerAvatarHtml(key, name, cls){
+  const photo = playerPhotoFor(key);
+  return photo
+    ? `<img class="player-avatar ${cls || ""}" src="${photo}" alt="">`
+    : `<span class="player-avatar initials ${cls || ""}" aria-hidden="true">${escapeHtml(playerInitials(name))}</span>`;
 }
 
 /* --- records (computeRecords) ---
@@ -171,18 +313,30 @@ function renderRecords(matches){
    lets a name be tapped for that player's figures over them; `opts.title`
    names those matches on that sheet ("Summer Cup", "KICC"). The signed-in
    player's own rows are tagged You; their full figures have a place of their
-   own (a tournament's My stats tab, renderMyStatsTab). */
+   own (a tournament's My stats tab, renderMyStatsTab). `opts.leader` names
+   the MVP podium when it isn't a month's or a year's ("Tournament MVP").
+   With `opts.matches` spanning more than one month, a period picker narrows
+   everything below it -- podium, table, records and the player sheet -- to
+   one year or month (statsPeriodFor); `totals` is then counted again. */
 function renderLeaderboards(totals, opts){
   const o = opts || {};
   const points = o.points || null;
-  statsScope = { matches: o.matches || [], points, title: o.title || "" };
-  const tabs = [...(points ? [["mvp", "MVP"]] : []), ["bat", "Batting"], ["bowl", "Bowling"], ["field", "Fielding"], ...(o.matches ? [["records", "Records"]] : [])];
+  const period = o.matches ? statsPeriodFor(o.matches) : null;
+  if (period && period.kind !== "all") totals = aggregatePlayerStats(period.matches, points, statsOpts());
+  const matches = period ? period.matches : null;
+  statsScope = { matches: matches || [], points, title: [o.title, period && period.label].filter(Boolean).join(" · ") || "All time" };
+  const tabs = [...(points ? [["mvp", "MVP"]] : []), ["bat", "Batting"], ["bowl", "Bowling"], ["field", "Fielding"], ...(matches ? [["records", "Records"]] : [])];
   const tab = tabs.some(([k]) => k === ui.statsTab) ? ui.statsTab : tabs[0][0];
-  if (tab === "records") return `${tabsHtml("stats-tab", tabs, tab, "stats-tabs")}${renderRecords(o.matches)}`;
+  // Every table's top three in one request, so switching tabs finds their photos there.
+  wantPlayerPhotos(tabs.filter(([k]) => LEADERBOARD_COLUMNS[k]).flatMap(([k]) => podiumFor(k, totals).top.map(t => t.key)));
+  const top = `${period ? statsOverviewHtml(period, totals) : ""}${tabsHtml("stats-tab", tabs, tab, "stats-tabs")}`;
+  if (tab === "records") return `${top}${renderRecords(matches)}`;
+  const listed = totals.filter(LEADERBOARD_ROWS[tab] || (() => true)).length;
   return `
-    ${tabsHtml("stats-tab", tabs, tab, "stats-tabs")}
+    ${top}
+    ${podiumHtml(tab, totals, period || { kind: "all" }, o.leader)}
     <div class="leaderboard${tab === "mvp" ? " mvp" : ""}">
-      <h3>${LEADERBOARD_TITLES[tab]}</h3>
+      <div class="lb-head"><h3>${LEADERBOARD_TITLES[tab]}</h3>${listed ? `<span class="lb-count">${listed} player${listed === 1 ? "" : "s"}</span>` : ""}</div>
       ${tab === "mvp" ? `
         <p class="hint points-using">Counted with the <b>${escapeHtml(points.name)}</b> points ${presetInfoButtonHtml("points", points.id, "leaderboard-points", points.name)}${o.where ? ` · change them in ${escapeHtml(o.where)}` : ""}</p>
         ${presetInfoPanelHtml("leaderboard-points")}` : ""}
@@ -197,8 +351,8 @@ function renderStatsScreen(){
   return `
     <div class="screen stats">
       ${renderBackBar("Home", "home")}
-      <h1>📊 All-time stats</h1>
-      ${matches.length ? renderLeaderboards(aggregatePlayerStats(matches, points, statsOpts()), { points, where: "Presets → MVP points", matches, title: "All-time" }) : `<p class="hint">Play and finish a match to see stats here.</p>`}
+      <h1>📊 Stats</h1>
+      ${matches.length ? renderLeaderboards(aggregatePlayerStats(matches, points, statsOpts()), { points, where: "Presets → MVP points", matches }) : `<p class="hint">Play and finish a match to see stats here.</p>`}
     </div>
   `;
 }
@@ -298,7 +452,42 @@ function playerStatsBodyHtml(ps){
     ${where ? `<p class="muted player-stats-where">${escapeHtml(where)}</p>` : ""}
     ${also.length ? `<p class="hint">Also counted: played as ${also.map(escapeHtml).join(", ")}.</p>` : ""}
     ${career ? careerStatsHtml(career, !!ps.points, playerRankPills(ranks, !!ps.points)) : `<p class="hint">No figures for this player here yet.</p>`}
+    ${career ? playerMonthsHtml(who, ps) : ""}
     ${lines.length ? `<h3 class="section-label">Match by match</h3><div class="fixtures">${lines.map(l => playerMatchRowHtml(l, matchDateText(l.match))).join("")}</div>` : ""}`;
+}
+/* Month by month, when these matches span more than one: a bar per month
+   (MVP points, or runs where nothing counts points -- Premier), the best month
+   in full colour, with matches / runs / wickets under it. Newest first, like
+   Match by match; months they didn't play in are left out. */
+function playerMonthsHtml(who, ps){
+  const starts = tournamentStartTimes(ps.matches);
+  if (statsPeriods(ps.matches, "month", starts).length < 2) return "";
+  const rows = playerByPeriod(who, ps.matches, "month", ps.points, starts);
+  if (!rows.length) return "";
+  const pts = !!ps.points;
+  const value = c => pts ? c.points : c.runs;
+  const max = Math.max(0, ...rows.map(r => value(r.career)));
+  const best = rows.reduce((b, r) => value(r.career) > value(b.career) ? r : b, rows[0]);
+  const n = (v, one, many) => `${v} ${v === 1 ? one : many}`;
+  return `
+    <h3 class="section-label">Month by month <span class="section-sub">${pts ? "MVP points" : "Runs"}</span></h3>
+    <ol class="month-bars">${rows.map(r => {
+      const c = r.career, v = value(c);
+      const w = max > 0 ? Math.max(0, Math.round(v / max * 100)) : 0;
+      const facts = [n(c.matches, "match", "matches"), pts ? n(c.runs, "run", "runs") : "", n(c.wickets, "wkt", "wkts")].filter(Boolean).join(" · ");
+      return `<li class="month-bar${r === best && max > 0 ? " best" : ""}">
+        <span class="month-name">${escapeHtml(statsPeriodLabel("month", r.key, true))}</span>
+        <span class="month-track" aria-hidden="true"><span class="month-fill" style="width:${w}%"></span></span>
+        <span class="month-val">${pts ? pointsNum(v) : v}</span>
+        <span class="month-facts">${escapeHtml(facts)}</span>
+      </li>`;
+    }).join("")}</ol>`;
+}
+// The photo / initials badge at the top of a player's sheet or My stats.
+function playerStatsAvatarHtml(ps){
+  const key = ps.self ? ps.self.id : ps.key;
+  wantPlayerPhotos([key]);
+  return playerAvatarHtml(key, ps.name, "sheet-avatar");
 }
 function myProfileButtonHtml(title, cls){
   return `<button type="button" data-action="open-my-profile-from-stats" data-title="${escapeHtml(title || "")}" class="ghost${cls ? " " + cls : ""}">My profile</button>`;
@@ -313,7 +502,7 @@ function renderMyStatsTab(matches, points, title){
   statsScope = { matches, points, title: title || "" };
   return `
     <div class="my-stats-tab">
-      <h2 class="my-stats-head">${escapeHtml(self.name)} <span class="you-tag">You</span></h2>
+      <div class="player-stats-head">${playerStatsAvatarHtml({ self, name: self.name })}<h2 class="my-stats-head">${escapeHtml(self.name)} <span class="you-tag">You</span></h2></div>
       ${playerStatsBodyHtml({ name: self.name, names: self.names, self, matches, points, title })}
       ${myProfileButtonHtml(title, "my-stats-profile")}
     </div>`;
@@ -325,7 +514,7 @@ function renderPlayerStatsModal(){
     <div class="modal-backdrop">
       <div class="modal player-stats-modal" data-keep-scroll="player-stats" role="dialog" aria-modal="true" aria-label="${escapeHtml(ps.name)}: stats">
         <div class="wicket-modal-head">
-          <h2>${escapeHtml(ps.name)}${ps.self ? ` <span class="you-tag">You</span>` : ""}</h2>
+          <div class="player-stats-head">${playerStatsAvatarHtml(ps)}<h2>${escapeHtml(ps.name)}${ps.self ? ` <span class="you-tag">You</span>` : ""}</h2></div>
           <button type="button" data-action="close-player-stats" class="sheet-close" aria-label="Close">✕</button>
         </div>
         ${playerStatsBodyHtml(ps)}

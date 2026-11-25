@@ -17,6 +17,8 @@ function defaultUi(){
     editingPointsPreset: null, editingClubPointsPreset: null, clubPresetMessage: null,
     // Leaderboard sort per table: { mvp|bat|bowl|field: { key, dir } } (renderLeaderboards).
     statsSort: {},
+    // The leaderboards' period: { kind: "all"|"year"|"month", key, near } (statsPeriodFor).
+    statsPeriod: { kind: "all", key: null, near: null },
     // cloud clubs (see CLOUD section) -- caches of fetched data, not persisted;
     // re-fetched whenever their screen is opened.
     myClubs: null, myClubsLoading: false, currentClubId: null, club: null, clubBusy: false, clubInviteMessage: null,

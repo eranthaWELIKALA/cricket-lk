@@ -30,7 +30,9 @@ const SEED = require('./seed.js');
   await run(`state.view = "teams"; render();`); await shot('26-teams');
   await run(`state.view = "players"; render();`); await shot('27-players');
   await run(`state.view = "presets"; render();`); await shot('28-presets');
-  await run(`state.view = "stats"; render();`); await shot('29-stats');
+  // The friendly a month earlier, so Stats has two months and shows its period picker.
+  await run(`Object.values(state.matchHistory).filter(m => !m.tournamentId).forEach(m => { m.completedAt -= 35 * 864e5; });
+    state.view = "stats"; render();`); await shot('29-stats');
   // --- tournaments ---
   await run(`state.view = "tournamentSetup"; render();`); await shot('30-tournament-setup');
   await run(`state.activeTournamentId = Object.keys(state.tournaments)[0]; state.view = "tournamentDashboard"; ui.tournamentTab = null; render();`);

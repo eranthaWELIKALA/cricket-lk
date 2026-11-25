@@ -767,7 +767,7 @@ button:active:not(:disabled){ transform:scale(.96); }
 @media (prefers-reduced-motion: reduce){
   .screen, .modal, .modal-backdrop, .chip, .score-tile, .freehit-badge, .home-card, .list-row,
   .screen.result > *, .screen.break > *, .side-menu, .side-menu-item, .side-menu-backdrop,
-  .tab-row.tab-switched ~ *, .form-error.shake{ animation:none !important; }
+  .tab-row.tab-switched ~ *, .form-error.shake, .podium-step, .podium-btn, .kpi{ animation:none !important; }
   .confetti, .moment, .screen.result .result-hero::after{ display:none !important; }
 }
 
@@ -1304,7 +1304,7 @@ button.fixture-row{ width:100%; text-align:left; color:var(--text); align-items:
 .lb-table td.on{ color:var(--text); background:rgba(var(--accent-rgb),.06); }
 /* A player's name opens their figures over these matches (the player stats
    sheet); the signed-in player's own row is tagged "You". */
-.lb-table .lb-name-btn{ font-weight:inherit; max-width:calc(36vw - 2.4em); }
+.lb-table .lb-name-btn{ font-weight:inherit; max-width:calc(36vw - 2.7em); }
 .lb-table td.lb-me .lb-name-btn{ max-width:calc(36vw - 6.2em); }   /* room for the You tag */
 .lb-table td.lb-me{ color:var(--accent); }
 .you-tag{ display:inline-block; margin-left:6px; padding:1px 6px; border-radius:6px; border:2px solid rgba(var(--accent-rgb),.5); color:var(--accent); font-size:.6rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; vertical-align:middle; }
@@ -1354,6 +1354,138 @@ button.record-row{ margin:0; background:none; border:0; border-radius:0; box-sha
 .record-row.lead .record-place{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
 .record-balls{ display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
 .record-balls .chip{ min-width:24px; height:24px; padding:0 4px; border-radius:6px; font-size:.68rem; }
+
+/* --- Stats: period picker + headline numbers, the podium, the player badge ---
+   (renderLeaderboards, stats.js). Medal colours are fixed, not theme tokens:
+   gold / silver / bronze read the same in every theme, each with a dark ink
+   for the place number printed on it. */
+.stats-overview{
+  --gold:#F5C242; --silver:#C5CEDB; --bronze:#D9925A;
+  background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-md);
+  box-shadow:var(--shadow-card); padding:10px; margin-bottom:12px;
+}
+.period-kinds{ display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:4px; padding:3px; border-radius:var(--radius-sm); background:rgba(0,0,0,.12); border:2px solid var(--line); }
+.period-kinds button{
+  margin:0; padding:7px 4px; border:2px solid transparent; border-radius:5px; background:none; box-shadow:none;
+  color:var(--muted); font-size:.78rem; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.period-kinds button.on{ background:var(--accent-2); color:var(--accent-2-ink); border-color:var(--accent-2-ink); font-weight:800; }
+.period-step{ display:flex; align-items:center; gap:8px; margin-top:10px; }
+.period-arrow{
+  flex:0 0 40px; height:40px; margin:0; padding:0 0 3px; border-radius:var(--radius-sm); border:2px solid var(--line-strong);
+  background:var(--panel-solid); color:var(--text); font-size:1.5rem; font-weight:700; line-height:1; box-shadow:var(--shadow-btn);
+}
+.period-now{ flex:1; min-width:0; text-align:center; }
+.period-now b{ display:block; font-size:1.15rem; font-weight:800; letter-spacing:-.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.kpi-row{ display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); margin-top:10px; }
+.stats-overview > .kpi-row:first-child{ margin-top:0; }
+.kpi{ display:flex; flex-direction:column; align-items:center; gap:2px; padding:4px 2px; min-width:0; }
+.kpi + .kpi{ box-shadow:inset 2px 0 0 var(--line); }
+.kpi-n{ font-size:1.3rem; font-weight:800; line-height:1.1; letter-spacing:-.02em; }
+.kpi-label{ font-size:.6rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+
+/* A player's round badge: their profile photo, or their initials. */
+.player-avatar{ display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; border-radius:50%; object-fit:cover; }
+.player-avatar.initials{ background:var(--panel-solid); color:var(--text); font-weight:800; letter-spacing:-.02em; }
+
+/* The podium: #1 in the middle, taller and bigger; each spot opens the
+   player's sheet. The plinths sit flush on the card's bottom edge. */
+.podium-card{
+  --gold:#F5C242; --silver:#C5CEDB; --bronze:#D9925A;
+  position:relative; overflow:hidden; margin-bottom:12px; padding:12px 12px 0;
+  border:2px solid rgba(var(--accent-rgb),.55); border-radius:var(--radius-md); box-shadow:var(--shadow-card);
+  background:radial-gradient(120% 90% at 50% 0%, rgba(var(--accent-rgb),.16), transparent 62%), var(--panel-2);
+}
+.podium-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.podium-title{ font-size:.74rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); }
+.podium-by{ font-size:.66rem; font-weight:700; color:var(--muted); border:2px solid var(--line-strong); border-radius:6px; padding:2px 7px; white-space:nowrap; }
+.podium{ list-style:none; margin:8px 0 0; padding:0; display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr); align-items:end; gap:6px; }
+.podium.n2{ grid-template-columns:repeat(2, minmax(0, 1fr)); max-width:300px; margin-left:auto; margin-right:auto; }
+.podium.n1{ grid-template-columns:minmax(0, 190px); justify-content:center; }
+.podium-spot{ display:flex; flex-direction:column; min-width:0; }
+.podium-spot.s1{ order:2; } .podium-spot.s2{ order:1; } .podium-spot.s3{ order:3; }
+.podium-spot.m1{ --medal:var(--gold); --medal-ink:#2A1E00; }
+.podium-spot.m2{ --medal:var(--silver); --medal-ink:#1C2330; }
+.podium-spot.m3{ --medal:var(--bronze); --medal-ink:#2B1606; }
+.podium-btn{
+  display:flex; flex-direction:column; align-items:center; gap:3px; width:100%; margin:0; padding:2px 2px 8px;
+  background:none; border:0; border-radius:var(--radius-sm); box-shadow:none; color:var(--text); text-align:center;
+  font-weight:400; text-transform:none; letter-spacing:0;
+}
+.podium-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.podium-crown{ width:26px; height:17px; fill:var(--gold); margin-bottom:-1px; filter:drop-shadow(1px 1px 0 rgba(0,0,0,.35)); }
+.podium-avatar{ width:52px; height:52px; font-size:1.05rem; border:3px solid var(--medal); box-shadow:2px 2px 0 rgba(0,0,0,.35); }
+.podium-spot.s1 .podium-avatar{ width:72px; height:72px; font-size:1.45rem; }
+.podium-name{
+  font-size:.8rem; font-weight:700; line-height:1.2; margin-top:3px; max-width:100%; overflow-wrap:anywhere;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+.podium-spot.s1 .podium-name{ font-size:.9rem; font-weight:800; }
+.podium-spot.me .podium-name{ color:var(--accent); }
+.podium-btn .you-tag{ margin:0; }
+.podium-val{ font-size:1.2rem; font-weight:800; line-height:1.1; letter-spacing:-.02em; }
+.podium-spot.s1 .podium-val{ font-size:1.6rem; color:var(--accent); }
+.podium-val small{ margin-left:3px; font-size:.58rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+.podium-sub{ font-size:.66rem; line-height:1.3; color:var(--muted); max-width:100%; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.podium-step{
+  display:flex; align-items:flex-start; justify-content:center; padding-top:4px; height:24px;
+  background:var(--medal); color:var(--medal-ink); border:2px solid rgba(0,0,0,.35); border-bottom:0;
+  border-radius:8px 8px 0 0; font-size:.95rem; font-weight:900; font-variant-numeric:tabular-nums;
+}
+.podium-spot.s1 .podium-step{ height:46px; font-size:1.2rem; }
+.podium-spot.s2 .podium-step{ height:34px; }
+.podium.n1 .podium-step{ height:30px; }
+/* It rises in on a new screen, and again when it changes (another period, tab or column). */
+@keyframes plinthUp{ from{ transform:scaleY(.15); } to{ transform:none; } }
+@keyframes spotPop{ 0%{ opacity:0; transform:translateY(8px) scale(.9); } 100%{ opacity:1; transform:none; } }
+.screen:not(.no-anim) .podium-step, .podium-card.anim-new .podium-step{ transform-origin:bottom; animation:plinthUp .3s cubic-bezier(.16,1,.3,1) backwards; }
+.screen:not(.no-anim) .podium-btn, .podium-card.anim-new .podium-btn{ animation:spotPop .3s cubic-bezier(.34,1.56,.64,1) backwards; }
+.screen:not(.no-anim) .podium-spot.s2 .podium-btn, .podium-card.anim-new .podium-spot.s2 .podium-btn{ animation-delay:.06s; }
+.screen:not(.no-anim) .podium-spot.s3 .podium-btn, .podium-card.anim-new .podium-spot.s3 .podium-btn{ animation-delay:.1s; }
+.kpi-row.anim-new .kpi{ animation:fadeUp .22s ease backwards; }
+.kpi-row.anim-new .kpi:nth-child(2){ animation-delay:.03s; }
+.kpi-row.anim-new .kpi:nth-child(3){ animation-delay:.06s; }
+.kpi-row.anim-new .kpi:nth-child(4){ animation-delay:.09s; }
+
+/* The table under it: places 1-3 wear their medal; the sorted column has a
+   thin bar under each figure (leaderboardBars). */
+.lb-head{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.lb-head h3{ margin:0 0 8px; }
+.lb-count{ font-size:.66rem; font-weight:700; color:var(--muted); }
+.lb-rank.medal{
+  --gold:#F5C242; --silver:#C5CEDB; --bronze:#D9925A;
+  display:inline-flex; align-items:center; justify-content:center; min-width:0; width:16px; height:16px; margin-right:3px;
+  border-radius:50%; font-size:.6rem; font-weight:900; vertical-align:1px;
+}
+.lb-rank.m1{ background:var(--gold); color:#2A1E00; }
+.lb-rank.m2{ background:var(--silver); color:#1C2330; }
+.lb-rank.m3{ background:var(--bronze); color:#2B1606; }
+.lb-table td.on.bar{
+  background-image:linear-gradient(rgba(var(--accent-rgb),.7), rgba(var(--accent-rgb),.7));
+  background-origin:content-box; background-position:right bottom -4px; background-size:var(--bar) 3px; background-repeat:no-repeat;
+}
+
+/* A player's sheet / My stats: their badge by the name, and month by month. */
+.player-stats-head{ display:flex; align-items:center; gap:10px; min-width:0; }
+.player-stats-head h2{ margin:0; min-width:0; overflow-wrap:anywhere; }
+.sheet-avatar{ width:44px; height:44px; font-size:1rem; border:2px solid var(--line-strong); }
+.player-stats-modal .wicket-modal-head{ align-items:center; margin-bottom:10px; }
+.player-stats-modal .player-stats-where{ margin-top:0; }
+.my-stats-tab .player-stats-head{ margin:4px 0 6px; }
+.section-label .section-sub{ margin-left:auto; font-size:.66rem; font-weight:700; letter-spacing:0; text-transform:none; }
+.month-bars{ list-style:none; margin:0 0 8px; padding:0; }
+.month-bar{
+  display:grid; grid-template-columns:62px minmax(0, 1fr) auto; grid-template-areas:"name track val" ". facts facts";
+  align-items:center; column-gap:10px; row-gap:1px; padding:7px 0;
+}
+.month-bar + .month-bar{ border-top:1px solid var(--line); }
+.month-name{ grid-area:name; font-size:.8rem; font-weight:700; white-space:nowrap; }
+.month-track{ grid-area:track; height:10px; border-radius:5px; background:rgba(var(--accent-rgb),.14); overflow:hidden; }
+.month-fill{ display:block; height:100%; border-radius:5px; background:rgba(var(--accent-rgb),.5); }
+.month-bar.best .month-fill{ background:var(--accent); }
+.month-val{ grid-area:val; min-width:2.4em; text-align:right; font-size:.9rem; font-weight:800; font-variant-numeric:tabular-nums; }
+.month-bar.best .month-val{ color:var(--accent); }
+.month-facts{ grid-area:facts; font-size:.68rem; color:var(--muted); }
 @media print{
   .lb-table th .sort-btn{ display:inline-flex !important; }
   .table-scroll{ overflow:visible; }
@@ -1378,14 +1510,7 @@ button.record-row{ margin:0; background:none; border:0; border-radius:0; box-sha
 .in-use-badge{ background:rgba(var(--accent-2-rgb),.16); border-color:var(--accent-2); color:var(--accent-2); }
 
 /* --- MVP / MOTM / share --- */
-.mvp-callout{
-  background:var(--accent); color:var(--accent-ink); border:2px solid var(--accent-ink);
-  border-radius:var(--radius-lg); padding:16px; display:flex; flex-direction:column; gap:2px; margin-bottom:16px;
-  box-shadow:var(--shadow-card);
-}
-.mvp-label{ font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; opacity:.75; font-weight:700; }
 .mvp-name{ font-size:1.35rem; font-weight:800; }
-.mvp-points{ font-size:.85rem; font-weight:700; }
 .motm-card{
   background:rgba(var(--accent-rgb),.1); border:2px solid var(--accent); border-radius:var(--radius-lg);
   box-shadow:var(--shadow-card); padding:10px 12px 11px; margin-bottom:10px; display:flex; flex-direction:column; gap:4px;

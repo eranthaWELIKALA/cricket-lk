@@ -1400,6 +1400,31 @@ async function syncMatchToCloud(match, archived){
   });
 }
 
+/* --- player photos for the stats screens (the podium, a player's sheet) ---
+   players_public.photo (supabase/008, public), fetched by id for the few
+   players on screen and kept in memory only: a photo is up to 80 KB, too big
+   for the read cache in localStorage. "" = no photo (or 008 not run). A
+   background load: it never spins the button that was just tapped, and it
+   re-renders only when a photo came back. Offline, initials show instead. */
+const playerPhotos = {};
+const playerPhotosLoading = new Set();
+function isPlayerUuid(id){ return typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id); }
+function playerPhotoFor(id){ return isPlayerUuid(id) ? safePhoto(playerPhotos[id]) : ""; }
+function wantPlayerPhotos(ids){
+  if (!supabaseClient || needsInternet()) return;
+  const need = [...new Set(ids || [])].filter(id => isPlayerUuid(id) && !(id in playerPhotos) && !playerPhotosLoading.has(id));
+  if (!need.length) return;
+  need.forEach(id => playerPhotosLoading.add(id));
+  if (activity.trigger && !activity.trigger.owned) activity.trigger = null;
+  supabaseClient.from("players_public").select("id, photo").in("id", need).then(({ data, error }) => {
+    need.forEach(id => playerPhotosLoading.delete(id));
+    if (error && isNetworkError(error, isOnline())) return;   // tried again on a later render
+    need.forEach(id => { playerPhotos[id] = ""; });
+    (data || []).forEach(r => { playerPhotos[r.id] = safePhoto(r.photo); });
+    if ((data || []).some(r => playerPhotos[r.id])) render();
+  }, () => need.forEach(id => playerPhotosLoading.delete(id)));
+}
+
 /* --- Premier: a cross-club, public players/stats/(eventually teams)
    browse screen, and player claiming ("this is me"). Claiming works
    today even though Premier tournaments (organizing, multi-club) don't

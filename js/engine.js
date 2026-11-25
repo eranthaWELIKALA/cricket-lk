@@ -3471,3 +3471,77 @@ function computeRecords(matches, opts){
       { key: "lowTotal", label: "Lowest total", entries: recordPlaces(low, "asc") }] }
   ];
 }
+
+/* --- stats by month / year (the leaderboards' period filter) ---
+   When a match was played, for stats, is its tournament's start, not its own
+   time: every match of a tournament counts on the day its first match was
+   played, so a club day that runs past midnight (or a tournament that runs for
+   weeks) stays in the month it began. A match outside a tournament counts when
+   it finished. Either way a time before STATS_DAY_START_HOUR (5am) is still the
+   day before: a night game that ends at 00:40 on the 1st is the 31st's. Local
+   time. A match with no time (a very old save) is only in "All time". */
+const STATS_DAY_START_HOUR = 5;
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+function statsDayOf(ts){
+  const d = new Date(ts);
+  if (d.getHours() < STATS_DAY_START_HOUR) d.setDate(d.getDate() - 1);
+  return d;
+}
+// { tournamentId: when its first match finished } over these matches.
+function tournamentStartTimes(matches){
+  const out = {};
+  (matches || []).forEach(m => {
+    if (!m || !m.tournamentId || !m.completedAt) return;
+    if (out[m.tournamentId] == null || m.completedAt < out[m.tournamentId]) out[m.tournamentId] = m.completedAt;
+  });
+  return out;
+}
+function matchStatsTime(match, starts){
+  if (!match) return null;
+  const t = match.tournamentId && starts ? starts[match.tournamentId] : null;
+  return t || match.completedAt || null;
+}
+// "2026" (kind "year") or "2026-11" (kind "month") for a time, or null.
+function statsPeriodKey(ts, kind){
+  if (!ts) return null;
+  const d = statsDayOf(ts);
+  return kind === "year" ? String(d.getFullYear()) : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+// "November 2026" ("Nov 2026" short), "2026", or "All time".
+function statsPeriodLabel(kind, key, short){
+  if (kind === "year") return key;
+  if (kind !== "month" || !key) return "All time";
+  const [y, mo] = key.split("-");
+  const name = MONTH_NAMES[parseInt(mo, 10) - 1] || "";
+  return `${short ? name.slice(0, 3) : name} ${y}`;
+}
+// Every month (or year) these matches were played in, newest first: [{ key, count }].
+function statsPeriods(matches, kind, starts){
+  const counts = new Map();
+  (matches || []).forEach(m => {
+    const k = statsPeriodKey(matchStatsTime(m, starts), kind);
+    if (k) counts.set(k, (counts.get(k) || 0) + 1);
+  });
+  return [...counts].map(([key, count]) => ({ key, count })).sort((a, b) => b.key.localeCompare(a.key));
+}
+// The matches played in one month or year; kind "all" (or none) is every match.
+function matchesInPeriod(matches, kind, key, starts){
+  if (kind !== "year" && kind !== "month") return (matches || []).slice();
+  return (matches || []).filter(m => statsPeriodKey(matchStatsTime(m, starts), kind) === key);
+}
+/* One player month by month (or year by year), newest first: [{ key, career }]
+   -- playerCareer over each period's matches, the same matches that period's
+   leaderboard counts; periods they didn't play in are left out. */
+function playerByPeriod(who, matches, kind, preset, starts){
+  return statsPeriods(matches, kind, starts)
+    .map(p => ({ key: p.key, career: playerCareer(who, matchesInPeriod(matches, kind, p.key, starts), preset) }))
+    .filter(x => x.career);
+}
+/* The headline numbers for a set of matches: how many, the runs and wickets of
+   every innings (team totals: result-only and "no names" matches too), and the
+   sixes hit (from the players' totals, so "no names" matches add none). */
+function statsSummary(matches, totals){
+  let runs = 0, wickets = 0;
+  (matches || []).forEach(m => (m && m.innings || []).forEach(inn => { runs += inn.runs || 0; wickets += inn.wickets || 0; }));
+  return { matches: (matches || []).length, runs, wickets, sixes: (totals || []).reduce((s, t) => s + (t.sixes || 0), 0) };
+}

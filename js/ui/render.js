@@ -201,6 +201,10 @@ function render(){
   const prevScore = sameScreen ? (root.querySelector(".score-n") || {}).textContent : null;
   const prevChips = sameScreen ? new Set([...root.querySelectorAll("[data-chip]")].map(c => c.dataset.chip)) : null;
   const prevTabs = sameScreen ? activeTabs(root) : null;
+  // Content that animates when it changes on the same screen (a stats podium
+  // for another month, say) carries data-anim-key; a key that wasn't there
+  // before gets .anim-new.
+  const prevAnimKeys = sameScreen ? new Set([...root.querySelectorAll("[data-anim-key]")].map(e => e.dataset.animKey)) : null;
   const menuWasOpen = !!root.querySelector(".side-menu");
   // A search box marked data-keep-focus keeps focus (and the caret) across a
   // re-render, so a background render while typing doesn't drop the keyboard.
@@ -218,6 +222,7 @@ function render(){
     if (score && score.textContent === prevScore) root.querySelector(".score-tile").classList.add("no-anim");
     root.querySelectorAll("[data-chip]").forEach(c => { if (prevChips.has(c.dataset.chip)) c.classList.add("no-anim"); });
     markTabSwitches(root, prevTabs);
+    root.querySelectorAll("[data-anim-key]").forEach(e => { if (!prevAnimKeys.has(e.dataset.animKey)) e.classList.add("anim-new"); });
   }
   if (menuWasOpen) root.querySelectorAll(".side-menu, .side-menu-backdrop").forEach(el => el.classList.add("no-anim"));
   restoreFormDrafts(root, appDrafts);
