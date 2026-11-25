@@ -950,7 +950,7 @@ async function handleResultEntrySubmit(e){
   if (err){ showFormError(form, err); return; }
   const match = createResultOnlyMatch(config, scores);
   if (c.kind === "club"){
-    match.clubId = ui.currentClubId || ui.clubTournament.organizer_club_id;
+    match.clubId = ui.clubTournament.organizer_club_id || ui.currentClubId;   // the organizing club's, whatever club screen came before
     match.matchType = "tournament";
   }
   const archived = archiveMatch(match);

@@ -71,6 +71,14 @@ function render(){
       && (state.view !== "matchSetup" || ui.clubMatchSetupType) && !clubCanEdit(ui.currentClubId)){
     state.view = "home"; save();
   }
+  // A club tournament belongs to the club that organizes it, whichever club
+  // screen was open before (or a link said): its back bar, Start match, Enter
+  // result, roster and presets all follow the tournament once it's loaded.
+  const ct = ui.clubTournament;
+  if (!m && ct && ct.id === ui.currentTournamentId && ct.organizer_club_id && ui.currentClubId !== ct.organizer_club_id
+      && (state.view === "clubTournamentDashboard" || (state.view === "matchSetup" && ui.clubMatchSetupType === "tournament"))){
+    ui.currentClubId = ct.organizer_club_id;
+  }
   // Club screens read the user's role in the club (clubCanEdit) from
   // ui.myClubs, so a reload straight onto one loads it too.
   if (!m && CLUB_VIEWS.includes(state.view) && session && ui.myClubs === null && !ui.myClubsLoading){

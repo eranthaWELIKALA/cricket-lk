@@ -3648,6 +3648,49 @@ async function main(){
       delete state.teams["so-ta"]; delete state.teams["so-tb"]; ui = defaultUi(); state.view = "home"; save(); render();`);
   }
 
+  // --- a club tournament is its organizer's: back bar, Acting as and its matches follow it, not the last club screen ---
+  {
+    const doc = win.document;
+    const tick = () => new Promise(r => setTimeout(r, 0));
+    win.eval(`state.match = null; state.snapshots = [];
+      window.__ctPrev = { session, client: supabaseClient, fetchT: fetchClubTournamentDetail, fetchC: fetchClubDetail, myClubs: fetchMyClubs };
+      session = { user: { id: "u1" } }; supabaseClient = {};
+      window.__clubs = {
+        wc: { id: "wc", name: "Weekend Cricket", roster: [], members: [], matches: [], tournaments: [{ id: "WT", name: "Weekend Cup" }], presets: { match: [], tournament: [] }, invites: [], deletedMatchIds: [] },
+        kc: { id: "kc", name: "KICC", roster: [], members: [], matches: [], tournaments: [{ id: "KT", name: "KICC Cup" }], presets: { match: [], tournament: [] }, invites: [], deletedMatchIds: [] } };
+      fetchClubDetail = async id => { ui.club = __clubs[id]; };
+      fetchMyClubs = async () => {};
+      fetchClubTournamentDetail = async id => { ui.clubTournament = { id, name: id === "WT" ? "Weekend Cup" : "KICC Cup", organizer_club_id: id === "WT" ? "wc" : "kc", tournament_preset: {}, matches: [], teams: [] }; };
+      ui = defaultUi(); ui.myClubs = [{ id: "kc", name: "KICC", role: "owner" }, { id: "wc", name: "Weekend Cricket", role: "owner" }];
+      ui.currentClubId = "kc";                       // a KICC screen was open last...
+      state.activeClubId = "wc"; ui.club = __clubs.wc; // ...then "Acting as" switched to Weekend Cricket
+      state.view = "home"; render();`);
+    doc.querySelector('#app [data-action="open-club-tournament"][data-id="WT"]').click();
+    await tick(); await tick();
+    const back = () => (doc.querySelector("#app .back-bar") || {}).textContent || "";
+    assert(/Weekend Cricket/.test(back()) && win.eval("state.activeClubId") === "wc" && win.eval("ui.currentClubId") === "wc" && win.location.hash === "#/clubs/wc/tournaments/WT",
+      "a Weekend Cricket tournament opened from Home: its back bar is Weekend Cricket's and Acting as stays on it: " + back().trim() + " " + win.location.hash);
+    // However it was reached (a link, back, a stale club id), the loaded tournament's organizer wins.
+    win.eval(`ui.currentClubId = "kc"; ui.currentTournamentId = "WT"; ui.clubTournament = null; state.view = "clubTournamentDashboard"; render();`);
+    await tick(); await tick();
+    assert(/Weekend Cricket/.test(back()) && win.eval("state.activeClubId") === "wc" && win.eval("ui.currentClubId") === "wc",
+      "a stale club id is put right once the tournament loads: " + back().trim());
+    doc.querySelector('#app .back-bar').click();
+    assert(win.eval("state.view") === "home" && win.eval("state.activeClubId") === "wc", "...and back lands on Weekend Cricket's Home");
+    // A match started from it is the organizer's, even if a stale club id slipped through.
+    win.eval(`ui.currentTournamentId = "WT"; ui.clubTournament = null; state.view = "clubTournamentDashboard"; render();`);
+    await tick(); await tick();
+    doc.querySelector('#app [data-action="go-club-tournament-match-setup"]').click();
+    const setupForm = doc.getElementById("match-setup-form");
+    setupForm.querySelector('[name="teamA"]').value = "Reds"; setupForm.querySelector('[name="teamB"]').value = "Blues";
+    win.eval(`ui.currentClubId = "kc";`);
+    setupForm.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(win.eval("state.match && state.match.clubId") === "wc" && win.eval("state.match.tournamentId") === "WT",
+      "a match started from Weekend Cricket's tournament is Weekend Cricket's, never the last club screen's: " + win.eval("state.match && state.match.clubId"));
+    win.eval(`({ session, client: supabaseClient, fetchT: fetchClubTournamentDetail, fetchC: fetchClubDetail, myClubs: fetchMyClubs } = window.__ctPrev);
+      state.match = null; state.snapshots = []; state.activeClubId = null; state.viewClubId = null; state.viewTournamentId = null; ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
   // --- Guest edition (the Android app, mobile/): the same page with the flag set, no cloud ---
   {
     const guestHtml = html.replace("<script>", '<script>window.CRICKET_LK_EDITION = "guest";</script><script>');

@@ -2183,7 +2183,15 @@ The old `clubHome` view is gone; a saved `view: "clubHome"` or an old
 `#/clubs/<id>` link becomes Home acting as that club (top of `render()`).
 Every club view also sets `state.activeClubId` to its club, so its back bar
 ("Home", or the club's name on a tournament) lands on that club's Home even
-when it was reached by a link. Club presets are edited on
+when it was reached by a link. **A club tournament's club is its
+`organizer_club_id`**, never just whichever club screen was open last: "Acting
+as" only changes `state.activeClubId`, so `ui.currentClubId` can be another
+club's. Home's tournament rows pass their club (`data-club`), `render()` puts
+`ui.currentClubId` right once `ui.clubTournament` loads (dashboard and its
+match setup), and Start match / Enter result only take the club from the
+tournament. Before this, a tournament opened after switching clubs showed the
+old club's name on its back bar, switched Acting as back to it, and filed a
+match started there under that club. Club presets are edited on
 `clubPresets` with the *same* forms (`renderMatchPresetForm(p, clubId)` etc.)
 but their own actions (`club-*-preset`) and ui fields
 (`editingClub*Preset`), and saved with `saveClubPreset` (a club's tournament

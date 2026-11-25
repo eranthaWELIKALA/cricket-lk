@@ -141,7 +141,7 @@ function renderHome(){
         <div class="home-section">
           <h3>Tournaments · ${escapeHtml(activeClub.name)}</h3>
           ${ui.club.tournaments.map(t => `
-            <button data-action="open-club-tournament" data-id="${t.id}" class="list-row">
+            <button data-action="open-club-tournament" data-id="${t.id}" data-club="${escapeHtml(activeClub.id)}" class="list-row">
               <span>${escapeHtml(t.name)}${t.pending ? `<span class="pending-tag">not synced</span>` : ""}</span><span class="chevron">›</span>
             </button>
           `).join("")}

@@ -161,7 +161,9 @@ function handleMatchSetupSubmit(e){
   if (ui.currentClubId && ui.clubMatchSetupType){
     // Extra, UI-only fields on top of the engine's match object (like
     // tournamentId already is) -- recordBall etc. never look at these.
-    state.match.clubId = ui.currentClubId;
+    // A tournament match is its organizing club's.
+    const ct = inTournament && ui.clubTournament && ui.clubTournament.id === ui.currentTournamentId ? ui.clubTournament : null;
+    state.match.clubId = (ct && ct.organizer_club_id) || ui.currentClubId;
     state.match.matchType = ui.clubMatchSetupType;
     // Read by playerTeamInMatch (side checks) and the squad datalists.
     if (squads) state.match.squads = squads;
