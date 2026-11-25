@@ -1044,7 +1044,7 @@ either — the sheet shows `busyLabel` meanwhile) and `onCancel`. Esc cancels.
 It currently covers: end innings, toss restart, forfeit, cancel match,
 remove club player, delete tournament team, discard unsaved team edits,
 move a player between tournament teams, new club player vs guest in the team builder,
-end/reopen a tournament,
+end/reopen a tournament, delete an empty club tournament,
 delete guest team/player, delete match/tournament/points/club presets, change or
 remove an earlier ball, add a ball, set the final score by hand, change the forfeit, reopen an
 innings, replace a wrongly picked player. **Don't add
@@ -2036,7 +2036,8 @@ is next online. Three pieces, all in the CLOUD section:
   `SIGNED_OUT`.
 - **Online-only on purpose** (`needsInternet()`): sign in/up, inviting an
   admin, platform player search, profile contact/NIC and detail edits,
-  claims/merges, Premier and player profiles, and the admin portal. The
+  claims/merges, Premier and player profiles, deleting a club tournament
+  (one made offline and never synced excepted), and the admin portal. The
   server has to look something up or check a rule there and then.
   `friendlyError()` (via `showFormError`) turns a raw "Failed to fetch" into
   an offline message.
@@ -2342,9 +2343,36 @@ a fresh server list to `forgetDeletedMatches` (state.js), which drops those
 matches from the archive, the match log store, a guest tournament's
 `matchIds` and the outbox. Only explicit tombstones remove anything: a club
 match this device scored while signed out, which never reached the cloud, is
-left alone. Neither the app nor the admin portal deletes a *tournament*; that's
-SQL (copy the row and its `tournament_teams` into `admin_audit_log` first,
-like `admin_delete_match` does for a match).
+left alone. A tournament *with* matches is never deleted by the app or the
+admin portal; that's SQL (copy the row and its `tournament_teams` into
+`admin_audit_log` first, like `admin_delete_match` does for a match). An
+empty one is, below.
+
+## Deleting an empty club tournament (`supabase/024_delete_empty_tournament.sql`)
+
+A tournament made by mistake (a double tap once left two "Tue Nov 10 2026",
+one empty) can be deleted by a club admin: the dashboard's **Overview** shows
+**Delete tournament** (`delete-tournament` → `askDeleteTournament`,
+club-tournaments.js; shared confirmation sheet, which says its teams go too)
+while it has no matches, to `isClubAdmin` + `clubCanEdit` only (and it's in
+`CLUB_TOURNAMENT_WRITE_ACTIONS`). `deleteClubTournament` (cloud.js) first
+checks `tournamentDeleteBlock(t, ops, state.match)` (pure, tested: a match in
+it here — the tournament's matches fold in this device's archive — one still
+queued, or one being scored on this phone), then calls
+`delete_club_tournament(_tournament_id)` (024, SECURITY DEFINER): only an
+owner/admin of the organizing club, only with no match in the cloud for it,
+its `tournament_teams` cascade, the row and teams kept in `admin_audit_log`
+(`tournament_delete`); returns `'deleted'` or `'not_found'` (a retry). It's
+**online-only** (the server checks for matches there and then), not an outbox
+op, except for a tournament whose `tournament.create` is still in this
+device's outbox: dropping its queued ops is the whole delete. Either way
+`dropTournamentOps` (pure, tested) removes this user's queued create /
+update / team ops for it, and it leaves the read cache and `ui.club`, then
+the club's Home is shown (`navReplaceNext`). Another device that still opens
+it falls back to the club's Home, and its public link shows "not found". A
+match scored offline for it on another phone and uploaded after the delete
+keeps its `tournament_id` and stays a club match (it isn't refused, so
+nothing is lost). Before 024 is run the sheet stays open and says to run it.
 
 ## Renaming a player (`supabase/013_rename_player.sql`)
 

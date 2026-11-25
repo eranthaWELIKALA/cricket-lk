@@ -130,6 +130,8 @@ function renderClubTournamentDashboard(){
   // A club the user only plays for (supabase/020): everything to see, nothing to change.
   const canEdit = clubCanEdit(t.organizer_club_id);
   const actions = (played, withEnd) => !canEdit ? "" : ended ? ENDED_NOTE : tournamentActionsHtml(startBtn, played, withEnd);
+  // One made by mistake (supabase/024): a club admin can delete it while it has no matches.
+  const canDelete = canEdit && !matches.length && isClubAdmin(t.organizer_club_id);
   return `
     <div class="screen tournament">
       ${renderBackBar(escapeHtml(clubName) || "Home", "home")}
@@ -143,7 +145,8 @@ function renderClubTournamentDashboard(){
       ${tab === "overview" ? `
         ${matches.length ? renderStandingsTable(computeStandings(matches, p), p.useNRR) : `<p class="hint">No matches yet.</p>`}
         ${matches.length ? `<h3 class="section-label">Latest results</h3>${renderFixtureList([...matches].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)).slice(0, 3))}` : ""}
-        ${actions(matches.length, true)}` : ""}
+        ${actions(matches.length, true)}
+        ${canDelete ? `<button type="button" data-action="delete-tournament" class="ghost danger-text delete-tournament-btn">Delete tournament</button>` : ""}` : ""}
       ${tab === "teams" ? renderTournamentTeams(t, canEdit) : ""}
       ${tab === "fixtures" ? `${actions(0, false)}<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches, canEdit && !ended ? "No matches yet — start one above." : "No matches yet.")}` : ""}
       ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, clubPointsPreset(t.organizer_club_id)), { points: clubPointsPreset(t.organizer_club_id), where: "the club's Presets", matches, title: t.name }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
@@ -608,6 +611,25 @@ function askReopenTournament(){
     body: `<p>Matches can be added again and the Summary tab goes away until you end it again.</p>`,
     confirmLabel: "Reopen", busyLabel: "Saving…",
     onConfirm: () => setTournamentEnded(c, null)
+  });
+}
+/* Delete a club tournament with no matches (deleteClubTournament,
+   supabase/024), then go to the club's Home. */
+function askDeleteTournament(){
+  const t = ui.clubTournament;
+  if (!t) return;
+  const teams = (t.teams || []).length;
+  askConfirm({
+    title: `Delete ${t.name}?`, icon: "🗑",
+    body: `<p>It has no matches${teams ? `. Its ${teams === 1 ? "team goes" : `${teams} teams go`} with it` : ""}. This can't be undone.</p>`,
+    confirmLabel: "Delete tournament", busyLabel: "Deleting…",
+    onConfirm: () => deleteClubTournament(t).then(res => {
+      if (res.error) return res;
+      state.activeClubId = t.organizer_club_id;
+      ui.clubTournament = null; ui.currentTournamentId = null; ui.tournamentTab = null;
+      navReplaceNext = true;   // the deleted tournament's entry isn't returned to
+      setView("home"); save();
+    })
   });
 }
 async function setTournamentEnded(c, endedAt){

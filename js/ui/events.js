@@ -340,6 +340,7 @@ document.addEventListener("click", (e) => {
   else if (action === "close-result-entry") closeTopOverlay();   // asks first if scores were typed
   else if (action === "end-tournament") askEndTournament();
   else if (action === "reopen-tournament") askReopenTournament();
+  else if (action === "delete-tournament") askDeleteTournament();
   else if (action === "share-tournament") shareTournamentResults();
   else if (action === "share-tournament-link") askShareTournamentLink();
   // From the share sheet: the public page as anyone with the link sees it, loaded fresh.

@@ -1690,6 +1690,82 @@ async function main(){
     assert(shown.tournament_preset.endedAt === 9, "a pending end shows as ended before it syncs");
   }
 
+  // --- a club admin deletes a tournament with no matches (supabase/024) ---
+  {
+    const doc = win.document, app = () => doc.querySelector("#app");
+    const op = (kind, args, extra) => Object.assign({ id: Math.random().toString(36), kind, args, userId: "u1", createdAt: 1, failed: false }, extra);
+    // what can't be deleted, and the queued ops a delete drops
+    const t0 = { id: "T", matches: [] };
+    assert(win.tournamentDeleteBlock(t0, [], null) === null, "an empty tournament can be deleted");
+    assert(/has 2 matches/.test(win.tournamentDeleteBlock({ id: "T", matches: [{}, {}] }, [], null)), "one with matches can't");
+    assert(/waiting to sync/.test(win.tournamentDeleteBlock(t0, [op("match", { id: "m", tournamentId: "T" })], null)), "nor one with a match still waiting to sync");
+    assert(/being scored/.test(win.tournamentDeleteBlock(t0, [], { tournamentId: "T", status: "live" })) && win.tournamentDeleteBlock(t0, [], { tournamentId: "X", status: "live" }) === null,
+      "nor one whose match is being scored here (another tournament's match doesn't count)");
+    const q = [op("tournament.create", { id: "T" }), op("tournament.update", { id: "T" }), op("team.save", { id: "tm", tournamentId: "T" }, { failed: true }),
+      op("team.save", { id: "tm2", tournamentId: "U" }), op("tournament.update", { id: "T" }, { userId: "u2" }), op("match", { id: "m", tournamentId: "U" })];
+    assert(win.dropTournamentOps(q, "T", "u1").map(o => o.args.id).join() === "tm2,T,m", "a delete drops this user's create/update/team ops for it (failed ones too), nothing else");
+
+    // the dashboard: Delete tournament on an empty Overview, for an admin
+    win.eval(`window.__prevSession = session; window.__prevClient = supabaseClient; state.match = null; state.snapshots = [];
+      session = { user: { id: "u1" } }; ui = defaultUi(); outbox = [];
+      window.__rpc = []; window.__rpcResult = { data: "deleted", error: null };
+      const chain = () => { const c = { then: (ok, no) => Promise.resolve({ data: [], error: null }).then(ok, no) };
+        ["select", "eq", "order", "maybeSingle", "range", "in"].forEach(f => { c[f] = () => c; }); return c; };
+      supabaseClient = { from: chain, rpc: async (fn, args) => { __rpc.push([fn, args]); return __rpcResult; } };
+      ui.myClubs = [{ id: "c1", name: "KICC", role: "owner" }];
+      ui.club = { id: "c1", name: "KICC", members: [], invites: [], roster: [], matches: [], presets: { match: [], tournament: [], points: [] },
+        tournaments: [{ id: "kt", name: "Tue Nov 10 2026", created_at: new Date().toISOString() }, { id: "kt2", name: "Tue Nov 10 2026", created_at: new Date().toISOString() }] };
+      cacheFor().clubs.c1 = { id: "c1", tournaments: JSON.parse(JSON.stringify(ui.club.tournaments)) }; cacheFor().tournaments.kt = { id: "kt" };
+      outbox = [{ id: "o1", kind: "team.save", args: { id: "tm1", tournamentId: "kt", name: "Reds", players: [] }, userId: "u1", createdAt: 1, failed: true }];
+      state.activeClubId = "c1"; ui.currentClubId = "c1"; ui.currentTournamentId = "kt";
+      ui.clubTournament = { id: "kt", name: "Tue Nov 10 2026", organizer_club_id: "c1", tournament_preset: { pointsForWin: 2 }, matches: [],
+        teams: [{ id: "tm1", name: "Reds", players: [] }] };
+      ui.tournamentTab = "overview"; state.view = "clubTournamentDashboard"; render();`);
+    const delBtn = () => app().querySelector('[data-action="delete-tournament"]');
+    assert(delBtn(), "an empty tournament's Overview has Delete tournament for a club admin");
+    win.eval(`ui.tournamentTab = "fixtures"; render();`);
+    assert(!delBtn(), "...on the Overview only");
+    win.eval(`ui.tournamentTab = "overview"; ui.myClubs[0].role = "player"; render();`);
+    assert(!delBtn(), "a player who only plays for the club doesn't get it");
+    win.eval(`ui.myClubs = [{ id: "other", name: "My XI", role: "owner" }]; render();`);
+    assert(!delBtn(), "nor does anyone the club list doesn't have as its admin");
+    win.eval(`ui.myClubs = [{ id: "c1", name: "KICC", role: "owner" }]; ui.clubTournament.matches = [{ id: "m1", data: { id: "m1", teamA: "A", teamB: "B", innings: [], completedAt: 1 } }]; render();`);
+    assert(!delBtn(), "a tournament with a match has no Delete");
+    win.eval(`ui.clubTournament.matches = []; render();`);
+
+    // 024 not run: the sheet stays open and says so
+    win.eval(`__rpcResult = { data: null, error: { code: "PGRST202", message: "not found" } };`);
+    delBtn().click();
+    assert(/Delete Tue Nov 10 2026\?/.test(doc.querySelector("#confirm-root").textContent) && /team goes with it/.test(doc.querySelector("#confirm-root").textContent),
+      "it asks first, saying its team goes too");
+    doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    await wait(10);
+    assert(/024_delete_empty_tournament/.test(doc.querySelector("#confirm-root").textContent) && win.eval("state.view") === "clubTournamentDashboard",
+      "without 024 the sheet stays open and says which SQL to run");
+    win.eval(`ui.confirm = null; __rpcResult = { data: "deleted", error: null }; __rpc = []; render();`);
+
+    delBtn().click();
+    doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    await wait(10);
+    assert(win.eval(`JSON.stringify(__rpc)`) === JSON.stringify([["delete_club_tournament", { _tournament_id: "kt" }]]), "it asks the server to delete it");
+    assert(win.eval("state.view") === "home" && win.eval("state.activeClubId") === "c1" && !doc.querySelector("#confirm-root .modal")
+      && !app().querySelector('[data-action="open-club-tournament"][data-id="kt"]') && app().querySelector('[data-action="open-club-tournament"][data-id="kt2"]'),
+      "then the club's Home, which no longer lists it (the other one stays)");
+    assert(win.eval(`outbox.length === 0 && !cacheFor().tournaments.kt && cacheFor().clubs.c1.tournaments.map(x => x.id).join() === "kt2"`),
+      "its queued team change and its read-cache copy are gone");
+
+    // made offline, never synced: the delete just drops its queued ops, no server call
+    win.eval(`__rpc = []; outbox = [{ id: "o2", kind: "tournament.create", args: { id: "kt3", clubId: "c1", name: "Oops", preset: {} }, userId: "u1", createdAt: 1, failed: false }];`);
+    const r3 = await win.eval(`deleteClubTournament({ id: "kt3", name: "Oops", organizer_club_id: "c1", matches: [], teams: [] })`);
+    assert(r3.ok && win.eval("outbox.length") === 0 && win.eval("__rpc.length") === 0, "a tournament made offline is deleted by dropping its queued create");
+    // offline, a synced one has to wait
+    win.eval(`session.offline = true;`);
+    const r4 = await win.eval(`deleteClubTournament({ id: "kt2", name: "x", organizer_club_id: "c1", matches: [], teams: [] })`);
+    assert(/offline/i.test(r4.error) && win.eval("__rpc.length") === 0, "offline, a synced tournament can't be deleted yet");
+    win.eval(`session = window.__prevSession; supabaseClient = window.__prevClient; outbox = []; cloudCache = null; state.activeClubId = null;
+      ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
   // --- wickets off a wide / no-ball ---
   {
     const fresh = () => {

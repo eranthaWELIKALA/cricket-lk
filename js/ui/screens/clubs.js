@@ -69,7 +69,7 @@ const CLUB_WRITE_ACTIONS = new Set([
   "cancel-club-invite"
 ]);
 // Shared with guest tournaments, so they're only refused on a club's own tournament.
-const CLUB_TOURNAMENT_WRITE_ACTIONS = new Set(["open-result-entry", "end-tournament", "reopen-tournament"]);
+const CLUB_TOURNAMENT_WRITE_ACTIONS = new Set(["open-result-entry", "end-tournament", "reopen-tournament", "delete-tournament"]);
 function clubWriteRefused(action){
   if (CLUB_TOURNAMENT_WRITE_ACTIONS.has(action)) return state.view === "clubTournamentDashboard" && !clubCanEdit(screenClubId());
   return CLUB_WRITE_ACTIONS.has(action) && !clubCanEdit(screenClubId());

@@ -843,6 +843,52 @@ async function updateClubTournament(t, { preset }){
   return res.error ? { error: res.error } : { ok: true, queued: !!res.queued };
 }
 
+/* Deleting a club tournament that has no matches (supabase/024: a club
+   admin's, checked again by the server, which also refuses one with a match
+   in the cloud). Why it can't go yet, or null: a match in it here (the
+   tournament's matches fold in this device's archive), one still waiting to
+   sync, or one being scored on this phone. */
+function tournamentDeleteBlock(t, ops, liveMatch){
+  const n = (t.matches || []).length;
+  if (n) return `It has ${n} match${n === 1 ? "" : "es"}. Only a tournament with no matches can be deleted.`;
+  if ((ops || []).some(o => o.kind === "match" && o.args && o.args.tournamentId === t.id)) return "A match in it is still waiting to sync.";
+  if (liveMatch && liveMatch.tournamentId === t.id && liveMatch.status !== "complete") return "A match in it is being scored on this phone. Finish or cancel it first.";
+  return null;
+}
+/* `queue` without this user's ops for tournament `id` (its create, settings
+   and teams), failed ones too: they'd only fail against a deleted tournament. */
+function dropTournamentOps(queue, id, userId){
+  return queue.filter(o => !(o.userId === userId && o.args && (
+    ((o.kind === "tournament.create" || o.kind === "tournament.update") && o.args.id === id)
+    || ((o.kind === "team.save" || o.kind === "team.delete") && o.args.tournamentId === id))));
+}
+/* Online-only like an invite (the server checks there and then that no match
+   is in it), except for a tournament made offline and never synced: dropping
+   its queued ops is the whole delete. Then it leaves the read cache and the
+   loaded club, so Home's list doesn't show it while the club reloads. */
+async function deleteClubTournament(t){
+  if (!supabaseClient || !session) return { error: "Sign in to delete it." };
+  const block = tournamentDeleteBlock(t, myOps(), state.match);
+  if (block) return { error: block };
+  const uid = session.user.id;
+  const unsynced = outbox.some(o => o.userId === uid && o.kind === "tournament.create" && o.args && o.args.id === t.id);
+  if (!unsynced){
+    const offline = needsInternet(); if (offline) return offline;
+    const { error } = await supabaseClient.rpc("delete_club_tournament", { _tournament_id: t.id });
+    if (error) return { error: cloudSqlMissing(error, "supabase/024_delete_empty_tournament.sql") || error.message };
+  }
+  outbox = dropTournamentOps(outbox, t.id, uid); saveOutbox();
+  const cache = cacheFor(), clubId = t.organizer_club_id;
+  if (cache){
+    delete cache.tournaments[t.id];
+    const c = cache.clubs[clubId];
+    if (c && c.tournaments) c.tournaments = c.tournaments.filter(x => x.id !== t.id);
+    saveCloudCache();
+  }
+  if (ui.club && ui.club.id === clubId) ui.club.tournaments = ui.club.tournaments.filter(x => x.id !== t.id);
+  return { ok: true };
+}
+
 async function fetchClubTournamentDetail(tournamentId){
   const cache = cacheFor();
   let server;   // undefined = couldn't ask; null = asked, not there (yet)

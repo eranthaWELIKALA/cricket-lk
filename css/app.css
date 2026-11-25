@@ -545,7 +545,7 @@ button.primary.danger-confirm.is-loading::after{ border-color:rgba(0,0,0,.2); bo
 .tournament-actions{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
 .tournament-actions button{ width:100%; margin:0; }
 .tournament-actions button:only-child{ grid-column:1 / -1; }
-.end-tournament-btn{ width:100%; margin-top:10px; }
+.end-tournament-btn, .delete-tournament-btn{ width:100%; margin-top:10px; }
 .tab-btn svg{ vertical-align:-3px; margin-right:2px; }
 /* Share link / Refresh / Manage under a tournament's title, and the public page (#/t/<id>). */
 .tournament-links{ display:flex; flex-wrap:wrap; gap:8px; margin:2px 0 12px; }
