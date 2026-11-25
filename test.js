@@ -2478,11 +2478,31 @@ async function main(){
       session = { user: { id: "u1" } };
       const rows = { deleted_matches: [{ id: __gone }], clubs: { id: "club9", name: "KICC" } };
       const chain = table => { const c = { then: (ok, no) => Promise.resolve({ data: rows[table] || [], error: null }).then(ok, no) };
-        ["select", "eq", "in", "order", "limit", "single"].forEach(f => { c[f] = () => c; }); return c; };
+        ["select", "eq", "in", "order", "limit", "range", "single"].forEach(f => { c[f] = () => c; }); return c; };
       supabaseClient = { from: chain }; }`);
     await win.eval(`fetchClubDetail("club9")`);
     assert(!win.eval("state.matchHistory[__gone]") && win.eval("!!state.matchHistory[__kept]") && !win.eval("matchLogStore()[__gone]") && win.eval("outbox.length") === 0, "a deleted club match leaves the archive, its kept log and its queued upload; the others stay");
     win.eval(`supabaseClient = window.__prevClient; session = window.__prevSession; ui.club = null; outbox = [];`);
+
+    // every one of a club's cloud matches loads, a page at a time (it used to stop at the newest 50)
+    win.eval(`{ window.__prevClient = supabaseClient; window.__prevSession = session; session = { user: { id: "u1" } };
+      const n = CLUB_MATCH_PAGE * 2 + 7;
+      const all = Array.from({ length: n }, (_, i) => ({ id: "cm" + i, match_type: "practice", played_at: new Date(n - i).toISOString(),
+        data: { id: "cm" + i, teamA: "A", teamB: "B", completedAt: n - i, clubId: "club8", innings: [] } }));
+      window.__pages = 0;
+      const chain = table => { let from = 0, to = Infinity, count = false;
+        const c = { then: (ok, no) => Promise.resolve(table === "matches"
+          ? (__pages++, { data: all.slice(from, to + 1), count: count ? all.length : null, error: null })
+          : { data: table === "clubs" ? { id: "club8", name: "KICC" } : [], error: null }).then(ok, no) };
+        ["eq", "in", "order", "limit", "single"].forEach(f => { c[f] = () => c; });
+        c.select = (cols, opts) => { count = !!(opts && opts.count); return c; };
+        c.range = (a, b) => { from = a; to = b; return c; };
+        return c; };
+      supabaseClient = { from: chain }; }`);
+    await win.eval(`fetchClubDetail("club8")`);
+    assert(win.eval("ui.club.matches.length") === win.eval("CLUB_MATCH_PAGE * 2 + 7") && win.eval("new Set(clubMatchesFor('club8').map(m => m.id)).size") === win.eval("CLUB_MATCH_PAGE * 2 + 7")
+      && win.eval("__pages") === 3 && win.eval("ui.club.matches[0].id") === "cm0", "a club with more matches than a page loads every one, newest first, in 3 pages");
+    win.eval(`supabaseClient = window.__prevClient; session = window.__prevSession; ui.club = null;`);
 
     // only the newest matches keep their logs
     win.eval(`for (let i = 0; i < MATCH_LOGS_KEEP + 3; i++){ const mm = createMatch({ teamA: "X", teamB: "Y", oversLimit: 1, playersPerSide: 11, battingFirst: "A" }); openInnings(currentInnings(mm), "a", "b", "c"); mm.status = "complete"; archiveMatch(mm); }`);

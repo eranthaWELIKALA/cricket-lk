@@ -712,12 +712,38 @@ async function fetchClubDetail(clubId){
   ui.club = Object.assign(overlayClubData(base, myOps()), { fromCache: !server });
   ui.clubBusy = false;
 }
+/* Every match of a club, newest first, a page at a time. It used to ask for
+   the newest 50 only, so a device that hadn't scored the older ones (a
+   browser, a second phone) showed and counted 50 while the cloud had more --
+   club Stats, records and profiles were short too. The first page asks for
+   the total; later pages follow until it's reached (or a page comes back
+   empty, so a smaller server row limit can't loop). Returns a result shaped
+   like a single query's, so the network-error check above still applies. */
+const CLUB_MATCH_PAGE = 100;
+async function fetchClubMatchRows(clubId){
+  const page = (from, count) => supabaseClient.from("matches")
+    .select("id, match_type, data, played_at", count ? { count: "exact" } : undefined)
+    .eq("club_id", clubId).order("played_at", { ascending: false }).order("id")
+    .range(from, from + CLUB_MATCH_PAGE - 1);
+  const first = await page(0, true);
+  if (first.error) return first;
+  const all = [...(first.data || [])];
+  const total = first.count == null ? Infinity : first.count;
+  let last = first.data || [];
+  while (last.length && all.length < total){
+    const next = await page(all.length, false);
+    if (next.error) return { data: all, error: next.error };
+    last = next.data || [];
+    all.push(...last);
+  }
+  return { data: all, error: null };
+}
 async function fetchClubDetailFromServer(clubId){
   const [clubRes, members, rosterRes, matchesRes, tournamentsRes, presetsRes, invitesRes, deletedRes] = await Promise.all([
     supabaseClient.from("clubs").select("id, name").eq("id", clubId).single(),
     fetchClubMembers(clubId),
     fetchRosterRows(clubId),
-    supabaseClient.from("matches").select("id, match_type, data, played_at").eq("club_id", clubId).order("played_at", { ascending: false }).limit(50),
+    fetchClubMatchRows(clubId),
     supabaseClient.from("tournaments").select("id, name, created_at").eq("organizer_club_id", clubId).order("created_at", { ascending: false }),
     supabaseClient.from("club_presets").select("id, kind, preset").eq("club_id", clubId).order("created_at"),
     // Pending admin invites (supabase/014); an error just means it isn't run yet.

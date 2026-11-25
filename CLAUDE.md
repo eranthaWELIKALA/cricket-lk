@@ -1960,7 +1960,9 @@ is next online. Three pieces, all in the CLOUD section:
   fails with "waiting for X"), so a temp id can never reach the database.
 - **Read cache** (`cloudCache`, key `cricket.lk.cloudcache.v1`, per user):
   the last server copy of `myClubs`, each club (`fetchClubDetail`, recent 30
-  matches) and each tournament (`fetchClubTournamentDetail`), plus
+  matches; online it loads *every* club match, paged by `fetchClubMatchRows`
+  — it used to stop at the newest 50, so another device showed 50 of 59)
+  and each tournament (`fetchClubTournamentDetail`), plus
   profile/isAdmin. Separate key on purpose — running out of storage there can
   never cost the scorer's `state`. Offline (or on a network error) the
   fetchers fall back to it; either way `overlayClubData` /
