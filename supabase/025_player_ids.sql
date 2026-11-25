@@ -306,7 +306,8 @@ begin
   for m in select x.id, x.club_id, x.data, x.played_at, c.name as club_name
              from public.matches x left join public.clubs c on c.id = x.club_id
              order by x.played_at nulls last, x.id loop
-    _labels := public._match_labels(m.data);
+    -- a "no names" match's Batter 1 / Over 3 aren't people: nothing to link
+    _labels := case when coalesce(m.data ->> 'anonymous', 'false') = 'true' then '{}'::text[] else public._match_labels(m.data) end;
     _have := case when jsonb_typeof(m.data -> 'playerIds') = 'object' then m.data -> 'playerIds' else '{}'::jsonb end;
     _add := public._match_label_ids(m.club_id, m.data);
     if _apply and _add <> '{}'::jsonb then
