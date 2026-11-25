@@ -66,7 +66,8 @@ inspected from desktop Chrome at `chrome://inspect`.
    ```
    You get two files in `dist/`, each signature-checked:
    - `cricket-lk-guest-<version>-<code>.aab` → upload to **Google Play**
-   - `cricket-lk-guest-<version>-<code>.apk` → upload to the **Samsung Galaxy Store**
+   - `cricket-lk-guest-<version>-<code>.apk` → upload to the **Samsung Galaxy Store** and
+    **Huawei AppGallery**
 
 ### Before the first upload
 

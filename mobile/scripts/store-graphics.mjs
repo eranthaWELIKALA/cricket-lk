@@ -1,6 +1,7 @@
 // npm run store-graphics: the store listing images, from the guest build.
 //   store/screenshots/plain/NN-*.jpg   the app's screens, 1080×1920 (both stores)
 //   store/screenshots/NN-*.jpg         the same with a caption, 1080×1920
+//   store/screenshots/huawei/NN-*.jpg  the captioned ones at 450×800 (Huawei AppGallery's size)
 //   store/feature-graphic.jpg          Google Play's 1024×500 feature graphic
 // Runs www/ (built fresh) in Chrome at phone size with sample data: made-up
 // teams and players, scored through the app's own engine functions (logged,
@@ -205,6 +206,17 @@ for (const s of shots){
   await artPage.screenshot({ path: path.join(STORE, "screenshots", s.name + ".jpg"), type: "jpeg", quality: 90 });
 }
 await art.close();
+
+// --- Huawei AppGallery wants exactly 450×800 (or 800×450) ----------------------
+const HUAWEI = path.join(STORE, "screenshots", "huawei");
+fs.mkdirSync(HUAWEI, { recursive: true });
+const small = await browser.newContext({ viewport: { width: 450, height: 800 }, deviceScaleFactor: 1 });
+const smallPage = await small.newPage();
+for (const s of shots){
+  await smallPage.setContent(`<!doctype html><html><body style="margin:0;"><img src="${dataUrl(path.join(STORE, "screenshots", s.name + ".jpg"))}" style="display:block;width:450px;height:800px;"></body></html>`);
+  await smallPage.screenshot({ path: path.join(HUAWEI, s.name + ".jpg"), type: "jpeg", quality: 92 });
+}
+await small.close();
 
 // --- Google Play feature graphic (1024×500) ---------------------------------
 const icon = "data:image/png;base64," + fs.readFileSync(path.join(MOBILE, "..", "icon-512.png")).toString("base64");

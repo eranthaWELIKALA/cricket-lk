@@ -68,6 +68,23 @@ PRIVATE BY DESIGN
   The app allows Android backup, so a user's matches move to a new phone.
 - Permissions: **none**.
 
+## Huawei AppGallery (checked 8 Nov 2026)
+
+- **Account:** an individual developer account is free. Verification takes 1 to 2 working days
+  and needs a passport or national ID card plus a bank document (card, statement or account
+  letter) showing your full name in English and valid for 6+ months. Sri Lanka is supported for
+  individuals. Two choices are permanent: the country you verify in, and individual vs
+  enterprise. No D-U-N-S number is needed for an individual.
+- **Upload the `.apk`** (`dist/cricket-lk-guest-<version>-<code>.apk`), signed with our own key.
+  An AAB would need Huawei's app-signing agreement.
+- **Short introduction:** up to 80 characters, 25 or fewer advised: `Offline cricket scorer`.
+  The full description above fits (limit 8,000).
+- **Category** Sports; age rating through Huawei's questionnaire (same answers as below);
+  privacy policy URL as above; English (US).
+- **Release countries:** everywhere except the Chinese mainland, which has extra paperwork. Phones
+  sold outside China run Android-based EMUI, so the APK runs there. The app needs no Google
+  services, which Huawei phones don't have.
+
 ## Other Play Console answers
 
 - **App access:** all functionality is available without logging in.
@@ -82,11 +99,12 @@ PRIVATE BY DESIGN
 
 ## Graphics (`npm run store-graphics`)
 
-| | Google Play | Galaxy Store |
-|---|---|---|
-| `play-icon-512.png` | App icon (512×512) | App icon (512×512) |
-| `screenshots/01-…08-*.jpg` (1080×1920, captioned) | Phone screenshots (all 8, in order) | Screenshots |
-| `feature-graphic.jpg` (1024×500) | Feature graphic | not used |
+| | Google Play | Galaxy Store | Huawei AppGallery |
+|---|---|---|---|
+| `play-icon-512.png` | App icon (512×512) | App icon (512×512) | App icon (512×512) |
+| `screenshots/01-…08-*.jpg` (1080×1920, captioned) | Phone screenshots (all 8, in order) | Screenshots | not this size |
+| `screenshots/huawei/01-…08-*.jpg` (450×800) | | | Screenshots (3 to 8) |
+| `feature-graphic.jpg` (1024×500) | Feature graphic | not used | not used |
 
 The sample data uses made-up teams and players. Plain versions without
 captions are in `screenshots/plain/`.
