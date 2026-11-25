@@ -2502,6 +2502,29 @@ async function main(){
     await win.eval(`fetchClubDetail("club8")`);
     assert(win.eval("ui.club.matches.length") === win.eval("CLUB_MATCH_PAGE * 2 + 7") && win.eval("new Set(clubMatchesFor('club8').map(m => m.id)).size") === win.eval("CLUB_MATCH_PAGE * 2 + 7")
       && win.eval("__pages") === 3 && win.eval("ui.club.matches[0].id") === "cm0", "a club with more matches than a page loads every one, newest first, in 3 pages");
+
+    // offline it still has every one: the read cache keeps the newest 30, IndexedDB (clubMatchStore) all of them
+    win.eval(`{ const data = new Map(), copy = v => v === undefined ? undefined : JSON.parse(JSON.stringify(v));
+      const tx = () => { const t = {}; const later = (r, f) => { setTimeout(() => { f(); t.oncomplete && t.oncomplete(); }); return r; };
+        t.objectStore = () => ({ get: k => { const r = {}; return later(r, () => { r.result = copy(data.get(k)); }); },
+          put: (v, k) => { data.set(k, copy(v)); const r = {}; return later(r, () => { r.result = k; }); },
+          clear: () => { data.clear(); return later({}, () => {}); } });
+        return t; };
+      window.indexedDB = { open: () => { const req = {}; setTimeout(() => { req.result = { createObjectStore(){}, transaction: tx }; req.onupgradeneeded(); req.onsuccess(); }); return req; } };
+      window.__idb = data; }`);
+    await win.eval(`fetchClubDetail("club8")`);
+    win.eval(`session = { user: { id: "u1" }, offline: true }; window.__pages = 0;`);
+    await win.eval(`fetchClubDetail("club8")`);
+    assert(win.eval("cloudCache.clubs.club8.matches.length") === 30 && win.eval("ui.club.fromCache") === true && win.eval("__pages") === 0
+      && win.eval("ui.club.matches.length") === win.eval("CLUB_MATCH_PAGE * 2 + 7") && win.eval("ui.club.matches[0].id + ui.club.matches.at(-1).id") === "cm0cm206",
+      "offline, a club shows every match from IndexedDB, newest first, while localStorage keeps only the newest 30");
+    win.eval(`cloudCache.clubs.club8.deletedMatchIds = ["cm150"];`);
+    await win.eval(`fetchClubDetail("club8")`);
+    assert(win.eval("ui.club.matches.length") === win.eval("CLUB_MATCH_PAGE * 2 + 6") && !win.eval("ui.club.matches.some(m => m.id === 'cm150')"), "offline, a match the cloud has deleted stays out");
+    win.eval(`__idb.get("club8").userId = "someone else";`);
+    await win.eval(`fetchClubDetail("club8")`);
+    assert(win.eval("ui.club.matches.length") === 30, "another account's stored matches aren't used: just the read cache's 30");
+    win.eval(`delete window.indexedDB; delete window.__idb;`);
     win.eval(`supabaseClient = window.__prevClient; session = window.__prevSession; ui.club = null;`);
 
     // only the newest matches keep their logs

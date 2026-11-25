@@ -250,6 +250,45 @@ function cacheFor(){
   }
   return cloudCache;
 }
+
+/* Every match of a club, kept for offline in IndexedDB -- not in the read
+   cache. A match is ~12 KB and a club plays a few hundred a year, more than
+   localStorage (about 5 MB a site, shared with the scorer's own state) can
+   hold; and a full localStorage would make DB.save fall back to memory, so a
+   match being scored could be lost on a reload. The read cache keeps the
+   newest CLUB_CACHE_RECENT, which is what a browser without IndexedDB gets.
+   Entries are { userId, savedAt, rows } by club id. Every call resolves (null
+   when IndexedDB is missing, fails or hangs), so it can't block a club screen. */
+const CLUB_CACHE_RECENT = 30;
+const clubMatchStore = (() => {
+  let opening = null;
+  const settle = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]).catch(() => null);
+  function open(){
+    if (typeof indexedDB === "undefined" || !indexedDB) return Promise.resolve(null);
+    if (!opening){
+      opening = settle(new Promise(resolve => {
+        const req = indexedDB.open("cricket.lk.clubmatches", 1);
+        req.onupgradeneeded = () => req.result.createObjectStore("clubs");
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = req.onblocked = () => resolve(null);
+      }), 3000).then(db => { if (!db) opening = null; return db; });
+    }
+    return opening;
+  }
+  function run(mode, fn){
+    return settle(open().then(db => db && new Promise(resolve => {
+      const tx = db.transaction("clubs", mode);
+      const req = fn(tx.objectStore("clubs"));
+      tx.oncomplete = () => resolve(req.result === undefined ? null : req.result);
+      tx.onerror = tx.onabort = () => resolve(null);
+    })), 3000);
+  }
+  return {
+    get: clubId => run("readonly", s => s.get(clubId)),
+    put: (clubId, entry) => run("readwrite", s => s.put(entry, clubId)),
+    clear: () => run("readwrite", s => s.clear())
+  };
+})();
 function myOps(){
   const uid = session && session.user && session.user.id;
   return uid ? outbox.filter(o => o.userId === uid) : [];
@@ -627,7 +666,7 @@ async function doSignOut(){
   // The read cache holds members-only club data (rosters, teams) -- never
   // leave it for whoever uses this device next. Queued changes stay, tagged
   // with their user, until that user signs in again.
-  cloudCache = null; DB.clear(CLOUD_CACHE_KEY);
+  cloudCache = null; DB.clear(CLOUD_CACHE_KEY); clubMatchStore.clear();
   state.view = "home";
   state.activeClubId = null; state.viewClubId = null; state.viewTournamentId = null;
   ui.identity = null; ui.premier = null;
@@ -693,6 +732,19 @@ async function fetchClubMembers(clubId){
   return { data: rows.map(r => ({ userId: r.user_id, role: r.role, displayName: byId.get(r.user_id) || "—" })) };
 }
 
+/* Offline: the read cache's newest matches, plus the older ones from
+   clubMatchStore. Both were written by the same fetch; should the store's
+   copy be older (its write failed), the cache's rows still win and a match
+   the cloud has since deleted stays out. */
+async function offlineClubMatches(clubId, cache, cached){
+  const recent = cached.matches || [];
+  const stored = await clubMatchStore.get(clubId);
+  if (!stored || stored.userId !== cache.userId || !Array.isArray(stored.rows)) return recent;
+  const have = new Set(recent.map(r => r.id));
+  const gone = new Set(cached.deletedMatchIds || []);
+  const older = stored.rows.filter(r => !have.has(r.id) && !gone.has(r.id));
+  return recent.concat(older).sort((a, b) => String(b.played_at || "").localeCompare(String(a.played_at || "")));
+}
 async function fetchClubDetail(clubId){
   ui.clubBusy = true;
   const cache = cacheFor();
@@ -701,14 +753,17 @@ async function fetchClubDetail(clubId){
     try { server = await fetchClubDetailFromServer(clubId); } catch (_){ server = null; }
   }
   if (server && cache){
-    // Cache a trimmed copy (recent matches only) -- it's a separate storage
-    // key, so running out of space here can never cost the scorer's state.
-    cache.clubs[clubId] = Object.assign({}, server, { matches: server.matches.slice(0, 30) });
+    // The read cache keeps the newest matches only, small enough never to
+    // crowd out the scorer's state; all of them go to clubMatchStore.
+    const savedAt = Date.now();
+    cache.clubs[clubId] = Object.assign({}, server, { matches: server.matches.slice(0, CLUB_CACHE_RECENT), savedAt });
     saveCloudCache();
+    clubMatchStore.put(clubId, { userId: cache.userId, savedAt, rows: server.matches });
   }
   // Matches deleted in the cloud leave this device's archive too (supabase/015).
   if (server && forgetDeletedMatches(server.deletedMatchIds)) save();
-  const base = server || (cache && cache.clubs[clubId]) || { id: clubId, name: (ui.myClubs || []).find(c => c.id === clubId)?.name || "", members: [], roster: [], matches: [], tournaments: [], invites: [], presets: { match: [], tournament: [] } };
+  let base = server || (cache && cache.clubs[clubId]) || { id: clubId, name: (ui.myClubs || []).find(c => c.id === clubId)?.name || "", members: [], roster: [], matches: [], tournaments: [], invites: [], presets: { match: [], tournament: [] } };
+  if (!server && cache) base = Object.assign({}, base, { matches: await offlineClubMatches(clubId, cache, base) });
   ui.club = Object.assign(overlayClubData(base, myOps()), { fromCache: !server });
   ui.clubBusy = false;
 }

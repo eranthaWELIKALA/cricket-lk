@@ -1961,8 +1961,11 @@ is next online. Three pieces, all in the CLOUD section:
 - **Read cache** (`cloudCache`, key `cricket.lk.cloudcache.v1`, per user):
   the last server copy of `myClubs`, each club (`fetchClubDetail`, recent 30
   matches; online it loads *every* club match, paged by `fetchClubMatchRows`
-  — it used to stop at the newest 50, so another device showed 50 of 59)
-  and each tournament (`fetchClubTournamentDetail`), plus
+  — it used to stop at the newest 50, so another device showed 50 of 59 —
+  and keeps all of them for offline in IndexedDB, `clubMatchStore`, merged
+  back by `offlineClubMatches`: a club outgrows localStorage, and a full
+  localStorage makes `DB.save` fall back to memory, losing state on reload;
+  cleared on sign-out) and each tournament (`fetchClubTournamentDetail`), plus
   profile/isAdmin. Separate key on purpose — running out of storage there can
   never cost the scorer's `state`. Offline (or on a network error) the
   fetchers fall back to it; either way `overlayClubData` /
