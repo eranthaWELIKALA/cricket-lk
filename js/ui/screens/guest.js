@@ -67,14 +67,20 @@ function handleNewTeamSubmit(e){
   save(); render();
 }
 
+/* A name already on this phone's list asks first: the same player (they join
+   the team), or someone new with the same name (askIsThisHim). */
 function handleAddPlayerSubmit(e){
   e.preventDefault();
   const teamId = e.target.dataset.team;
   const f = new FormData(e.target);
   const name = (f.get("name") || "").trim();
   if (!name) return;
-  addPlayerToTeam(teamId, name);
-  save(); render();
+  const same = guestPlayersNamed(name);
+  if (!same.length){ addPlayerToTeam(teamId, name); save(); render(); return; }
+  askIsThisHim(name, same, { where: "on your players list", onPick: pick => {
+    addPlayerToTeam(teamId, name, pick.someoneNew ? createGuestPlayer(name).id : pick.id);
+    save();
+  } });
 }
 
 /* --- players: the full local, global (not per-team) roster --
@@ -110,8 +116,11 @@ function handleAddGlobalPlayerSubmit(e){
   e.preventDefault();
   const name = (new FormData(e.target).get("name") || "").trim();
   if (!name) return;
-  findOrCreatePlayer(name);
-  save(); render();
+  const same = guestPlayersNamed(name);
+  if (!same.length){ findOrCreatePlayer(name); save(); render(); return; }
+  askIsThisHim(name, same, { where: "on your players list", onPick: pick => {
+    if (pick.someoneNew){ createGuestPlayer(name); save(); }
+  } });
 }
 
 /* --- presets --- */
@@ -623,7 +632,11 @@ function handleTournamentStartMatchSubmit(e){
     superOver: !!(matchPreset.superOver || preset.superOver)
   });
   if (f.get("anonymous") === "on") state.match.anonymous = true;
-  else state.match.squads = { A: guestTeamSquad(state.teams[teamAId], state.players), B: guestTeamSquad(state.teams[teamBId], state.players) };
+  else {
+    const sq = squadsWithIds(guestTeamPlayers(state.teams[teamAId]), guestTeamPlayers(state.teams[teamBId]));
+    state.match.squads = { A: sq.A, B: sq.B };
+    state.match.playerIds = sq.playerIds;
+  }
   state.snapshots = [];
   save(); render();
 }

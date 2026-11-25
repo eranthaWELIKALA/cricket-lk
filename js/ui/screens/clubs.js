@@ -694,7 +694,34 @@ function handleClubAddPlayerSubmit(e){
   ui.clubAddMessage = null;
   const submit = form.querySelector('button[type="submit"]');
   if (submit) submit.disabled = true;   // no double-add on a slow network
-  addPlayerToClub(ui.currentClubId, name, { phone, nic, details }).then(result => {
+  const clubId = ui.currentClubId;
+  const done = () => {
+    if (ui.premier) fetchPremierData();
+    render();
+    fetchClubDetail(clubId).then(render);
+  };
+  // "Which Kasun Perera?" (supabase/025): a name already on the platform is
+  // asked about first -- one of them joins the roster as they are, or someone
+  // new is added with the same name. Offline, or before 025: as before.
+  findPlayersNamed(name, clubId).then(rows => {
+    if (!rows || !rows.length){ addNew({}); return; }
+    if (submit) submit.disabled = false;
+    askIsThisHim(name, rows, { where: "on the platform", clubName: currentClubName(),
+      note: phone || nic || playerHasDetails(details) ? "The details you typed are saved only for someone new." : "",
+      onPick: pick => {
+        if (pick.someoneNew) return addNew({ someoneNew: true });
+        ui.playerModal = null;
+        if (pick.row && pick.row.on_roster){ ui.clubAddMessage = `${pick.row.name} is already in your club.`; render(); return; }
+        return addExistingPlayerToClub(clubId, pick.id, pick.row ? pick.row.name : name).then(res => {
+          if (res && res.error) return { error: res.error };
+          ui.clubAddMessage = `${pick.row ? pick.row.name : name} added to your club, as they are on the platform.`;
+          done();
+        });
+      } });
+  });
+  function addNew(extra){
+  if (submit) submit.disabled = true;
+  addPlayerToClub(clubId, name, Object.assign({ phone, nic, details }, extra)).then(result => {
     if (submit) submit.disabled = false;
     // "Added, but couldn't save ..." means the roster row exists already --
     // close the sheet (re-submitting would just hit "already on the platform").
@@ -709,10 +736,9 @@ function handleClubAddPlayerSubmit(e){
     } else ui.clubAddMessage = `${name} added.`;
     // A brand-new name also just became a global (Premier) player -- refresh
     // that list too if it was already loaded, so it doesn't show stale.
-    if (ui.premier) fetchPremierData();
-    render();
-    fetchClubDetail(ui.currentClubId).then(render);
+    done();
   });
+  }
 }
 
 function handleClubInviteAdminSubmit(e){

@@ -113,3 +113,69 @@ function withoutTempIds(ids){
   Object.keys(ids).forEach(k => { if (ids[k] && String(ids[k]).indexOf(TEMP_ID_PREFIX) !== 0) out[k] = ids[k]; });
   return out;
 }
+
+/* --- two players, one name ---
+   A match's scorecard labels players by name, and a label is unique in its
+   match. So when a list holds two players of one name (a club's roster, this
+   phone's players, two squads), the later ones are labelled "Name (2)",
+   "Name (3)" in that match's pick lists and scorecard, and match.playerIds
+   says who each label is. Lists with no shared names are unchanged. */
+function labelledPlayers(list){
+  const seen = {};
+  return (list || []).map(p => {
+    const k = String((p && p.name) || "").trim().toLowerCase();
+    const n = seen[k] = (seen[k] || 0) + 1;
+    return Object.assign({}, p, { label: n === 1 ? p.name : `${p.name} (${n})` });
+  });
+}
+// The player behind a label in a labelled list (case-insensitive), or null.
+function playerByLabel(list, label){
+  const k = String(label || "").trim().toLowerCase();
+  return k ? labelledPlayers(list).find(p => String(p.label).trim().toLowerCase() === k) || null : null;
+}
+/* Two squads ([{ id, name, guest }] each) as a match takes them: labels unique
+   across both, the id behind each, and the labels of the guests among them.
+   A player in both lists counts once (on the first side). */
+function squadsWithIds(a, b){
+  const ids = new Set();
+  const keep = list => (list || []).filter(p => p && p.name && !(p.id && ids.has(p.id)) && (p.id ? ids.add(p.id) : true));
+  const A = keep(a), B = keep(b);
+  const all = labelledPlayers([...A, ...B]);
+  const playerIds = {};
+  all.forEach(p => { if (p.id) playerIds[p.label] = p.id; });
+  return { A: all.slice(0, A.length).map(p => p.label), B: all.slice(A.length).map(p => p.label),
+    playerIds, guestNames: all.filter(p => p.guest).map(p => p.label) };
+}
+// A saved guest team's players, { id, name } each.
+function guestTeamPlayers(team){
+  return ((team && team.playerIds) || []).map(id => state.players[id] && { id, name: state.players[id].name }).filter(Boolean);
+}
+
+/* "Is this him?" -- a name that players on the platform (or this phone's
+   list) already have: each of them as a choice, with what tells them apart,
+   plus "Someone new" (a different person, a new player with the same name).
+   `rows`: [{ id, name, nickname, jersey_no, city, origin_club, on_roster,
+   claimed, former_name }] (find_players_named, supabase/025, or this phone's
+   players). onPick({ id, row }) or onPick({ someoneNew: true }); its return
+   value is the confirmation's (an { error } keeps it open). */
+function askIsThisHim(name, rows, opts){
+  const o = opts || {};
+  const sub = r => [
+    r.note || (r.on_roster ? `Already in ${o.clubName || "your club"}` : r.origin_club ? `Added by ${r.origin_club}` : o.listName || ""),
+    r.former_name ? `was called ${name}` : "", r.city || "", r.claimed ? "claimed profile" : ""
+  ].filter(Boolean).join(" · ");
+  const label = r => `${r.jersey_no != null ? `#${r.jersey_no} ` : ""}${r.name}${r.nickname ? ` (${r.nickname})` : ""}`;
+  askConfirm({
+    title: `Which ${name}?`, icon: "👤", tone: "primary",
+    body: `<p>${rows.length === 1
+      ? `There's already a <b>${escapeHtml(name)}</b>${o.where ? ` ${escapeHtml(o.where)}` : ""}. Is it the same player, or someone new with the same name?`
+      : `There are ${rows.length} players called <b>${escapeHtml(name)}</b>${o.where ? ` ${escapeHtml(o.where)}` : ""}. Is it one of them, or someone new?`}</p>`
+      + (o.note ? `<p class="hint">${escapeHtml(o.note)}</p>` : ""),
+    choices: [...rows.map(r => ({ value: r.id, label: label(r), sub: sub(r) })),
+      { value: "__new", label: "Someone new", sub: "A different person" }],
+    confirmLabel: c => c === "__new" ? "Add someone new" : c ? "Same player" : "Pick one",
+    cancelLabel: o.cancelLabel || "Go back",
+    onConfirm: c => o.onPick(c === "__new" ? { someoneNew: true } : { id: c, row: rows.find(r => String(r.id) === c) }),
+    onCancel: o.onCancel
+  });
+}

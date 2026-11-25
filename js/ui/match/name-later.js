@@ -96,9 +96,9 @@ function saveNameLater(typed, form){
   const entry = unnamedPlayers(m).find(u => u.name === from);
   const name = unnamedTarget(m, typed);
   const side = entry.role === "batter" ? m.innings[entry.inn].battingTeam : m.innings[entry.inn].bowlingTeam;
-  const apply = () => {
+  const apply = picks => {
     applyBallEdit(m, nameUnnamedPlayer(m, from, name));
-    registerMatchPlayer(name, side);
+    registerMatchPlayer(name, side, picks && picks[name.toLowerCase()]);
     ui.nameLater = null;
     render();
   };

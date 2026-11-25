@@ -675,9 +675,45 @@ count twice). Leaderboard rows carry `data-key`; `openPlayerStats(key)`;
 "You" is `isMyTotal` (the claimed id, or a `name:` line with one of their
 names). `test.js` proves the regrouping: with no ids every figure is what it
 was, and with ids each total is exactly the sum of the per-name figures
-counted into it. Still to come (supabase/025+): "Is this him?" when a typed
-name matches existing players, a backfill + trigger storing ids in the cloud's
-old matches, and profiles / player_matches by id.
+counted into it.
+
+**Two people, one name (supabase/025, run by hand after a fresh backup).**
+`add_player_to_club` / `ensure_global_player` take `_new: true` (a second
+player with a taken name; without it, the old reuse, so older app versions are
+unchanged); `find_players_named(name, club)` lists who a name could be (public
+columns, the club that first added them, `on_roster` for your club, a former
+name); `link_match_player_ids(apply)` writes `data.playerIds` into every cloud
+match for names that can be only one player (the club's roster, then the
+platform; aliases; tournament visitors `guest:<name>`) and reports the rest
+(dry run first); a trigger (`matches_link_player_ids`) does the same on every
+upload, never changes an id a match has, and drops `tmp:` ids; `player_matches`
+finds by id, plus old matches by name only when no other player has that name;
+`rename_player` allows a name another player has unless they share a club.
+Verified in PGlite on 001–024 + old data (28 checks, permissions included).
+
+**"Which Kasun Perera?"** (`askIsThisHim`, player-ids.js: the shared
+confirmation with each candidate as a choice — what tells them apart: the club
+that added them / "Already in KICC" / their team on this phone, city, a former
+name — plus **Someone new**). Asked by the club add-player sheet
+(`findPlayersNamed` → existing: `addExistingPlayerToClub`; new:
+`addPlayerToClub(…, { someoneNew })`, which `coalesceOp` never folds into
+another add of the name), by `confirmUnlisted` in a club match for a typed name
+the side's list doesn't have but the platform does (the answer goes to
+`registerMatchPlayer(name, team, pick)`: the picked id is recorded and, for the
+club's side, joins the roster), and by the guest Players screen / team add for
+a name already on this phone's list (`guestPlayersNamed`, `createGuestPlayer`).
+Offline or before 025 nothing is asked (as before). `confirmUnlisted` only
+waits when a lookup happens; otherwise it asks at once, as it always did.
+
+**A label per player in a match.** When a list holds two players of one name
+(a roster, this phone's players, two squads), the later ones are
+`"Name (2)"`… in that match (`labelledPlayers`): `suggestionPlayerNames`,
+`currentRoster` (so `rosterEntryFor`, nicknames and `resolveTypedName` follow
+labels) and `squadsWithIds` (match setup / guest tournament matches: squads by
+label, `playerIds` for each, guests by label) — and `registerMatchPlayer` finds
+the player behind a label (`playerByLabel`). Lists with no shared names are
+exactly as before. Still to come: the admin portal by id, and a list of the
+names old matches couldn't link, to link by hand.
 
 ## Stats & MVP
 

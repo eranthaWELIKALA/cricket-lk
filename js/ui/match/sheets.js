@@ -423,13 +423,14 @@ function handleOpeningSubmit(e){
   if (conflict){ showFormError(e.target, conflict); return; }
   confirmUnlisted(state.match, [
     { name: striker, teamKey: innOpen.battingTeam }, { name: nonStriker, teamKey: innOpen.battingTeam }, { name: bowler, teamKey: innOpen.bowlingTeam }
-  ], () => {
+  ], picks => {
     if (!state.match || state.match.status !== "opening") return;
     pushSnapshot();
     const inn = currentInnings(state.match);
     ui.opening = null;
     openInnings(inn, striker, nonStriker, bowler);
-    registerMatchPlayer(striker, inn.battingTeam); registerMatchPlayer(nonStriker, inn.battingTeam); registerMatchPlayer(bowler, inn.bowlingTeam);
+    const pk = n => picks[n.toLowerCase()];
+    registerMatchPlayer(striker, inn.battingTeam, pk(striker)); registerMatchPlayer(nonStriker, inn.battingTeam, pk(nonStriker)); registerMatchPlayer(bowler, inn.bowlingTeam, pk(bowler));
     state.match.status = "live";
     save(); render();
   });
@@ -453,9 +454,37 @@ function unlistedNames(match, entries){
     return playerTeamInMatch(match, name) !== teamKey;
   });
 }
+/* `proceed(picks)`: picks = { [lowercase name]: { id, row } | { someoneNew } }
+   for the names asked "Which …?" -- in a club match, a typed name players on
+   the platform already have (find_players_named, supabase/025) is asked
+   about first: one of them (registerMatchPlayer records their id, and the
+   club's side adds them to the roster), or someone new. A name nobody has,
+   or with no connection (or before 025), gets the "Add player?" below. A
+   tournament's visiting side never asks (its newcomers are guests). */
 function confirmUnlisted(match, entries, proceed){
   const fresh = unlistedNames(match, entries);
-  if (!fresh.length){ proceed(); return; }
+  if (!fresh.length){ proceed({}); return; }
+  const picks = {};
+  const askable = f => !!match.clubId && !(match.matchType !== "friendly" && isVisitingSide(match, f.teamKey));
+  const go = found => {
+    const known = fresh.map((f, i) => ({ f, rows: found[i] })).filter(x => x.rows && x.rows.length);
+    const rest = fresh.filter((f, i) => !(found[i] && found[i].length));
+    const next = k => {
+      if (k < known.length){
+        const { f, rows } = known[k];
+        askIsThisHim(f.name, rows, { where: "on the platform", note: `For ${teamName(match, f.teamKey)}.`,
+          onPick: pick => { picks[f.name.toLowerCase()] = pick; next(k + 1); } });
+      } else if (rest.length) confirmAddNew(match, rest, () => proceed(picks));
+      else proceed(picks);
+    };
+    next(0);
+  };
+  // Only a lookup waits (a club match, online); otherwise it asks at once, as before.
+  if (!supabaseClient || needsInternet() || !fresh.some(askable)){ go(fresh.map(() => null)); return; }
+  Promise.all(fresh.map(f => askable(f) ? findPlayersNamed(f.name, match.clubId) : Promise.resolve(null))).then(go);
+}
+// The plain "Add player?" for names nobody on the platform has (or that can't be looked up).
+function confirmAddNew(match, fresh, proceed){
   const one = fresh.length === 1;
   const list = match.squads ? "this match's squad" : match.clubId ? "the club roster" : "your players list";
   // A visiting tournament team's newcomers play as guests (registerMatchPlayer).
@@ -622,11 +651,11 @@ function submitNewBatsman(name, form){
   }
   const sideConflict = playerSideConflict(state.match, name, inn.battingTeam);
   if (sideConflict){ showFormError(form, sideConflict); return; }
-  confirmUnlisted(state.match, [{ name, teamKey: inn.battingTeam }], () => {
+  confirmUnlisted(state.match, [{ name, teamKey: inn.battingTeam }], picks => {
     if (pendingBatsmanSlot(currentInnings(state.match)) !== slot) return;   // something else filled it meanwhile
     pushSnapshot();
     sendInBatter(inn, name);
-    registerMatchPlayer(name, inn.battingTeam);
+    registerMatchPlayer(name, inn.battingTeam, picks[name.toLowerCase()]);
     save(); render();
   });
 }
@@ -760,13 +789,13 @@ function pickUnnamed(){
   save(); render();
 }
 
-function confirmNewBowler(name){
+function confirmNewBowler(name, pick){
   const inn = currentInnings(state.match);
   if (inn.bowler || !name) return;
   if (inn.lastOverBowler && name.toLowerCase() === inn.lastOverBowler.toLowerCase()) return;
   pushSnapshot();
   setBowler(inn, name);
-  registerMatchPlayer(name, inn.bowlingTeam);
+  registerMatchPlayer(name, inn.bowlingTeam, pick);
   save(); render();
 }
 
@@ -786,7 +815,7 @@ function submitNewBowler(name, form){
   }
   const sideConflict = playerSideConflict(state.match, name, inn.bowlingTeam);
   if (sideConflict){ showFormError(form, sideConflict); return; }
-  confirmUnlisted(state.match, [{ name, teamKey: inn.bowlingTeam }], () => confirmNewBowler(name));
+  confirmUnlisted(state.match, [{ name, teamKey: inn.bowlingTeam }], picks => confirmNewBowler(name, picks[name.toLowerCase()]));
 }
 
 function showFormError(form, msg){

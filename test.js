@@ -4181,6 +4181,86 @@ async function main(){
     win.eval(`state = JSON.parse(window.__keep); save(); render();`);
   }
 
+  // --- player ids, phase 2: "Which Kasun Perera?", and two players of one name in a match ---
+  {
+    const doc = win.document;
+    const tick = () => new Promise(r => setTimeout(r, 0));
+    const confirm = () => doc.querySelector("#confirm-root");
+    const pickChoice = v => doc.querySelector(`#confirm-root [data-action="confirm-pick"][data-value="${v}"]`).click();
+    const ok = () => doc.querySelector('#confirm-root [data-action="confirm-ok"]').click();
+    assert(win.labelledPlayers([{ name: "Kasun" }, { name: "Ravi" }, { name: "kasun" }]).map(p => p.label).join() === "Kasun,Ravi,kasun (2)",
+      "a second player of a name is labelled 'Name (2)' in a match (a list without shared names is unchanged)");
+    const sq = win.squadsWithIds([{ id: "a", name: "Kasun Perera" }, { id: "g", name: "Amal", guest: true }], [{ id: "b", name: "Kasun Perera" }, { id: "a", name: "Kasun Perera" }]);
+    assert(sq.A.join() === "Kasun Perera,Amal" && sq.B.join() === "Kasun Perera (2)" && sq.playerIds["Kasun Perera"] === "a" && sq.playerIds["Kasun Perera (2)"] === "b"
+      && sq.guestNames.join() === "Amal", "two squads: each player a label of their own and their id; a guest is marked by label; nobody twice");
+    const q = win.coalesceOp([{ kind: "roster.add", userId: "u", args: { clubId: "c", name: "Kasun" } }], { kind: "roster.add", userId: "u", args: { clubId: "c", name: "kasun" } });
+    const q2 = win.coalesceOp(q, { kind: "roster.add", userId: "u", args: { clubId: "c", name: "Kasun", someoneNew: true } });
+    assert(q.length === 1 && q2.length === 2, "a repeat offline add of a name is dropped, but 'someone new' with that name is kept");
+
+    // A guest team with two Kasun Pereras: both in the match, each with their own id.
+    win.eval(`window.__keepGuest = JSON.stringify({ players: state.players, teams: state.teams });
+      state.players = { k1: { id: "k1", name: "Kasun Perera" }, k2: { id: "k2", name: "Kasun Perera" }, p1: { id: "p1", name: "Pathum" }, s1: { id: "s1", name: "Shaheen" } };
+      state.teams = { ta: { id: "ta", name: "Lions", playerIds: ["k1", "k2", "p1"] }, tb: { id: "tb", name: "Tigers", playerIds: ["s1"] } };
+      state.match = null; state.snapshots = []; ui = defaultUi(); state.view = "matchSetup"; render();`);
+    const setup = doc.getElementById("match-setup-form");
+    setup.querySelector('[name="teamA"]').value = "Lions"; setup.querySelector('[name="teamB"]').value = "Tigers";
+    setup.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(win.state.match.squads.A.join() === "Kasun Perera,Kasun Perera (2),Pathum" && win.state.match.playerIds["Kasun Perera (2)"] === "k2" && win.state.match.playerIds["Kasun Perera"] === "k1",
+      "match setup: the second Kasun Perera is 'Kasun Perera (2)' in this match, and each label is tied to its player");
+    const pickOpen = n => doc.querySelector(`#modal-root [data-action="opening-pick"][data-name="${n}"]`).click();
+    pickOpen("Kasun Perera (2)"); pickOpen("Kasun Perera"); pickOpen("Shaheen");
+    doc.getElementById("opening-form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    const live1 = currentInnings(win.state.match);
+    assert(live1.striker === "Kasun Perera (2)" && live1.nonStriker === "Kasun Perera" && win.state.match.playerIds["Kasun Perera (2)"] === "k2" && win.state.match.playerIds["Kasun Perera"] === "k1",
+      "both Kasun Pereras open the batting, each counted as themselves");
+    win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); state.view = "players"; render();`);
+
+    // The guest Players screen: a name already on the list asks first; 'someone new' makes a second player.
+    const addForm = () => doc.getElementById("add-global-player-form");
+    addForm().querySelector('[name="name"]').value = "Pathum";
+    addForm().dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(/Which Pathum\?/.test(confirm().textContent) && /Someone new/.test(confirm().textContent), "adding a name already on the list asks: the same player, or someone new");
+    pickChoice("__new"); ok();
+    assert(Object.values(win.state.players).filter(p => p.name === "Pathum").length === 2, "someone new: a second Pathum, with an id of his own");
+    win.eval(`{ const k = JSON.parse(window.__keepGuest); state.players = k.players; state.teams = k.teams; } state.view = "home"; save(); render();`);
+
+    // A club: the add-player sheet asks when the platform already has the name.
+    win.eval(`window.__calls = []; window.__keepFns = { findPlayersNamed, addPlayerToClub, addExistingPlayerToClub, fetchClubDetail, client: supabaseClient };
+      findPlayersNamed = async () => [{ id: "x1", name: "Kasun Perera", origin_club: "Club2", on_roster: false, city: "Kandy" }];
+      addPlayerToClub = async (c, n, ex) => { __calls.push(["new", n, !!(ex && ex.someoneNew)]); return { ok: true, id: "x9", created: true }; };
+      addExistingPlayerToClub = async (c, id, n) => { __calls.push(["existing", id, n]); return { ok: true }; };
+      fetchClubDetail = async () => {};
+      ui = defaultUi(); ui.currentClubId = "c1"; ui.club = { id: "c1", name: "KICC", roster: [{ id: "d1", name: "Dilshan" }], matches: [], presets: { match: [], tournament: [] } };`);
+    const clubAdd = name => {
+      const f = doc.createElement("form");
+      f.innerHTML = `<input name="name" value="${name}"><button type="submit">Add</button>`;
+      win.handleClubAddPlayerSubmit({ preventDefault(){}, target: f });
+    };
+    clubAdd("Kasun Perera"); await tick(); await tick();
+    assert(/Which Kasun Perera\?/.test(confirm().textContent) && /Added by Club2/.test(confirm().textContent) && /Kandy/.test(confirm().textContent),
+      "club add: the platform's Kasun Perera is shown with what tells him apart (the club that added him, his city)");
+    pickChoice("x1"); ok(); await tick(); await tick();
+    assert(JSON.stringify(win.__calls) === JSON.stringify([["existing", "x1", "Kasun Perera"]]), "'same player': that player joins the roster as they are -- nobody new is made");
+    clubAdd("Kasun Perera"); await tick(); await tick();
+    pickChoice("__new"); ok(); await tick(); await tick();
+    assert(JSON.stringify(win.__calls[1]) === JSON.stringify(["new", "Kasun Perera", true]), "'someone new': a new player with the same name (add_player_to_club _new)");
+
+    // A club match: a typed name the roster doesn't have, but the platform does, asks too -- and the match records who it was.
+    win.eval(`supabaseClient = {}; ui.club.roster = [{ id: "d1", name: "Dilshan" }, { id: "p1", name: "Pathum" }];
+      state.match = createMatch({ teamA: "Reds", teamB: "Blues", oversLimit: 5, playersPerSide: 6, battingFirst: "A" }); state.match.clubId = "c1"; state.match.matchType = "practice";
+      state.snapshots = []; openInnings(currentInnings(state.match), "Dilshan", "Pathum", "Bowler B"); state.match.status = "live";
+      recordBall(currentInnings(state.match), { kind: "wicket", wicketType: "bowled" }); afterBall(state.match); render();`);
+    const bf = doc.getElementById("new-batsman-form");
+    win.submitNewBatsman("Kasun Perera", bf); await tick(); await tick();
+    assert(/Which Kasun Perera\?/.test(confirm().textContent) && /For Reds/.test(confirm().textContent), "a club match: typing a name the platform has asks which player it is");
+    pickChoice("x1"); ok(); await tick();
+    const li = currentInnings(win.state.match);
+    assert(li.striker === "Kasun Perera" && win.state.match.playerIds["Kasun Perera"] === "x1" && win.eval(`ui.club.roster.some(p => p.id === "x1")`),
+      "picked: he comes in, the match records his id, and he joins the club's roster");
+    win.eval(`({ findPlayersNamed, addPlayerToClub, addExistingPlayerToClub, fetchClubDetail } = window.__keepFns); supabaseClient = window.__keepFns.client;
+      state.match = null; state.snapshots = []; ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
   console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }

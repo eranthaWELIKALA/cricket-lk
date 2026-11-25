@@ -116,9 +116,9 @@ function coalesceOp(queue, op){
     if (pendingNew) return queue.filter(o => !(o.kind === saveKind && o.args.id === a.id && !o.failed));
     queue = queue.filter(o => !(o.kind === saveKind && o.args.id === a.id && !o.failed));
   }
-  if (op.kind === "roster.add" || op.kind === "global.add"){
+  if ((op.kind === "roster.add" || op.kind === "global.add") && !a.someoneNew){
     const key = (a.name || "").trim().toLowerCase();
-    if (queue.some(o => same(o) && o.args.clubId === a.clubId && (o.args.name || "").trim().toLowerCase() === key)) return queue;
+    if (queue.some(o => same(o) && !o.args.someoneNew && o.args.clubId === a.clubId && (o.args.name || "").trim().toLowerCase() === key)) return queue;
   }
   // A match edited after it was archived: the newest copy replaces the queued one.
   if (op.kind === "match"){
@@ -145,7 +145,7 @@ function overlayClubData(club, ops){
       ["match", "tournament", "points"].forEach(k => { c.presets[k] = (c.presets[k] || []).filter(p => p.id !== a.id); });
     } else if (o.kind === "roster.add"){
       const key = a.name.trim().toLowerCase();
-      if (!c.roster.some(p => p.name && p.name.toLowerCase() === key)){
+      if (a.someoneNew ? !c.roster.some(p => p.id && p.id === a.tempId) : !c.roster.some(p => p.name && p.name.toLowerCase() === key)){
         const d = a.details || {};
         c.roster.push({ id: a.tempId || null, name: a.name.trim(), nickname: d.nickname || null, jersey_no: parseJerseyNo(d.jersey_no), pending: true });
       }
@@ -428,7 +428,7 @@ const OP_HANDLERS = {
     return { error };
   },
   "roster.add": async a => {
-    const { data, error } = await supabaseClient.rpc("add_player_to_club", { _club_id: a.clubId, _name: a.name.trim() });
+    const { data, error } = await supabaseClient.rpc("add_player_to_club", Object.assign({ _club_id: a.clubId, _name: a.name.trim() }, a.someoneNew ? { _new: true } : {}));
     if (error) return { error: cloudSqlMissing(error, "supabase/005_add_player_to_club.sql") ? { message: cloudSqlMissing(error, "supabase/005_add_player_to_club.sql"), code: error.code } : error };
     // Before 009 the RPC returned a bare uuid (and the caller always owned the row).
     const id = data && typeof data === "object" ? data.id : data;
@@ -455,7 +455,7 @@ const OP_HANDLERS = {
     return data && data.length ? {} : (a.mustExist ? { error: "Couldn't remove this player — only this club's admins can." } : {});
   },
   "global.add": async a => {
-    let { data, error } = await supabaseClient.rpc("ensure_global_player", { _name: a.name.trim(), _club_id: a.clubId || null });
+    let { data, error } = await supabaseClient.rpc("ensure_global_player", Object.assign({ _name: a.name.trim(), _club_id: a.clubId || null }, a.someoneNew ? { _new: true } : {}));
     if (error && error.code === "PGRST202") ({ data, error } = await supabaseClient.rpc("ensure_global_player", { _name: a.name.trim() }));
     // The visitor's platform id (a uuid; older servers may return nothing).
     const id = data && typeof data === "object" ? data.id : data;
@@ -993,13 +993,15 @@ async function addPlayerToClub(clubId, name, extras){
     return { error: "Contact number and NIC need an internet connection. Clear them to add the player offline, and fill them in later from the profile." };
   }
   const tempId = TEMP_ID_PREFIX + newUuid();
+  const someoneNew = !!(extras && extras.someoneNew);
   const args = { clubId, name: trimmed, tempId, details: extras && extras.details ? extras.details : null };
+  if (someoneNew) args.someoneNew = true;   // a different person with a name that's taken (supabase/025)
   if (phone || nic) Object.assign(args, { phone: phone || "", nic: nic || "" });
   const res = await submitCloudOp("roster.add", args);
   if (res.error) return { error: res.error };
   if (res.queued){
-    // Already queued for this name? Reuse that op's temp id.
-    const prev = outbox.find(o => o.kind === "roster.add" && !o.failed && o.args.clubId === clubId && o.args.name.toLowerCase() === trimmed.toLowerCase());
+    // Already queued for this name? Reuse that op's temp id (never for someone new: that's another person).
+    const prev = someoneNew ? null : outbox.find(o => o.kind === "roster.add" && !o.failed && !o.args.someoneNew && o.args.clubId === clubId && o.args.name.toLowerCase() === trimmed.toLowerCase());
     return { ok: true, queued: true, id: prev ? prev.args.tempId : tempId };
   }
   if (res.partial) return { error: res.partial, id: res.id, created: res.created };
@@ -1155,14 +1157,28 @@ async function updatePlayerProfile(playerId, phone, nic){
 /* A friendly's visitor on the platform (ensure_global_player). Returns
    { ok, id }: their platform id, or a temp id while it's queued offline
    (remapTempId swaps it once the add syncs), or no id from an older server. */
-async function addGlobalPlayer(name, clubId){
+/* "Is this him?" (supabase/025): everyone on the platform a name could be --
+   that name or a former one -- with public details, the club that first
+   added them, and (for a member of `clubId`) whether they're on its roster.
+   null when it can't be asked: offline, signed out of the cloud, or 025 not
+   run yet -- the add then reuses an existing player of that name, as before. */
+async function findPlayersNamed(name, clubId){
+  const trimmed = (name || "").trim();
+  if (!trimmed || !supabaseClient || needsInternet()) return null;
+  try {
+    const { data, error } = await supabaseClient.rpc("find_players_named", { _name: trimmed, _club_id: clubId || null });
+    return error ? null : (data || []);
+  } catch (_){ return null; }
+}
+async function addGlobalPlayer(name, clubId, opts){
   const trimmed = (name || "").trim();
   if (!trimmed) return;
   const tempId = TEMP_ID_PREFIX + newUuid();
-  const res = await submitCloudOp("global.add", { name: trimmed, clubId: clubId || null, tempId });
+  const someoneNew = !!(opts && opts.someoneNew);
+  const res = await submitCloudOp("global.add", Object.assign({ name: trimmed, clubId: clubId || null, tempId }, someoneNew ? { someoneNew: true } : {}));
   if (res.error) return { error: res.error };
   if (res.queued){
-    const prev = outbox.find(o => o.kind === "global.add" && !o.failed && (o.args.clubId || null) === (clubId || null) && o.args.name.toLowerCase() === trimmed.toLowerCase());
+    const prev = someoneNew ? null : outbox.find(o => o.kind === "global.add" && !o.failed && !o.args.someoneNew && (o.args.clubId || null) === (clubId || null) && o.args.name.toLowerCase() === trimmed.toLowerCase());
     return { ok: true, queued: true, id: prev && prev.args.tempId ? prev.args.tempId : tempId };
   }
   return { ok: true, id: res.id || null };
