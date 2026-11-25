@@ -15,8 +15,9 @@ function createInnings(battingTeam, bowlingTeam, target, playersPerSide, oversLi
     // means the side can't be bowled out, null oversLimit means no overs
     // cap (the innings then ends on all out, the target, or endInnings()).
     // Last man stands: the side is only all out once every batter is out,
-    // and the last one bats alone (see battingAlone()).
-    lastManStands: !!cfg.lastManStands && playersPerSide != null,
+    // and the last one bats alone (see battingAlone()). With no players
+    // limit it waits for the scorer to say nobody's left (batAlone).
+    lastManStands: !!cfg.lastManStands,
     maxWickets: playersPerSide == null ? null : (cfg.lastManStands ? playersPerSide : playersPerSide - 1),
     runs: 0, wickets: 0, legalBalls: 0,
     extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0 },
@@ -297,7 +298,8 @@ function wicketTypesFor(freeHit, extra){
    batter ({t:"bat", name}) and bowler ({t:"bowl", name}), a strike swap by
    hand ({t:"swap"}), a batter retiring ({t:"retire", name, reason}; coming
    back is a "bat"), the last batter going on alone ({t:"alone"}, see
-   batAlone), closing the innings ({t:"end"}) and a score typed in
+   batAlone), the side all out with nobody left ({t:"allout"}, see
+   declareAllOut), closing the innings ({t:"end"}) and a score typed in
    part way ({t:"score"} set by hand, {t:"catchup"} caught up; see
    setScoreStep). `inn.logBase` is the innings as it was before the first
    logged action: a fresh innings, or wherever an older match left it (balls
@@ -360,6 +362,81 @@ function batAlone(inn){
   logAction(inn, { t: "alone" });
   inn.maxWickets = inn.wickets + 1;
   if (!inn.striker){ inn.striker = inn.nonStriker; inn.nonStriker = null; }
+  return true;
+}
+
+/* The same, put right later: instead of going on alone, the scorer sent in a
+   placeholder partner ("Bat ?1", or a "no names" match's "Batter N") and kept
+   swapping the strike by hand. batAloneInstead turns that placeholder's
+   {t:"bat"} into {t:"alone"} and replays the innings, so the batter at the
+   other end has batted alone since then: every ball the placeholder faced is
+   theirs, the swaps by hand drop out (there's nobody to swap with) and the
+   next wicket ends the innings. Only for the innings being scored, and only
+   while that partnership is unbroken (balls, swaps and new bowlers since,
+   nothing else). Returns { match, survivor, notes } (a copy) or { error }. */
+function batAloneInsteadAt(inn, name){
+  for (let j = inn.log.length - 1; j >= 0; j--){
+    const a = inn.log[j];
+    if (a.t === "bat" && a.name === name) return j;
+    if (a.t !== "ball" && a.t !== "swap" && a.t !== "bowl") return -1;
+  }
+  return -1;
+}
+function batAloneInsteadError(match, name){
+  const inn = match && match.status === "live" ? currentInnings(match) : null;
+  if (!inn || !inn.log || inn.complete) return "Only while the innings is being scored.";
+  if (!inn.lastManStands) return "This match isn't last man stands.";
+  if (!isUnnamedPlayer(name) && !match.anonymous) return `${name} is a named player: change the player instead.`;
+  const end = inn.striker === name ? "striker" : inn.nonStriker === name ? "nonStriker" : null;
+  if (!end) return `${name} isn't batting now.`;
+  const survivor = inn[end === "striker" ? "nonStriker" : "striker"];
+  if (!survivor) return `${name} is batting alone already.`;
+  if (batAloneInsteadAt(inn, name) < 0) return `${survivor} hasn't batted with ${name} all along since ${name} came in.`;
+  return null;
+}
+// The placeholder partner that batAloneInstead could take out now, or null.
+function batAloneInsteadName(match){
+  const inn = match && match.status === "live" ? currentInnings(match) : null;
+  if (!inn || !inn.lastManStands) return null;
+  return [inn.nonStriker, inn.striker].find(n => n && !batAloneInsteadError(match, n)) || null;
+}
+function batAloneInstead(match, name){
+  const err = batAloneInsteadError(match, name);
+  if (err) return { error: err };
+  const m = JSON.parse(JSON.stringify(match));
+  const idx = m.innings.length - 1, inn = m.innings[idx];
+  const survivor = inn.striker === name ? inn.nonStriker : inn.striker;
+  const k = batAloneInsteadAt(inn, name);
+  const s = inn.batting.stats[name];
+  const res = replayInnings(inn, inn.log.map((a, j) => j === k ? { t: "alone" } : a), { batters: [], bowlers: [] }, !!m.anonymous);
+  if (res.error) return { error: res.error };
+  if (res.need || res.inn.batting.stats[name] || !(battingAlone(res.inn) || res.inn.complete)) return { error: "The innings can't be worked out that way." };
+  m.innings[idx] = res.inn;
+  settleMatchStatus(m);
+  const notes = res.notes.slice();
+  if (s.balls || s.runs) notes.unshift(`${name}'s ${s.runs} (${s.balls}) now count for ${survivor}.`);
+  return { match: m, survivor, notes };
+}
+
+/* The same short side without last man stands: a wicket falls and that was
+   the last man, so the side is all out now instead of being asked for another
+   batter. maxWickets becomes the wickets so far (what it was is kept in
+   `inn.allOutByHand`, so reopenInnings can put it back) and the innings ends
+   "allout": the scorecard, the result, NRR's full quota and the records treat
+   it like any other all out. Logged ({t:"allout"}), so a ball edit replays it
+   -- and pulls it forward, like a "bat alone", when a wicket now falls earlier
+   and nobody else was entered to come in. With last man stands the batter
+   still in carries on alone instead (batAlone). */
+function canDeclareAllOut(inn){
+  return !!(inn && !inn.lastManStands && !inn.complete && inn.wickets > 0 && pendingBatsmanSlot(inn));
+}
+function declareAllOut(inn){
+  if (!canDeclareAllOut(inn)) return false;
+  logAction(inn, { t: "allout" });
+  inn.allOutByHand = { maxWickets: inn.maxWickets };
+  inn.maxWickets = inn.wickets;
+  inn.complete = true;
+  inn.completeReason = "allout";
   return true;
 }
 
@@ -500,11 +577,12 @@ function replayInnings(inn, actions, supply, anonymous){
   };
   // Fill the empty slots from what was entered (in order). `now`: a ball is
   // about to be bowled, so a later entry or a supplied name may be used.
-  // A later "nobody left: bat alone" (batAlone), pulled forward when a
-  // wicket now falls earlier and nobody else was entered to come in.
-  const aloneAhead = i => {
+  // A later "nobody left: bat alone" (batAlone) or "all out" (declareAllOut),
+  // pulled forward when a wicket now falls earlier and nobody else was
+  // entered to come in.
+  const stepAhead = (i, t) => {
     for (let j = i + 1; j < actions.length && !isScoreStep(actions[j]); j++){
-      if (!used.has(j) && actions[j].t === "alone"){ used.add(j); return true; }
+      if (!used.has(j) && actions[j].t === t){ used.add(j); return true; }
     }
     return false;
   };
@@ -512,10 +590,13 @@ function replayInnings(inn, actions, supply, anonymous){
     let slot;
     while ((slot = pendingBatsmanSlot(r))){
       let name = batQ.length ? batQ.shift() : null;
+      // ("no names" batters are made up as they're needed, so a "bat alone"
+      // entry -- batAloneInstead -- stays where it was, never pulled forward)
       if (!name && now && anonymous) name = `Batter ${r.batting.order.length + 1}`;
       else if (!name && now){
         name = ahead(i, "bat");
-        if (!name && canBatAlone(r) && aloneAhead(i)){ batAlone(r); continue; }
+        if (!name && canBatAlone(r) && stepAhead(i, "alone")){ batAlone(r); continue; }
+        if (!name && canDeclareAllOut(r) && stepAhead(i, "allout")){ declareAllOut(r); break; }
         if (!name) name = supply.batters.shift() || null;
       }
       if (!name) break;
@@ -570,9 +651,13 @@ function replayInnings(inn, actions, supply, anonymous){
         notes.push(`${a.name} isn't batting by ball ${nextBallLabel(r)} any more, so they no longer retire ${a.reason === "notout" ? "not out" : "hurt"} there. Check it.`);
       }
     } else if (a.t === "alone"){
-      if (anonymous || r.complete) continue;
+      if (r.complete) continue;
       const res = fill(i, false); if (res) return res;
       if (!batAlone(r) && r.striker && r.nonStriker) notes.push(`From ball ${nextBallLabel(r)} nobody bats alone any more: there are two batters in. Check it.`);
+    } else if (a.t === "allout"){
+      if (r.complete) continue;
+      const res = fill(i, false); if (res) return res;
+      if (!declareAllOut(r)) notes.push(`The innings isn't all out at ${r.runs}-${r.wickets} any more${r.striker && r.nonStriker ? ": there are two batters in" : ""}. Check it.`);
     } else if (a.t === "bowl"){
       if (anonymous || r.complete) continue;
       bowlQ.push(a.name);
@@ -584,6 +669,7 @@ function replayInnings(inn, actions, supply, anonymous){
     } else if (a.t === "ball"){
       if (r.complete){ droppedBalls++; continue; }
       const res = fill(i, true); if (res) return res;
+      if (r.complete){ droppedBalls++; continue; }   // all out, pulled forward
       if (pendingBatsmanSlot(r)){
         const fow = r.fallOfWickets[r.fallOfWickets.length - 1];
         return stop(i, { kind: "batter", label: nextBallLabel(r), out: fow ? fow.batsman : null });
@@ -858,7 +944,8 @@ function rebuildInningsFromScorecard(match, idx){
   const r = createInnings(inn.battingTeam, inn.bowlingTeam, inn.target, match.playersPerSide, inn.oversLimit, {
     ballsPerOver: inn.ballsPerOver, wideRuns: inn.wideBaseRuns, noBallRuns: inn.noBallBaseRuns,
     freeHitOnNoBall: inn.freeHitOnNoBall, lastManStands: inn.lastManStands });
-  r.maxWickets = inn.maxWickets; r.lastManStands = inn.lastManStands;
+  // (all out by hand: the side's size before it, declared again at the end)
+  r.maxWickets = inn.allOutByHand ? inn.allOutByHand.maxWickets : inn.maxWickets; r.lastManStands = inn.lastManStands;
   const first = events[0].batter;
   if (order.length < 2 || (first !== order[0] && first !== order[1]) || !overs[0].bowler) return null;
   openInnings(r, first, first === order[0] ? order[1] : order[0], overs[0].bowler);
@@ -943,6 +1030,7 @@ function rebuildInningsFromScorecard(match, idx){
   // a batter who came in after the last ball, before the score was set
   if (g0) sendIn(r);
   tail.forEach(o => setScoreStep(r, { runs: o.gap.toRuns, wickets: o.gap.toWickets, balls: o.gap.toBalls }));
+  if (inn.allOutByHand && !r.complete && !declareAllOut(r)) return null;
   if (inn.completeReason === "closed" && !r.complete){
     sendIn(r);
     logAction(r, { t: "end" }); r.complete = true; r.completeReason = "closed";
@@ -963,13 +1051,16 @@ function rebuildInningsFromScorecard(match, idx){
    set by hand ends that way too), so it's the one that can be taken back: the
    innings goes back to live from where it stopped, its `end` dropped from the
    log. A later innings is cleared -- it was played against a total that isn't
-   final any more. An innings that ended on its own (all out, overs, target)
-   needs a ball edited instead. Returns { match, notes } (a copy) or { error }. */
+   final any more. All out by hand (declareAllOut: nobody left to bat) is taken
+   back the same way, the side's size put back. An innings that ended on its
+   own (all out, overs, target) needs a ball edited instead. Returns
+   { match, notes } (a copy) or { error }. */
 function reopenInningsError(match, idx){
   const inn = match && match.innings[idx];
   if (!inn || match.resultOnly) return "This innings can't be reopened.";
   if (match.forfeited) return "This match was forfeited: take the forfeit back first.";
   if (!inn.complete) return "This innings isn't over.";
+  if (inn.completeReason === "allout" && inn.allOutByHand) return null;
   const why = { allout: "they were all out", overs: "the overs ran out", target: "the target was reached" }[inn.completeReason];
   if (why) return `${possessive(teamName(match, inn.battingTeam))} innings ended because ${why}. To change that, edit a ball.`;
   return null;
@@ -985,7 +1076,8 @@ function reopenInnings(match, idx){
     m.innings.length = idx + 1;
   }
   const inn = m.innings[idx];
-  if (inn.log && inn.log.length && inn.log[inn.log.length - 1].t === "end") inn.log.pop();
+  if (inn.log && inn.log.length && ["end", "allout"].includes(inn.log[inn.log.length - 1].t)) inn.log.pop();
+  if (inn.allOutByHand){ inn.maxWickets = inn.allOutByHand.maxWickets; delete inn.allOutByHand; }
   inn.complete = false; inn.completeReason = null;
   checkInningsComplete(inn);
   if (inn.complete) return { error: reopenInningsError(m, idx) };
@@ -1171,7 +1263,7 @@ function setScoresByHand(match, scores){
   return { match: m, notes };
 }
 
-function createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst, ballsPerOver, wideRuns, noBallRuns, wideEnabled, noBallEnabled, freeHitOnNoBall, lastManStands, requireFielderOnCatch, requireFielderOnRunout, presetId, presetName, tournamentId, tossWinner, superOver }){
+function createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst, ballsPerOver, wideRuns, noBallRuns, wideEnabled, noBallEnabled, freeHitOnNoBall, lastManStands, requireFielderOnCatch, requireFielderOnRunout, presetId, presetName, tournamentId, tossWinner, superOver, freshBowlersFirst }){
   // null/undefined overs or players = no limit (see createInnings).
   oversLimit = oversLimit || null;
   playersPerSide = playersPerSide || null;
@@ -1180,7 +1272,7 @@ function createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst, b
     wideRuns: wideRuns != null ? wideRuns : 1,
     noBallRuns: noBallRuns != null ? noBallRuns : 1,
     freeHitOnNoBall: freeHitOnNoBall !== false,
-    lastManStands: !!lastManStands && playersPerSide != null
+    lastManStands: !!lastManStands
   };
   return {
     teamA, teamB, oversLimit, playersPerSide, battingFirst,
@@ -1191,6 +1283,9 @@ function createMatch({ teamA, teamB, oversLimit, playersPerSide, battingFirst, b
     freeHitOnNoBall: cfg.freeHitOnNoBall,
     requireFielderOnCatch: !!requireFielderOnCatch,
     requireFielderOnRunout: !!requireFielderOnRunout,
+    // The new-bowler sheet lists players yet to bowl before those who have
+    // (display only, from the match preset; renderNewBowlerModal).
+    freshBowlersFirst: !!freshBowlersFirst,
     // A tie goes to a super over (see "super over" below): Result leads with it.
     superOver: !!superOver,
     presetId: presetId || null,
@@ -1298,7 +1393,7 @@ function conditionTagsFor(c){
     c.oversLimit != null ? `${c.oversLimit} over${c.oversLimit === 1 ? "" : "s"}` : "no over limit",
     `${c.ballsPerOver}-ball`,
     c.playersPerSide != null ? `${c.playersPerSide} a side` : "any number a side",
-    c.lastManStands && c.playersPerSide != null ? "last man stands" : null,
+    c.lastManStands ? "last man stands" : null,
     c.superOver ? "super over" : null
   ].filter(Boolean);
 }
@@ -1308,7 +1403,7 @@ function describeMatchPreset(p){
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const wide = p.wide || {}, noBall = p.noBall || {};
   const players = p.playersPerSide == null
-    ? "Any number. A side can't be bowled out."
+    ? (p.lastManStands ? "Any number. Last man stands: once nobody's left to come in, the last batter bats alone and their wicket ends the innings." : "Any number. A side can't be bowled out.")
     : `${p.playersPerSide} a side. All out at ${p.lastManStands ? p.playersPerSide : p.playersPerSide - 1} wickets${p.lastManStands ? " (last man stands: the last batter bats alone)" : ""}.`;
   const rows = [
     ["Overs", p.oversLimit == null ? "No limit. The scorer ends the innings by hand." : `${plural(p.oversLimit, "over")} per innings.`],
@@ -1319,6 +1414,7 @@ function describeMatchPreset(p){
   ];
   const fielder = [p.requireFielderOnCatch && "catches", p.requireFielderOnRunout && "run-outs"].filter(Boolean);
   if (fielder.length) rows.push(["Fielder", `Must be named for ${fielder.join(" and ")}.`]);
+  rows.push(["New bowler", p.freshBowlersFirst ? "Players yet to bowl are listed first." : "Players who've bowled are listed first."]);
   rows.push(["If tied", p.superOver ? `A super over decides it: ${plural(SUPER_OVER_OVERS, "over")} and ${SUPER_OVER_PLAYERS - 1} wickets a side.` : "It stays a tie."]);
   return rows;
 }
@@ -1692,7 +1788,7 @@ function restartMatch(match, battingFirst){
     freeHitOnNoBall: match.freeHitOnNoBall, lastManStands: match.lastManStands,
     requireFielderOnCatch: match.requireFielderOnCatch, requireFielderOnRunout: match.requireFielderOnRunout,
     presetId: match.presetId, presetName: match.presetName, tournamentId: match.tournamentId,
-    tossWinner: match.tossWinner, superOver: match.superOver
+    tossWinner: match.tossWinner, superOver: match.superOver, freshBowlersFirst: match.freshBowlersFirst
   });
   MATCH_CARRY_FIELDS.forEach(k => { if (match[k] !== undefined) fresh[k] = JSON.parse(JSON.stringify(match[k])); });
   return fresh;
@@ -1781,7 +1877,8 @@ function createSuperOver(parent, parentId){
     ballsPerOver: parent.ballsPerOver, wideRuns: i1.wideBaseRuns, noBallRuns: i1.noBallBaseRuns,
     wideEnabled: parent.wideEnabled, noBallEnabled: parent.noBallEnabled, freeHitOnNoBall: parent.freeHitOnNoBall,
     requireFielderOnCatch: parent.requireFielderOnCatch, requireFielderOnRunout: parent.requireFielderOnRunout,
-    presetId: parent.presetId, presetName: parent.presetName, tournamentId: parent.tournamentId
+    presetId: parent.presetId, presetName: parent.presetName, tournamentId: parent.tournamentId,
+    freshBowlersFirst: parent.freshBowlersFirst
   });
   ["clubId", "matchType", "guestNames", "visitingSides", "opponentName", "anonymous"].forEach(k => {
     if (parent[k] !== undefined) so[k] = JSON.parse(JSON.stringify(parent[k]));

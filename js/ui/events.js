@@ -89,6 +89,8 @@ document.addEventListener("click", (e) => {
   else if (action === "opening-use") useOpeningTyped();
   else if (action === "pick-fielder") pickFielder(btn.dataset.name);
   else if (action === "bat-alone") handleBatAlone();
+  else if (action === "all-out") handleAllOut();
+  else if (action === "bat-alone-instead") askBatAloneInstead(btn.dataset.name);
   else if (action === "name-later-pick") saveNameLater(btn.dataset.name, btn.closest(".modal").querySelector("form"));
   else if (action === "close-name-later") closeNameLater();
   else if (action === "combo-pick"){

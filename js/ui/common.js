@@ -146,6 +146,32 @@ function pickPool(teamKey){
   if (m && m.squads && (m.squads[teamKey] || []).length) return m.squads[teamKey];
   return suggestionPlayerNames();
 }
+/* With a squad, everyone else on the list it was picked from (the club roster,
+   or the guest players) who isn't in either squad: a late arrival, a sub,
+   someone left off the team list. The pick sheets list them in a section of
+   their own under the squad (othersSectionLabel), so nobody is missing from
+   the rows just because the squad didn't have them -- they used to be
+   reachable only by typing the exact name. Without a squad, pickPool is that
+   whole list already, so this is empty. pickCandidates still drops anyone
+   playing for the other side. */
+function pickPoolOthers(teamKey){
+  const m = state.match;
+  if (!m || !m.squads || !(m.squads[teamKey] || []).length) return [];
+  const inSquads = new Set([...(m.squads.A || []), ...(m.squads.B || [])].map(n => n.toLowerCase()));
+  return suggestionPlayerNames().filter(n => !inSquads.has(n.toLowerCase()));
+}
+function othersSectionLabel(teamKey){
+  const m = state.match;
+  return m && isVisitingSide(m, teamKey) ? "Lend a club player" : m && m.clubId ? "Other club players" : "Other players";
+}
+// Both, in one list: for the search-select boxes (renderNameCombo), which have no sections.
+function pickPoolAll(teamKey){ return [...pickPool(teamKey), ...pickPoolOthers(teamKey)]; }
+// A side's one-tap rows: its own list, then (with a squad) everyone else.
+function renderPickRowsAll(label, teamKey, role, action, inn, keep){
+  const m = state.match, ok = keep || (() => true);
+  return renderPickRows(label, pickCandidates(m, pickPool(teamKey), role, inn).filter(ok), action)
+    + renderPickRows(othersSectionLabel(teamKey), pickCandidates(m, pickPoolOthers(teamKey), role, inn).filter(ok), action);
+}
 /* A visiting side whose list is only the club roster (no squad of its own):
    its rows read "Lend a club player", and a typed visitor's name is never
    questioned as "not on the list" (confirmUnlisted). */

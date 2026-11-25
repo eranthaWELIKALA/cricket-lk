@@ -22,10 +22,12 @@ function openingState(match){
   return ui.opening && ui.opening.key === key ? ui.opening : { key, striker: "", nonStriker: "", bowler: "", slot: "striker" };
 }
 // The players a slot can take: its side, minus anyone in the other two slots.
-function openingChoices(match, o, slot){
+// `others`: the rest of the roster / guest list (pickPoolOthers), not the squad.
+function openingChoices(match, o, slot, others){
   const inn = currentInnings(match);
   const taken = OPENING_SLOTS.filter(([k]) => k !== slot).map(([k]) => (o[k] || "").toLowerCase()).filter(Boolean);
-  return pickCandidates(match, pickPool(slot === "bowler" ? inn.bowlingTeam : inn.battingTeam), slot === "bowler" ? "bowler" : "batter")
+  const team = slot === "bowler" ? inn.bowlingTeam : inn.battingTeam;
+  return pickCandidates(match, others ? pickPoolOthers(team) : pickPool(team), slot === "bowler" ? "bowler" : "batter")
     .filter(n => !taken.includes(n.toLowerCase()));
 }
 function setOpeningPick(name){
@@ -65,6 +67,8 @@ function renderOpeningModal(match){
   const ready = OPENING_SLOTS.every(([k]) => o[k]);
   const sideName = escapeHtml(teamName(match, slot === "bowler" ? inn.bowlingTeam : inn.battingTeam));
   const names = slot ? openingChoices(match, o, slot) : [];
+  const others = slot ? openingChoices(match, o, slot, true) : [];
+  const rows = list => `<div class="bowler-pick-list">${list.map(n => pickRowHtml(n, "opening-pick", null, (o[slot] || "").toLowerCase() === n.toLowerCase())).join("")}</div>`;
   const tile = ([k, label]) => `
     <button type="button" data-action="opening-slot" data-slot="${k}" class="end-tile opening-slot${slot === k ? " active" : ""}${o[k] ? " filled" : ""}" aria-pressed="${slot === k}">
       <span class="role">${label}</span><span class="n">${o[k] ? escapeHtml(o[k]) : slot === k ? "Pick below ↓" : "Tap to pick"}</span>
@@ -85,9 +89,8 @@ function renderOpeningModal(match){
             <div class="opening-list">
               <div class="section-label">${slot === "bowler" ? "Who bowls the first over?" : slot === "striker" ? "Who's on strike?" : "Who's at the other end?"} · ${sideName}</div>
               ${renderPickSearch("Use", "opening-use")}
-              ${names.length
-                ? `<div class="bowler-pick-list">${names.map(n => pickRowHtml(n, "opening-pick", null, (o[slot] || "").toLowerCase() === n.toLowerCase())).join("")}</div>`
-                : o[slot] ? "" : `<p class="hint">No players listed: type a name above.</p>`}
+              ${names.length ? rows(names) : others.length || o[slot] ? "" : `<p class="hint">No players listed: type a name above.</p>`}
+              ${others.length ? `<div class="section-label">${othersSectionLabel(slot === "bowler" ? inn.bowlingTeam : inn.battingTeam)}</div>${rows(others)}` : ""}
             </div>` : ""}
           ${match.innings.length === 1 ? `<button type="button" data-action="swap-toss" class="link-btn">Wrong toss? ${escapeHtml(teamName(match, inn.bowlingTeam))} bats first instead</button>` : ""}
           <button type="button" data-action="open-catch-up" class="link-btn">Already under way? Enter the score so far</button>
@@ -263,6 +266,8 @@ function renderMatchMenuModal(match){
         ? `Toss got reversed? Restarts from ball one with ${escapeHtml(teamName(match, otherFirst))} batting`
         : `Nothing bowled yet: ${escapeHtml(teamName(match, otherFirst))} bats first instead`)}
       ${match.status === "live" && canSwapStrike(cur) ? row("swap-strike", "⇅", "Swap strike", `Put ${escapeHtml(liveName(cur.nonStriker))} on strike instead of ${escapeHtml(liveName(cur.striker))}`) : ""}
+      ${(n => n ? row("bat-alone-instead", "1", `${escapeHtml(liveName(n === cur.striker ? cur.nonStriker : cur.striker))} bats alone`,
+        `Nobody else was left? ${escapeHtml(n)} comes off: last man stands`, `data-name="${escapeHtml(n)}"`) : "")(batAloneInsteadName(match))}
       ${retireAllowed(match) ? row("open-retire", "🩹", "Retire a batter", "Retired hurt (or retired not out): not a wicket, and they can bat again later") : ""}
       ${match.innings.some(i => i.log && i.log.some(x => x.t === "ball")) ? row("open-edit-balls", "✎", "Edit an earlier ball", "Wrong runs, a missed wide or wicket? Fix it from ball by ball") : ""}
       ${canReplacePick(match) && match.innings.some((i, idx) => { const p = replaceablePlayers(match, idx); return p.batters.length || p.bowlers.length; })
@@ -482,16 +487,25 @@ function renderNewBatsmanModal(inn, slot){
   // Retired batters who can come back in now, and whether anyone else is left to bat.
   const comeBack = retiredBatters(inn, true);
   const yetToBat = pickCandidates(m, pickPool(inn.battingTeam), "batter");
-  // With a squad, "nobody left" is known: everyone in it has batted.
-  const squad = m.squads && (m.squads[inn.battingTeam] || []).length && !lendOnlySide(m, inn.battingTeam);
-  const noneLeft = !!squad && !yetToBat.length && !comeBack.length;
+  // Nobody left to pick: the side had a list (its squad, else the club roster
+  // or guest players) and everyone on it has batted. (A friendly's visitors'
+  // list is only club players to lend, so it says nothing about who's left.)
+  const listed = pickPool(inn.battingTeam).length && !lendOnlySide(m, inn.battingTeam);
+  const noneLeft = !!listed && !yetToBat.length && !comeBack.length;
   const allBatted = noneLeft || (m.playersPerSide != null && inn.batting.order.length >= m.playersPerSide && retiredBatters(inn).length > 0);
-  // Last man stands: the batter still in can carry on alone (batAlone).
+  // That was the last man. Last man stands: the batter still in carries on
+  // alone (batAlone); otherwise the side is all out (declareAllOut). Under the
+  // list, or first and primary on the sheet once nobody is left to pick.
   const survivor = canBatAlone(inn) ? inn.striker || inn.nonStriker : null;
-  const aloneBtn = (primary) => survivor ? `
+  const allOut = canDeclareAllOut(inn);
+  const lastManBtn = primary => survivor ? `
     <button type="button" data-action="bat-alone" class="${primary ? "primary" : "ghost"} bat-alone-btn">
-      <span class="main">Nobody else to bat · ${escapeHtml(liveName(survivor))} bats on alone</span>
-      <span class="sub">Last man stands · the next wicket ends the innings</span>
+      <span class="main">${escapeHtml(liveName(survivor))} bats alone</span>
+      <span class="sub">No one else to bat</span>
+    </button>` : allOut ? `
+    <button type="button" data-action="all-out" class="${primary ? "primary" : "ghost"} bat-alone-btn">
+      <span class="main">All out</span>
+      <span class="sub">No one else to bat</span>
     </button>` : "";
   return `
     <div class="modal-backdrop with-score">
@@ -512,7 +526,7 @@ function renderNewBatsmanModal(inn, slot){
             <span class="n detail">${escapeHtml(dismissed.howOut || "")} · ${dismissed.runs} (${dismissed.balls})</span>
           </div>
         ` : ""}
-        ${noneLeft && survivor ? aloneBtn(true) : ""}
+        ${noneLeft ? lastManBtn(true) : ""}
         <form id="new-batsman-form">
           <div class="form-error"></div>
           ${renderUnnamedButton("batter")}
@@ -521,13 +535,14 @@ function renderNewBatsmanModal(inn, slot){
             <div class="section-label">Retired · can bat again</div>
             <div class="bowler-pick-list">${comeBack.map(n => { const s = inn.batting.stats[n]; return pickRowHtml(n, "pick-batter", `${s.runs} (${s.balls})`); }).join("")}</div>
           ` : ""}
-          ${allBatted && !survivor ? `<p class="hint">Everyone else has batted.</p>` : ""}
+          ${allBatted && !survivor && !(noneLeft && allOut) ? `<p class="hint">Everyone else has batted.</p>` : ""}
           ${renderPickRows(lendOnlySide(state.match, inn.battingTeam) ? "Lend a club player" : state.match.squads ? "Yet to bat" : "Players", yetToBat, "pick-batter")}
-          ${noneLeft && survivor ? "" : aloneBtn(false)}
+          ${renderPickRows(othersSectionLabel(inn.battingTeam), pickCandidates(m, pickPoolOthers(inn.battingTeam), "batter"), "pick-batter")}
+          ${noneLeft ? "" : lastManBtn(false)}
         </form>
         <div class="sheet-actions">
           <button type="button" data-action="undo" class="undo-chip" ${state.snapshots.length ? "" : "disabled"}>${retiring ? "UNDO RETIRE" : "UNDO BALL"}</button>
-          ${renderEndInningsButton(state.match, inn, "bar", allBatted && !survivor)}
+          ${renderEndInningsButton(state.match, inn, "bar", allBatted && !survivor && !allOut)}
           ${renderPickLaterButton(true)}
         </div>
       </div>
@@ -544,6 +559,34 @@ function handleBatAlone(){
   batAlone(inn);
   ui.pickDismissed = null;
   save(); render();
+}
+
+/* That was the last man: nobody else bats, the side is all out now
+   (declareAllOut). Asks first, since it ends the innings (in a chase, the
+   match); the innings break / Result can reopen it, and Undo takes it back. */
+function handleAllOut(){
+  const m = state.match;
+  const inn = m && m.status === "live" ? currentInnings(m) : null;
+  if (!inn || !canDeclareAllOut(inn)) return;
+  const bat = teamName(m, inn.battingTeam), bowl = teamName(m, inn.bowlingTeam);
+  const chase = m.innings.length === 2;
+  const p = JSON.parse(JSON.stringify(m));
+  declareAllOut(currentInnings(p)); afterBall(p);
+  askConfirm({
+    title: `${bat} all out?`, icon: "☝️",
+    body: `<p>Nobody else bats: ${escapeHtml(bat)} are all out for <b class="n">${inn.runs}</b> (${inn.wickets} wicket${inn.wickets === 1 ? "" : "s"}, ${oversDisplay(inn.legalBalls, inn.ballsPerOver)} ov).</p>
+      <p>${chase ? escapeHtml(p.result || "") : `${escapeHtml(bowl)} will need <b class="n">${inn.runs + 1}</b> to win.`}</p>`,
+    confirmLabel: chase ? "All out · end match" : "All out",
+    onConfirm: () => {
+      const live = state.match && state.match.status === "live" ? currentInnings(state.match) : null;
+      if (!live || !canDeclareAllOut(live)) return;
+      pushSnapshot();
+      declareAllOut(live); afterBall(state.match);
+      ui.pickDismissed = null;
+      maybeArchiveCompletedMatch(state.match);
+      save();
+    }
+  });
 }
 
 function handleNewBatsmanSubmit(e){
@@ -600,19 +643,9 @@ function renderNewBowlerModal(inn){
   const overNumber = Math.floor(inn.legalBalls / bpo) + 1;
   // Each unnamed over has its own placeholder -- they're never offered again.
   const pickable = inn.bowling.order.filter(name => name !== inn.lastOverBowler && !isUnnamedPlayer(name));
-  return `
-    <div class="modal-backdrop with-score">
-      ${renderSheetScore(state.match, inn)}
-      <div class="modal" data-keep-scroll="new-bowler">
-        <div class="wicket-modal-head">
-          <h2>New bowler</h2>
-          <span class="n batter">${overNumber}${ordinalSuffix(overNumber)} over · ${bpo} balls</span>
-        </div>
-        <form id="new-bowler-form">
-          <div class="form-error"></div>
-          ${renderUnnamedButton("bowler")}
-          ${renderPickSearch("Bowl")}
-          ${pickable.length || inn.lastOverBowler ? `
+  // Both groups are always listed; the match preset says which comes first
+  // (freshBowlersFirst: those yet to bowl).
+  const bowled = pickable.length || inn.lastOverBowler ? `
             <div class="section-label">Already bowled</div>
             <div class="bowler-pick-list">
               ${pickable.map(name => {
@@ -625,9 +658,21 @@ function renderNewBowlerModal(inn){
                   <span class="reason">bowled the ${overNumber - 1}${ordinalSuffix(overNumber - 1)}</span>
                 </div>
               ` : ""}
-            </div>
-          ` : ""}
-          ${renderPickRows(lendOnlySide(state.match, inn.bowlingTeam) ? "Lend a club player" : "Yet to bowl", pickCandidates(state.match, pickPool(inn.bowlingTeam), "bowler"), "pick-bowler")}
+            </div>` : "";
+  const fresh = renderPickRowsAll(lendOnlySide(state.match, inn.bowlingTeam) ? "Lend a club player" : "Yet to bowl", inn.bowlingTeam, "bowler", "pick-bowler");
+  return `
+    <div class="modal-backdrop with-score">
+      ${renderSheetScore(state.match, inn)}
+      <div class="modal" data-keep-scroll="new-bowler">
+        <div class="wicket-modal-head">
+          <h2>New bowler</h2>
+          <span class="n batter">${overNumber}${ordinalSuffix(overNumber)} over · ${bpo} balls</span>
+        </div>
+        <form id="new-bowler-form">
+          <div class="form-error"></div>
+          ${renderUnnamedButton("bowler")}
+          ${renderPickSearch("Bowl")}
+          ${state.match.freshBowlersFirst ? fresh + bowled : bowled + fresh}
         </form>
         <div class="sheet-actions">
           <button type="button" data-action="undo" class="undo-chip" ${state.snapshots.length ? "" : "disabled"}>UNDO BALL</button>
@@ -896,6 +941,7 @@ function resetWicketUi(){
    empty): the submit handler checks the preset's rule. */
 function renderFielderPicker(match, inn, { isCaught, isStumped, required }){
   const names = pickCandidates(match, pickPool(inn.bowlingTeam), "fielder");
+  const others = pickCandidates(match, pickPoolOthers(inn.bowlingTeam), "fielder");   // a sub fielder, say
   const picked = ui.wicketFielder || "";
   return `
     <div class="fielder-box">
@@ -905,10 +951,11 @@ function renderFielderPicker(match, inn, { isCaught, isStumped, required }){
         ${picked ? `<span class="fielder-picked">${escapeHtml(liveName(picked))}</span>` : ""}
       </div>
       <div class="pick-search fielder-search">
-        <input id="wicket-fielder" name="fielder" maxlength="24" placeholder="${names.length ? "Search, or type a name" : "Type a name"}" data-pick-filter data-fielder-search autocomplete="off" autocapitalize="words" enterkeyhint="done">
+        <input id="wicket-fielder" name="fielder" maxlength="24" placeholder="${names.length || others.length ? "Search, or type a name" : "Type a name"}" data-pick-filter data-fielder-search autocomplete="off" autocapitalize="words" enterkeyhint="done">
       </div>
       <p class="hint pick-none" hidden>No match: Confirm uses this name.</p>
       ${names.length ? `<div class="bowler-pick-list fielder-list">${names.map(n => pickRowHtml(n, "pick-fielder", null, n === picked, "bowler-pick-row fielder-row")).join("")}</div>` : ""}
+      ${others.length ? `<div class="section-label">${othersSectionLabel(inn.bowlingTeam)}</div><div class="bowler-pick-list fielder-list">${others.map(n => pickRowHtml(n, "pick-fielder", null, n === picked, "bowler-pick-row fielder-row")).join("")}</div>` : ""}
     </div>`;
 }
 function pickFielder(name){

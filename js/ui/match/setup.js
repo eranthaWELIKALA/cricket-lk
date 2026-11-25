@@ -83,6 +83,10 @@ function renderMatchSetup(){
           <label class="check-row"><input type="checkbox" name="requireFielderOnCatch" ${preset.requireFielderOnCatch ? "checked" : ""}> Require a catch taker</label>
           <label class="check-row"><input type="checkbox" name="requireFielderOnRunout" ${preset.requireFielderOnRunout ? "checked" : ""}> Require a run-out taker</label>
         </fieldset>
+        <fieldset>
+          <legend>New bowler</legend>
+          <label class="check-row"><input type="checkbox" name="freshBowlersFirst" ${preset.freshBowlersFirst ? "checked" : ""}> List players yet to bowl first</label>
+        </fieldset>
         <h3 class="section-label">Who won the toss? <span class="muted">(optional)</span></h3>
         <fieldset class="tile-fieldset">
           <legend>Who won the toss?</legend>
@@ -148,7 +152,8 @@ function handleMatchSetupSubmit(e){
     presetId: preset ? preset.id : null, presetName: preset ? preset.name : null,
     tournamentId: inTournament ? ui.currentTournamentId : null,
     tossWinner: f.get("tossWinner"),
-    superOver: f.get("superOver") === "on"
+    superOver: f.get("superOver") === "on",
+    freshBowlersFirst: f.get("freshBowlersFirst") === "on"
   });
   if (ui.currentClubId && ui.clubMatchSetupType){
     // Extra, UI-only fields on top of the engine's match object (like
