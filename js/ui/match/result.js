@@ -475,7 +475,7 @@ function renderResult(match){
   const allNames = Array.from(matchPlayerNames(match)).filter(n => !isUnnamedPlayer(n));
   const unnamed = ballEditAllowed(match) ? unnamedPlayers(match) : [];
   const motmName = matchMotm(match);
-  const motmTotal = motmName ? aggregatePlayerStats([match], pointsPresetFor(match)).find(t => t.name === motmName) : null;
+  const motmTotal = motmName ? aggregatePlayerStats([match], pointsPresetFor(match)).find(t => t.names.includes(motmName)) : null;
   const detail = renderResultDetail(match);
   const won = !match.forfeited && !match.editingFromHistory && / won (by|the super over)/.test(match.result || "");
   const so = match.superOverOf;
@@ -673,7 +673,7 @@ function renderScorecardCanvas(match, themeKey, logo){
   const th = SHARE_THEMES[themeKey] || SHARE_THEMES.night;
   const when = match.completedAt ? new Date(match.completedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
   const motm = matchMotm(match);
-  const motmTotal = motm ? aggregatePlayerStats([match], pointsPresetFor(match)).find(t => t.name === motm) : null;
+  const motmTotal = motm ? aggregatePlayerStats([match], pointsPresetFor(match)).find(t => t.names.includes(motm)) : null;
   const superOvers = matchTied(match) ? match.superOvers || [] : [];
   return composeShareImage(th, ctx => {
     const X = SHARE_PAD, W = SHARE_W - SHARE_PAD * 2;
@@ -836,7 +836,7 @@ function sharePreviewFile(){
 function sharePreviewText(){
   const sp = ui.sharePreview;
   if (sp.kind === "scorecard"){ const m = sp.match || state.match; return `${m.teamA} v ${m.teamB}: ${m.result || ""}`; }
-  const c = tournamentContext(), s = c && tournamentSummary(c.matches, c.preset);
+  const c = tournamentContext(), s = c && tournamentSummary(c.matches, c.preset, undefined, statsOpts());
   return c ? `${c.name}${s && s.champion ? ` — champions: ${s.champion.name}` : ""}` : "";
 }
 async function shareFromPreview(){

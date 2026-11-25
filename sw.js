@@ -10,6 +10,7 @@ const APP_CODE = [
   "./js/storage.js",
   "./js/cloud.js",
   "./js/ui/state.js",
+  "./js/ui/player-ids.js",
   "./js/ui/common.js",
   "./js/ui/chrome.js",
   "./js/ui/router.js",

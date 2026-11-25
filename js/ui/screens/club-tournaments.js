@@ -146,7 +146,7 @@ function renderClubTournamentDashboard(){
         ${actions(matches.length, true)}` : ""}
       ${tab === "teams" ? renderTournamentTeams(t, canEdit) : ""}
       ${tab === "fixtures" ? `${actions(0, false)}<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches, canEdit && !ended ? "No matches yet — start one above." : "No matches yet.")}` : ""}
-      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, clubPointsPreset(t.organizer_club_id)), { points: clubPointsPreset(t.organizer_club_id), where: "the club's Presets", matches, title: t.name }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
+      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, clubPointsPreset(t.organizer_club_id), statsOpts()), { points: clubPointsPreset(t.organizer_club_id), where: "the club's Presets", matches, title: t.name }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
       ${tab === "me" ? renderMyStatsTab(matches, clubPointsPreset(t.organizer_club_id), t.name) : ""}
     </div>
   `;
@@ -629,7 +629,7 @@ async function setTournamentEnded(c, endedAt){
    without supabase/017) there's no MVP, rather than one counted with points
    the club doesn't use. */
 function tournamentSummaryOf(c){
-  const s = tournamentSummary(c.matches, c.preset, c.pointsPreset);
+  const s = tournamentSummary(c.matches, c.preset, c.pointsPreset, statsOpts());
   if (!c.pointsPreset) s.mvp = null;
   return s;
 }
@@ -836,7 +836,7 @@ function renderPublicTournament(){
         ? `${renderStandingsTable(computeStandings(matches, p), p.useNRR)}<h3 class="section-label">Latest results</h3>${renderFixtureList(latest)}`
         : `<p class="hint">No matches yet.</p>`) : ""}
       ${tab === "fixtures" ? `<h3 class="section-label">Completed matches</h3>${renderFixtureList(matches)}` : ""}
-      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, pt.points), { points: pt.points, matches, title: pt.name }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
+      ${tab === "stats" ? (matches.length ? renderLeaderboards(aggregatePlayerStats(matches, pt.points, statsOpts()), { points: pt.points, matches, title: pt.name }) : `<p class="hint">Stats appear once a match is finished.</p>`) : ""}
       ${tab === "me" ? renderMyStatsTab(matches, pt.points, pt.name) : ""}
       <p class="hint public-note">${pt.refreshError ? escapeHtml(pt.refreshError) : `Read only · updated ${escapeHtml(updated)}`}</p>
     </div>`;

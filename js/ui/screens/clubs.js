@@ -294,7 +294,9 @@ function renderPlayerProfile(){
   // -- before 019 -- only the clubs the viewer belongs to.
   const everyClub = pr.clubScope === "all";
   const clubLabel = isClub ? (currentClubName() || "club") : everyClub ? "all clubs" : "your clubs";
-  const names = [pr.name, ...(pr.aliases || [])];
+  // This player: matches that recorded their id, and (matches from before ids)
+  // their name or a former one, unless another player there has it too.
+  const names = statsWho(pr.id, [pr.name, ...(pr.aliases || [])]);
   const premierMatches = ui.premier ? ui.premier.premierMatches.map(m => m.data).filter(Boolean) : [];
   const clubBlock = statsBlock(
     `Club matches · ${escapeHtml(clubLabel)}`, playerCareer(names, clubMatches, isClub ? clubPointsPreset(ui.currentClubId) : null),
@@ -433,9 +435,9 @@ function matchDateText(m){
    and Premier matches), newest first, each with the player's own line --
    tap one for its scorecard. View only: a scorecard opened from a profile
    never offers Edit match (renderMatchDetailModal). */
-function renderProfileMatches(pr, names, clubMatches, premierMatches){
+function renderProfileMatches(pr, who, clubMatches, premierMatches){
   if (clubMatches === undefined || !ui.premier) return loadingHtml();
-  const lines = playerMatchLines(names, [...clubMatches, ...premierMatches]);
+  const lines = playerMatchLines(who, [...clubMatches, ...premierMatches]);
   if (!lines.length) return `<p class="hint">No matches for this player yet.</p>`;
   const clubName = m => (pr.clubNames && pr.clubNames[m.id])
     || (m.clubId && ((ui.myClubs || []).find(c => c.id === m.clubId) || {}).name) || "";
@@ -629,7 +631,7 @@ function renderClubStats(){
     const points = clubPointsPreset(club.id);
     // The full match list lives here (Home shows the latest 3).
     return matches.length
-      ? renderLeaderboards(aggregatePlayerStats(matches, points), { points, where: "the club's Presets", matches, title: club.name || currentClubName() })
+      ? renderLeaderboards(aggregatePlayerStats(matches, points, statsOpts()), { points, where: "the club's Presets", matches, title: club.name || currentClubName() })
         + renderRecentMatches("Matches", recentMatchesFor(matches, matches.length))
       : `<p class="hint">Play and finish a club match to see stats here.</p>`;
   });

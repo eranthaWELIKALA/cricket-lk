@@ -353,7 +353,10 @@ const OP_HANDLERS = {
     const { error } = await supabaseClient.from("matches").upsert({
       id: a.id, club_id: a.clubId, match_type: a.matchType || "practice", level: "local",
       opponent_name: a.opponentName || null, tournament_id: a.tournamentId || null,
-      created_by: op.userId, data: a.data, played_at: a.playedAt
+      // A temp id still here (its add failed) never reaches the cloud: that name
+      // counts by name until the database links it.
+      created_by: op.userId, data: a.data && a.data.playerIds ? Object.assign({}, a.data, { playerIds: withoutTempIds(a.data.playerIds) }) : a.data,
+      played_at: a.playedAt
     });
     return { error };
   },
@@ -452,16 +455,18 @@ const OP_HANDLERS = {
     return data && data.length ? {} : (a.mustExist ? { error: "Couldn't remove this player — only this club's admins can." } : {});
   },
   "global.add": async a => {
-    let { error } = await supabaseClient.rpc("ensure_global_player", { _name: a.name.trim(), _club_id: a.clubId || null });
-    if (error && error.code === "PGRST202") ({ error } = await supabaseClient.rpc("ensure_global_player", { _name: a.name.trim() }));
-    return { error };
+    let { data, error } = await supabaseClient.rpc("ensure_global_player", { _name: a.name.trim(), _club_id: a.clubId || null });
+    if (error && error.code === "PGRST202") ({ data, error } = await supabaseClient.rpc("ensure_global_player", { _name: a.name.trim() }));
+    // The visitor's platform id (a uuid; older servers may return nothing).
+    const id = data && typeof data === "object" ? data.id : data;
+    return error ? { error } : { id: typeof id === "string" ? id : null };
   }
 };
 /* A roster add that was queued offline got a temp id; once the server hands
    back the real one, rewrite every reference (later queued ops, caches,
    the open team editor) so nothing ever stores the temp id in the cloud. */
 function afterOpSucceeded(op, res){
-  if (op.kind === "roster.add" && op.args.tempId && res.id) remapTempId(op.args.tempId, res.id);
+  if ((op.kind === "roster.add" || op.kind === "global.add") && op.args.tempId && res.id) remapTempId(op.args.tempId, res.id);
 }
 function remapTempId(from, to){
   // In place (not a new array): syncNow may be part-way through the queue.
@@ -470,6 +475,13 @@ function remapTempId(from, to){
   if (ui.club) ui.club = replaceIdDeep(ui.club, from, to);
   if (ui.clubTournament) ui.clubTournament = replaceIdDeep(ui.clubTournament, from, to);
   if (ui.tournamentTeamEdit) ui.tournamentTeamEdit = replaceIdDeep(ui.tournamentTeamEdit, from, to);
+  // Matches on this device that recorded the player under the temp id (match.playerIds).
+  if (typeof state !== "undefined" && state){
+    if (state.match) state.match = replaceIdDeep(state.match, from, to);
+    if (state.snapshots) state.snapshots = state.snapshots.map(snap => replaceIdDeep(snap, from, to));
+    if (state.matchHistory) state.matchHistory = replaceIdDeep(state.matchHistory, from, to);
+    if (typeof save === "function") save();
+  }
 }
 
 /* Replay this user's queue in order. Stops at the first network failure (it
@@ -1140,11 +1152,20 @@ async function updatePlayerProfile(playerId, phone, nic){
    visitors, who aren't on the home club's roster. The club is passed so a
    brand-new visitor is attributed to the club that first recorded them (and
    that club can edit the profile until the player claims it). */
+/* A friendly's visitor on the platform (ensure_global_player). Returns
+   { ok, id }: their platform id, or a temp id while it's queued offline
+   (remapTempId swaps it once the add syncs), or no id from an older server. */
 async function addGlobalPlayer(name, clubId){
   const trimmed = (name || "").trim();
   if (!trimmed) return;
-  const res = await submitCloudOp("global.add", { name: trimmed, clubId: clubId || null });
-  return res.error ? { error: res.error } : { ok: true };
+  const tempId = TEMP_ID_PREFIX + newUuid();
+  const res = await submitCloudOp("global.add", { name: trimmed, clubId: clubId || null, tempId });
+  if (res.error) return { error: res.error };
+  if (res.queued){
+    const prev = outbox.find(o => o.kind === "global.add" && !o.failed && (o.args.clubId || null) === (clubId || null) && o.args.name.toLowerCase() === trimmed.toLowerCase());
+    return { ok: true, queued: true, id: prev && prev.args.tempId ? prev.args.tempId : tempId };
+  }
+  return { ok: true, id: res.id || null };
 }
 
 /* The few cloud actions that can't work offline (they need the server to

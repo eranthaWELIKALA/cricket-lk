@@ -26,6 +26,7 @@ of `index.html`:
 | `js/storage.js` | 3. STORAGE — `DB` |
 | `js/cloud.js` | 4. CLOUD — Supabase, auth, outbox sync, read cache, cloud RPCs |
 | `js/ui/state.js` | `state`/`ui`, `load`/`save`/migration/purges, guest data helpers |
+| `js/ui/player-ids.js` | who a scorecard name is on this device: `statsOpts`, `statsWho`, `playerNameForId`, `setMatchPlayerId` (see "Player ids") |
 | `js/ui/common.js` | `escapeHtml`, theme, `SFX`, name search-selects, back bar |
 | `js/ui/chrome.js` | top bar, loading indicators, shared confirmation sheet |
 | `js/ui/router.js` | page navigation (routes, history, back interception, unsaved-input checks) |
@@ -629,6 +630,54 @@ Not covered: the saved Teams screen (`state.teams[x].playerIds`) still
 lets one player sit on two saved teams, and `#players-datalist` still
 suggests everyone regardless of side — the check fires on submit, not while
 typing.
+
+## Player ids: who a scorecard name is
+
+**A player is their id; a name is only a label inside one match.** Inside a
+match the engine still keys everything by name (innings stats, the log,
+scorecards, howOut text) — a label is unique within its match
+(`playerSideConflict`), so nothing there changed. What's new is
+`match.playerIds`: `{ [label]: id }` — a club roster / platform player's uuid,
+this device's guest-list id (`state.players`), or `"guest:<name>"` for a
+club tournament's visitors (`guestPlayerKey`). It's filled by
+`registerMatchPlayer` (state.js), the one function every name entered in a
+match goes through: guest → `findOrCreatePlayer(name).id`; club → the roster
+entry's id, or the id `addPlayerToClub` / `addGlobalPlayer` (a friendly's
+visitors; `global.add` now returns ensure_global_player's uuid) hands back —
+a `tmp:` id while queued offline, swapped everywhere by `remapTempId`
+(which now also rewrites `state.match`, the snapshots and `matchHistory`).
+`withoutTempIds` keeps a temp id out of the cloud (the `match` op strips it at
+upload time, not when queued, so a swap can still fill it in). `playerIds` is in
+`MATCH_CARRY_FIELDS` and copied into a super over.
+
+**Every figure across matches groups by `playerKey(match, label, resolve)`**
+(ENGINE): the stored id, else `resolve` (UI: `playerIdLookup` in
+`js/ui/player-ids.js` — a guest match's name is the one guest player with that
+name on this phone; a club match's the one roster player of that club loaded or
+cached here; a tournament visitor's `guest:` key), else `nameKey(label)`
+(`"name:<lowercase>"`), so a match from before ids still counts, by name,
+exactly as it did. `aggregatePlayerStats(matches, preset, { keyOf, nameOf,
+link })` returns totals with `key`, `names` (every label folded in) and `name`
+(`nameOf(key)` — `playerNameForId`, the current name — else the latest
+label). **Old and new add up**: `linkedKeyOf(matches, keyOf)` joins an
+unlinked label to the one id that label's name is linked to in the same set
+of matches; with two ids sharing the name it stays on its own `name:` line (it
+can't be known which it was) — so two Kasun Pereras never add up, and a
+player's old matches join their new ones. **One player** (a profile, a player's
+sheet, My stats) is `playerWho(id, names, keyOf)` (UI: `statsWho`):
+`playerTestFor` counts labels linked to that id, and unlinked ones by name (the
+name + aliases) unless another id in those matches has the name.
+`playerCareer` / `playerMatchLines` take it (or, as before, a name or names);
+`playerRanks` takes a key or a test on a total; `computeRecords` and
+`tournamentSummary` take `{ keyOf, nameOf }`. Every UI call passes
+`statsOpts()`. A match with two of a player's names counts once now (it used to
+count twice). Leaderboard rows carry `data-key`; `openPlayerStats(key)`;
+"You" is `isMyTotal` (the claimed id, or a `name:` line with one of their
+names). `test.js` proves the regrouping: with no ids every figure is what it
+was, and with ids each total is exactly the sum of the per-name figures
+counted into it. Still to come (supabase/025+): "Is this him?" when a typed
+name matches existing players, a backfill + trigger storing ids in the cloud's
+old matches, and profiles / player_matches by id.
 
 ## Stats & MVP
 
@@ -2157,8 +2206,8 @@ Labels/validation
 and tested.
 
 Stats come from
-`playerCareer(nameOrNames, matches)`, matched by **name** (matches store names,
-not ids; pass `[name, ...aliases]` and it folds every spelling — see merging), and **every profile shows two separate tiers — "Club matches" and
+`playerCareer(statsWho(id, [name, ...aliases]), matches)` — by the player's
+id, and matches from before ids by name and alias (see "Player ids"), and **every profile shows two separate tiers — "Club matches" and
 "Premier matches" — never a combined total**, whichever screen opened it (the
 order flips: club-opened shows club first). **Inside each tier, batting,
 bowling and fielding are separate sections** (a small "matches / MVP pts" line
@@ -2180,8 +2229,9 @@ searches the public match data by name + aliases server-side, so it works for
 anyone, signed out too, and never reads `club_rosters` (rosters stay
 members-only). Before 019 is run (or on an error) it falls back to the
 *viewer's own clubs'* matches (`fetchViewerClubMatches`, `clubScope = "mine"`,
-"your clubs"). Like every name-based stat, two different people with the same
-name are counted together there. Economy uses 6-ball overs (like the
+"your clubs"). 019 still finds matches by name; the profile then keeps
+only the ones whose label is this player (`playerTestFor`), so a same-named
+player's matches it returns aren't counted. Economy uses 6-ball overs (like the
 leaderboards).
 
 **Matches tab** (`renderProfileMatches`, clubs.js): the same club + Premier
@@ -2362,9 +2412,10 @@ snapshots in `tournament_teams`, and writes `player_rename` to
 `admin_audit_log`. Client: `normalizePlayerName`/`playerNameError` (pure,
 tested, 1–24 chars), `renamePlayer`, `applyPlayerRename`; the rename runs
 before the other saves in `handlePlayerProfileSubmit`. Online-only, like the
-other profile edits. Known limits: leaderboards still list old and new names
-separately (same as merges), and a match in progress keeps the name it
-started with.
+other profile edits. Matches keep the name they were scored with; with player
+ids (above) the leaderboards show them as one player under the current name
+wherever the match has the id (or can be linked to it). A match in progress
+keeps the name it started with.
 
 ## Club tournament teams (`supabase/012_tournament_teams.sql`)
 
@@ -2491,9 +2542,9 @@ merge by name-folding: the profile loads `player_aliases` and passes
 `[name, ...aliases]` to `playerCareer` (`mergeCareers` sums counts, keeps the
 best single innings/figures and re-derives averages from the combined totals).
 `add_player_to_club` resolves a typed old name through the alias table to the
-survivor. **Known limits:** the leaderboards (`aggregatePlayerStats`) still list
-names separately — only profiles fold aliases; and a match where *both* names
-appeared would count that match twice in the "matches" tally. `merge_requests.
+survivor. Leaderboards fold a merged name in wherever the match has (or links
+to) the survivor's id; an unlinked old spelling still shows on its own line. A
+match with both names counts once. `merge_requests.
 from_player_id` deliberately has no FK (the row is deleted on approval); the
 `into_player_id` FK cascades.
 

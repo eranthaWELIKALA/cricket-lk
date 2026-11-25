@@ -208,7 +208,7 @@ document.addEventListener("click", (e) => {
     // A club has no dashboard of its own: it's Home, acting as that club.
     state.activeClubId = btn.dataset.id; state.view = "home"; save(); render(); // render() loads it
   }
-  else if (action === "open-player-stats") openPlayerStats(btn.dataset.name);
+  else if (action === "open-player-stats") openPlayerStats(btn.dataset.key, null, btn.dataset.name);
   else if (action === "close-player-stats") closePlayerStats();
   // "My profile" on the player stats sheet or a tournament's My stats tab:
   // the full profile, its back bar returning to the screen it came from.

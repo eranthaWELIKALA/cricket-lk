@@ -582,7 +582,7 @@ function renderTournamentFixtures(matches, teams){
 
 function renderTournamentStats(matches, title){
   const points = guestPointsPreset();
-  const totals = aggregatePlayerStats(matches, points);
+  const totals = aggregatePlayerStats(matches, points, statsOpts());
   if (!totals.length) return `<p class="hint">No stats yet.</p>`;
   const mvp = totals[0].points > 0 ? totals[0] : null;
   return `
