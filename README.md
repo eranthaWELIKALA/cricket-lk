@@ -52,7 +52,8 @@ final result. Beyond a single match, it also supports:
   innings, at the break) and declare the other team the winner. Counts
   toward tournament standings (points, and net run rate for the runs and
   overs played up to the forfeit) and archived stats. Ending an innings
-  with overs and wickets still left asks whether a team forfeited. A
+  with overs and wickets still left in the chase asks whether a team
+  forfeited (ending the first innings just ends it). A
   forfeited match can still be edited (balls, names, the score at the
   forfeit), and **Change the forfeit** on its Result takes it back (the
   match carries on from where it stopped) or names the other side.

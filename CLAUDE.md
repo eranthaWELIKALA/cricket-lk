@@ -264,7 +264,7 @@ always wins and ends the match immediately, even mid-over.
 Every change to an innings goes through a logging engine function, so it can
 be replayed: `openInnings` (openers), `recordBall` (each ball, given a `seq`
 id that its over event also carries), `sendInBatter` (fills whichever slot
-`pendingBatsmanSlot` says), `setBowler`, `batAlone` (last man stands, a short side), `swapStrikeByHand` (the live board's
+`pendingBatsmanSlot` says), `setBowler`, `batAlone` (last man stands, a short side), `declareAllOut` (a short side, the last man out), `swapStrikeByHand` (the live board's
 ⇅ Swap / Match options → Swap strike) and `endInnings`. They append to
 `inn.log` via `logAction`, which on its first call stores `inn.logBase` (the
 innings before that action: a fresh innings, or wherever an older match left
@@ -378,10 +378,11 @@ swap went. A typed bowler is registered on save (`registerMatchPlayer`).
 
 **Reopening an innings & Undo after it ends.** An innings ended by hand
 (`completeReason: "closed"` — End innings, the pick sheets' button, finish
-match, a score set by hand) can be taken back: `reopenInnings(match, idx)`
+match, a score set by hand) or all out by hand (`declareAllOut`, its
+`maxWickets` put back) can be taken back: `reopenInnings(match, idx)`
 (ENGINE, tested; `reopenInningsError` says why not — an innings that was all
 out / out of overs / reached the target needs a ball edited) drops the log's
-`end`, sets it live again from where it stopped and **clears any later
+`end` / `allout`, sets it live again from where it stopped and **clears any later
 innings** (the chase was played against a total that isn't final). Offered as
 `reopen-innings` (`askReopenInnings`, snapshotted) in ⋯ Match options, on the
 innings break and on Result (`renderGoBackRow`, which also shows Undo —
@@ -529,8 +530,19 @@ nobody left to bat, otherwise a ghost button under the list. `replayInnings`
 replays it, and pulls it forward (like a `bat` entry) when an edit makes a
 wicket fall earlier and no batter was entered to come in; `logBase` keeps the
 preset's `maxWickets`. `scoreByHandError` reads each innings' own
-`maxWickets`. Without last man stands, a squad with nobody left just shows End
-innings on that sheet. `matchResult`
+`maxWickets`. **Without last man stands, the last man out ends it**:
+`declareAllOut(inn)` (ENGINE, tested; `canDeclareAllOut`: no last man stands,
+a wicket down, a batter slot waiting) is a logged `{t:"allout"}` that sets
+`maxWickets` to the wickets so far (the old value kept in `inn.allOutByHand`)
+and ends the innings `completeReason: "allout"`, so the scorecard, result,
+NRR's full quota and records treat it as any all out. The new-batsman sheet
+offers it as **All out** in its button bar (`handleAllOut`, sheets.js: asks
+first, with the target or the result, then `afterBall`), or as a primary
+**Nobody else to bat · all out** on top when the squad has nobody left (that
+used to show End innings). `replayInnings` replays it and pulls it forward
+like an `alone` (`stepAhead`); an edit that leaves two batters in drops it
+with a "Check it." note. It can be reopened (below) and is rebuilt from the
+scorecard (`rebuildInningsFromScorecard` reads `allOutByHand`). `matchResult`
 omits the wickets margin with no players limit and "overs left" with no
 overs limit.
 
@@ -685,16 +697,16 @@ so it can interrupt any of them at any time. Two consequences worth remembering 
   to bat adds nothing. If you change how standings fold in normal
   matches, check the forfeited branch still makes sense alongside it.
 
-**End innings asks whether a team forfeited** when the innings is cut short
+**Ending the chase asks whether a team forfeited** when it's cut short
 (`inningsCutShort(inn)`, ENGINE, tested: an overs limit, overs and wickets
 left). `handleEndInnings`' confirmation then has three required `choices`:
-**No forfeit** (sub: the target, or in the chase the result the scores give,
-worked out on a copy) → `endInnings` as before; **{batting side} forfeited**
-/ **{bowling side} forfeited** → `forfeitMatch`, the same as ⋯ → Forfeit
-(Result's Undo forfeit walks it back). The button reads End innings / End
-match to match the pick (`confirmLabel` as a function of the choice). With
-no overs limit it only confirms: ending by hand is how such an innings
-normally ends.
+**No forfeit** (sub: the result the scores give, worked out on a copy) →
+`endInnings` as before; **{batting side} forfeited** / **{bowling side}
+forfeited** → `forfeitMatch`, the same as ⋯ → Forfeit (Result's Undo forfeit
+walks it back); the button reads End match. **The first innings never asks**
+(on request): ending it just confirms and goes to the innings break, as it
+always did; a forfeit then is ⋯ → Forfeit. With no overs limit the chase
+only confirms too: ending by hand is how such an innings normally ends.
 
 `askForfeit()` passes the two teams as the confirmation's `choices`, so
 picking a team and confirming are deliberately two separate taps rather

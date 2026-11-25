@@ -131,7 +131,7 @@ function renderExtraRunsModal(inn){
 
 /* Asks first: closing the 1st innings lands on the innings break and closing
    the 2nd ends the match. Either can be taken back (Reopen innings, Undo).
-   Cut short with overs and wickets left (inningsCutShort), it also asks
+   A chase cut short with overs and wickets left (inningsCutShort) also asks
    whether a team forfeited: "No forfeit" ends the innings as above, a team
    ends the match as a forfeit (forfeitMatch, like ⋯ → Forfeit). */
 function handleEndInnings(){
@@ -147,7 +147,8 @@ function handleEndInnings(){
   const endLabel = last ? "End match" : "End innings";
   const finish = apply => { pushSnapshot(); apply(); maybeArchiveCompletedMatch(state.match); save(); };
   const title = last ? "End the match now?" : "End this innings?";
-  if (!inningsCutShort(inn)){
+  // The first innings just ends, as it always did: only a chase cut short asks about a forfeit.
+  if (!last || !inningsCutShort(inn)){
     askConfirm({
       title, icon: "⏹",
       body: `<p>${escapeHtml(bat)} finish on <b class="n">${score}</b>. ${last
@@ -161,8 +162,8 @@ function handleEndInnings(){
   const ballsLeft = inn.oversLimit * inn.ballsPerOver - inn.legalBalls;
   const wktsLeft = inn.maxWickets != null ? inn.maxWickets - inn.wickets : null;
   const left = `${oversDisplay(ballsLeft, inn.ballsPerOver)} overs${wktsLeft != null ? ` and ${wktsLeft} wicket${wktsLeft === 1 ? "" : "s"}` : ""} left`;
-  let ifNot = `${bowl} need ${inn.runs + 1} to win`;
-  if (last){ const p = JSON.parse(JSON.stringify(m)); endInnings(p); ifNot = p.result; }
+  const p = JSON.parse(JSON.stringify(m)); endInnings(p);
+  const ifNot = p.result;   // what the scores give if nobody forfeited
   askConfirm({
     title, icon: "⏹",
     body: `<p>${escapeHtml(bat)} stop at <b class="n">${score}</b>, with ${left}.</p><p><b>Did a team forfeit?</b></p>`,
@@ -171,7 +172,7 @@ function handleEndInnings(){
       { value: inn.battingTeam, label: `${bat} forfeited`, sub: `${bowl} win` },
       { value: inn.bowlingTeam, label: `${bowl} forfeited`, sub: `${bat} win` }
     ],
-    confirmLabel: choice => choice && choice !== "end" ? "End match" : endLabel,
+    confirmLabel: endLabel,
     onConfirm: choice => finish(() => choice === "end" ? endInnings(state.match) : forfeitMatch(state.match, choice))
   });
 }
