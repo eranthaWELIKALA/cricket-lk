@@ -4157,6 +4157,16 @@ async function main(){
       && win.playerCareer(win.eval("playerStatsWho(ui.playerStats)"), [g10, g11]).runs === want.runs, "tapping the second opens that player's own figures");
     win.eval(`ui.playerStats = null; state.players = window.__players; state.matchHistory = window.__history; state.view = "home"; save(); render();`);
 
+    // Two Ravis on the list, only one of whom played in the linked match: an old unlinked "Ravi" is neither's.
+    win.eval(`window.__players = state.players; state.players = { r1: { id: "r1", name: "Ravi" }, r2: { id: "r2", name: "Ravi" } };`);
+    win.__amb = [quick(["Ravi", "Pathum", "Charith"], ["Babar", "Rizwan"], "Wanindu", "Shaheen", { Ravi: "r2" }, 40),
+      quick(["Ravi", "Dasun", "Charith"], ["Babar", "Rizwan"], "Wanindu", "Shaheen", null, 41)];
+    const ravis = JSON.parse(win.eval(`JSON.stringify(aggregatePlayerStats(window.__amb, null, statsOpts()).filter(t => t.names.includes("Ravi")).map(t => [t.key, t.matches]).sort())`));
+    assert(JSON.stringify(ravis) === JSON.stringify([["name:ravi", 1], ["r2", 1]]) && win.eval(`playerCareer(statsWho("r2", ["Ravi"]), window.__amb).matches`) === 1
+      && win.eval(`playerCareer(statsWho("r1", ["Ravi"]), window.__amb)`) === null,
+      "with two Ravis on the list, an old unlinked Ravi joins neither (it stays on its own line), even when only one of them played elsewhere");
+    win.eval(`state.players = window.__players; delete window.__amb;`);
+
     // Guest matches from before ids get them stored once, on load (only names that are one guest player).
     const old = quick(["Dasun", "Kasun Perera", "Pathum"], ["Babar", "Rizwan"], "Wanindu", "Shaheen", null, 30);
     win.eval(`window.__keep = JSON.stringify(state);`);

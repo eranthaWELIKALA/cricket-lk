@@ -2131,9 +2131,13 @@ function playerKey(match, label, resolve){
    (default: stored ids, then names). An unlinked label ("name:" key) whose
    name was linked to exactly one id somewhere in these matches is that id,
    so a player's old matches and new ones add up; with two ids sharing the
-   name it stays on its own (which of them it was can't be known). */
+   name it stays on its own (which of them it was can't be known) -- and so
+   it does when `keyOf.ambiguous(match, label)` says the name is two players
+   the caller knows of (a roster with two Ravis, only one of whom played
+   here). */
 function linkedKeyOf(matches, keyOf){
   const base = keyOf || ((m, label) => playerKey(m, label));
+  const amb = base.ambiguous || null;
   const idsByName = {};
   matches.forEach(m => {
     if (!m || !Array.isArray(m.innings) || playerStatsExcluded(m)) return;
@@ -2146,11 +2150,12 @@ function linkedKeyOf(matches, keyOf){
   });
   const keyFn = (m, label) => {
     const k = base(m, label);
-    if (!isNameKey(k)) return k;
+    if (!isNameKey(k) || (amb && amb(m, label))) return k;
     const ids = idsByName[k];
     return ids && ids.size === 1 ? [...ids][0] : k;
   };
   keyFn.idsByName = idsByName;   // name key -> the ids it's linked to in these matches
+  keyFn.ambiguous = amb;
   return keyFn;
 }
 /* `who` -- one player, for a profile or a player's sheet: playerWho(id, names,
@@ -2165,16 +2170,17 @@ function playerTest(who){
 /* `who` as a test over `matches`. For playerWho: a label linked to their id
    is them, one linked to another id isn't (even with the same name), and an
    unlinked one is them by name (`names`, as before ids) -- unless another
-   player in these matches has that name too: then which of them it was
-   can't be known, and it's left out of both (it still counts, by name, in
-   the leaderboards). */
+   player in these matches has that name too, or keyOf.ambiguous knows of
+   one: then which of them it was can't be known, and it's left out of both
+   (it still counts, by name, in the leaderboards). */
 function playerTestFor(who, matches){
   if (!who || typeof who !== "object" || Array.isArray(who)) return playerTest(who);
   const linked = linkedKeyOf(matches, who.keyOf);
   const byName = playerTest(who.names);
   return (m, label) => {
     const k = linked(m, label);
-    return isNameKey(k) ? !linked.idsByName[k] && byName(m, label) : !!who.id && k === who.id;
+    if (!isNameKey(k)) return !!who.id && k === who.id;
+    return !linked.idsByName[k] && !(linked.ambiguous && linked.ambiguous(m, label)) && byName(m, label);
   };
 }
 

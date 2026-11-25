@@ -55,7 +55,17 @@ function playerIdLookup(){
     const ids = roster(match.clubId)[k];
     return ids && ids.length === 1 ? ids[0] : null;
   };
-  return { resolve, keyOf: (match, label) => playerKey(match, label, resolve) };
+  const keyOf = (match, label) => playerKey(match, label, resolve);
+  // Two players of that name on the list the match belongs to: an unlinked
+  // label is neither of them (linkedKeyOf / playerTestFor leave it alone).
+  keyOf.ambiguous = (match, label) => {
+    if (!match || label == null) return false;
+    const k = String(label).trim().toLowerCase();
+    if (!match.clubId) return (guests[k] || []).length > 1;
+    if (isGuestInMatch(match, label)) return false;
+    return (roster(match.clubId)[k] || []).length > 1;
+  };
+  return { resolve, keyOf };
 }
 
 // The name to show for an id: this phone's guest list, a roster here, Premier's list, the viewer's own profile.
