@@ -13,29 +13,38 @@ const BOWLING_TYPES = { fast: "Fast", medium: "Medium", "off-spin": "Off spin", 
 
 /* Built-in MVP points presets (calcPlayerPoints; see CLAUDE.md "Stats &
    MVP"). Seeded into a guest's state.pointsPresets on first run; a club with
-   no points presets of its own uses the first one. Milestones and wicket
-   hauls are "highest reached only" (a hundred isn't also a fifty). A rate
-   band is { from, below, pts }: from <= value < below, either end open (null),
-   the first band that fits wins. "Classic" is the formula this app used
-   before points could be set; "Club" weighs runs more for short club games
-   (a wicket is worth about 15 runs, as CricHeroes counts 10-20 over games),
+   no points presets of its own uses the first one. Milestones
+   (`battingMilestones`, runs) and wicket hauls (`wicketHauls`) are lists of
+   { at, pts }, "highest reached only" (a hundred isn't also a fifty); a
+   preset from before the lists has fixed 30/50/100 and 3/4/5-wicket values
+   instead (pointsMilestones reads both). `hatTrick` is per hat-trick, and
+   each wicket in a row after it adds half of it again. A rate band is
+   { from, below, pts }: from <= value < below, either end open (null), the
+   first band that fits wins. "Classic" is the formula this app used before
+   points could be set; "Club" weighs runs more for short club games (a
+   wicket is worth about 15 runs, as CricHeroes counts 10-20 over games),
    and boundaries more still, since most club games are 4-6 overs. */
 const POINTS_ZERO = {
-  perRun: 0, perFour: 0, perSix: 0, thirty: 0, fifty: 0, century: 0, notOut: 0, duck: 0,
-  perWicket: 0, bowledLbw: 0, perMaiden: 0, perDot: 0, threeWickets: 0, fourWickets: 0, fiveWickets: 0,
+  perRun: 0, perFour: 0, perSix: 0, battingMilestones: [], notOut: 0, duck: 0,
+  perWicket: 0, bowledLbw: 0, perMaiden: 0, perDot: 0, hatTrick: 0, wicketHauls: [],
   perCatch: 0, perStumping: 0, perRunOut: 0, economy: null, strikeRate: null
 };
 const DEFAULT_POINTS_PRESETS = [
   Object.assign({}, POINTS_ZERO, { id: "points-club", name: "Club",
-    perRun: 1, perFour: 2, perSix: 4, thirty: 4, fifty: 8, century: 16, notOut: 2,
-    perWicket: 15, perMaiden: 5, perCatch: 5, perStumping: 5, perRunOut: 8 }),
+    perRun: 1, perFour: 2, perSix: 4, notOut: 2,
+    battingMilestones: [{ at: 20, pts: 2 }, { at: 30, pts: 4 }, { at: 50, pts: 8 }, { at: 100, pts: 16 }],
+    perWicket: 15, perMaiden: 10, hatTrick: 20, perCatch: 5, perStumping: 5, perRunOut: 8,
+    economy: { minOvers: 1, bands: [{ from: null, below: 5, pts: 6 }, { from: 5, below: 10, pts: 4 }, { from: 10, below: 15, pts: 2 }] } }),
   Object.assign({}, POINTS_ZERO, { id: "points-classic", name: "Classic",
-    perRun: 1, perFour: 1, perSix: 2, fifty: 8, century: 16, notOut: 4,
+    perRun: 1, perFour: 1, perSix: 2, notOut: 4,
+    battingMilestones: [{ at: 50, pts: 8 }, { at: 100, pts: 16 }],
     perWicket: 25, perMaiden: 8, perCatch: 8, perStumping: 8, perRunOut: 8 }),
   // In the style of the fantasy-cricket apps' T20 scoring.
   Object.assign({}, POINTS_ZERO, { id: "points-fantasy", name: "Fantasy T20",
-    perRun: 1, perFour: 1, perSix: 2, thirty: 4, fifty: 8, century: 16, duck: -2,
-    perWicket: 25, bowledLbw: 8, perMaiden: 12, threeWickets: 4, fourWickets: 8, fiveWickets: 16,
+    perRun: 1, perFour: 1, perSix: 2, duck: -2,
+    battingMilestones: [{ at: 30, pts: 4 }, { at: 50, pts: 8 }, { at: 100, pts: 16 }],
+    perWicket: 25, bowledLbw: 8, perMaiden: 12,
+    wicketHauls: [{ at: 3, pts: 4 }, { at: 4, pts: 8 }, { at: 5, pts: 16 }],
     perCatch: 8, perStumping: 12, perRunOut: 12,
     economy: { minOvers: 2, bands: [
       { from: null, below: 5, pts: 6 }, { from: 5, below: 6, pts: 4 }, { from: 6, below: 7, pts: 2 },
@@ -48,8 +57,8 @@ const DEFAULT_POINTS_PRESETS = [
     perFour: 2.5, perSix: 3.5, perWicket: 3.5, perDot: 1, perCatch: 2.5, perStumping: 2.5, perRunOut: 2.5 })
 ];
 const DEFAULT_POINTS_PRESET_ID = "points-club";
-// Most bands a rate bonus can have (the editor shows this many rows).
-const POINTS_BAND_ROWS = 6;
+// Most rows a milestone list or a rate bonus can have in the editor.
+const POINTS_ROWS_MAX = 8;
 
 const DEFAULT_MATCH_PRESETS = [
   { id: "preset-t20", name: "T20 (6-ball overs)", ballsPerOver: 6, oversLimit: 20, playersPerSide: 11,

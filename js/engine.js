@@ -1439,19 +1439,20 @@ function describePointsPreset(p){
   const v = k => Number(p[k]) || 0;
   const list = items => items.filter(([k]) => v(k)).map(([k, text]) => text(v(k)));
   const each = (n, what) => `${pointsNum(n)} a ${what}`;
-  const tiers = (keys, unit) => {
-    const hit = keys.filter(([k]) => v(k));
-    return hit.length ? [`${hit.map(([k, at]) => `${pointsSigned(v(k))} at ${at}`).join(", ")}${hit.length > 1 ? " (the highest only)" : ""}${unit}`] : [];
+  const tiers = (kind, unit) => {
+    const hit = pointsMilestones(p, kind).filter(t => t.pts);
+    return hit.length ? [`${hit.map(t => `${pointsSigned(t.pts)} at ${t.at}`).join(", ")}${hit.length > 1 ? " (the highest only)" : ""}${unit}`] : [];
   };
   const batting = [
     ...list([["perRun", n => each(n, "run")], ["perFour", n => `${pointsSigned(n)} a four`], ["perSix", n => `${pointsSigned(n)} a six`]]),
-    ...tiers([["thirty", "30"], ["fifty", "50"], ["century", "100"]], " runs"),
+    ...tiers("batting", " runs"),
     ...list([["notOut", n => `${pointsSigned(n)} not out`], ["duck", n => `${pointsSigned(n)} for a duck`]])
   ];
   const bowling = [
     ...list([["perWicket", n => each(n, "wicket")], ["bowledLbw", n => `${pointsSigned(n)} if bowled or lbw`],
-             ["perMaiden", n => each(n, "maiden")], ["perDot", n => each(n, "dot ball")]]),
-    ...tiers([["threeWickets", "3"], ["fourWickets", "4"], ["fiveWickets", "5"]], " wickets")
+             ["perMaiden", n => each(n, "maiden")], ["perDot", n => each(n, "dot ball")],
+             ["hatTrick", n => `${pointsSigned(n)} a hat-trick (${pointsSigned(n / 2)} for each wicket in a row after it)`]]),
+    ...tiers("hauls", " wickets")
   ];
   const fielding = list([["perCatch", n => each(n, "catch")], ["perStumping", n => each(n, "stumping")], ["perRunOut", n => each(n, "run-out")]]);
   const rows = [
@@ -1467,6 +1468,17 @@ function describePointsPreset(p){
 }
 /* Why a points preset can't be saved as it is, or null. */
 function pointsPresetError(p){
+  for (const [key, label, unit] of [["battingMilestones", "Batting milestone", "runs"], ["wicketHauls", "Wicket haul", "wickets"]]){
+    const rows = Array.isArray(p[key]) ? p[key] : [];
+    const seen = new Set();
+    for (let i = 0; i < rows.length; i++){
+      const at = rows[i].at;
+      if (at == null) return `${label} ${i + 1}: fill in the ${unit}.`;
+      if (!(Number.isInteger(at) && at >= 1)) return `${label} ${i + 1}: the ${unit} have to be a whole number, 1 or more.`;
+      if (seen.has(at)) return `${label}s: ${at} is in twice.`;
+      seen.add(at);
+    }
+  }
   for (const [key, label] of [["economy", "Economy"], ["strikeRate", "Strike rate"]]){
     const cfg = p[key];
     if (!cfg) continue;
@@ -2052,8 +2064,28 @@ function pointsBand(value, bands){
   const b = (bands || []).find(x => (x.from == null || value >= x.from) && (x.below == null || value < x.below));
   return b ? Number(b.pts) || 0 : 0;
 }
+/* A preset's batting milestones (`kind` "batting", runs) or wicket hauls
+   ("hauls", wickets): [{ at, pts }], lowest first. A preset from before these
+   were lists has the fixed 30/50/100 and 3/4/5-wicket values instead, read
+   here with their zeros kept, so it counts exactly as it always did. */
+const POINTS_LEGACY_TIERS = {
+  batting: ["battingMilestones", [[30, "thirty"], [50, "fifty"], [100, "century"]]],
+  hauls: ["wicketHauls", [[3, "threeWickets"], [4, "fourWickets"], [5, "fiveWickets"]]]
+};
+function pointsMilestones(p, kind){
+  const [listKey, legacy] = POINTS_LEGACY_TIERS[kind];
+  const own = p && p[listKey];
+  if (Array.isArray(own)) return own.filter(t => t && t.at != null).map(t => ({ at: Number(t.at), pts: Number(t.pts) || 0 })).sort((a, b) => a.at - b.at);
+  return legacy.map(([at, k]) => ({ at, pts: Number(p && p[k]) || 0 }));
+}
+// The points of the highest milestone `value` reached (0 below the first).
+function milestonePoints(value, tiers){
+  let pts = 0;
+  tiers.forEach(t => { if (value >= t.at) pts = t.pts; });
+  return pts;
+}
 /* One player's points for one innings. `bowl` is that innings' bowling line
-   plus `dots`/`bowledLbw` (inningsBowlerExtras) and `ballsPerOver`. */
+   plus `dots`/`bowledLbw`/`hatTricks` (inningsBowlerExtras) and `ballsPerOver`. */
 function calcPlayerPoints(bat, bowl, field, preset){
   const p = preset || DEFAULT_POINTS_PRESETS[0];
   const v = k => Number(p[k]) || 0;
@@ -2061,9 +2093,7 @@ function calcPlayerPoints(bat, bowl, field, preset){
   if (bat){
     pts += bat.runs * v("perRun") + bat.fours * v("perFour") + bat.sixes * v("perSix");
     // Only the highest milestone reached counts (a hundred isn't also a fifty).
-    if (bat.runs >= 100) pts += v("century");
-    else if (bat.runs >= 50) pts += v("fifty");
-    else if (bat.runs >= 30) pts += v("thirty");
+    pts += milestonePoints(bat.runs, pointsMilestones(p, "batting"));
     if (bat.balls > 0 && !bat.out) pts += v("notOut");
     if (bat.out && bat.runs === 0) pts += v("duck");
     const sr = p.strikeRate;
@@ -2071,10 +2101,8 @@ function calcPlayerPoints(bat, bowl, field, preset){
   }
   if (bowl){
     pts += bowl.wickets * v("perWicket") + (bowl.bowledLbw || 0) * v("bowledLbw")
-      + bowl.maidens * v("perMaiden") + (bowl.dots || 0) * v("perDot");
-    if (bowl.wickets >= 5) pts += v("fiveWickets");
-    else if (bowl.wickets >= 4) pts += v("fourWickets");
-    else if (bowl.wickets >= 3) pts += v("threeWickets");
+      + bowl.maidens * v("perMaiden") + (bowl.dots || 0) * v("perDot") + (bowl.hatTricks || 0) * v("hatTrick");
+    pts += milestonePoints(bowl.wickets, pointsMilestones(p, "hauls"));
     const ec = p.economy, bpo = bowl.ballsPerOver || 6, balls = bowl.legalBalls || 0;
     if (ec && balls > 0 && balls >= (Number(ec.minOvers) || 0) * bpo) pts += pointsBand(bowl.runs / (balls / bpo), ec.bands);
   }
@@ -2086,16 +2114,32 @@ function calcPlayerPoints(bat, bowl, field, preset){
 
 /* Per bowler: dot balls, from ball by ball (a legal ball they gave nothing
    away on -- byes and leg byes don't count against them; balls a catch-up
-   skipped have no events, so they add none), and wickets bowled or lbw, from
-   each batter's "bowled b X" / "lbw b X" (so catch-up wickets count too). */
+   skipped have no events, so they add none), wickets bowled or lbw, from
+   each batter's "bowled b X" / "lbw b X" (so catch-up wickets count too), and
+   hat-tricks, from ball by ball too: three of their own deliveries in a row
+   that each took a wicket credited to them (anything but a run-out), across
+   their overs. A wide or no-ball that took no such wicket is passed over; a
+   legal ball without one (a run-out included) ends the run, and so does a
+   catch-up gap (its balls aren't known). Each wicket in a row after the
+   third adds half a hat-trick (4 in 4 is 1.5, 5 in 5 is 2). Old over events
+   with no `kind` still work: their "W" is the bowler's, "Ro" a run-out. */
 function inningsBowlerExtras(inn){
   const out = {};
-  const bump = (name, k) => { if (!name) return; (out[name] || (out[name] = { dots: 0, bowledLbw: 0 }))[k] += 1; };
-  [...inn.overs, { bowler: inn.bowler, events: inn.currentOverEvents || [] }].forEach(ov => (ov.events || []).forEach(ev => {
-    const c = commentaryEvent(ev);
-    const legal = c.kind !== "wide" && c.kind !== "noball" && !c.extra;
-    if (legal && (c.kind === "bye" || c.kind === "legbye" || !ev.runs)) bump(ov.bowler, "dots");
-  }));
+  const bump = (name, k, by) => { if (!name) return; (out[name] || (out[name] = { dots: 0, bowledLbw: 0, hatTricks: 0 }))[k] += by == null ? 1 : by; };
+  const inARow = {};
+  const endRun = name => { const n = inARow[name] || 0; if (n >= 3) bump(name, "hatTricks", 1 + (n - 3) / 2); inARow[name] = 0; };
+  [...inn.overs, { bowler: inn.bowler, events: inn.currentOverEvents || [] }].forEach(ov => {
+    if (ov.gap) Object.keys(inARow).forEach(endRun);
+    (ov.events || []).forEach(ev => {
+      const c = commentaryEvent(ev);
+      const legal = c.kind !== "wide" && c.kind !== "noball" && !c.extra;
+      if (legal && (c.kind === "bye" || c.kind === "legbye" || !ev.runs)) bump(ov.bowler, "dots");
+      if (!ov.bowler) return;
+      if (c.kind === "wicket" && c.wicketType !== "runout") inARow[ov.bowler] = (inARow[ov.bowler] || 0) + 1;
+      else if (legal) endRun(ov.bowler);
+    });
+  });
+  Object.keys(inARow).forEach(endRun);
   inn.batting.order.forEach(n => {
     const mt = /^(?:bowled|lbw) b (.+)$/.exec(inn.batting.stats[n].howOut || "");
     if (mt) bump(mt[1], "bowledLbw");
@@ -2223,7 +2267,7 @@ function foldInningsIntoTotals(totals, inn, preset, keyOf, at){
   inn.bowling.order.forEach(name => {
     if (isUnnamedPlayer(name)) return;
     const b = inn.bowling.stats[name];
-    const x = extras[name] || { dots: 0, bowledLbw: 0 };
+    const x = extras[name] || { dots: 0, bowledLbw: 0, hatTricks: 0 };
     const t = totalFor(name);
     t.wickets += b.wickets; t.legalBalls += b.legalBalls; t.runsConceded += b.runs; t.maidens += b.maidens; t.dots += x.dots;
     if (b.legalBalls > 0 || b.wickets > 0){

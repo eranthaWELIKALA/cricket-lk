@@ -320,21 +320,40 @@ function handleTournamentPresetSubmit(e){
 /* --- MVP points presets (see calcPlayerPoints). The card and editor are
    shared by the guest Presets screen (state.pointsPresets) and the club's
    Presets (club_presets kind 'points'); each passes its own actions. --- */
+// Each group's numbers, then (`list`) its milestone list (see pointsMilestones).
 const POINTS_FIELD_GROUPS = [
-  ["Batting", [["perRun", "Per run"], ["perFour", "Four (extra)"], ["perSix", "Six (extra)"], ["thirty", "Reaching 30"],
-    ["fifty", "Reaching 50"], ["century", "Reaching 100"], ["notOut", "Not out"], ["duck", "Duck"]]],
+  ["Batting", [["perRun", "Per run"], ["perFour", "Four (extra)"], ["perSix", "Six (extra)"], ["notOut", "Not out"], ["duck", "Duck"]], "battingMilestones"],
   ["Bowling", [["perWicket", "Per wicket"], ["bowledLbw", "Bowled / lbw (extra)"], ["perMaiden", "Per maiden"], ["perDot", "Per dot ball"],
-    ["threeWickets", "3 wickets"], ["fourWickets", "4 wickets"], ["fiveWickets", "5 wickets"]]],
+    ["hatTrick", "Hat-trick"]], "wicketHauls"],
   ["Fielding", [["perCatch", "Per catch"], ["perStumping", "Per stumping"], ["perRunOut", "Per run-out"]]]
 ];
+/* The editor's row lists: a milestone list (`at` + points) or a rate band
+   list (from / below + points). Field names are `${list}${Field}${i}`. */
+const POINTS_ROW_LISTS = {
+  battingMilestones: { kind: "batting", title: "Milestones", cols: [["at", "At", "Runs"]], add: "+ Add a milestone" },
+  wicketHauls: { kind: "hauls", title: "Wicket hauls", cols: [["at", "At", "Wickets"]], add: "+ Add a wicket haul" },
+  economy: { band: true, cols: [["from", "From", "From"], ["below", "Below", "Below"]], add: "+ Add a band" },
+  strikeRate: { band: true, cols: [["from", "From", "From"], ["below", "Below", "Below"]], add: "+ Add a band" }
+};
+// The rows the editor shows for a list: the draft's own (blank rows
+// included), else what the preset counts (an old preset's fixed milestones,
+// the ones that give points).
+function pointsEditorRows(p, list){
+  const cfg = POINTS_ROW_LISTS[list];
+  if (cfg.band) return (p[list] && p[list].bands) || [];
+  return Array.isArray(p[list]) ? p[list] : pointsMilestones(p, cfg.kind).filter(t => t.pts);
+}
 // Short card tags for the values a preset actually gives points for; extras
 // on top of something else (a four's runs, a wicket) carry their sign.
 function pointsPresetTags(p){
-  const tags = [["perRun", "run"], ["perFour", "four", 1], ["perSix", "six", 1], ["thirty", "30", 1], ["fifty", "50", 1], ["century", "100", 1],
-    ["notOut", "not out", 1], ["duck", "duck", 1], ["perWicket", "wicket"], ["bowledLbw", "bowled/lbw", 1], ["perMaiden", "maiden"],
-    ["perDot", "dot"], ["threeWickets", "3 wkts", 1], ["fourWickets", "4 wkts", 1], ["fiveWickets", "5 wkts", 1],
-    ["perCatch", "catch"], ["perStumping", "stumping"], ["perRunOut", "run-out"]]
-    .filter(([k]) => Number(p[k])).map(([k, label, extra]) => `${label} ${extra ? pointsSigned(Number(p[k])) : pointsNum(p[k])}`);
+  const values = keys => keys.filter(([k]) => Number(p[k])).map(([k, label, extra]) => `${label} ${extra ? pointsSigned(Number(p[k])) : pointsNum(p[k])}`);
+  const tier = (kind, unit) => pointsMilestones(p, kind).filter(t => t.pts).map(t => `${t.at}${unit} ${pointsSigned(t.pts)}`);
+  const tags = [
+    ...values([["perRun", "run"], ["perFour", "four", 1], ["perSix", "six", 1]]), ...tier("batting", ""),
+    ...values([["notOut", "not out", 1], ["duck", "duck", 1], ["perWicket", "wicket"], ["bowledLbw", "bowled/lbw", 1],
+      ["perMaiden", "maiden"], ["perDot", "dot"], ["hatTrick", "hat-trick"]]), ...tier("hauls", " wkts"),
+    ...values([["perCatch", "catch"], ["perStumping", "stumping"], ["perRunOut", "run-out"]])
+  ];
   if (p.economy) tags.push("economy bands");
   if (p.strikeRate) tags.push("strike-rate bands");
   return tags;
@@ -372,29 +391,40 @@ function renderPointsPresetsTab(){
 }
 
 function renderPointsPresetForm(p, clubId){
-  const num = (name, value, extra) => `<input name="${name}" type="number" step="any" inputmode="decimal" value="${value == null ? "" : value}" ${extra || ""}>`;
-  const bandBlock = (key, title, minName, minLabel, minValue, unit) => {
-    const cfg = p[key], bands = (cfg && cfg.bands) || [];
-    const rows = Array.from({ length: POINTS_BAND_ROWS }, (_, i) => {
-      const b = bands[i] || {};
-      return `<div class="band-row">
-        ${num(`${key}From${i}`, b.from, `min="0" placeholder="—" aria-label="${title} band ${i + 1} from"`)}
-        ${num(`${key}Below${i}`, b.below, `min="0" placeholder="—" aria-label="${title} band ${i + 1} below"`)}
-        ${num(`${key}Pts${i}`, b.pts, `placeholder="0" aria-label="${title} band ${i + 1} points"`)}
+  const target = clubId ? "1" : "";
+  const num = (name, value, extra, step) => `<input name="${name}" type="number" step="${step || "any"}" inputmode="${step ? "numeric" : "decimal"}" value="${value == null ? "" : value}" ${extra || ""}>`;
+  // One of POINTS_ROW_LISTS as rows with a ✕ each and an add button. A rate
+  // bonus always has a row to fill in once it's ticked.
+  const rowList = list => {
+    const cfg = POINTS_ROW_LISTS[list];
+    let rows = pointsEditorRows(p, list);
+    if (cfg.band && !rows.length) rows = [{}];
+    const cls = `tier-row${cfg.band ? " band" : ""}`;
+    return `
+      <div class="tier-list">
+        ${rows.length ? `<div class="${cls} tier-head">${cfg.cols.map(([, , label]) => `<span>${label}</span>`).join("")}<span>Points</span><span></span></div>` : ""}
+        ${rows.map((r, i) => `<div class="${cls}">
+          ${cfg.cols.map(([prop, field, label]) => cfg.band
+            ? num(`${list}${field}${i}`, r[prop], `min="0" placeholder="—" aria-label="${label} ${i + 1}"`)
+            : num(`${list}${field}${i}`, r[prop], `min="1" placeholder="${label}" aria-label="${label} ${i + 1}"`, "1")).join("")}
+          ${num(`${list}Pts${i}`, r.pts, `min="-100" max="100" placeholder="0" aria-label="Points ${i + 1}"`)}
+          <button type="button" class="ghost small tier-remove" data-action="points-row-remove" data-list="${list}" data-i="${i}" data-club="${target}" aria-label="Remove row ${i + 1}">✕</button>
+        </div>`).join("")}
+        ${rows.length < POINTS_ROWS_MAX ? `<button type="button" class="link-btn tier-add" data-action="points-row-add" data-list="${list}" data-club="${target}">${cfg.add}</button>` : ""}
       </div>`;
-    }).join("");
+  };
+  const bandBlock = (key, title, minName, minLabel, minValue, unit) => {
+    const cfg = p[key];
     return `
       <div class="band-block">
-        <label class="check-row"><input type="checkbox" name="${key}On" ${cfg ? "checked" : ""}> ${title}</label>
+        <label class="check-row"><input type="checkbox" name="${key}On" ${cfg && cfg.on !== false ? "checked" : ""}> ${title}</label>
         <div class="band-body">
           <label class="band-min">${minLabel}<input name="${minName}" type="number" min="0" max="50" value="${minValue}"></label>
-          <div class="band-row band-head"><span>From</span><span>Below</span><span>Points</span></div>
-          ${rows}
-          <p class="hint">${unit} Leave a box blank for no limit; the first band that fits counts. Unused rows stay blank.</p>
+          ${rowList(key)}
+          <p class="hint">${unit} Leave a box blank for no limit; the first band that fits counts.</p>
         </div>
       </div>`;
   };
-  const target = clubId ? "1" : "";
   return `
     <form id="${clubId ? "club-" : ""}points-preset-form" class="preset-form points-form">
       <input type="hidden" name="id" value="${p.id || ""}">
@@ -405,12 +435,13 @@ function renderPointsPresetForm(p, clubId){
         <span class="muted">Fill in from</span>
         ${DEFAULT_POINTS_PRESETS.map(t => `<button type="button" data-action="points-template" data-id="${t.id}" data-club="${target}" class="preset-chip">${escapeHtml(t.name)}</button>`).join("")}
       </div>
-      ${POINTS_FIELD_GROUPS.map(([title, fields]) => `
+      ${POINTS_FIELD_GROUPS.map(([title, fields, list]) => `
         <h4 class="stat-sub">${title}</h4>
         <div class="points-grid">
           ${fields.map(([k, label]) => `<label>${label}${num(k, p[k] ?? 0, `min="-100" max="100" required`)}</label>`).join("")}
-        </div>`).join("")}
-      <p class="hint">Points are per innings. Milestones and wicket hauls give the highest reached only (a hundred isn't also a fifty). A duck or a band can take points away: use a minus number.</p>
+        </div>
+        ${list ? `<div class="tier-block"><span class="tier-title">${POINTS_ROW_LISTS[list].title}</span>${rowList(list)}</div>` : ""}`).join("")}
+      <p class="hint">Points are per innings. Milestones and wicket hauls give the highest reached only (a hundred isn't also a fifty). Each wicket in a row after a hat-trick adds half a hat-trick. A duck or a band can take points away: use a minus number.</p>
       <h4 class="stat-sub">Rate bonuses</h4>
       ${bandBlock("economy", "Economy (runs an over)", "economyMin", "Only after this many overs in an innings", p.economy ? p.economy.minOvers : 2, "Runs per over, the match's own over length.")}
       ${bandBlock("strikeRate", "Strike rate (runs per 100 balls)", "strikeRateMin", "Only after this many balls faced", p.strikeRate ? p.strikeRate.minBalls : 10, "Runs per 100 balls faced.")}
@@ -422,21 +453,47 @@ function renderPointsPresetForm(p, clubId){
   `;
 }
 
-function parsePointsPresetForm(f){
+/* The editor's form as a preset. `draft`: as typed, for the editor to show
+   again (a row added or taken away) -- blank rows and an unticked rate
+   bonus's rows (`on: false`) are kept, nothing is checked. */
+function parsePointsPresetForm(f, draft){
   const opt = k => { const n = parseFloat(f.get(k)); return isNaN(n) ? null : n; };
-  const p = { id: f.get("id") || undefined, name: (f.get("name") || "").trim() || "Untitled preset" };
+  const name = (f.get("name") || "").trim();
+  const p = { id: f.get("id") || undefined, name: draft ? name : name || "Untitled preset" };
   if (f.get("inUse") === "1") p.inUse = true;
   POINTS_FIELD_GROUPS.forEach(([, fields]) => fields.forEach(([k]) => { p[k] = roundPoints(opt(k) || 0); }));
-  const bands = key => {
+  const rows = list => {
     const out = [];
-    for (let i = 0; i < POINTS_BAND_ROWS; i++){
-      const b = { from: opt(`${key}From${i}`), below: opt(`${key}Below${i}`), pts: roundPoints(opt(`${key}Pts${i}`) || 0) };
-      if (b.from != null || b.below != null || b.pts) out.push(b);
+    for (let i = 0; f.has(`${list}Pts${i}`); i++){
+      const r = {};
+      POINTS_ROW_LISTS[list].cols.forEach(([prop, field]) => { r[prop] = opt(`${list}${field}${i}`); });
+      const pts = opt(`${list}Pts${i}`);
+      r.pts = draft ? pts : roundPoints(pts || 0);
+      out.push(r);
     }
     return out;
   };
-  p.economy = f.get("economyOn") === "on" ? { minOvers: Math.max(0, parseInt(f.get("economyMin"), 10) || 0), bands: bands("economy") } : null;
-  p.strikeRate = f.get("strikeRateOn") === "on" ? { minBalls: Math.max(0, parseInt(f.get("strikeRateMin"), 10) || 0), bands: bands("strikeRate") } : null;
+  // A milestone worth nothing is left out (it would only cap the ones under it).
+  ["battingMilestones", "wicketHauls"].forEach(list => {
+    const r = draft ? rows(list) : rows(list).filter(t => t.pts);
+    p[list] = draft || r.some(t => t.at == null) ? r : r.sort((a, b) => a.at - b.at);
+  });
+  // App versions from before the lists read only the fixed 30/50/100 and
+  // 3/4/5-wicket values, so they're written too, from the lists (this
+  // version reads the lists): a club preset saved here still counts its
+  // 50s, 100s and hauls on a phone that hasn't updated yet.
+  if (!draft) Object.values(POINTS_LEGACY_TIERS).forEach(([list, legacy]) => legacy.forEach(([at, k]) => {
+    const t = p[list].find(x => x.at === at);
+    p[k] = t ? t.pts : 0;
+  }));
+  const bands = (key, minKey, minName) => {
+    const on = f.get(`${key}On`) === "on";
+    const min = Math.max(0, parseInt(f.get(minName), 10) || 0);
+    if (draft) return { on, [minKey]: min, bands: rows(key) };
+    return on ? { [minKey]: min, bands: rows(key).filter(b => b.from != null || b.below != null || b.pts) } : null;
+  };
+  p.economy = bands("economy", "minOvers", "economyMin");
+  p.strikeRate = bands("strikeRate", "minBalls", "strikeRateMin");
   return p;
 }
 

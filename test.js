@@ -497,12 +497,36 @@ async function main(){
     const pts = calcPlayerPoints(...line, preset("points-classic"));
     // batting: 55 + 4 + (2*2) + fifty(8) + notOut(4) = 75; bowling: (2*25) + (1*8) = 58; fielding: 1*8 = 8
     assert(pts === 141, `the Classic preset is the old fixed formula, got ${pts}`);
-    // Club: 55 + (4*2) + (2*4) + 8 + 2 = 81; (2*15) + 5 = 35; 5
-    assert(calcPlayerPoints(...line) === 121 && win.eval("DEFAULT_POINTS_PRESETS[0].id") === win.eval("DEFAULT_POINTS_PRESET_ID"), "with no preset, the default (Club) points");
+    // Club: 55 + (4*2) + (2*4) + 8 + 2 = 81; (2*15) + 10 = 40; 5
+    assert(calcPlayerPoints(...line) === 126 && win.eval("DEFAULT_POINTS_PRESETS[0].id") === win.eval("DEFAULT_POINTS_PRESET_ID"), "with no preset, the default (Club) points");
+    // A preset saved before milestones were lists (fixed 30/50/100, 3/4/5
+    // wickets) counts exactly as it did: the old Club numbers still give 121.
+    const oldClub = { perRun: 1, perFour: 2, perSix: 4, thirty: 4, fifty: 8, century: 16, notOut: 2, duck: 0,
+      perWicket: 15, bowledLbw: 0, perMaiden: 5, perDot: 0, threeWickets: 0, fourWickets: 0, fiveWickets: 0,
+      perCatch: 5, perStumping: 5, perRunOut: 8, economy: null, strikeRate: null };
+    assert(calcPlayerPoints(...line, oldClub) === 121, "an old-shape preset (thirty/fifty/century) gives the points it always did");
+    assert(calcPlayerPoints({ runs: 55, balls: 30, out: true, fours: 0, sixes: 0 }, null, null, Object.assign({}, oldClub, { fifty: 0 })) === 55
+      && calcPlayerPoints(null, { wickets: 3, maidens: 0, runs: 20, legalBalls: 12 }, null, Object.assign({}, oldClub, { threeWickets: 7 })) === 52
+      && calcPlayerPoints(null, { wickets: 4, maidens: 0, runs: 20, legalBalls: 12 }, null, Object.assign({}, oldClub, { threeWickets: 7 })) === 60,
+      "...an old 50 or 4-wicket haul worth nothing still caps the one below it");
 
     const club = preset("points-club"), fantasy = preset("points-fantasy"), ipl = preset("points-ipl");
     const bat = (runs, balls, out, fours = 0, sixes = 0) => calcPlayerPoints({ runs, balls, out, fours, sixes }, null, null, club);
-    assert(bat(32, 30, true) === 36 && bat(50, 40, true) === 58 && bat(100, 80, true) === 116, "milestones: 30 +4, 50 +8 (not also 30), 100 +16 (highest only)");
+    assert(bat(19, 20, true) === 19 && bat(20, 20, true) === 22 && bat(32, 30, true) === 36 && bat(50, 40, true) === 58 && bat(100, 80, true) === 116, "milestones: 20 +2, 30 +4, 50 +8 (not also 30), 100 +16 (highest only)");
+    const own = Object.assign({}, club, { battingMilestones: [{ at: 50, pts: 8 }, { at: 25, pts: 3 }], wicketHauls: [{ at: 2, pts: 5 }, { at: 3, pts: 9 }], economy: null });
+    const ownBat = runs => calcPlayerPoints({ runs, balls: runs + 10, out: true, fours: 0, sixes: 0 }, null, null, own);
+    const ownBowl = wickets => calcPlayerPoints(null, { wickets, maidens: 0, runs: 20, legalBalls: 12 }, null, own);
+    assert(ownBat(24) === 24 && ownBat(25) === 28 && ownBat(60) === 68 && ownBowl(1) === 15 && ownBowl(2) === 35 && ownBowl(4) === 69,
+      "a preset's own milestones (25, 50, in any order) and wicket hauls (2, 3): the highest reached only");
+    assert(calcPlayerPoints(null, { wickets: 0, maidens: 0, runs: 4, legalBalls: 6, ballsPerOver: 6 }, null, club) === 6
+      && calcPlayerPoints(null, { wickets: 0, maidens: 0, runs: 9, legalBalls: 6, ballsPerOver: 6 }, null, club) === 4
+      && calcPlayerPoints(null, { wickets: 0, maidens: 0, runs: 14, legalBalls: 6, ballsPerOver: 6 }, null, club) === 2
+      && calcPlayerPoints(null, { wickets: 0, maidens: 0, runs: 15, legalBalls: 6, ballsPerOver: 6 }, null, club) === 0
+      && calcPlayerPoints(null, { wickets: 0, maidens: 0, runs: 2, legalBalls: 5, ballsPerOver: 6 }, null, club) === 0,
+      "Club: economy under 5 +6, under 10 +4, under 15 +2, after a full over");
+    assert(calcPlayerPoints(null, { wickets: 3, maidens: 0, runs: 30, legalBalls: 12, hatTricks: 1 }, null, club) === 65
+      && calcPlayerPoints(null, { wickets: 4, maidens: 0, runs: 30, legalBalls: 12, hatTricks: 1.5 }, null, club) === 90,
+      "Club: a hat-trick +20, and 4 in 4 (1.5 hat-tricks) +30");
     assert(bat(10, 8, false) === 12 && bat(0, 0, false) === 0, "not out +2 only after facing a ball");
     assert(calcPlayerPoints({ runs: 0, balls: 3, out: true, fours: 0, sixes: 0 }, null, null, fantasy) === -2, "a duck can take points away");
     const bowl = (wickets, extra = {}) => calcPlayerPoints(null, Object.assign({ wickets, maidens: 0, runs: 30, legalBalls: 6 }, extra), null, fantasy);
@@ -524,7 +548,17 @@ async function main(){
     const rows = Object.fromEntries(win.describePointsPreset(fantasy));
     assert(/25 a wicket/.test(rows.Bowling) && /\+4 at 3, \+8 at 4, \+16 at 5 \(the highest only\) wickets/.test(rows.Bowling) && /−2 for a duck/.test(rows.Batting), "describePointsPreset: plain words, only what it gives points for");
     assert(/After 2 overs/.test(rows.Economy) && /under 5 \+6/.test(rows.Economy) && /170 and over \+6/.test(rows["Strike rate"]), "describePointsPreset: the rate bands");
-    assert(Object.fromEntries(win.describePointsPreset(ipl)).Batting === "+2.5 a four · +3.5 a six" && !win.describePointsPreset(club).some(([k]) => k === "Economy"), "describePointsPreset: no rows for bands it doesn't use");
+    assert(Object.fromEntries(win.describePointsPreset(ipl)).Batting === "+2.5 a four · +3.5 a six" && !win.describePointsPreset(preset("points-classic")).some(([k]) => k === "Economy"), "describePointsPreset: no rows for bands it doesn't use");
+    const clubRows = Object.fromEntries(win.describePointsPreset(club));
+    assert(/\+2 at 20, \+4 at 30, \+8 at 50, \+16 at 100 \(the highest only\) runs/.test(clubRows.Batting)
+      && /\+20 a hat-trick \(\+10 for each wicket in a row after it\)/.test(clubRows.Bowling)
+      && /After 1 over in an innings, runs an over under 5 \+6 · 5 to under 10 \+4 · 10 to under 15 \+2/.test(clubRows.Economy),
+      "describePointsPreset: the milestones a preset lists, the hat-trick and Club's economy");
+    assert(/\+4 at 30, \+8 at 50, \+16 at 100/.test(Object.fromEntries(win.describePointsPreset(oldClub)).Batting), "describePointsPreset: an old-shape preset's milestones");
+    assert(/Batting milestone 1: fill in the runs/.test(win.pointsPresetError({ battingMilestones: [{ at: null, pts: 2 }] }))
+      && /Wicket haul 1: the wickets have to be a whole number/.test(win.pointsPresetError({ wicketHauls: [{ at: 2.5, pts: 2 }] }))
+      && /Batting milestones: 25 is in twice/.test(win.pointsPresetError({ battingMilestones: [{ at: 25, pts: 2 }, { at: 25, pts: 3 }] }))
+      && win.pointsPresetError(club) === null, "pointsPresetError: a milestone needs a whole number, once");
     assert(win.pointsPresetError(fantasy) === null && /add at least one band/.test(win.pointsPresetError({ economy: { minOvers: 2, bands: [] } }))
       && /band 1: From has to be lower/.test(win.pointsPresetError({ strikeRate: { minBalls: 0, bands: [{ from: 50, below: 40, pts: 2 }] } }))
       && /band 1: fill in/.test(win.pointsPresetError({ economy: { minOvers: 0, bands: [{ from: null, below: null, pts: 2 }] } })), "pointsPresetError: empty or backwards bands are refused");
@@ -588,6 +622,51 @@ async function main(){
     const old = JSON.parse(JSON.stringify(now)); delete old.fielding.stats.K1.stumpings;
     assert(win.inningsScorecardKey(old) === win.inningsScorecardKey(now), "inningsScorecardKey: a fielding line without stumpings equals one with 0");
     assert(win.catchUpHowOut("stumped", "B1", "K1") === "st K1 b B1" && win.catchUpHowOut("stumped", "B1", null) === "stumped b B1", "catch-up: a stumping can name the keeper");
+  }
+
+  // --- 14c. hat-tricks, from ball by ball ---
+  {
+    const W = { kind: "wicket", wicketType: "bowled" };
+    const C = { kind: "wicket", wicketType: "caught", fielder: "F1" };
+    const dot = { kind: "run", runs: 0 };
+    // Bowls `balls` (B1 bowls overs 1, 3, 5…; B2 the others), sending in a new batter after each wicket.
+    const play = (balls, opts) => {
+      const m = createMatch(Object.assign({ teamA: "Lions", teamB: "Tigers", oversLimit: 10, playersPerSide: 11, battingFirst: "A" }, opts));
+      const inn = currentInnings(m);
+      win.openInnings(inn, "A1", "A2", "B1");
+      let next = 3, over = 0;
+      balls.forEach(ev => {
+        recordBall(inn, Object.assign({}, ev));
+        if (inn.striker === null || inn.nonStriker === null) win.sendInBatter(inn, "A" + next++);
+        if (inn.bowler === null){ over++; win.setBowler(inn, over % 2 ? "B2" : "B1"); }
+      });
+      return inn;
+    };
+    const hats = (inn, who) => (win.inningsBowlerExtras(inn)[who || "B1"] || {}).hatTricks;
+    assert(hats(play([dot, W, C, W, dot])) === 1, "three wickets in three balls: a hat-trick");
+    assert(hats(play([dot, W, W, dot, W])) === 0, "two in a row, a dot, then a wicket: no hat-trick");
+    assert(hats(play([dot, dot, dot, dot, W, W, dot, dot, dot, dot, dot, dot, W])) === 1, "across the bowler's overs (another bowler's over in between)");
+    assert(hats(play([W, { kind: "wide", runs: 0 }, W, { kind: "noball", runs: 0 }, W])) === 1, "a wide or no-ball in between doesn't break it");
+    assert(hats(play([W, W, { kind: "wicket", wicketType: "runout", runs: 0, endComingIn: "striker" }, W])) === 0, "a run-out isn't the bowler's: it breaks the run");
+    assert(hats(play([W, W, { kind: "wicket", wicketType: "stumped", extra: "wide", runs: 0, fielder: "K1" }])) === 1, "a stumping off a wide is the bowler's wicket");
+    assert(hats(play([W, W, W, W, dot])) === 1.5 && hats(play([W, W, W, W, W, dot])) === 2 && hats(play([W, W, W, W, W, W])) === 2.5, "each wicket in a row after the third adds half: 4 in 4 is 1.5, 5 in 5 is 2, 6 in 6 is 2.5");
+    assert(hats(play([W, W, W, dot, W, W, W], { ballsPerOver: 8 })) === 2, "two separate hat-tricks count twice");
+    const split = play([dot, dot, dot, dot, dot, W, W, W, W]);
+    assert(hats(split) === 0 && hats(split, "B2") === 1, "each bowler's own deliveries: B1's last-ball wicket doesn't join B2's three");
+    // Over events from older app versions (display only): "W" is the bowler's, "Ro" a run-out.
+    const old = d => ({ display: d, runs: 0, isWicket: /W|Ro/.test(d) });
+    const oldInn = (events, gap) => ({ overs: gap ? [{ bowler: "X", events: events.slice(0, 2) }, { bowler: null, events: [], gap: {} }, { bowler: "X", events: events.slice(2) }] : [{ bowler: "X", events }],
+      currentOverEvents: [], bowler: null, batting: { order: [], stats: {} } });
+    assert(win.inningsBowlerExtras(oldInn([old("W"), old("W"), old("W")])).X.hatTricks === 1 && win.inningsBowlerExtras(oldInn([old("W"), old("Ro"), old("W"), old("W")])).X.hatTricks === 0, "older over events: W counts, Ro breaks");
+    assert(win.inningsBowlerExtras(oldInn([old("W"), old("W"), old("W")], true)).X.hatTricks === 0, "a catch-up gap (balls not known) breaks the run");
+    const club = win.eval("DEFAULT_POINTS_PRESETS[0]");
+    const m = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 1, playersPerSide: 11, battingFirst: "A" });
+    const inn = currentInnings(m);
+    win.openInnings(inn, "A1", "A2", "B1");
+    [dot, dot, dot, W, W, W].forEach((ev, i) => { recordBall(inn, Object.assign({}, ev)); if (i > 2) win.sendInBatter(inn, "A" + i); });
+    const b1 = win.aggregatePlayerStats([m], club).find(t => t.name === "B1");
+    // 3 wickets 45 + hat-trick 20 + economy (0 an over) 6 + a maiden 10
+    assert(b1.points === 45 + 20 + 6 + 10, `a hat-trick's points reach the leaderboard (3 wickets, hat-trick, economy, maiden), got ${b1.points}`);
   }
 
   // --- 15. computeStandings: points, win/loss, and NRR across a mini round-robin ---
@@ -2654,6 +2733,44 @@ async function main(){
     form().querySelector('input[name="economyBelow0"]').value = "";
     form().dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
     assert(form() && /fill in From, Below or both/.test(form().querySelector(".form-error").textContent), "a band with no range is refused with a message");
+    // Milestone lists: rows added and taken away, what was typed kept through both.
+    win.eval(`ui.editingPointsPreset = null; render();`);
+    assert(/20 \+2/.test(cards()[0].textContent) && /hat-trick 20/.test(cards()[0].textContent), "Club's card lists its 20 milestone and the hat-trick");
+    doc.querySelector('#app [data-action="new-points-preset"]').click();
+    const atRows = list => [...form().querySelectorAll(`input[name^="${list}At"]`)].map(i => i.value).join();
+    assert(atRows("battingMilestones") === "20,30,50,100" && atRows("wicketHauls") === "" && form().querySelector('input[name="hatTrick"]').value === "20", "a new preset starts with Club's milestones (20, 30, 50, 100) and hat-trick");
+    form().querySelector('input[name="name"]').value = "Short games";
+    form().querySelector('input[name="perMaiden"]').value = "12";
+    form().querySelector('[data-action="points-row-add"][data-list="battingMilestones"]').click();
+    form().querySelector('input[name="battingMilestonesAt4"]').value = "25";
+    form().querySelector('input[name="battingMilestonesPts4"]').value = "3";
+    form().querySelector('[data-action="points-row-remove"][data-list="battingMilestones"][data-i="1"]').click();
+    assert(atRows("battingMilestones") === "20,50,100,25" && form().querySelector('input[name="name"]').value === "Short games" && form().querySelector('input[name="perMaiden"]').value === "12",
+      "+ Add a milestone and ✕ keep what was typed: " + atRows("battingMilestones"));
+    form().querySelector('[data-action="points-row-add"][data-list="wicketHauls"]').click();
+    form().querySelector('input[name="wicketHaulsAt0"]').value = "2";
+    form().querySelector('input[name="wicketHaulsPts0"]').value = "4";
+    form().querySelector('[data-action="points-row-add"][data-list="wicketHauls"]').click();   // left blank: dropped on save
+    form().dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    const short = win.eval(`Object.values(state.pointsPresets).find(p => p.name === "Short games")`);
+    assert(short && short.battingMilestones.map(t => t.at + ":" + t.pts).join() === "20:2,25:3,50:8,100:16" && short.wicketHauls.length === 1 && short.wicketHauls[0].at === 2 && short.wicketHauls[0].pts === 4
+      && short.perMaiden === 12 && short.hatTrick === 20 && short.economy.minOvers === 1 && short.economy.bands.length === 3 && !("on" in short.economy) && !form(),
+      "saved: milestones lowest first, the haul (a blank row left out), Club's hat-trick and economy");
+    assert(short.thirty === 0 && short.fifty === 8 && short.century === 16 && short.threeWickets === 0 && short.fourWickets === 0
+      && calcPlayerPoints({ runs: 27, balls: 20, out: true, fours: 0, sixes: 0 }, null, null, short) === 30,
+      "...with the old fixed 30/50/100 and 3/4/5-wicket values written too, for app versions that only read those (this one reads the lists)");
+    doc.querySelector(`#app [data-action="edit-points-preset"][data-id="${short.id}"]`).click();
+    form().querySelector('input[name="battingMilestonesPts1"]').value = "";
+    form().querySelector('input[name="battingMilestonesAt1"]').value = "";
+    form().querySelector('input[name="wicketHaulsAt0"]').value = "";
+    form().dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    assert(form() && /Wicket haul 1: fill in the wickets/.test(form().querySelector(".form-error").textContent), "a haul with points but no wickets is refused with a message");
+    // A preset saved before the lists opens with its fixed milestones as rows.
+    win.eval(`ui.editingPointsPreset = null; state.pointsPresets.old1 = { id: "old1", name: "Old one", perRun: 1, thirty: 4, fifty: 8, century: 0, perWicket: 10, threeWickets: 5 }; render();`);
+    assert(/30 \+4/.test(cards().find(c => /Old one/.test(c.textContent)).textContent), "an old preset's card shows its milestones");
+    doc.querySelector('#app [data-action="edit-points-preset"][data-id="old1"]').click();
+    assert(atRows("battingMilestones") === "30,50" && atRows("wicketHauls") === "3", "an old preset opens with its milestones and hauls as rows (the ones worth points)");
+    win.eval(`delete state.pointsPresets.old1; delete state.pointsPresets[${JSON.stringify(short.id)}];`);
     win.eval(`ui.editingPointsPreset = null; state.pointsPresetId = "points-club"; render();`);
 
     // A guest match with 11 batters: everyone is listed, not a top 10.

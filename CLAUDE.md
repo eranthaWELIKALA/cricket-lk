@@ -725,22 +725,43 @@ section ties the rest by hand.
 
 **MVP points come from a points preset**, a third kind of preset next to
 match and tournament presets. `calcPlayerPoints(bat, bowl, field, preset)`
-gives one player's points for one innings: per run / four / six, a 30 / 50
-/ 100 bonus (highest reached only), not out, duck; per wicket, bowled-or-lbw
-extra, per maiden, per dot ball, a 3 / 4 / 5-wicket haul (highest only); per
-catch / stumping / run-out; and optional economy and strike-rate **bands**
-(`{ from, below, pts }`, from <= x < below, open ends `null`, first fit
-wins; only after `minOvers` / `minBalls`; economy in the match's own over
-length). Values may be decimals or negative. Dots and bowled/lbw wickets
-aren't in the bowling line: `inningsBowlerExtras(inn)` reads dots from ball
-by ball (byes/leg byes are dots for the bowler; catch-up gaps have no
-balls) and bowled/lbw from each batter's `howOut`. Built-ins
-(`DEFAULT_POINTS_PRESETS`): **Club** (the default: a wicket is about 15
-runs, and a four +2 / a six +4 on top of their runs, since most club games
-are 4-6 overs), **Classic** (the old fixed formula), **Fantasy
-T20** (bands, hauls, duck) and **IPL MVP**. Described in plain words by
-`describePointsPreset` (the ⓘ), checked by `pointsPresetError` (ENGINE,
-tested).
+gives one player's points for one innings: per run / four / six, batting
+**milestones** (`battingMilestones: [{ at, pts }]`, runs; highest reached
+only), not out, duck; per wicket, bowled-or-lbw extra, per maiden, per dot
+ball, a **hat-trick** (`hatTrick`), **wicket hauls** (`wicketHauls: [{ at,
+pts }]`, highest only); per catch / stumping / run-out; and optional economy
+and strike-rate **bands** (`{ from, below, pts }`, from <= x < below, open
+ends `null`, first fit wins; only after `minOvers` / `minBalls`; economy in
+the match's own over length). Values may be decimals or negative. **Presets
+from before the milestone lists** have fixed `thirty`/`fifty`/`century` and
+`threeWickets`/`fourWickets`/`fiveWickets` values instead: `pointsMilestones(p,
+"batting"|"hauls")` (ENGINE, tested) reads either shape, keeping the old
+zeros (an old 50 worth 0 still caps the 30 under it), so a stored guest or
+club preset counts exactly as it did; the editor saves the lists (a row worth
+0 is dropped) **and** the old fixed fields mirrored from them (a 50 row →
+`fifty`, else 0), which this version ignores but an app not yet updated reads,
+so a club preset saved from a new phone still counts its 50s/100s/hauls on an
+old one. No migration: club presets are jsonb. Dots, bowled/lbw wickets
+and hat-tricks aren't in the bowling line: `inningsBowlerExtras(inn)` reads
+dots from ball by ball (byes/leg byes are dots for the bowler; catch-up gaps
+have no balls), bowled/lbw from each batter's `howOut`, and `hatTricks` from
+ball by ball: three of the bowler's own deliveries in a row each taking a
+wicket credited to them (not a run-out), across their overs; a wide/no-ball
+with no such wicket is passed over, any other legal ball or a catch-up gap
+ends the run, and each wicket in a row after the third adds half (4 in 4 =
+1.5, 5 in 5 = 2) — old over events work too ("W" the bowler's, "Ro" a
+run-out). Built-ins (`DEFAULT_POINTS_PRESETS`): **Club** (the default: a
+wicket is about 15 runs, and a four +2 / a six +4 on top of their runs, since
+most club games are 4-6 overs; milestones at 20 / 30 / 50 / 100, 10 a maiden,
+20 a hat-trick, economy under 5 / 10 / 15 an over after one over),
+**Classic** (the old fixed formula), **Fantasy T20** (bands, hauls, duck) and
+**IPL MVP**. A guest's seeded copies keep the numbers they were seeded with
+("Fill in from" a built-in takes the new ones). The editor's lists
+(`POINTS_ROW_LISTS`, guest.js: milestones, hauls, both rate bands) take rows
+with `+ Add` / ✕ (`points-row-add`/`-remove`), which first read the form into
+the draft (`parsePointsPresetForm(f, true)`) so nothing typed is lost.
+Described in plain words by `describePointsPreset` (the ⓘ), checked by
+`pointsPresetError` (ENGINE, tested).
 
 **Points are counted when stats are read, never stored**, with the preset in
 use for that role: the guest's (`state.pointsPresets`,
