@@ -23,6 +23,7 @@ of `index.html`:
 |---|---|
 | `js/reference-data.js` | 1. REFERENCE DATA |
 | `js/engine.js` | 2. ENGINE — pure, zero DOM access (the block to port for a native app) |
+| `js/engine-history.js` | 2b. ENGINE: records & history — `computeRecords`, partnerships, match-ups, ratings, milestones, badges, chart data (pure too; see "Records & history") |
 | `js/storage.js` | 3. STORAGE — `DB` |
 | `js/cloud.js` | 4. CLOUD — Supabase, auth, outbox sync, read cache, cloud RPCs |
 | `js/ui/state.js` | `state`/`ui`, `load`/`save`/migration/purges, guest data helpers |
@@ -32,7 +33,8 @@ of `index.html`:
 | `js/ui/router.js` | page navigation (routes, history, back interception, unsaved-input checks) |
 | `js/ui/menus.js` | sync pill/sheet, side menu |
 | `js/ui/screens/*.js` | `home-account`, `clubs` (+ profiles, player modals), `club-tournaments` (+ team builder, the public link page), `premier`, `guest` (teams/players/presets/tournaments), `stats` |
-| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `catch-up` (catch up the score), `edit-ball` (edit/add/remove a ball, set the final score by hand), `name-later` (name an unnamed batter/bowler, replace a wrongly picked one), `live`, `result` (+ scorecards, share/export), `super-over` (start one off a tie, keep its result in the tied match) |
+| `js/ui/screens/records.js`, `player-history.js`, `backup.js` | the Records tab + honours board (`statsMemo`); a player's history, compare, year in review, live records/milestones; CSV and the guest backup |
+| `js/ui/match/*.js` | `setup`, `sheets` (opening/batsman/bowler/match options/wicket), `catch-up` (catch up the score), `edit-ball` (edit/add/remove a ball, set the final score by hand), `name-later` (name an unnamed batter/bowler, replace a wrongly picked one), `live`, `result` (+ scorecards, share/export), `charts` (the scorecard's Charts tab, small line charts), `super-over` (start one off a tie, keep its result in the tied match) |
 | `js/ui/render.js` | `render()` |
 | `js/ui/events.js` | the delegated listeners |
 | `js/boot.js` | boot: `load()`, first route + render, `initAuth()`, sync triggers, service worker |
@@ -789,21 +791,11 @@ by `match.archivedId`) right after `afterBall()` flips its status to
 `"complete"` — that archive is the only source of truth stats/standings
 read from. Editing a finished match (on Result, or later from history)
 replaces its archive entry in place, so stats and standings follow it.
-**Records** (`computeRecords`, ENGINE, tested; the Records tab, `renderRecords`
-in stats.js) are worked out from the same matches as the leaderboards, which pass
-them in as `renderLeaderboards(totals, { …, matches })` — every caller does, so
-the tab is on guest, club, tournament and Premier Stats. Five groups: career
-tallies for Batting/Bowling/Fielding (from `aggregatePlayerStats`, plus wides and
-no-balls per bowler counted as *deliveries* from ball by ball, like dots, so a
-catch-up gap adds none), "In one match" (highest score, best bowling, most sixes
-in an innings, most runs hit in an over — `eventBatRuns`, shared with the
-commentary — and conceded in an over, byes/leg byes not the bowler's) and team
-totals (highest; lowest = all out or out of overs, not a won chase or forfeit).
-Each keeps its top `RECORDS_TOP` (3) places, equal values sharing a place;
-an empty record is left out. Player records skip "no names" matches and
-placeholders, team totals count every match (result-only too). Career tallies
-render as two-up tiles, one-match records as rows that open their scorecard
-(`open-match-detail`, so the id must be findable by `findCompletedMatch`).
+**Records** (`computeRecords`, now in `js/engine-history.js`, tested; the
+Records tab, `renderRecords` in records.js) are worked out from the same matches
+as the leaderboards, which pass them in as `renderLeaderboards(totals, { …,
+matches })` — every caller does, so the tab is on guest, club, tournament and
+Premier Stats. See "Records & history" below for the sections.
 
 **By month or year** (`ui.statsPeriod = { kind: "all"|"year"|"month", key,
 near }`, `statsPeriodFor` in stats.js). When a leaderboard's `matches` span more
@@ -847,6 +839,97 @@ none.
 all-out innings counts its full overs quota (not the fewer overs it
 actually took) — this is a simplification, not a bug, consistent with
 the run-out-crossing simplification above.
+
+## Records & history (`js/engine-history.js`, records.js, player-history.js, charts.js, backup.js)
+
+All pure ENGINE functions in `engine-history.js` (tested), worked out from the
+completed matches when shown, never stored. **Only what a scorecard holds is
+used**: anything per batter per ball (fastest 25/50/100, a batter's runs off a
+bowler, partnership shares, opening/death overs) reads the over events'
+`batter` (`inningsBallData`, `forEachBall`), so older matches and catch-up gaps
+are left out of those, never guessed. Players by key (`linkedKeyOf`), "no names"
+matches and placeholders out, as everywhere.
+- **Records tab**: `computeRecords` returns seven sections — Batting, Bowling,
+  Fielding, Partnerships, Match-ups, Teams (with `facts`: batting first v
+  chasing, toss), Awards (player of the match from `match.motm`, matches, Lucky
+  charm / Tough luck = best / worst win rate, `RECORD_MIN_DECIDED` 5) — plus the
+  Honours board (`computeHonours`: every 50+, 3+ wicket haul, hat-trick, newest
+  first). One section at a time behind chips (`ui.recordsTab`,
+  `RECORD_SECTIONS`), each record a **full-width card** (two to a row cut long
+  names short; names wrap, never mid-word). A record is `{ key, label,
+  entries, tile, dir, note, bad, byWicket }`: `tile` = a career tally (its
+  names open the player sheet, listed first), else rows that open their
+  scorecard; places level beyond three are behind "+N more level · see all"
+  (`ui.recordSheet = { view, key }`, `renderRecordSheetModal`, an overlay);
+  `dir: "asc"` lowest is best; best economy needs a full over; a match-up
+  entry (batter v bowler, the batter always first) has `pair` and shows each on
+  its own line marked with a drawn **bat** (blue) or **red ball** (`roleTagHtml`,
+  `ROLE_ICONS`: inline SVG, not emoji — 🏏 is bat *and* ball and emoji differ by
+  phone; the shape, not only the colour, tells them apart; `aria-label` / title
+  "Batter" / "Bowler") — so do the player sheet's match-ups and Compare's head
+  to head;
+  `bad` (ducks, lowest total, extras…) is never announced as "set". Each keeps
+  `RECORDS_TOP` (3) places, equal values sharing one; empty records left out.
+  Team records count every match (result-only too); player records skip "no
+  names". Lowest total = all out or out of overs.
+- **Partnerships** (`inningsPartnerships`): who was in is worked out like a
+  scorer does — openers, then the next in `batting.order` after each wicket,
+  retirements and returns from `inn.retirements` (each starts a new partnership,
+  as `partnershipBase` does). `null` (shown as "not worked out") with a catch-up
+  gap or a ball whose `batter` doesn't fit.
+- **Phases** (`inningsPhases`): from the overs limit, first ~30% / last ~25%
+  (each 1–10 overs; T20 1-6 / 16-20, 6 overs 1-2 / 5-6); none under 3 overs or
+  without a limit.
+- **Dismissals** come from `howOut` (`howOutParts`, the longest bowler name that
+  fits), so old matches count; run-outs are nobody's. Match-ups
+  (`computeMatchups`) add runs/balls/dots from the balls that say who faced.
+- **Ratings** (`playerRatings`): per innings, scored against these matches' own
+  averages (batting: runs × √(SR ratio, ½–2); bowling: wickets × the runs a
+  wicket costs here + runs saved against the average economy, ≥ 0), weighted
+  `RATING_DECAY` (0.85) per older innings, built up over `RATING_RAMP` (5)
+  innings; 500 = average. The Batting/Bowling tables end with **Last 5**
+  (`playerRecentForm`) and **Rtg** (`withRatingsAndForm`, stats.js), sortable.
+- **A player's history** (player-history.js, `playerHistoryTop` / `Rest`): form,
+  badges (`PLAYER_BADGES`, one per family, highest step), rating pills,
+  milestones (`playerMilestones`: firsts and `RUN_/WICKET_/MATCH_MILESTONES`,
+  each with `sofar` — the career up to and including that match — and `match`
+  — their line, side, opponent, result, player of the match; a row opens to
+  that summary, `more.ms`, with the scorecard a tap further), Over time
+  (`playerCareerSeries`, one small chart per measure — never two scales on
+  one), match-ups (each list **Best / Toughest**, `sortMatchups` +
+  `MATCHUP_SORT_TEXT`: batting = most runs v out most then slowest; bowling =
+  most wickets v most runs given away; `more.mu_faced` / `mu_bowledAt`). On the player sheet the career-long parts use
+  `ps.allMatches` (the whole club / tournament / phone, `statsScope.all`), not
+  the period on screen. Tools on the sheet: **Compare** (`ui.playerStats.compare
+  = { key }`, `playerComparison`; back closes it first) and **year in review**
+  (share preview kind `"year"`, `renderYearCanvas`). A profile gets a
+  **Career** tab (club or Premier matches, never mixed, `ui.profile.careerScope`).
+- **Live** (`liveHistory(match)`: the matches it counts with — `historyScopeFor`:
+  the club's, or this phone's guest ones — cached per match): `historyMoment` /
+  `wicketMoment` play a `record` (★, beats a best of `liveRecordMarks`) or
+  `career` (a milestone number) stinger, ahead of a hundred / fifty; nothing
+  until `RECORDS_MIN_HISTORY` (5) matches. `pickMilestoneNote` puts "8 to 500
+  runs" on a pick sheet row (within 10%, ≤ 25 runs; wickets within 2).
+  **Result** lists `newRecordsIn` (a single-match record now held outright, or a
+  career lead taken by someone in it) — not when editing from history.
+- **Charts tab** on every scorecard (`renderMatchCharts`, charts.js: worm, runs
+  per over, the chase's run rate v needed, partnerships, phases). Plain SVG.
+  Team colours are `--chart-a`/`--chart-b` (blue/orange, set by `applyTheme` per
+  light/dark theme — not the accents, which some themes make too alike; checked
+  for colour-blind separation on every theme's surface). Every chart has a
+  legend or a title; wickets are the app's wicket red.
+- `statsMemo(name, matches, extra, fn)` (records.js) caches these per set of
+  matches (ids, finish times, scores, players, who-is-who lists).
+- **CSV** (backup.js): the leaderboard head's `CSV` button asks for the table or
+  every match; `csvCell` prefixes `'` to a cell starting `= + - @` (CSV injection).
+- **Guest backup** (Settings → Your data): one JSON file of guest data only —
+  matches without `clubId` (+ their kept logs), players, teams, presets,
+  tournaments. Restore (`planGuestRestore`) only **adds** records this phone
+  doesn't have (by id), checks each one's shape, never copies `__proto__` /
+  `constructor` / `prototype` keys, never touches `state.match` or club data, and
+  asks first with what it will add. In the Android app, mobile/web/native-bridge.js
+  hands a non-image `<a download>` (backup, CSV) to the share sheet (needs an APK
+  rebuild).
 
 ## Forfeiting a match
 
@@ -1083,13 +1166,13 @@ it at 360×640 and 375×667, not just a tall phone.
 out as a 4-column `.run-pad.small` grid (8 tiles, 2 rows) — `5` was
 added and the old separate "Wicket + Undo" `.action-row` pair was
 folded into this one grid (`UNDO` is just another tile now, styled with
-`.run-btn.undo`). **There is deliberately no "7+" custom-runs tile yet**
-— a Design-canvas mockup for this screen included one, but entering an
-arbitrary run count needs a small input flow the app doesn't have at
-all today (no way to record, say, "8 off the bat" from an overthrow);
-don't wire a `data-runs="7"` button to `handleBallClick` as a
-stand-in, that would silently record the wrong number. Build a real
-custom-runs input first if this is ever added.
+`.run-btn.undo`). **Seven or more runs** (overthrows) is the extras row's
+narrow last button, `7+` (`ui.pendingExtra = "more"`): its sheet
+(`renderMoreRunsModal`) picks the kind first (`ui.moreRunsKind`: off the bat,
+byes, leg byes, or the runs on top of a wide / no-ball the match has) and has
+tiles 7–12, each an ordinary `handleBallClick` ball — so Undo, ball edits
+(whose run pad grows a `7+` / `+1` tile) and the commentary need nothing new.
+Keep it out of the run pad itself (the 4×2 grid is the screen's anchor).
 
 **Extras ask for their runs in a sheet.** Tapping Wide / No ball / Bye /
 Leg bye opens `renderExtraRunsModal`, so an extra can't be recorded without
@@ -1323,7 +1406,8 @@ History rules — these are what make it work on phones:
 ## Scorecards: tabs and ball by ball
 
 `renderScorecard(match)` (result.js) is the one full scorecard: a tab per
-innings, then **Scorecard / Ball by ball**. Which tab shows is
+innings, then **Scorecard / Ball by ball / Commentary / Charts** (Charts: see
+"Records & history"). Which tab shows is
 `ui.scorecard = { inn, mode }` (`inn: null` = the latest innings), reset
 whenever one opens — the live scorecard sheet, Result's full scorecard, and
 the completed-match sheet. Ball by ball (`renderBallByBall`) lists every
@@ -2003,6 +2087,10 @@ wide/no-ball run values, fielder credit on catches/run-outs,
 than deleting it when you touch the engine or storage — it's cheap
 insurance against exactly the kind of off-by-one that this codebase is
 full of (over boundaries, strike rotation parity, free-hit timing).
+The jsdom page has **no network** (`OfflineLoader`): boot's `initAuth` would
+otherwise download supabase-js from its CDN and, whenever that landed, reset
+`session` in the middle of a later test (it failed at random). Tests that need
+a cloud put in their own stand-in `supabaseClient`.
 Note that `DB`, `STORAGE_KEY`, and `LEGACY_KEY` are declared with `var`
 specifically so `test.js` can reach them as `win.DB` etc. — a classic
 (non-module) script only exposes top-level `var`/`function` bindings on
@@ -2184,7 +2272,7 @@ is next online. Three pieces, all in the CLOUD section:
   and the tournament overlay also folds this device's archived matches for
   it, so standings count a match scored offline. Pending items render with
   a "not synced" tag.
-- **Offline sign-in.** `sw.js` (cache `cricket-lk-v18`; the page and the app's
+- **Offline sign-in.** `sw.js` (cache `cricket-lk-v19`; the page and the app's
   own `css/`/`js/` files are network-first, refreshing the cache, so a deploy
   never mixes versions; those fetches are `cache: "no-cache"`, because GitHub
   Pages' `max-age=600` otherwise let the browser run the old code for up to 10
@@ -2896,7 +2984,8 @@ so the app's own code paths are the same as on the web: `navigator.share` /
 `canShare` with image files (the share sheet), an `<a download>` of a
 blob (Save image → Pictures/Cricket.lk; before Android 10, the share sheet),
 `window.print()` (Export PDF → Android's print dialog, which prints the page
-with the `@media print` rules, named after `document.title`), and the system
+with the `@media print` rules, named after `document.title`), any other
+`<a download>` (a backup, a CSV) → the share sheet, and the system
 bar icons following `meta[name=theme-color]`. If the app starts relying on
 another browser API, check it works in a WebView or add it there.
 `MainActivity` sends the hardware back button to the page's history (Capacitor

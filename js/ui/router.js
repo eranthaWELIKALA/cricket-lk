@@ -107,6 +107,7 @@ function overlayOpen(){
     || (ui.tournamentTeamEdit && state.view === "clubTournamentDashboard")
     || (ui.matchDetail && ui.matchDetail.view === state.view)
     || (ui.playerStats && ui.playerStats.view === state.view)
+    || (ui.recordSheet && ui.recordSheet.view === state.view)
     || (ui.resultEntry && ui.resultEntry.view === state.view)
     || (ui.sharePreview && ui.sharePreview.view === navKey())
     || (onMatch && (ui.matchMenu || ui.catchUp || ui.wicketFlow || ui.retire || ui.pendingExtra || ui.liveScorecard))
@@ -359,7 +360,9 @@ function closeTopOverlay(){
   if (ui.tournamentTeamEdit && document.querySelector(".team-modal")){ closeTeamEdit(); return true; }
   if (ui.sharePreview){ closeSharePreview(); return true; }
   if (ui.matchDetail){ ui.matchDetail = null; render(); return true; }
+  if (ui.playerStats && ui.playerStats.compare){ closePlayerCompare(); return true; }
   if (ui.playerStats){ closePlayerStats(); return true; }
+  if (ui.recordSheet){ ui.recordSheet = null; render(); return true; }
   if (ui.resultEntry && document.querySelector("#result-entry-form")){
     const close = () => { ui.resultEntry = null; render(); };
     if (hasDirtyForm("#modal-root")) confirmDiscard(close); else close();

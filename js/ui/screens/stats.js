@@ -32,7 +32,11 @@ const LEADERBOARD_COLUMNS = {
     { key: "sixes", label: "6s", title: "Sixes", value: t => t.sixes },
     { key: "fifties", label: "50s", title: "Fifties", value: t => t.fifties },
     { key: "hundreds", label: "100s", title: "Hundreds", value: t => t.hundreds },
-    { key: "ducks", label: "0s", title: "Ducks", value: t => t.ducks }],
+    { key: "ducks", label: "0s", title: "Ducks", value: t => t.ducks },
+    // Runs in the last 5 innings (sorts by who's in form), and the rating (playerRatings).
+    { key: "formBat", label: "Last 5", title: "Last 5 innings, newest first", bar: false, value: t => t.formBat ? t.formBat.reduce((s, x) => s + x.runs, 0) : null,
+      text: t => t.formBat ? `<span class="lb-form">${t.formBat.map(x => `${x.runs}${x.out ? "" : "*"}`).join(" ")}</span>` : "—" },
+    { key: "batRating", label: "Rtg", title: "Batting rating: 500 is an average player here, recent innings count most", value: t => t.batRating, text: t => t.batRating == null ? "—" : t.batRating }],
   bowl: [LB_PLAYER,
     { key: "wickets", label: "W", title: "Wickets", value: t => t.wickets, strong: true },
     LB_MATCHES,
@@ -45,7 +49,10 @@ const LEADERBOARD_COLUMNS = {
       text: t => t.best ? `${t.best.wickets}/${t.best.runs}` : "—" },
     { key: "bowlAverage", label: "Avg", title: "Bowling average", value: t => lbRatio(t.runsConceded, t.wickets), text: t => lbDec(lbRatio(t.runsConceded, t.wickets), 1), best: "asc" },
     { key: "economy", label: "Econ", title: "Economy (runs per 6 balls)", value: t => lbRatio(t.runsConceded, t.legalBalls / 6), text: t => lbDec(lbRatio(t.runsConceded, t.legalBalls / 6), 2), best: "asc" },
-    { key: "bowlStrikeRate", label: "SR", title: "Balls per wicket", value: t => lbRatio(t.legalBalls, t.wickets), text: t => lbDec(lbRatio(t.legalBalls, t.wickets), 1), best: "asc" }],
+    { key: "bowlStrikeRate", label: "SR", title: "Balls per wicket", value: t => lbRatio(t.legalBalls, t.wickets), text: t => lbDec(lbRatio(t.legalBalls, t.wickets), 1), best: "asc" },
+    { key: "formBowl", label: "Last 5", title: "Wickets in the last 5 innings bowled, newest first", bar: false, value: t => t.formBowl ? t.formBowl.reduce((s, x) => s + x.wickets, 0) : null,
+      text: t => t.formBowl ? `<span class="lb-form">${t.formBowl.map(x => x.wickets).join(" ")}</span>` : "—" },
+    { key: "bowlRating", label: "Rtg", title: "Bowling rating: 500 is an average player here, recent innings count most", value: t => t.bowlRating, text: t => t.bowlRating == null ? "—" : t.bowlRating }],
   field: [LB_PLAYER,
     { key: "dismissals", label: "Total", title: "Dismissals", value: t => fieldDismissals(t), strong: true },
     LB_MATCHES,
@@ -241,71 +248,19 @@ function playerAvatarHtml(key, name, cls){
     : `<span class="player-avatar initials ${cls || ""}" aria-hidden="true">${escapeHtml(playerInitials(name))}</span>`;
 }
 
-/* --- records (computeRecords) ---
-   Career tallies (Batting/Bowling/Fielding) are two-up tiles: the leader's
-   number large, the next places a line each. Single-match records (one
-   innings, one over, team totals) are full-width rows that open that
-   match's scorecard; an over shows its balls. A record nobody has yet is
-   left out. */
-const RECORDS_SHOWN = 3;
-const RECORD_TILE_GROUPS = ["bat", "bowl", "field"];
-function recordValue(e){ return escapeHtml(e.text != null ? e.text : String(e.value)); }
-function recordMoreHtml(r){
-  const more = r.entries.length - RECORDS_SHOWN;
-  return more > 0 ? `<p class="record-more">+${more} more level</p>` : "";
+/* Each total with its last 5 innings (bat / bowl) and its ratings
+   (playerRatings) over the same matches: the tables' Last 5 and Rtg columns. */
+function withRatingsAndForm(totals, matches){
+  const opts = statsOpts();
+  const ratings = statsMemo("ratings", matches, "", () => playerRatings(matches, opts));
+  const form = statsMemo("form", matches, "", () => playerRecentForm(matches, opts));
+  return totals.map(t => {
+    const r = ratings[t.key] || {}, f = form[t.key] || {};
+    return Object.assign({}, t, { batRating: r.bat != null ? r.bat : null, bowlRating: r.bowl != null ? r.bowl : null,
+      formBat: f.bat && f.bat.length ? f.bat : null, formBowl: f.bowl && f.bowl.length ? f.bowl : null });
+  });
 }
-function recordTileHtml(r){
-  const [lead, ...rest] = r.entries.slice(0, RECORDS_SHOWN);
-  return `<div class="record-tile">
-    <div class="record-label">${r.label}</div>
-    <div class="record-lead">
-      <span class="record-val">${recordValue(lead)}</span>
-      <span class="record-name">${escapeHtml(lead.name)}</span>
-      <span class="record-detail">${escapeHtml(lead.detail)}</span>
-    </div>
-    ${rest.length ? `<ol class="record-rest">${rest.map(e => `<li><span class="record-place">${e.place}</span><span class="record-name">${escapeHtml(e.name)}</span><span class="record-val">${recordValue(e)}</span></li>`).join("")}</ol>` : ""}
-    ${recordMoreHtml(r)}
-  </div>`;
-}
-function recordBallsHtml(balls){
-  return `<span class="record-balls">${balls.map(e => {
-    const bat = !/^(Wd|Nb|B|Lb)/.test(e.display);
-    const cls = e.isWicket ? " wicket" : e.runs === 4 && bat ? " four" : e.runs === 6 && bat ? " six" : /^(Wd|Nb)/.test(e.display) ? " extra" : "";
-    return `<span class="chip${cls}">${escapeHtml(e.display)}</span>`;
-  }).join("")}</span>`;
-}
-function recordRowHtml(e){
-  const lead = e.place === 1;
-  const inner = `<span class="record-place">${e.place}</span>
-    <span class="record-who"><span class="record-name">${escapeHtml(e.name)}</span><span class="record-detail">${escapeHtml(e.detail)}</span>${lead && e.balls ? recordBallsHtml(e.balls) : ""}</span>
-    <span class="record-val">${recordValue(e)}</span>`;
-  return e.matchId
-    ? `<li><button type="button" data-action="open-match-detail" data-id="${escapeHtml(e.matchId)}" class="record-row record-open${lead ? " lead" : ""}">${inner}<span class="chevron" aria-hidden="true">›</span></button></li>`
-    : `<li class="record-row${lead ? " lead" : ""}">${inner}</li>`;
-}
-function recordCardHtml(r){
-  return `<div class="record-card">
-    <div class="record-label">${r.label}</div>
-    <ol class="record-rows">${r.entries.slice(0, RECORDS_SHOWN).map(recordRowHtml).join("")}</ol>
-    ${recordMoreHtml(r)}
-  </div>`;
-}
-function renderRecords(matches){
-  const groups = computeRecords(matches, statsOpts())
-    .map(g => Object.assign({}, g, { records: g.records.filter(r => r.entries.length) }))
-    .filter(g => g.records.length);
-  if (!groups.length) return `<p class="hint">No records yet.</p>`;
-  return `<div class="records">
-    ${groups.map(g => {
-      const tiles = RECORD_TILE_GROUPS.includes(g.key);
-      return `<section class="records-group">
-        <h3 class="section-label">${g.title}</h3>
-        <div class="${tiles ? "records-tiles" : "records-cards"}">${g.records.map(tiles ? recordTileHtml : recordCardHtml).join("")}</div>
-      </section>`;
-    }).join("")}
-    
-  </div>`;
-}
+let lbCsvScope = null;   // the leaderboard on screen, for its CSV download (exportLeaderboardCsv)
 
 /* `opts.points`: the points preset `totals` were counted with -- null
    (Premier) leaves the MVP table out; `opts.where` says where it's changed.
@@ -324,7 +279,10 @@ function renderLeaderboards(totals, opts){
   const period = o.matches ? statsPeriodFor(o.matches) : null;
   if (period && period.kind !== "all") totals = aggregatePlayerStats(period.matches, points, statsOpts());
   const matches = period ? period.matches : null;
-  statsScope = { matches: matches || [], points, title: [o.title, period && period.label].filter(Boolean).join(" · ") || "All time" };
+  if (matches) totals = withRatingsAndForm(totals, matches);
+  // `all`: every match of this club / tournament / phone, for a player's career-long history.
+  statsScope = { matches: matches || [], all: o.matches || [], points, title: [o.title, period && period.label].filter(Boolean).join(" · ") || "All time", scopeTitle: o.title || "" };
+  lbCsvScope = { totals, matches: matches || [], title: statsScope.title };
   const tabs = [...(points ? [["mvp", "MVP"]] : []), ["bat", "Batting"], ["bowl", "Bowling"], ["field", "Fielding"], ...(matches ? [["records", "Records"]] : [])];
   const tab = tabs.some(([k]) => k === ui.statsTab) ? ui.statsTab : tabs[0][0];
   // Every table's top three in one request, so switching tabs finds their photos there.
@@ -336,7 +294,7 @@ function renderLeaderboards(totals, opts){
     ${top}
     ${podiumHtml(tab, totals, period || { kind: "all" }, o.leader)}
     <div class="leaderboard${tab === "mvp" ? " mvp" : ""}">
-      <div class="lb-head"><h3>${LEADERBOARD_TITLES[tab]}</h3>${listed ? `<span class="lb-count">${listed} player${listed === 1 ? "" : "s"}</span>` : ""}</div>
+      <div class="lb-head"><h3>${LEADERBOARD_TITLES[tab]}</h3>${listed ? `<span class="lb-count">${listed} player${listed === 1 ? "" : "s"}</span>` : ""}${listed ? `<button type="button" data-action="export-csv" data-table="${tab}" class="lb-csv" aria-label="Download as a CSV file">CSV</button>` : ""}</div>
       ${tab === "mvp" ? `
         <p class="hint points-using">Counted with the <b>${escapeHtml(points.name)}</b> points ${presetInfoButtonHtml("points", points.id, "leaderboard-points", points.name)}${o.where ? ` · change them in ${escapeHtml(o.where)}` : ""}</p>
         ${presetInfoPanelHtml("leaderboard-points")}` : ""}
@@ -410,7 +368,8 @@ function openPlayerStats(key, scope, name){
   const mine = t ? isMyTotal(self, t) : isMyName(self, name);
   ui.playerStats = { view: state.view, key: t ? t.key : null, name: mine ? self.name : t ? t.name : name,
     names: mine ? self.names : t ? t.names : [name], self: mine ? self : null,
-    matches: sc.matches, points: sc.points, title: sc.title };
+    matches: sc.matches, allMatches: sc.all && sc.all.length ? sc.all : sc.matches, points: sc.points, title: sc.title, scopeTitle: sc.scopeTitle || "",
+    compare: null, more: {} };
   render();
 }
 function closePlayerStats(){
@@ -448,10 +407,17 @@ function playerStatsBodyHtml(ps){
   // Every other name they're counted under here (a former name, a merged profile's).
   const shown = (ps.name || "").trim().toLowerCase();
   const also = [...new Set(lines.flatMap(l => l.labels || []))].filter(n => n.trim().toLowerCase() !== shown);
+  // Form, badges, milestones and over time are career-long: every match of
+  // this club / tournament / phone (`all`), not just the period on screen.
+  const all = ps.allMatches || ps.matches;
+  const key = self ? self.id : ps.key;
   return `
     ${where ? `<p class="muted player-stats-where">${escapeHtml(where)}</p>` : ""}
     ${also.length ? `<p class="hint">Also counted: played as ${also.map(escapeHtml).join(", ")}.</p>` : ""}
-    ${career ? careerStatsHtml(career, !!ps.points, playerRankPills(ranks, !!ps.points)) : `<p class="hint">No figures for this player here yet.</p>`}
+    ${career ? playerHistoryTop(who, all) : ""}
+    ${career ? careerStatsHtml(career, !!ps.points, playerRankPills(ranks, !!ps.points) + playerRatingPills(key, ps.matches)) : `<p class="hint">No figures for this player here yet.</p>`}
+    ${career && ps === ui.playerStats ? playerToolsHtml(ps, who) : ""}
+    ${career ? playerHistoryRest(who, all, ps.matches, ps.more || {}) : ""}
     ${career ? playerMonthsHtml(who, ps) : ""}
     ${lines.length ? `<h3 class="section-label">Match by match</h3><div class="fixtures">${lines.map(l => playerMatchRowHtml(l, matchDateText(l.match))).join("")}</div>` : ""}`;
 }
@@ -512,15 +478,15 @@ function renderPlayerStatsModal(){
   const ps = ui.playerStats;
   return `
     <div class="modal-backdrop">
-      <div class="modal player-stats-modal" data-keep-scroll="player-stats" role="dialog" aria-modal="true" aria-label="${escapeHtml(ps.name)}: stats">
+      <div class="modal player-stats-modal" data-keep-scroll="player-stats${ps.compare ? `:compare:${ps.compare.key || ""}` : ""}" role="dialog" aria-modal="true" aria-label="${escapeHtml(ps.name)}: stats">
         <div class="wicket-modal-head">
           <div class="player-stats-head">${playerStatsAvatarHtml(ps)}<h2>${escapeHtml(ps.name)}${ps.self ? ` <span class="you-tag">You</span>` : ""}</h2></div>
           <button type="button" data-action="close-player-stats" class="sheet-close" aria-label="Close">✕</button>
         </div>
-        ${playerStatsBodyHtml(ps)}
+        ${ps.compare ? renderPlayerCompareBody(ps) : playerStatsBodyHtml(ps)}
         <div class="sheet-actions">
-          ${ps.self ? myProfileButtonHtml(ps.title) : ""}
-          <button type="button" data-action="close-player-stats" class="ghost">Close</button>
+          ${ps.compare ? `<button type="button" data-action="player-compare-close" class="ghost">‹ Back</button>${ps.compare.key ? `<button type="button" data-action="player-compare" class="ghost">Someone else</button>` : ""}`
+            : `${ps.self ? myProfileButtonHtml(ps.title) : ""}<button type="button" data-action="close-player-stats" class="ghost">Close</button>`}
         </div>
       </div>
     </div>`;

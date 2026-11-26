@@ -6,7 +6,7 @@
 var state = defaultState();
 function defaultUi(){
   return {
-    pendingExtra: null, wicketFlow: null, wicketExtra: null, retire: null, ballEdit: null, scoreSet: null, nameLater: null, replacePick: null, opening: null, wicketFielder: null, runoutRuns: 0, runoutEnd: "striker", runoutAt: null, showFullScorecard: false, liveScorecard: false, scorecard: null, matchDetail: null, playerStats: null, statsTab: "mvp", confirm: null, syncSheet: false, matchMenu: null, catchUp: null, squadError: null, pickDismissed: null, awayFromMatch: false, clubRosterLoading: null, clubTournamentLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
+    pendingExtra: null, moreRunsKind: null, wicketFlow: null, wicketExtra: null, retire: null, ballEdit: null, scoreSet: null, nameLater: null, replacePick: null, opening: null, wicketFielder: null, runoutRuns: 0, runoutEnd: "striker", runoutAt: null, showFullScorecard: false, liveScorecard: false, scorecard: null, matchDetail: null, playerStats: null, statsTab: "mvp", confirm: null, syncSheet: false, matchMenu: null, catchUp: null, squadError: null, pickDismissed: null, awayFromMatch: false, clubRosterLoading: null, clubTournamentLoading: null, editingClubMatchPreset: null, editingClubTournamentPreset: null, profile: null,
     matchSetupPresetId: null, presetInfo: null,
     tournamentSetupPresetId: null, tournamentSetupTeamIds: [],
     tournamentTab: null, resultEntry: null, sharePreview: null,
@@ -17,6 +17,8 @@ function defaultUi(){
     editingPointsPreset: null, editingClubPointsPreset: null, clubPresetMessage: null,
     // Leaderboard sort per table: { mvp|bat|bowl|field: { key, dir } } (renderLeaderboards).
     statsSort: {},
+    // The Records tab's section (renderRecords) and which honours lists show in full.
+    recordsTab: null, honoursAll: null, recordSheet: null,
     // The leaderboards' period: { kind: "all"|"year"|"month", key, near } (statsPeriodFor).
     statsPeriod: { kind: "all", key: null, near: null },
     // cloud clubs (see CLOUD section) -- caches of fetched data, not persisted;

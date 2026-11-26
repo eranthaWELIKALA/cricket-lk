@@ -748,8 +748,10 @@ function pickRowHtml(name, action, figs, active, cls){
   const nick = r && r.nickname ? r.nickname.trim() : "";
   const jersey = r && r.jersey_no != null ? `#${r.jersey_no}` : "";
   const search = nameSearchKey(name, nick, jersey);
+  // A batter / bowler close to a career milestone says so ("8 to 500 runs", pickMilestoneNote).
+  const note = pickMilestoneNote(name, action);
   return `<button type="button" data-action="${action}" data-name="${escapeHtml(name)}" data-search="${escapeHtml(search)}" class="${cls || "bowler-pick-row"} pick-row-item${active ? " active" : ""}"${active ? ` aria-pressed="true"` : ""}>`
-    + `<span class="name">${jersey ? `<span class="pick-jersey">${jersey}</span> ` : ""}${escapeHtml(name)}${nick ? ` <span class="combo-nick">${escapeHtml(nick)}</span>` : ""}</span>`
+    + `<span class="name">${jersey ? `<span class="pick-jersey">${jersey}</span> ` : ""}${escapeHtml(name)}${nick ? ` <span class="combo-nick">${escapeHtml(nick)}</span>` : ""}${note ? `<span class="pick-milestone">${escapeHtml(note)}</span>` : ""}</span>`
     + (figs ? `<span class="n figs">${figs}</span>` : "")
     + `</button>`;
 }

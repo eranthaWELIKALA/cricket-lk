@@ -621,9 +621,15 @@ function renderBallEditModal(m){
   const kinds = BALL_EDIT_KINDS.filter(([k]) =>
     (k !== "wide" || m.wideEnabled || (editing && (editing.kind === "wide" || editing.extra === "wide")))
     && (k !== "noball" || m.noBallEnabled || (editing && (editing.kind === "noball" || editing.extra === "noball"))));
-  const runPad = (from, to) => {
+  const runPad = (from, to, more) => {
     const out = [];
     for (let n = from; n <= to; n++) out.push(`<button type="button" data-action="ball-edit-set" data-field="runs" data-value="${n}" class="run-btn ${d.runs === n ? "active" : ""}">${n}</button>`);
+    // Seven or more (overthrows): the value it has, and a tile that adds one more.
+    if (more){
+      if ((d.runs || 0) > to) out.push(`<button type="button" data-action="ball-edit-set" data-field="runs" data-value="${d.runs}" class="run-btn active">${d.runs}</button>`);
+      const next = Math.max(to + 1, (d.runs || 0) + 1);
+      out.push(`<button type="button" data-action="ball-edit-set" data-field="runs" data-value="${next}" class="run-btn" aria-label="${next} runs">${(d.runs || 0) > to ? "+1" : `${to + 1}+`}</button>`);
+    }
     return `<div class="run-pad small">${out.join("")}</div>`;
   };
   const runsAsk = { run: "Runs off the bat", wide: "Runs on top of the wide", noball: "Runs off the bat (or run) on top of the no-ball", bye: "Byes", legbye: "Leg byes" }[d.kind];
@@ -644,7 +650,7 @@ function renderBallEditModal(m){
     <div class="ball-edit-kinds">${kinds.map(([k, label]) => tile("kind", k, label, d.kind === k)).join("")}</div>
     ${d.kind !== "wicket" ? `
       <div class="section-label">${runsAsk}</div>
-      ${runPad(d.kind === "bye" || d.kind === "legbye" ? 1 : 0, 6)}
+      ${runPad(d.kind === "bye" || d.kind === "legbye" ? 1 : 0, 6, true)}
     ` : `
       ${m.wideEnabled || m.noBallEnabled || d.extra ? `
         <div class="section-label">Off which ball?</div>

@@ -1,5 +1,5 @@
 const fs = require("fs");
-const { JSDOM } = require("jsdom");
+const { JSDOM, ResourceLoader, VirtualConsole } = require("jsdom");
 
 // index.html loads its code as ordered classic scripts (js/...) and a
 // stylesheet; inline them so jsdom runs the same code, in the same order,
@@ -8,7 +8,17 @@ const html = fs.readFileSync(__dirname + "/index.html", "utf8")
   .replace(/<script src="([^"]+)"><\/script>/g, (_, src) =>
     `<script>${fs.readFileSync(__dirname + "/" + src, "utf8").replace(/<\/script/gi, "<\\/script")}</script>`)
   .replace(/<link rel="stylesheet" href="([^"]+)">/g, (_, href) => `<style>${fs.readFileSync(__dirname + "/" + href, "utf8")}</style>`);
-const dom = new JSDOM(html, { runScripts: "dangerously", resources: "usable", url: "http://localhost/" });
+// No network: boot's initAuth would load supabase-js from its CDN, and when
+// that download lands (whenever the network allows) it sets the session --
+// in the middle of whichever later test is running, which then fails at random.
+// The tests put in their own stand-in client wherever they need one.
+class OfflineLoader extends ResourceLoader {
+  fetch(url, options){ return /^https?:\/\/(?!localhost)/.test(url) ? Promise.reject(new Error("offline: " + url)) : super.fetch(url, options); }
+}
+const quiet = new VirtualConsole();
+quiet.sendTo(console, { omitJSDOMErrors: true });
+quiet.on("jsdomError", e => { if (!/Could not load script|offline: /.test(e.message)) console.error(e); });
+const dom = new JSDOM(html, { runScripts: "dangerously", resources: new OfflineLoader(), url: "http://localhost/", virtualConsole: quiet });
 const win = dom.window;
 
 // sw.js must precache exactly the code index.html loads, or the app breaks
@@ -1659,7 +1669,7 @@ async function main(){
     const recs = win.computeRecords([m]);
     const rec = key => { for (const g of recs) for (const r of g.records) if (r.key === key) return r.entries; return null; };
     const top = key => rec(key).map(e => `${e.place}.${e.name}:${e.text != null ? e.text : e.value}`).join(" ");
-    assert(recs.map(g => g.key).join() === "bat,bowl,field,match,team", "records come in five groups");
+    assert(recs.map(g => g.key).join() === "bat,bowl,field,partner,matchups,team,awards", "records come in seven sections: " + recs.map(g => g.key).join());
     assert(top("runs") === "1.A1:17 2.B4:4 3.A2:2" && rec("runs")[0].detail === "1 innings", "most runs, top three: " + top("runs"));
     assert(top("sixes") === "1.A1:2" && top("fours") === "1.A1:1 1.B4:1", "most sixes; equal fours share first place: " + top("fours"));
     assert(top("ducks") === "1.B1:1 1.B3:1 1.B5:1 1.B6:1", "most ducks: everyone out for 0 (not A2, out for 2): " + top("ducks"));
@@ -1678,6 +1688,43 @@ async function main(){
       "most runs conceded in an over: wides and no-balls count, the leg bye and B2's maiden don't: " + top("overConceded"));
     assert(top("highTotal") === "1.Lions:22-1 2.Tigers:4-5" && top("lowTotal") === "1.Tigers:4-5 2.Lions:22-1" && rec("lowTotal")[0].detail === "v Lions · 1.0 ov · all out",
       "team totals: highest, and lowest (all out or out of overs): " + top("lowTotal"));
+    // The new sections, from the same match.
+    assert(top("partnership") === "1.A1 & A2:21 2.B2 & B4:4 3.A1 & A3:1*" && rec("partnership")[0].detail === "1st wicket · 6 balls · v Tigers",
+      "partnerships: the highest (extras count; an unbroken one has a *): " + top("partnership"));
+    assert(rec("byWicket").map(e => `${e.wicket}:${e.name}:${e.text}`).join(" ") === "1:A1 & A2:21 2:A1 & A3:1* 3:B2 & B4:4",
+      "the best partnership for each wicket (none with no runs): " + JSON.stringify(rec("byWicket").map(e => [e.wicket, e.name, e.value])));
+    assert(top("together") === "1.A1 & A2:21 2.B2 & B4:4 3.A1 & A3:1", "most runs together, per pair: " + top("together"));
+    assert(top("runsOff") === "1.A1 v B1:17 2.B4 v A1:4 3.A2 v B1:2" && rec("runsOff")[0].detail === "4 balls · never out" && rec("runsOff")[2].detail === "3 balls · out once",
+      "match-ups: most runs off one bowler (a wide isn't a ball faced; a no-ball is): " + top("runsOff"));
+    assert(rec("runsOff")[0].pair.batter.name === "A1" && rec("runsOff")[0].pair.bowler.name === "B1" && rec("outsOf").every(e => e.name === `${e.pair.batter.name} v ${e.pair.bowler.name}`),
+      "both match-up records say who batted and who bowled, the batter first");
+    assert(rec("outsOf").length === 5 && rec("outsOf").every(e => e.place === 1 && e.value === 1) && !rec("outsOf").some(e => /B4/.test(e.name)),
+      "match-ups: dismissals from the scorecard, a run-out is nobody's: " + top("outsOf"));
+    assert(top("bowledW") === "1.A1:2 2.B1:1" && top("lbwW") === "1.A1:1" && top("caughtW") === "1.A1:1" && rec("stumpedW").length === 0, "wickets by how they came: " + top("bowledW"));
+    assert(top("fielderBowler") === "1.c A2 b A1:1" && top("catchesMatch") === "1.A2:1" && top("dismInnings") === "1.A2:1 1.A3:1", "fielding: bowler and fielder, catches in a match, dismissals in an innings");
+    assert(top("openerHigh") === "1.A1:17* 2.A2:2" && top("openRuns") === "1.A1:17 2.A2:2", "openers: highest score and most runs");
+    assert(rec("fastest25").length === 0 && rec("bestSR").length === 0 && rec("srOpen").length === 0, "fastest 25, best strike rate (10+ balls) and phases (no overs limit under 3) have nobody yet");
+    assert(top("bestEcon") === "1.B2:0.00 2.A1:4.00 3.B1:21.00" && rec("bestEcon")[0].detail === "1.0-1-0-0 · v Lions",
+      "best economy in an innings: one full over is enough: " + top("bestEcon"));
+    const teams = recs.find(g => g.key === "team");
+    assert(teams.facts.map(f => `${f.key}:${f.value}`).join() === "batFirst:100%,chase:0%" && top("bigWinRuns") === "1.Lions:18 runs" && top("lowDefended") === "1.Lions:22-1"
+      && top("aggregate") === "1.Lions v Tigers:26" && top("extras") === "1.Tigers:3" && rec("bigWinWickets").length === 0,
+      "teams: batting first v chasing, the win margin, the lowest total defended, the match's runs and the extras given: " + JSON.stringify(teams.facts));
+    assert(top("matches").startsWith("1.") && rec("luckyCharm").length === 0 && rec("pom").length === 0, "awards: nobody has 5 decided matches or a player of the match award yet");
+    const hon = win.computeHonours([m]);
+    assert(hon.bowling.map(e => `${e.name}:${e.text}`).join() === "A1:4/4" && !hon.batting.length && !hon.hatTricks.length && hon.bowling[0].matchId === "rec1",
+      "the honours board: a 3-wicket haul (no fifties or hat-tricks yet)");
+    const ups = win.computeMatchups([m]);
+    const a3 = ups.find(p => p.batterName === "A3" && p.bowlerName === "B2");
+    assert(a3 && a3.balls === 5 && a3.dots === 5 && a3.runs === 0, "A3 v B2: five dot balls");
+    const ratings = win.playerRatings([m]);
+    assert(ratings["name:a1"].bat > ratings["name:a2"].bat && ratings["name:a1"].bowl > ratings["name:b1"].bowl && ratings["name:a3"].bowl === null && ratings["name:b2"].bowl != null,
+      "ratings: 17 off 4 beats 2 off 3, A1's 4/4 beats B1's 1/21, and nobody who didn't bowl has a bowling rating: " + JSON.stringify(ratings["name:a1"]));
+    const form = win.playerRecentForm([m]);
+    assert(JSON.stringify(form["name:a1"].bat) === JSON.stringify([{ runs: 17, out: false, balls: 5 }]) && form["name:a1"].bowl[0].wickets === 4, "recent form, bat and ball");
+    const charts = win.renderMatchCharts(m, 0);
+    assert(/Worm/.test(charts) && (charts.match(/class="chart-wkt"/g) || []).length >= 6 && /partnership-bars/.test(charts) && /A1 <b class="n">17<\/b> &amp; A2 <b class="n">2<\/b>/.test(charts),
+      "the Charts tab: worm with a mark per wicket, runs per over, and partnerships with each batter's share");
     // A "no names" copy counts for team totals only; a result-only match's totals count too.
     const noNames = Object.assign(JSON.parse(JSON.stringify(m)), { id: "rec2", anonymous: true });
     const ro = win.createResultOnlyMatch({ teamA: "Eagles", teamB: "Hawks", battingFirst: "A", oversLimit: 20, playersPerSide: 11 }, [{ runs: 150, wickets: 5, balls: 120 }, { runs: 151, wickets: 3, balls: null }]);
@@ -1689,23 +1736,152 @@ async function main(){
     assert(rec2("lowTotal").map(e => `${e.place}.${e.name}`).join(" ") === "1.Tigers 1.Tigers 3.Lions 3.Lions" && !rec2("lowTotal").some(e => e.name === "Hawks"),
       "a chase that got there isn't a lowest total: " + JSON.stringify(rec2("lowTotal").map(e => e.name)));
 
-    // The Records tab: tiles for the career tallies, rows for one-match records.
+    // The Records tab: a card per record; career names open the player, one-match rows the scorecard.
     const keptHistory = win.eval("JSON.stringify(state.matchHistory)");
     win.eval(`state.match = null; ui = defaultUi(); state.matchHistory = {}; state.view = "home";`);
     win.archiveMatch(m);
     win.eval(`state.view = "stats"; ui.statsTab = "records"; render();`);
     const tabs = [...doc.querySelectorAll('#app [data-action="stats-tab"]')].map(b => b.dataset.tab).join();
     assert(tabs === "mvp,bat,bowl,field,records" && doc.querySelector('#app [data-action="stats-tab"][data-tab="records"]').classList.contains("active"), "Stats has a Records tab: " + tabs);
-    const labels = [...doc.querySelectorAll("#app .records-group .section-label")].map(h => h.textContent).join();
-    assert(labels === "Batting,Bowling,Fielding,In one match,Team totals", "the five groups show: " + labels);
-    const ducks = [...doc.querySelectorAll("#app .record-tile")].find(t => /Most ducks/.test(t.textContent));
-    assert(ducks && ducks.querySelectorAll(".record-rest li").length === 2 && /\+1 more level/.test(ducks.textContent), "four players level on ducks: the first three and \"+1 more\"");
+    const chips = () => [...doc.querySelectorAll('#app [data-action="records-tab"]')].map(b => b.dataset.tab).join();
+    assert(chips() === "bat,bowl,field,partner,matchups,team,awards,honours" && doc.querySelector('#app [data-action="records-tab"][data-tab="bat"]').classList.contains("active"),
+      "Records shows one section at a time behind its chips, Batting first: " + chips());
+    const ducks = [...doc.querySelectorAll("#app .record-card")].find(t => /Most ducks/.test(t.textContent));
+    assert(ducks && ducks.querySelectorAll(".record-rows > li").length === 3 && /\+1 more level/.test(ducks.textContent), "four players level on ducks: the first three and \"+1 more\"");
+    ducks.querySelector('[data-action="open-record"]').click();
+    assert(doc.querySelectorAll("#modal-root .record-sheet .record-rows > li").length === 4, "\"see all\" opens every player level on ducks");
+    win.eval("closeTopOverlay()");
     assert(![...doc.querySelectorAll("#app .record-label")].some(l => /fifties|stumpings/i.test(l.textContent)), "records nobody has yet are left out");
+    assert(!/Best bowling/.test(doc.querySelector("#app .records").textContent), "...another section's records aren't on screen");
     const overCard = [...doc.querySelectorAll("#app .record-card")].find(c => /hit in an over/.test(c.textContent));
     assert(overCard && overCard.querySelectorAll(".record-row.lead .record-balls .chip").length === 8 && overCard.querySelector(".record-balls .chip.six"), "the over's balls show under its leader");
     overCard.querySelector('[data-action="open-match-detail"]').click();
     assert(doc.querySelector("#modal-root .scorecard-modal"), "tapping a one-match record opens that match's scorecard");
+    win.eval(`ui.matchDetail = null; ui.recordsTab = "matchups"; render();`);
+    const pairRow = doc.querySelector("#app .pair-row");
+    assert(pairRow && [...pairRow.querySelectorAll(".role-icon")].map(x => x.getAttribute("aria-label")).join() === "Batter,Bowler" && /A1/.test(pairRow.querySelector(".pair-line").textContent)
+      && pairRow.querySelector('.pair-line [data-action="open-player-stats"]'), "Match-ups rows mark the batter (a bat, first) and the bowler (a ball), each name opening that player");
     win.eval(`ui = defaultUi(); state.matchHistory = ${keptHistory}; state.view = "home"; save(); render();`);
+  }
+
+  // --- history: partnerships around a retirement, phases, dismissals, milestones, badges, records set ---
+  {
+    const play = (m, ev) => { recordBall(currentInnings(m), ev); afterBall(m); };
+    const r = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A" });
+    const inn = currentInnings(r);
+    win.openInnings(inn, "A1", "A2", "B1"); r.status = "live";
+    play(r, { kind: "run", runs: 1 });
+    win.retireBatter(inn, "striker", "hurt"); win.sendInBatter(inn, "A3");
+    play(r, { kind: "run", runs: 4 });
+    play(r, { kind: "wicket", wicketType: "bowled" }); win.sendInBatter(inn, "A2");
+    play(r, { kind: "run", runs: 2 });
+    const ps = win.inningsPartnerships(inn);
+    assert(ps && ps.map(p => `${p.wicket}:${p.batters.join("&")}:${p.runs}:${p.balls}:${p.unbroken ? "*" : p.out}`).join(" ") === "1:A1&A2:1:1:* 1:A1&A3:4:2:A3 2:A1&A2:2:1:*",
+      "partnerships: a retirement starts a new one for the same wicket, and the batter coming back joins the next: " + JSON.stringify(ps));
+    assert(JSON.stringify(ps.map(p => p.bat)) === JSON.stringify([{ A1: 1 }, { A3: 4 }, { A2: 2 }]), "...each batter's share, from ball by ball");
+    const gapped = JSON.parse(JSON.stringify(inn)); gapped.overs.push({ bowler: null, events: [], gap: { toBalls: 6, toRuns: 20, toWickets: 1 } });
+    assert(win.inningsPartnerships(gapped) === null, "a caught-up innings has no partnerships (who fell when isn't known)");
+    const ph = l => JSON.stringify(win.inningsPhases({ oversLimit: l }));
+    assert(ph(20) === '{"open":6,"death":5,"limit":20}' && ph(6) === '{"open":2,"death":2,"limit":6}' && ph(4) === '{"open":1,"death":1,"limit":4}' && ph(2) === "null" && ph(null) === "null",
+      "phases from the overs limit: T20 1-6 / 16-20, 6 overs 1-2 / 5-6, none under 3 overs or with no limit");
+    const splits = win.inningsPhaseSplits(inn);
+    assert(splits.map(x => `${x.key}:${x.from}-${x.to}:${x.runs}/${x.wickets}`).join(" ") === "open:1-2:7/1 middle:3-4:0/0 death:5-5:0/0", "an innings split by phase: " + JSON.stringify(splits));
+    const hp = (h, b) => JSON.stringify(win.howOutParts(h, b));
+    assert(hp("c Kasun Perera b Nuwan", ["Nuwan"]) === '{"type":"caught","bowler":"Nuwan","fielder":"Kasun Perera"}'
+      && hp("bowled b Kasun Perera", ["Kasun", "Kasun Perera"]) === '{"type":"bowled","bowler":"Kasun Perera","fielder":null}'
+      && hp("st Kee b Ann", ["Ann"]) === '{"type":"stumped","bowler":"Ann","fielder":"Kee"}' && hp("lbw b Ann", ["Ann"]).includes('"lbw"')
+      && hp("hit wicket b Ann", ["Ann"]).includes('"hitwicket"') && hp("run out (Kee)", ["Ann"]) === "null" && hp("retired hurt", ["Ann"]) === "null",
+      "howOut read back: caught (with the fielder), the longest bowler name that fits, stumped, lbw, hit wicket; never a run-out");
+
+    // A career, match by match: milestones, badges, form, over time, a year in review.
+    const at = (mo, d) => new Date(2026, mo, d, 15).getTime();
+    const mk = (id, when, bat, bowl) => {
+      const x = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 20, playersPerSide: 11, battingFirst: "A" });
+      Object.assign(x, { id, completedAt: when, status: "complete", result: "Lions won" });
+      const i = currentInnings(x);
+      Object.entries(bat).forEach(([n, [runs, balls, out]]) => { win.ensureBatsman(i, n); Object.assign(i.batting.stats[n], { runs, balls, out: !!out, howOut: out ? "bowled b Bob" : null }); i.runs += runs; });
+      Object.entries(bowl).forEach(([n, [w, runs, legal]]) => { win.ensureBowler(i, n); Object.assign(i.bowling.stats[n], { wickets: w, runs, legalBalls: legal }); });
+      return x;
+    };
+    const ms = [mk("h1", at(2, 1), { Ann: [45, 30, 1] }, { Bob: [4, 20, 24] }), mk("h2", at(3, 1), { Ann: [60, 40, 1] }, { Bob: [6, 10, 24] }),
+      mk("h3", at(4, 1), { Ann: [120, 70, 0] }, { Bob: [0, 30, 24] }), mk("h4", at(5, 1), { Ann: [30, 20, 1] }, { Bob: [1, 25, 24] })];
+    const mls = win.playerMilestones("Ann", ms);
+    assert(mls.map(x => x.text).join() === "250 runs,First hundred,100 runs,First fifty,First match" && mls[0].matchId === "h4" && /match 4/.test(mls[0].detail),
+      "milestones, newest first, each with its match: " + mls.map(x => x.text).join());
+    assert(win.playerMilestones("Bob", ms).map(x => x.text).join() === "10 wickets,First five-for,First 3-wicket haul,First match", "a bowler's: hauls and round numbers of wickets");
+    const badges = win.playerBadges(win.playerCareer("Ann", ms), { hatTricks: 0, pom: 0 });
+    assert(badges.map(b => b.id + ":" + b.label).join() === "runs:250 runs,hundred:Century", "badges: one per family, the highest step (a hundred, not also a fifty): " + badges.map(b => b.label).join());
+    assert(win.playerBadges(win.playerCareer("Bob", ms), { hatTricks: 1, pom: 2 }).map(b => b.label).join() === "10 wickets,Five-for,Hat-trick,Player of the match", "a bowler's badges (2 awards: the first step)");
+    assert(win.playerForm("Ann", ms).bat.map(x => x.runs).join() === "30,120,60,45", "form: the last innings, newest first");
+    assert(win.playerCareerSeries("Ann", ms).map(p => p.runs).join() === "45,105,225,255" && win.playerCareerSeries("Ann", ms)[3].average === 85, "over time: running totals and average");
+    const yr = win.playerYearReview("Ann", ms, "2026");
+    assert(yr && yr.career.runs === 255 && yr.bestBat.runs === 120 && yr.milestones.length === 4 && win.playerYears("Ann", ms).join() === "2026", "a year in review: runs, the best innings and the milestones that year");
+    // Records set: nothing until there are five matches before it; then a new best, never a tie.
+    const five = [...ms, mk("h5", at(6, 1), { Cal: [10, 10, 1] }, {})];
+    const best = mk("h6", at(7, 1), { Dee: [130, 60, 0] }, {});
+    assert(win.newRecordsIn(best, ms).length === 0, "records set: nothing with fewer than five matches before it");
+    const set = win.newRecordsIn(best, five);
+    assert(set.some(x => x.label === "Highest score" && x.entry.name === "Dee" && x.entry.text === "130*") && !set.some(x => x.label === "Lowest total"),
+      "records set: a new highest score: " + set.map(x => x.label).join());
+    assert(!win.newRecordsIn(mk("h7", at(7, 2), { Eve: [120, 80, 1] }, {}), five).some(x => x.label === "Highest score"), "...a score level with the best isn't a new record");
+    assert(win.liveRecordMarks(five).highScore === 120 && win.liveRecordMarks(ms) === null, "the live board's marks: the best so far, once there are five matches");
+    // A milestone carries what led to it: the career up to then, and that match.
+    const m250 = win.playerMilestones("Ann", ms)[0];
+    assert(m250.text === "250 runs" && m250.sofar.runs === 255 && m250.sofar.innings === 4 && m250.sofar.matches === 4 && m250.sofar.hundreds === 1 && m250.sofar.fifties === 1
+      && Math.round(m250.sofar.average) === 85 && m250.match.line === "30 (20)" && m250.match.opp === "Tigers",
+      "250 runs: reached in 4 innings, average 85, with 30 (20) v Tigers: " + JSON.stringify(m250.sofar));
+    const w10 = win.playerMilestones("Bob", ms)[0];
+    assert(w10.text === "10 wickets" && w10.sofar.wickets === 10 && w10.sofar.bowlInnings === 2 && w10.sofar.best.wickets === 6 && w10.sofar.hauls === 2 && w10.match.line === "6/10 (4.0)",
+      "10 wickets: in 2 innings, best 6/10, two 3+ hauls: " + JSON.stringify(w10.sofar));
+    // Match-ups both ways.
+    const pairs = [{ bowlerName: "A", runs: 30, balls: 20, outs: 0 }, { bowlerName: "B", runs: 10, balls: 12, outs: 2 }, { bowlerName: "C", runs: 30, balls: 15, outs: 1 }, { bowlerName: "D", runs: 0, balls: 0, outs: 2 }];
+    assert(win.sortMatchups(pairs, "faced", "best").map(p => p.bowlerName).join("") === "CABD", "batting, best: most runs, then the faster scoring");
+    assert(win.sortMatchups(pairs, "faced", "tough").map(p => p.bowlerName).join("") === "BDCA", "batting, toughest: out most, then the slowest scoring (unknown last)");
+    const bw = [{ batterName: "P", runs: 40, balls: 20, outs: 1 }, { batterName: "Q", runs: 5, balls: 10, outs: 2 }, { batterName: "R", runs: 12, balls: 6, outs: 2 }];
+    assert(win.sortMatchups(bw, "bowledAt", "best").map(p => p.batterName).join("") === "QRP" && win.sortMatchups(bw, "bowledAt", "tough").map(p => p.batterName).join("") === "PRQ",
+      "bowling: best = most wickets then cheapest, toughest = most runs given away");
+  }
+
+  // --- 7 or more runs off one ball (overthrows) ---
+  {
+    win.eval(`state.match = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A", wideEnabled: true, noBallEnabled: true });
+      state.match.status = "live"; openInnings(currentInnings(state.match), "A1", "A2", "B1"); state.snapshots = []; ui = defaultUi(); state.view = "home"; render();`);
+    const more = doc.querySelector('#app [data-action="toggle-extra"][data-extra="more"]');
+    assert(more && more.textContent === "7+", "the extras row has 7+");
+    more.click();
+    assert(/7 or more runs/.test(doc.getElementById("modal-root").textContent) && doc.querySelectorAll('#modal-root [data-action="ball"]').length === 6, "7+ opens a sheet of 7 to 12");
+    doc.querySelector('#modal-root [data-action="ball"][data-runs="7"]').click();
+    const st = () => win.eval(`(() => { const i = currentInnings(state.match); return [i.runs, i.striker, i.batting.stats.A1.runs, i.currentOverEvents.map(e => e.display).join(" ")].join("|"); })()`);
+    assert(st() === "7|A2|7|7" && !doc.querySelector("#modal-root .modal"), "7 off the bat: an ordinary ball, the batters cross: " + st());
+    doc.querySelector('#app [data-extra="more"]').click();
+    doc.querySelector('#modal-root [data-action="more-runs-kind"][data-tab="bye"]').click();
+    doc.querySelector('#modal-root [data-action="ball"][data-runs="8"]').click();
+    assert(st() === "15|A2|7|7 B8" && win.eval("currentInnings(state.match).extras.byes") === 8, "8 byes: to the extras, not the batter: " + st());
+    doc.querySelector('#app [data-action="undo"]').click();
+    assert(st() === "7|A2|7|7", "Undo takes it back");
+    win.eval(`state.match = null; state.snapshots = []; ui = defaultUi(); state.view = "home"; save(); render();`);
+  }
+
+  // --- the guest backup, and CSV ---
+  {
+    const g = createMatch({ teamA: "Lions", teamB: "Tigers", oversLimit: 5, playersPerSide: 6, battingFirst: "A" });
+    Object.assign(g, { id: "bk1", status: "complete", completedAt: Date.now() });
+    const club = Object.assign(JSON.parse(JSON.stringify(g)), { id: "bk2", clubId: "c1" });
+    const backup = { kind: "cricket.lk/guest-backup", version: 1, savedAt: Date.now(), data: {
+      matchHistory: { bk1: g, bk2: club, bad: { id: "bad" } }, players: JSON.parse('{"p1":{"id":"p1","name":"Ann"},"__proto__":{"id":"x","name":"Evil"}}'),
+      teams: {}, matchPresets: {}, tournamentPresets: {}, pointsPresets: {}, tournaments: { t1: { id: "t1", name: "Cup", matchIds: ["bk1", "nope"] } } } };
+    const st = { matchHistory: {}, players: {}, teams: {}, matchPresets: {}, tournamentPresets: {}, pointsPresets: {}, tournaments: {} };
+    const plan = win.planGuestRestore(backup, st);
+    assert(plan.add.matches === 1 && plan.add.players === 1 && plan.add.tournaments === 1, "restore: a guest match (not a club one, not a broken one), its player and tournament: " + JSON.stringify(plan.add));
+    plan.apply(st, {});
+    assert(st.matchHistory.bk1 && !st.matchHistory.bk2 && st.players.p1.name === "Ann" && ({}).name === undefined && !Object.prototype.hasOwnProperty.call(st.players, "__proto__")
+      && JSON.stringify(st.tournaments.t1.matchIds) === '["bk1"]', "...applied: nothing reaches an object's prototype, a tournament keeps only matches it has");
+    const again = win.planGuestRestore(backup, st);
+    assert(again.add.matches === 0 && again.add.players === 0, "restoring twice adds nothing (whatever this phone has stays as it is)");
+    assert(win.planGuestRestore({ kind: "something else" }, st).error && win.planGuestRestore(Object.assign({}, backup, { version: 99 }), st).error, "a file that isn't a backup, or one from a newer app, is refused");
+    assert(win.csvCell("=HYPERLINK(1)") === "'=HYPERLINK(1)" && win.csvCell('a,"b"') === '"a,""b"""' && win.csvCell(12.5) === "12.5" && win.csvCell(null) === "",
+      "CSV: formulas stay text (CSV injection), quotes and commas are quoted");
+    assert(/^Date,Team batting first,Score/.test(win.matchesCsv([g])), "the matches CSV has its header");
   }
 
   // --- ended tournaments: summary, Summary tab, guest end/reopen ---
@@ -2781,7 +2957,7 @@ async function main(){
       mm.status = "complete"; state.matchHistory = {}; archiveMatch(mm); }
       ui = defaultUi(); state.view = "stats"; ui.statsTab = "bat"; render();`);
     const rows = () => [...doc.querySelectorAll("#app .lb-table tbody tr")].map(tr => tr.querySelector(".lb-name").textContent.replace(/^\d+/, ""));
-    assert(rows().length === 11 && doc.querySelectorAll("#app .lb-table thead th").length === 14, "Batting lists all 11 batters with every column (M, Inn, NO, R, B, HS, Avg, SR, 4s, 6s, 50s, 100s, 0s)");
+    assert(rows().length === 11 && doc.querySelectorAll("#app .lb-table thead th").length === 16, "Batting lists all 11 batters with every column (M, Inn, NO, R, B, HS, Avg, SR, 4s, 6s, 50s, 100s, 0s, Last 5, Rtg)");
     const head = key => doc.querySelector(`#app .sort-btn[data-key="${key}"]`);
     assert(head("runs").classList.contains("on") && head("runs").closest("th").getAttribute("aria-sort") === "descending", "sorted by runs, most first, by default");
     head("name").click();
@@ -4158,7 +4334,7 @@ async function main(){
     const runTile = [...tabEl().querySelectorAll(".stat-tile")].find(t => t.querySelector(".stat-label").textContent === "Runs");
     assert(runTile && runTile.querySelector(".stat-num").textContent === String(runs) && /2 matches/.test(tabEl().textContent) && /MVP #\d+ of \d+/.test(tabEl().textContent)
       && /Catches/.test(tabEl().textContent), `batting, bowling and fielding over both matches (${runs} runs), with where he ranks`);
-    const rows = tabEl().querySelectorAll('[data-action="open-match-detail"]');
+    const rows = tabEl().querySelectorAll('.fixtures [data-action="open-match-detail"]');
     assert(rows.length === 2 && rows[0].dataset.id === "pm2" && /For Lions/.test(rows[0].textContent) && tabEl().querySelector('[data-action="open-my-profile-from-stats"]'),
       "match by match, newest first, each his own line; and a way to his full profile");
     rows[0].click();
@@ -4167,9 +4343,9 @@ async function main(){
     // His own name in the table opens the same figures as a sheet.
     win.eval(`ui.tournamentTab = "stats"; render();`);
     doc.querySelector('#app td.lb-me .lb-name-btn[data-name="Kusal Mendis"]').click();
-    assert(sheet() && sheet().querySelector("h2 .you-tag") && /Also counted: played as Kusal/.test(sheet().textContent) && sheet().querySelectorAll('[data-action="open-match-detail"]').length === 2,
+    assert(sheet() && sheet().querySelector("h2 .you-tag") && /Also counted: played as Kusal/.test(sheet().textContent) && sheet().querySelectorAll('.fixtures [data-action="open-match-detail"]').length === 2,
       "his own row's name opens his sheet, every name of his counted");
-    sheet().querySelectorAll('[data-action="open-match-detail"]')[0].click();
+    sheet().querySelectorAll('.fixtures [data-action="open-match-detail"]')[0].click();
     assert(doc.querySelector("#modal-root .scorecard-modal") && !sheet(), "a match opens its scorecard over the sheet");
     win.eval("closeTopOverlay()");
     assert(sheet() && !doc.querySelector("#modal-root .scorecard-modal"), "closing (or back) returns to the sheet");
@@ -4190,7 +4366,7 @@ async function main(){
     win.eval(`ui.tournamentTab = "stats"; render();`);
     doc.querySelector('#app .lb-name-btn[data-name="Babar"]').click();
     assert(sheet() && /Babar/.test(sheet().querySelector("h2").textContent) && !sheet().querySelector(".you-tag") && !sheet().querySelector('[data-action="open-my-profile-from-stats"]')
-      && sheet().querySelectorAll('[data-action="open-match-detail"]').length === 2 && /for Tigers/.test(sheet().textContent),
+      && sheet().querySelectorAll('.fixtures [data-action="open-match-detail"]').length === 2 && /for Tigers/.test(sheet().textContent),
       "another player's name opens their own figures in this tournament");
     win.eval("closeTopOverlay()");
     assert(!sheet(), "back closes it");
@@ -4212,7 +4388,7 @@ async function main(){
       state.matchHistory = {}; __rows.forEach(r => { const a = JSON.parse(JSON.stringify(r.data)); delete a.clubId; state.matchHistory[a.id] = a; });
       state.view = "stats"; render();`);
     doc.querySelector('#app .lb-name-btn[data-name="Pathum"]').click();
-    assert(sheet() && /All time/.test(sheet().textContent) && sheet().querySelectorAll('[data-action="open-match-detail"]').length === 2, "guest Stats: a name opens that player's all-time figures");
+    assert(sheet() && /All time/.test(sheet().textContent) && sheet().querySelectorAll('.fixtures [data-action="open-match-detail"]').length === 2, "guest Stats: a name opens that player's all-time figures");
     win.eval(`fetchPlayerProfile = __prev.fetchPlayerProfile; fetchPlayerAliases = __prev.fetchPlayerAliases; fetchPlayerMatches = __prev.fetchPlayerMatches; fetchMyPlayerIdentity = __prev.fetchMyPlayerIdentity;
       state.matchHistory = {}; ui = defaultUi(); state.view = "home"; save(); render();`);
   }
