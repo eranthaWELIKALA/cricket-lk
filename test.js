@@ -497,8 +497,8 @@ async function main(){
     const pts = calcPlayerPoints(...line, preset("points-classic"));
     // batting: 55 + 4 + (2*2) + fifty(8) + notOut(4) = 75; bowling: (2*25) + (1*8) = 58; fielding: 1*8 = 8
     assert(pts === 141, `the Classic preset is the old fixed formula, got ${pts}`);
-    // Club: 55 + (4*2) + (2*4) + 8 + 2 = 81; (2*15) + 10 = 40; 5
-    assert(calcPlayerPoints(...line) === 126 && win.eval("DEFAULT_POINTS_PRESETS[0].id") === win.eval("DEFAULT_POINTS_PRESET_ID"), "with no preset, the default (Club) points");
+    // Club: 55 + (4*2) + (2*4) + 8 + 2 = 81; (2*15) + 10 = 40; a catch 10
+    assert(calcPlayerPoints(...line) === 131 && win.eval("DEFAULT_POINTS_PRESETS[0].id") === win.eval("DEFAULT_POINTS_PRESET_ID"), "with no preset, the default (Club) points");
     // A preset saved before milestones were lists (fixed 30/50/100, 3/4/5
     // wickets) counts exactly as it did: the old Club numbers still give 121.
     const oldClub = { perRun: 1, perFour: 2, perSix: 4, thirty: 4, fifty: 8, century: 16, notOut: 2, duck: 0,
@@ -527,6 +527,7 @@ async function main(){
     assert(calcPlayerPoints(null, { wickets: 3, maidens: 0, runs: 30, legalBalls: 12, hatTricks: 1 }, null, club) === 65
       && calcPlayerPoints(null, { wickets: 4, maidens: 0, runs: 30, legalBalls: 12, hatTricks: 1.5 }, null, club) === 90,
       "Club: a hat-trick +20, and 4 in 4 (1.5 hat-tricks) +30");
+    assert(calcPlayerPoints(null, null, { catches: 2, runouts: 1, stumpings: 1 }, club) === 46, "Club fielding: 10 a catch, 10 a stumping, 16 a run-out");
     assert(bat(10, 8, false) === 12 && bat(0, 0, false) === 0, "not out +2 only after facing a ball");
     assert(calcPlayerPoints({ runs: 0, balls: 3, out: true, fours: 0, sixes: 0 }, null, null, fantasy) === -2, "a duck can take points away");
     const bowl = (wickets, extra = {}) => calcPlayerPoints(null, Object.assign({ wickets, maidens: 0, runs: 30, legalBalls: 6 }, extra), null, fantasy);
