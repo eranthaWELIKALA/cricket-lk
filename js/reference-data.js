@@ -33,7 +33,7 @@ const DEFAULT_POINTS_PRESETS = [
   Object.assign({}, POINTS_ZERO, { id: "points-club", name: "Club",
     perRun: 1, perFour: 2, perSix: 4, notOut: 2,
     battingMilestones: [{ at: 20, pts: 2 }, { at: 30, pts: 4 }, { at: 50, pts: 8 }, { at: 100, pts: 16 }],
-    perWicket: 15, perMaiden: 10, hatTrick: 20, perCatch: 10, perStumping: 10, perRunOut: 16,
+    perWicket: 15, perMaiden: 10, hatTrick: 20, perCatch: 10, perStumping: 10, perRunOut: 15,
     economy: { minOvers: 1, bands: [{ from: null, below: 5, pts: 6 }, { from: 5, below: 10, pts: 4 }, { from: 10, below: 15, pts: 2 }] } }),
   Object.assign({}, POINTS_ZERO, { id: "points-classic", name: "Classic",
     perRun: 1, perFour: 1, perSix: 2, notOut: 4,
