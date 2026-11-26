@@ -753,7 +753,8 @@ ends the run, and each wicket in a row after the third adds half (4 in 4 =
 run-out). Built-ins (`DEFAULT_POINTS_PRESETS`): **Club** (the default: a
 wicket is about 15 runs, and a four +2 / a six +4 on top of their runs, since
 most club games are 4-6 overs; milestones at 20 / 30 / 50 / 100, 10 a maiden,
-20 a hat-trick, economy under 5 / 10 / 15 an over after one over),
+20 a hat-trick, economy under 5 / 10 / 15 an over after one over; 10 a catch or
+stumping, 15 a run-out, as much as a wicket),
 **Classic** (the old fixed formula), **Fantasy T20** (bands, hauls, duck) and
 **IPL MVP**. A guest's seeded copies keep the numbers they were seeded with
 ("Fill in from" a built-in takes the new ones). The editor's lists
