@@ -863,9 +863,11 @@ matches and placeholders out, as everywhere.
   (`ui.recordSheet = { view, key }`, `renderRecordSheetModal`, an overlay);
   `dir: "asc"` lowest is best; best economy needs a full over; a match-up
   entry (batter v bowler, the batter always first) has `pair` and shows each on
-  its own line tagged **BAT** / **BOWL** (`roleTagHtml`: the live board's
-  striker blue / bowler red, with the word, never colour alone) — so do the
-  player sheet's match-ups and Compare's head to head;
+  its own line marked with a drawn **bat** (blue) or **red ball** (`roleTagHtml`,
+  `ROLE_ICONS`: inline SVG, not emoji — 🏏 is bat *and* ball and emoji differ by
+  phone; the shape, not only the colour, tells them apart; `aria-label` / title
+  "Batter" / "Bowler") — so do the player sheet's match-ups and Compare's head
+  to head;
   `bad` (ducks, lowest total, extras…) is never announced as "set". Each keeps
   `RECORDS_TOP` (3) places, equal values sharing one; empty records left out.
   Team records count every match (result-only too); player records skip "no

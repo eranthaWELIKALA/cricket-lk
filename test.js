@@ -1759,8 +1759,8 @@ async function main(){
     assert(doc.querySelector("#modal-root .scorecard-modal"), "tapping a one-match record opens that match's scorecard");
     win.eval(`ui.matchDetail = null; ui.recordsTab = "matchups"; render();`);
     const pairRow = doc.querySelector("#app .pair-row");
-    assert(pairRow && [...pairRow.querySelectorAll(".role-tag")].map(x => x.textContent).join() === "BAT,BOWL" && /A1/.test(pairRow.querySelector(".pair-line").textContent)
-      && pairRow.querySelector('.pair-line [data-action="open-player-stats"]'), "Match-ups rows tag the batter (first) and the bowler, each name opening that player");
+    assert(pairRow && [...pairRow.querySelectorAll(".role-icon")].map(x => x.getAttribute("aria-label")).join() === "Batter,Bowler" && /A1/.test(pairRow.querySelector(".pair-line").textContent)
+      && pairRow.querySelector('.pair-line [data-action="open-player-stats"]'), "Match-ups rows mark the batter (a bat, first) and the bowler (a ball), each name opening that player");
     win.eval(`ui = defaultUi(); state.matchHistory = ${keptHistory}; state.view = "home"; save(); render();`);
   }
 

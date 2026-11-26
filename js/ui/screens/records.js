@@ -75,9 +75,20 @@ function recordPlayerRowHtml(e){
     <span class="record-who">${recordNameHtml(e)}<span class="record-detail">${escapeHtml(e.detail || "")}</span></span>
     <span class="record-val">${recordValue(e)}</span></li>`;
 }
-/* A batter v bowler pair (Match-ups): one line each, tagged BAT / BOWL (the
-   live board's striker and bowler colours), each name opening that player. */
-function roleTagHtml(role){ return `<span class="role-tag ${role}">${role === "bat" ? "BAT" : "BOWL"}</span>`; }
+/* A batter v bowler pair (Match-ups): one line each, marked with a small
+   bat (blue, the live board's striker colour) or a red ball with its seam
+   (the bowler's), each name opening that player. Drawn, not emoji: 🏏 is a
+   bat *and* ball, there's no cricket-ball emoji, and emoji differ by phone.
+   The shape tells them apart, not just the colour, and each has its word for
+   screen readers and a long-press / hover title. */
+const ROLE_ICONS = {
+  bat: `<svg viewBox="0 0 24 24" aria-hidden="true"><g transform="rotate(38 12 12)"><rect x="10.6" y="0.5" width="2.8" height="8" rx="1.2"/><rect x="8.6" y="7.6" width="6.8" height="15.9" rx="2.6"/></g></svg>`,
+  bowl: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M8.2 3.8c2.6 4.6 2.6 11.8 0 16.4M10.9 3.1c2.6 5 2.6 12.8 0 17.8" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/></svg>`
+};
+function roleTagHtml(role){
+  const word = role === "bat" ? "Batter" : "Bowler";
+  return `<span class="role-icon ${role}" role="img" aria-label="${word}" title="${word}">${ROLE_ICONS[role]}</span>`;
+}
 function recordPairRowHtml(e){
   const who = (role, x) => `<span class="pair-line">${roleTagHtml(role)}${recordNameHtml({ key: isNameKey(x.key) ? null : x.key, name: x.name })}</span>`;
   return `<li class="record-row pair-row${e.place === 1 ? " lead" : ""}"><span class="record-place">${e.place}</span>
