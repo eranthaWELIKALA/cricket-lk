@@ -18,7 +18,7 @@ function defaultUi(){
     // Leaderboard sort per table: { mvp|bat|bowl|field: { key, dir } } (renderLeaderboards).
     statsSort: {},
     // The Records tab's section (renderRecords) and which honours lists show in full.
-    recordsTab: null, honoursAll: null,
+    recordsTab: null, honoursAll: null, recordSheet: null,
     // The leaderboards' period: { kind: "all"|"year"|"month", key, near } (statsPeriodFor).
     statsPeriod: { kind: "all", key: null, near: null },
     // cloud clubs (see CLOUD section) -- caches of fetched data, not persisted;

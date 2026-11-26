@@ -100,15 +100,58 @@ function playerRatingPills(key, matches){
   const pill = (kind, label) => mine[kind] != null ? `<span class="tag-pill" title="${label} rating: 500 is an average player here, recent innings count most">${label} rating ${mine[kind]} · #${place(kind)}</span>` : "";
   return pill("bat", "Bat") + pill("bowl", "Bowl");
 }
-function milestonesHtml(list, all){
+/* Milestones, newest first. Each row opens (show.ms = its index) to what led
+   to it: the career up to then for a round number of runs, wickets or
+   matches; what they did in that match for a first; and for every one the
+   match it came in (side, opponent, result, player of the match), with its
+   scorecard a tap further. */
+function milestoneSummaryHtml(x){
+  const so = x.sofar || {}, m = x.match || {};
+  const f1 = v => v == null ? "—" : v.toFixed(1), f2 = v => v == null ? "—" : v.toFixed(2);
+  const hs = so.highScore ? `${so.highScore.runs}${so.highScore.out ? "" : "*"}` : "—";
+  const matches = plural(so.matches || 0, "match", "matches");
+  let lead = "", facts = [];
+  if (x.kind === "runs"){
+    lead = `${(so.runs || 0).toLocaleString("en-US")} runs in ${plural(so.innings || 0, "innings", "innings")} (${matches})`;
+    facts = [["Average", f1(so.average)], ["Strike rate", f1(so.strikeRate)], ["Highest", hs], ["50s / 100s", `${so.fifties} / ${so.hundreds}`]];
+  } else if (x.kind === "wickets"){
+    lead = `${so.wickets} wickets in ${plural(so.bowlInnings || 0, "innings", "innings")} (${matches})`;
+    facts = [["Average", f1(so.bowlAverage)], ["Economy", f2(so.economy)], ["Best", so.best ? `${so.best.wickets}/${so.best.runs}` : "—"], ["3+ wicket hauls", so.hauls]];
+  } else if (x.kind === "matches"){
+    lead = `${ordinalText(x.n)} match${m.opp ? ` · v ${m.opp}` : ""}`;
+    facts = [["Runs", (so.runs || 0).toLocaleString("en-US")], ["Wickets", so.wickets], ["Won", so.decided ? `${so.won} of ${so.decided}` : "—"], ["Player of the match", so.pom]];
+  } else if (x.kind === "debut"){
+    lead = `First match${m.team ? ` · for ${m.team}` : ""}${m.opp ? ` v ${m.opp}` : ""}`;
+  } else {
+    lead = `${x.text}${m.opp ? ` · v ${m.opp}` : ""} · their ${ordinalText(x.n)} match`;
+  }
+  const outcome = m.won === true ? "won" : m.won === false ? "lost" : "";
+  return `
+    <div class="ms-summary">
+      <div class="ms-lead">${escapeHtml(lead)}</div>
+      ${facts.length ? `<div class="ms-facts">${facts.map(([label, v]) => `<div class="ms-fact"><b>${escapeHtml(String(v))}</b><span>${escapeHtml(label)}</span></div>`).join("")}</div>` : ""}
+      <div class="ms-match">
+        <span class="muted">In that match${x.kind === "runs" || x.kind === "wickets" || x.kind === "matches" ? ` (their ${ordinalText(x.n)})` : ""}</span><br>
+        <b>${escapeHtml(m.line || "—")}</b>${m.team ? ` · for ${escapeHtml(m.team)}` : ""}${m.opp ? ` v ${escapeHtml(m.opp)}` : ""}<br>
+        <span class="muted">${escapeHtml([m.result, outcome && !/won|lost/.test(m.result || "") ? outcome : ""].filter(Boolean).join(" · "))}</span>
+        ${m.pom ? `<br><span class="ms-pom">★ Player of the match</span>` : ""}
+      </div>
+      ${x.matchId ? `<button type="button" data-action="open-match-detail" data-id="${escapeHtml(x.matchId)}" class="ghost small">Open scorecard ›</button>` : ""}
+    </div>`;
+}
+function milestonesHtml(list, show){
   if (!list.length) return "";
-  const shown = all ? list : list.slice(0, MILESTONES_SHOWN);
+  const s = show || {};
+  const shown = s.milestones ? list : list.slice(0, MILESTONES_SHOWN);
   return `
     <h3 class="section-label">Milestones <span class="section-sub">newest first</span></h3>
-    <ol class="milestones">${shown.map(x => {
-      const inner = `<span class="ms-icon" aria-hidden="true">${MILESTONE_ICONS[x.kind] || "•"}</span>
-        <span class="ms-text"><b>${escapeHtml(x.text)}</b><span class="muted">${escapeHtml([x.detail, x.at ? matchDateText({ completedAt: x.at }) : ""].filter(Boolean).join(" · "))}</span></span>`;
-      return x.matchId ? `<li><button type="button" data-action="open-match-detail" data-id="${escapeHtml(x.matchId)}" class="ms-row">${inner}<span class="chevron" aria-hidden="true">›</span></button></li>` : `<li class="ms-row">${inner}</li>`;
+    <ol class="milestones">${shown.map((x, i) => {
+      const open = s.ms === i;
+      return `<li><button type="button" data-action="milestone-open" data-i="${i}" class="ms-row" aria-expanded="${open}">
+          <span class="ms-icon" aria-hidden="true">${MILESTONE_ICONS[x.kind] || "•"}</span>
+          <span class="ms-text"><b>${escapeHtml(x.text)}</b><span class="muted">${escapeHtml([x.detail, x.at ? matchDateText({ completedAt: x.at }) : ""].filter(Boolean).join(" · "))}</span></span>
+          <span class="chevron" aria-hidden="true">›</span></button>
+        ${open ? milestoneSummaryHtml(x) : ""}</li>`;
     }).join("")}</ol>
     ${shown.length < list.length ? `<button type="button" data-action="history-more" data-what="milestones" class="link-btn">Show all ${list.length}</button>` : ""}`;
 }
@@ -125,23 +168,40 @@ function overTimeHtml(series){
     <h3 class="section-label">Over time <span class="section-sub">match by match</span></h3>
     <div class="over-time">${charts.filter(c => c[1]).map(([t, svg]) => `<div class="chart-card mini"><div class="chart-head"><h4>${t}</h4></div>${svg}</div>`).join("")}</div>` : "";
 }
-function matchupsHtml(mu, all){
+/* Match-ups: against each bowler they faced and each batter they bowled to,
+   each list sorted Best (most runs / most wickets) or Toughest (out most /
+   most runs given away) -- show["mu_faced"|"mu_bowledAt"], sortMatchups --
+   with what that order means under its heading. */
+function matchupsHtml(mu, show){
   if (!mu.faced.length && !mu.bowledAt.length) return "";
-  const fig = p => p.balls ? `${p.runs} (${p.balls})` : "";
-  const outs = p => p.outs ? `out ${p.outs === 1 ? "once" : `${p.outs}×`}` : "";
-  const list = (rows, line) => `<ol class="matchup-list">${(all ? rows : rows.slice(0, MATCHUPS_SHOWN)).map(p => `<li>${line(p)}</li>`).join("")}</ol>`;
+  const s = show || {};
+  const sr = p => p.balls ? `SR ${(p.runs / p.balls * 100).toFixed(0)}` : "";
+  const outs = p => p.outs ? `out ${p.outs === 1 ? "once" : `${p.outs}×`}` : "never out";
+  const block = (side, title, rows, name, line) => {
+    if (!rows.length) return "";
+    const mode = s["mu_" + side] === "tough" ? "tough" : "best";
+    const sorted = sortMatchups(rows, side, mode);
+    const shown = s.matchups ? sorted : sorted.slice(0, MATCHUPS_SHOWN);
+    const chip = (m, label) => `<button type="button" data-action="matchup-sort" data-list="${side}" data-mode="${m}" class="tab-btn ${mode === m ? "active" : ""}" aria-pressed="${mode === m}">${label}</button>`;
+    return `
+      <div class="mu-head"><h4 class="stat-sub">${title}</h4><div class="tab-row mu-sort">${chip("best", "Best")}${chip("tough", "Toughest")}</div></div>
+      <p class="mu-order">${MATCHUP_SORT_TEXT[side][mode]}</p>
+      <ol class="matchup-list">${shown.map(p => `<li><span class="mu-name">${escapeHtml(name(p))}</span><span class="mu-figs n">${escapeHtml(line(p))}</span></li>`).join("")}</ol>`;
+  };
   const more = mu.faced.length > MATCHUPS_SHOWN || mu.bowledAt.length > MATCHUPS_SHOWN;
   return `
     <h3 class="section-label">Match-ups</h3>
-    ${mu.faced.length ? `<h4 class="stat-sub">Against bowlers</h4>${list(mu.faced, p => `<span class="mu-name">${escapeHtml(p.bowlerName)}</span><span class="mu-figs n">${[fig(p), outs(p)].filter(Boolean).join(" · ") || "—"}</span>`)}` : ""}
-    ${mu.bowledAt.length ? `<h4 class="stat-sub">Against batters</h4>${list(mu.bowledAt, p => `<span class="mu-name">${escapeHtml(p.batterName)}</span><span class="mu-figs n">${[p.outs ? plural(p.outs, "wicket") : "", p.balls ? `${p.runs} off ${p.balls}` : ""].filter(Boolean).join(" · ") || "—"}</span>`)}` : ""}
-    ${more && !all ? `<button type="button" data-action="history-more" data-what="matchups" class="link-btn">Show all match-ups</button>` : ""}`;
+    ${block("faced", "Against bowlers", mu.faced, p => p.bowlerName,
+      p => [p.balls ? `${p.runs} (${p.balls})` : "", sr(p), outs(p)].filter(Boolean).join(" · "))}
+    ${block("bowledAt", "Against batters", mu.bowledAt, p => p.batterName,
+      p => [plural(p.outs, "wicket"), p.balls ? `${p.runs} off ${p.balls}` : ""].filter(Boolean).join(" · "))}
+    ${more && !s.matchups ? `<button type="button" data-action="history-more" data-what="matchups" class="link-btn">Show all match-ups</button>` : ""}`;
 }
 /* The top part (form and badges, next to the figures) and the rest
    (milestones, over time, match-ups). `career`: playerCareer over `all`
    (every match of the club / tournament / phone); `figures`: the matches the
    figures are over (a period's); `show`: { milestones, matchups } shown in
-   full. */
+   full, `ms` the milestone opened, `mu_faced` / `mu_bowledAt` each list's order. */
 // Every batter v bowler pairing of these matches (computeMatchups), statsMemo'd: a sheet re-renders on each tap.
 function matchupsFor(matches){ return statsMemo("matchups", matches, "", () => computeMatchups(matches, statsOpts())); }
 function playerHistoryTop(who, all){
@@ -151,9 +211,9 @@ function playerHistoryTop(who, all){
 }
 function playerHistoryRest(who, all, figures, show){
   const s = show || {};
-  return milestonesHtml(playerMilestones(who, all), s.milestones)
+  return milestonesHtml(playerMilestones(who, all), s)
     + overTimeHtml(playerCareerSeries(who, all))
-    + matchupsHtml(playerMatchups(who, figures, statsOpts(), matchupsFor(figures)), s.matchups);
+    + matchupsHtml(playerMatchups(who, figures, statsOpts(), matchupsFor(figures)), s);
 }
 
 /* --- the player sheet's tools: compare with someone, a year in review --- */

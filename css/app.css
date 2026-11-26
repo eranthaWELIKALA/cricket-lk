@@ -1929,3 +1929,32 @@ button.ms-row{ margin:0; background:none; border:0; border-radius:0; box-shadow:
 .lb-head .lb-count{ margin-left:auto; }
 .tab-row.career-scope-tabs{ margin:-2px 0 10px; }
 @media print{ .match-charts, .player-tools, .lb-csv{ display:none !important; } }
+
+/* Records: names are never cut off (two cards a row are narrow) -- they wrap. */
+.record-tile .record-name, .record-tile .name-btn.record-name, .record-rest .record-name, .record-rest .name-btn.record-name,
+.record-row .record-name, .record-row .name-btn.record-name{ white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:break-word; }
+.record-row .name-btn.record-name{ font-weight:600; align-self:flex-start; }
+.record-rest li{ align-items:flex-start; }
+.record-rest .record-val{ margin-left:auto; padding-left:4px; }
+button.record-more{ display:block; margin:6px 0 0; padding:0; min-height:0; background:none; border:0; box-shadow:none; color:var(--accent-2); font-size:.7rem; font-weight:700; text-align:left; letter-spacing:0; text-transform:none; }
+.record-sheet-note{ margin:-4px 0 8px; font-size:.74rem; }
+.record-sheet .record-rows{ margin-bottom:6px; }
+/* A milestone opens to what led to it. */
+.ms-row .chevron{ transition:transform .15s ease; }
+.ms-row[aria-expanded="true"] .chevron{ transform:rotate(90deg); }
+.ms-summary{ margin:0 0 10px 38px; padding:10px 12px; border:2px solid var(--line-strong); border-radius:var(--radius-md); background:var(--panel-2); display:flex; flex-direction:column; gap:8px; }
+.ms-lead{ font-weight:800; font-size:.9rem; }
+.ms-facts{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; }
+.ms-fact{ display:flex; flex-direction:column; padding:6px 8px; border-radius:var(--radius-sm); background:var(--panel); }
+.ms-fact b{ font-size:1rem; font-variant-numeric:tabular-nums; }
+.ms-fact span{ font-size:.62rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+.ms-match{ font-size:.8rem; line-height:1.45; }
+.ms-match .muted{ font-size:.72rem; }
+.ms-pom{ color:var(--accent); font-weight:800; }
+.ms-summary .ghost{ align-self:flex-start; }
+/* Match-ups: Best / Toughest, and which order that is. */
+.mu-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:12px; }
+.mu-head .stat-sub{ margin:0; }
+.tab-row.mu-sort{ margin:0; gap:4px; flex-wrap:nowrap; }
+.tab-row.mu-sort .tab-btn{ padding:3px 9px; font-size:.68rem; }
+.mu-order{ margin:4px 0 2px; font-size:.7rem; color:var(--muted); }

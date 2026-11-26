@@ -366,7 +366,8 @@ function computeRecords(matches, opts){
         if (isUnnamedPlayer(n)) return;
         const k = keyOf(m, n), figs = `${oversDisplay(b.legalBalls, bpo)}-${b.maidens}-${b.runs}-${b.wickets}`;
         if (b.wickets) bb.push({ name: n, value: b.wickets * 1000 - b.runs, sub: -b.legalBalls, text: `${b.wickets}/${b.runs}`, detail: `${oversDisplay(b.legalBalls, bpo)} ov · v ${team}`, matchId });
-        if (b.legalBalls >= 2 * bpo) econ.push({ name: n, value: Math.round(b.runs / (b.legalBalls / bpo) * 100) / 100, sub: b.legalBalls, text: (b.runs / (b.legalBalls / bpo)).toFixed(2), detail: `${figs} · v ${team}`, matchId });
+        // One full over is enough (club games are 4-6 overs); among equal economies the longer spell, then more wickets, first.
+        if (b.legalBalls >= bpo) econ.push({ name: n, value: Math.round(b.runs / (b.legalBalls / bpo) * 100) / 100, sub: b.legalBalls * 100 + b.wickets, text: (b.runs / (b.legalBalls / bpo)).toFixed(2), detail: `${figs} · v ${team}`, matchId });
         const h = Math.floor((bx[n] && bx[n].hatTricks) || 0);
         if (h) bump(k, "hatTricks", h);
       });
@@ -510,7 +511,7 @@ function computeRecords(matches, opts){
       { key: "wides", label: "Most wides", tile: true, bad: true, entries: bowledMost("wides") },
       { key: "noBalls", label: "Most no-balls", tile: true, bad: true, entries: bowledMost("noBalls") },
       { key: "bestBowling", label: "Best bowling", entries: recordPlaces(bb) },
-      { key: "bestEcon", label: "Best economy in an innings", dir: "asc", note: "2+ overs", entries: recordPlaces(econ, "asc") },
+      { key: "bestEcon", label: "Best economy in an innings", dir: "asc", note: "a full over or more", entries: recordPlaces(econ, "asc") },
       { key: "overConceded", label: "Most runs conceded in an over", bad: true, entries: recordPlaces(conceded) }] },
     { key: "field", title: "Fielding", records: [
       { key: "catches", label: "Most catches", tile: true, entries: most(t => t.catches, played) },
@@ -689,7 +690,13 @@ function playerCareerSeries(who, matches){
    5-wicket hauls, every hat-trick, the first player of the match award, and
    the round numbers of runs, wickets and matches (RUN_/WICKET_/MATCH_
    MILESTONES), each with the match it came in. Newest first: [{ kind, text,
-   detail, matchId, at, n (their nth match) }]. */
+   detail, matchId, at, n (their nth match), match, sofar }] --
+   `match`: what they did in that match ({ line (playerMatchLineText), team,
+   opp, result, won (true/false/null), pom }); `sofar`: their career up to and
+   including it ({ matches, innings, notOuts, runs, balls, average,
+   strikeRate, highScore, fifties, hundreds, bowlInnings, wickets,
+   runsConceded, legalBalls, economy, bowlAverage, best, hauls (3+ wickets),
+   catches, pom, won, decided }) -- the summary a milestone opens to. */
 const RUN_MILESTONES = [100, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000];
 const WICKET_MILESTONES = [10, 25, 50, 75, 100, 150, 200, 250, 300, 400, 500];
 const MATCH_MILESTONES = [10, 25, 50, 75, 100, 150, 200, 250, 300, 400, 500];
@@ -698,34 +705,62 @@ function crossed(before, after, list){ return list.filter(x => before < x && aft
 function playerMilestones(who, matches){
   const lines = playerMatchLines(who, matches).slice().reverse();
   const out = [], firsts = {};
-  let runs = 0, wickets = 0;
+  const so = { matches: 0, innings: 0, notOuts: 0, runs: 0, balls: 0, highScore: null, fifties: 0, hundreds: 0,
+    bowlInnings: 0, wickets: 0, runsConceded: 0, legalBalls: 0, best: null, hauls: 0, catches: 0, pom: 0, won: 0, decided: 0 };
+  const snapshot = () => {
+    const outs = so.innings - so.notOuts;
+    return Object.assign({}, so, {
+      highScore: so.highScore && Object.assign({}, so.highScore), best: so.best && Object.assign({}, so.best),
+      average: outs > 0 ? so.runs / outs : null, strikeRate: so.balls > 0 ? so.runs / so.balls * 100 : null,
+      economy: so.legalBalls > 0 ? so.runsConceded / (so.legalBalls / 6) : null, bowlAverage: so.wickets > 0 ? so.runsConceded / so.wickets : null });
+  };
   lines.forEach((l, i) => {
     const m = l.match, n = i + 1;
     const opp = l.team ? teamName(m, l.team === "A" ? "B" : "A") : "";
     const vs = opp ? ` v ${opp}` : "";
-    const add = (kind, text, detail) => out.push({ kind, text, detail, matchId: m.id || null, at: m.completedAt || null, n });
+    const labels = new Set(l.labels || []);
+    const runsBefore = so.runs, wicketsBefore = so.wickets;
+    // This match into the running totals first: a milestone reached in it counts it.
+    so.matches = n;
+    if (l.bat){
+      so.innings += 1; so.runs += l.bat.runs; so.balls += l.bat.balls;
+      if (!l.bat.out) so.notOuts += 1;
+      if (!so.highScore || l.bat.runs > so.highScore.runs || (l.bat.runs === so.highScore.runs && !l.bat.out)) so.highScore = { runs: l.bat.runs, out: l.bat.out };
+      if (l.bat.runs >= 100) so.hundreds += 1; else if (l.bat.runs >= 50) so.fifties += 1;
+    }
+    const bowled = l.bowl && (l.bowl.legalBalls > 0 || l.bowl.wickets > 0);
+    if (bowled){
+      so.bowlInnings += 1; so.wickets += l.bowl.wickets; so.runsConceded += l.bowl.runs; so.legalBalls += l.bowl.legalBalls;
+      if (!so.best || l.bowl.wickets > so.best.wickets || (l.bowl.wickets === so.best.wickets && l.bowl.runs < so.best.runs)) so.best = { wickets: l.bowl.wickets, runs: l.bowl.runs };
+      if (l.bowl.wickets >= 3) so.hauls += 1;
+    }
+    if (l.field) so.catches += l.field.catches || 0;
+    const pom = !!(m.motm && labels.has(m.motm));
+    if (pom) so.pom += 1;
+    const winner = m.status === "complete" ? matchWinnerKey(m) : null;
+    const won = winner && l.team ? winner === l.team : null;
+    if (won !== null){ so.decided += 1; if (won) so.won += 1; }
+    const here = { line: playerMatchLineText(l), team: l.team ? teamName(m, l.team) : "", opp, result: m.result || "", won, pom };
+    const add = (kind, text, detail) => out.push({ kind, text, detail, matchId: m.id || null, at: m.completedAt || null, n, match: here, sofar: snapshot() });
     const first = (key, kind, text, detail) => { if (!firsts[key]){ firsts[key] = true; add(kind, text, detail); } };
     if (n === 1) add("debut", "First match", `${l.team ? `for ${teamName(m, l.team)}` : ""}${vs}`.trim());
     if (l.bat){
       const line = `${l.bat.runs}${l.bat.out ? "" : "*"} (${l.bat.balls})${vs}`;
       if (l.bat.runs >= 100) first("hundred", "hundred", "First hundred", line);
       else if (l.bat.runs >= 50) first("fifty", "fifty", "First fifty", line);
-      crossed(runs, runs + l.bat.runs, RUN_MILESTONES).forEach(x => add("runs", `${x.toLocaleString("en-US")} runs`, `${line} · match ${n}`));
-      runs += l.bat.runs;
+      crossed(runsBefore, so.runs, RUN_MILESTONES).forEach(x => add("runs", `${x.toLocaleString("en-US")} runs`, `${line} · match ${n}`));
     }
     if (l.bowl){
       const line = `${l.bowl.wickets}/${l.bowl.runs}${vs}`;
       if (l.bowl.wickets >= 5) first("five", "haul", "First five-for", line);
       else if (l.bowl.wickets >= 3) first("three", "haul", "First 3-wicket haul", line);
-      crossed(wickets, wickets + l.bowl.wickets, WICKET_MILESTONES).forEach(x => add("wickets", `${x} wickets`, `${line} · match ${n}`));
-      wickets += l.bowl.wickets;
-      const labels = new Set(l.labels || []);
+      crossed(wicketsBefore, so.wickets, WICKET_MILESTONES).forEach(x => add("wickets", `${x} wickets`, `${line} · match ${n}`));
       m.innings.forEach(inn => {
         const bx = inningsBowlerExtras(inn);
         inn.bowling.order.forEach(b => { if (labels.has(b) && bx[b] && bx[b].hatTricks >= 1) add("hatTrick", "Hat-trick", line); });
       });
     }
-    if (m.motm && (l.labels || []).includes(m.motm)) first("pom", "pom", "First player of the match", vs.trim());
+    if (pom) first("pom", "pom", "First player of the match", vs.trim());
     if (MATCH_MILESTONES.includes(n)) add("matches", `${n} matches`, vs.trim());
   });
   return out.reverse();
@@ -771,9 +806,9 @@ function playerHonourCounts(who, matches){
   return { hatTricks, pom };
 }
 /* Their batting against each bowler and bowling against each batter over
-   `matches` (computeMatchups): { faced: [pairs, most runs first], bowledAt:
-   [pairs, most dismissals first] }. `ups`: computeMatchups' result for these
-   matches, when the caller has it already. */
+   `matches` (computeMatchups): { faced: [pairs], bowledAt: [pairs] }, each
+   in its "best" order (sortMatchups). `ups`: computeMatchups' result for
+   these matches, when the caller has it already. */
 function playerMatchups(who, matches, opts, ups){
   const test = playerTestFor(who, matches);
   const counted = countedMatches(matches);
@@ -782,9 +817,39 @@ function playerMatchups(who, matches, opts, ups){
   counted.forEach(m => matchPlayerNames(m).forEach(n => { if (test(m, n)) mine.add(keyOf(m, n)); }));
   const all = ups || computeMatchups(matches, opts);
   return {
-    faced: all.filter(p => mine.has(p.batter) && (p.balls > 0 || p.outs > 0)).sort((a, b) => b.runs - a.runs || b.balls - a.balls || b.outs - a.outs),
-    bowledAt: all.filter(p => mine.has(p.bowler) && (p.balls > 0 || p.outs > 0)).sort((a, b) => b.outs - a.outs || a.runs - b.runs)
+    faced: sortMatchups(all.filter(p => mine.has(p.batter) && (p.balls > 0 || p.outs > 0)), "faced", "best"),
+    bowledAt: sortMatchups(all.filter(p => mine.has(p.bowler) && (p.balls > 0 || p.outs > 0)), "bowledAt", "best")
   };
+}
+/* The two ways a player's match-ups are read (a new array):
+   - batting against bowlers ("faced"): "best" = most runs off them, then the
+     fastest scoring, then out the fewest times; "tough" = out the most times
+     by them, then the slowest scoring, then the most balls faced.
+   - bowling against batters ("bowledAt"): "best" = got them out the most,
+     then the fewest runs a ball given away; "tough" = the most runs they've
+     taken off you, then the fastest, then out the fewest times.
+   A pairing from before ball-by-ball batters has dismissals but no balls:
+   its scoring rate counts as unknown (after every known one). */
+const MATCHUP_SORT_TEXT = {
+  faced: { best: "most runs first", tough: "most times out, then slowest scoring" },
+  bowledAt: { best: "most wickets first", tough: "most runs given away first" }
+};
+function sortMatchups(list, side, mode){
+  const rate = p => p.balls > 0 ? p.runs / p.balls : null;
+  // lowest / highest first, an unknown rate always last
+  const asc = (x, y) => x == null && y == null ? 0 : x == null ? 1 : y == null ? -1 : x - y;
+  const desc = (x, y) => x == null && y == null ? 0 : x == null ? 1 : y == null ? -1 : y - x;
+  const cmp = {
+    faced: {
+      best: (a, b) => b.runs - a.runs || desc(rate(a), rate(b)) || a.outs - b.outs || b.balls - a.balls,
+      tough: (a, b) => b.outs - a.outs || asc(rate(a), rate(b)) || b.balls - a.balls
+    },
+    bowledAt: {
+      best: (a, b) => b.outs - a.outs || asc(rate(a), rate(b)) || b.balls - a.balls,
+      tough: (a, b) => b.runs - a.runs || desc(rate(a), rate(b)) || a.outs - b.outs
+    }
+  }[side][mode === "tough" ? "tough" : "best"];
+  return (list || []).slice().sort((a, b) => cmp(a, b) || String(side === "faced" ? a.bowlerName : a.batterName).localeCompare(side === "faced" ? b.bowlerName : b.batterName));
 }
 /* A year in review for one player: their career that year, best innings and
    figures, player of the match awards, the milestones they reached, the

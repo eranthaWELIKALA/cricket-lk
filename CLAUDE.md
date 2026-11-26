@@ -855,9 +855,13 @@ matches and placeholders out, as everywhere.
   charm / Tough luck = best / worst win rate, `RECORD_MIN_DECIDED` 5) — plus the
   Honours board (`computeHonours`: every 50+, 3+ wicket haul, hat-trick, newest
   first). One section at a time behind chips (`ui.recordsTab`,
-  `RECORD_SECTIONS`). A record is `{ key, label, entries, tile, dir, note, bad,
-  byWicket }`: `tile` = a career tally (two-up tile, names open the player
-  sheet), else rows that open their scorecard; `dir: "asc"` lowest is best;
+  `RECORD_SECTIONS`), each record a **full-width card** (two to a row cut long
+  names short; names wrap, never mid-word). A record is `{ key, label,
+  entries, tile, dir, note, bad, byWicket }`: `tile` = a career tally (its
+  names open the player sheet, listed first), else rows that open their
+  scorecard; places level beyond three are behind "+N more level · see all"
+  (`ui.recordSheet = { view, key }`, `renderRecordSheetModal`, an overlay);
+  `dir: "asc"` lowest is best; best economy needs a full over;
   `bad` (ducks, lowest total, extras…) is never announced as "set". Each keeps
   `RECORDS_TOP` (3) places, equal values sharing one; empty records left out.
   Team records count every match (result-only too); player records skip "no
@@ -881,9 +885,14 @@ matches and placeholders out, as everywhere.
   (`playerRecentForm`) and **Rtg** (`withRatingsAndForm`, stats.js), sortable.
 - **A player's history** (player-history.js, `playerHistoryTop` / `Rest`): form,
   badges (`PLAYER_BADGES`, one per family, highest step), rating pills,
-  milestones (`playerMilestones`: firsts and `RUN_/WICKET_/MATCH_MILESTONES`),
-  Over time (`playerCareerSeries`, one small chart per measure — never two
-  scales on one), match-ups. On the player sheet the career-long parts use
+  milestones (`playerMilestones`: firsts and `RUN_/WICKET_/MATCH_MILESTONES`,
+  each with `sofar` — the career up to and including that match — and `match`
+  — their line, side, opponent, result, player of the match; a row opens to
+  that summary, `more.ms`, with the scorecard a tap further), Over time
+  (`playerCareerSeries`, one small chart per measure — never two scales on
+  one), match-ups (each list **Best / Toughest**, `sortMatchups` +
+  `MATCHUP_SORT_TEXT`: batting = most runs v out most then slowest; bowling =
+  most wickets v most runs given away; `more.mu_faced` / `mu_bowledAt`). On the player sheet the career-long parts use
   `ps.allMatches` (the whole club / tournament / phone, `statsScope.all`), not
   the period on screen. Tools on the sheet: **Compare** (`ui.playerStats.compare
   = { key }`, `playerComparison`; back closes it first) and **year in review**

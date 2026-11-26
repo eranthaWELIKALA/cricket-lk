@@ -137,6 +137,17 @@ document.addEventListener("click", (e) => {
   else if (action === "stats-tab"){ ui.statsTab = btn.dataset.tab; render(); }
   // Records: a section at a time; the honours board's long lists in full.
   else if (action === "records-tab"){ ui.recordsTab = btn.dataset.tab; render(); }
+  else if (action === "open-record"){ ui.recordSheet = { view: state.view, key: btn.dataset.key }; render(); }
+  else if (action === "close-record-sheet"){ ui.recordSheet = null; render(); }
+  // A player's history: a milestone opens to what led to it; match-ups sort two ways.
+  else if (action === "milestone-open"){
+    const target = ui.playerStats || ui.profile;
+    if (target){ const i = parseInt(btn.dataset.i, 10); target.more = Object.assign({}, target.more, { ms: target.more && target.more.ms === i ? null : i }); render(); }
+  }
+  else if (action === "matchup-sort"){
+    const target = ui.playerStats || ui.profile;
+    if (target){ target.more = Object.assign({}, target.more, { ["mu_" + btn.dataset.list]: btn.dataset.mode }); render(); }
+  }
   else if (action === "honours-all"){ ui.honoursAll = Object.assign({}, ui.honoursAll, { [btn.dataset.tab]: true }); render(); }
   // A player's sheet: all milestones / match-ups, compare with someone, a year in review.
   else if (action === "history-more"){
@@ -147,7 +158,7 @@ document.addEventListener("click", (e) => {
   else if (action === "player-compare-pick") pickPlayerCompare(btn.dataset.key);
   else if (action === "player-compare-close") closePlayerCompare();
   else if (action === "player-year") openYearReview(btn.dataset.year);
-  else if (action === "profile-career-scope" && ui.profile){ ui.profile.careerScope = btn.dataset.tab; render(); }
+  else if (action === "profile-career-scope" && ui.profile){ ui.profile.careerScope = btn.dataset.tab; ui.profile.more = Object.assign({}, ui.profile.more, { ms: null }); render(); }
   // CSV of the leaderboard on screen, or of every match it counts.
   else if (action === "export-csv") askExportCsv(btn.dataset.table);
   // Settings: back up this phone's guest data, or bring a backup back.

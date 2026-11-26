@@ -247,6 +247,9 @@ function render(){
   // A player's figures (a leaderboard name, "Your stats"): the scorecard sheet can open over it.
   const psValid = !!(ui.playerStats && ui.playerStats.view === state.view && (!inProgress || away));
   if (ui.playerStats && !psValid) ui.playerStats = null;
+  // A record's full list (Records tab), under the player / scorecard sheets its rows open.
+  const rsValid = !!(ui.recordSheet && ui.recordSheet.view === state.view && (!inProgress || away));
+  if (ui.recordSheet && !rsValid) ui.recordSheet = null;
   // "Enter result only" (tournament dashboards) belongs to the view it was opened on.
   const resultEntryOpen = !!(ui.resultEntry && ui.resultEntry.view === state.view && (!inProgress || away)
     && (state.view === "tournamentDashboard" || (state.view === "clubTournamentDashboard" && ui.clubTournament)));
@@ -288,6 +291,8 @@ function render(){
     modalHtml = renderMatchDetailModal();
   } else if (psValid){
     modalHtml = renderPlayerStatsModal();
+  } else if (rsValid){
+    modalHtml = renderRecordSheetModal();
   } else if (resultEntryOpen){
     modalKey = "result-entry";   // keep typed scores across background re-renders
     modalHtml = renderResultEntryModal();

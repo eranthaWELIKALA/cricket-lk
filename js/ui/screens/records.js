@@ -26,20 +26,21 @@ function statsMemo(name, matches, extra, fn){
 /* --- records (computeRecords, computeHonours) ---
    One section at a time behind a row of chips (ui.recordsTab): Batting,
    Bowling, Fielding, Partnerships, Match-ups, Teams, Awards and the Honours
-   board -- only the ones with something in them. In a section, career
-   tallies are two-up tiles (the leader's number large, the next places a
-   line each, a name opens that player's sheet), one-match records are
-   full-width rows that open their match's scorecard (an over shows its
-   balls), "Best for each wicket" has a row per wicket, and Teams opens with
-   how matches were won (batting first, chasing, the toss). A record nobody
-   has yet is left out. */
+   board -- only the ones with something in them. In a section every record
+   is a full-width card (so long names show in full), its top three a row
+   each: a career tally's name opens that player's sheet, a one-match row
+   opens its scorecard (an over shows its balls). Places level beyond three
+   are behind "see all" (renderRecordSheetModal). "Best for each wicket" has
+   a row per wicket, and Teams opens with how matches were won (batting
+   first, chasing, the toss). A record nobody has yet is left out. */
 const RECORDS_SHOWN = 3;
 const RECORD_SECTIONS = [["bat", "Batting"], ["bowl", "Bowling"], ["field", "Fielding"], ["partner", "Partnerships"],
   ["matchups", "Match-ups"], ["team", "Teams"], ["awards", "Awards"], ["honours", "Honours"]];
 function recordValue(e){ return escapeHtml(e.text != null ? e.text : String(e.value)); }
+// Places level beyond the three shown: a button to the record's full list (renderRecordSheetModal).
 function recordMoreHtml(r){
   const more = r.entries.length - RECORDS_SHOWN;
-  return more > 0 ? `<p class="record-more">+${more} more level</p>` : "";
+  return more > 0 ? `<button type="button" data-action="open-record" data-key="${escapeHtml(r.key)}" class="record-more">+${more} more level · see all ›</button>` : "";
 }
 function recordLabelHtml(r){
   return `<div class="record-label">${escapeHtml(r.label)}</div>${r.note ? `<div class="record-note">${escapeHtml(r.note)}</div>` : ""}`;
@@ -49,19 +50,6 @@ function recordNameHtml(e){
   return e.key
     ? `<button type="button" data-action="open-player-stats" data-key="${escapeHtml(e.key)}" data-name="${escapeHtml(e.name)}" class="name-btn record-name">${escapeHtml(e.name)}</button>`
     : `<span class="record-name">${escapeHtml(e.name)}</span>`;
-}
-function recordTileHtml(r){
-  const [lead, ...rest] = r.entries.slice(0, RECORDS_SHOWN);
-  return `<div class="record-tile">
-    ${recordLabelHtml(r)}
-    <div class="record-lead">
-      <span class="record-val">${recordValue(lead)}</span>
-      ${recordNameHtml(lead)}
-      ${lead.detail ? `<span class="record-detail">${escapeHtml(lead.detail)}</span>` : ""}
-    </div>
-    ${rest.length ? `<ol class="record-rest">${rest.map(e => `<li><span class="record-place">${e.place}</span>${recordNameHtml(e)}<span class="record-val">${recordValue(e)}</span></li>`).join("")}</ol>` : ""}
-    ${recordMoreHtml(r)}
-  </div>`;
 }
 function recordBallsHtml(balls){
   return `<span class="record-balls">${balls.map(e => {
@@ -81,8 +69,15 @@ function recordRowHtml(e, place){
     ? `<li><button type="button" data-action="open-match-detail" data-id="${escapeHtml(e.matchId)}" class="record-row record-open${lead ? " lead" : ""}">${inner}<span class="chevron" aria-hidden="true">›</span></button></li>`
     : `<li class="record-row${lead ? " lead" : ""}">${inner}</li>`;
 }
+// A career tally's row: the name opens that player's sheet (a one-match row opens its scorecard, recordRowHtml).
+function recordPlayerRowHtml(e){
+  return `<li class="record-row${e.place === 1 ? " lead" : ""}"><span class="record-place">${e.place}</span>
+    <span class="record-who">${recordNameHtml(e)}<span class="record-detail">${escapeHtml(e.detail || "")}</span></span>
+    <span class="record-val">${recordValue(e)}</span></li>`;
+}
+function recordEntryRowHtml(e){ return e.matchId ? recordRowHtml(e) : recordPlayerRowHtml(e); }
 function recordCardHtml(r){
-  const rows = r.byWicket ? r.entries.map(e => recordRowHtml(e, ordinalText(e.wicket))) : r.entries.slice(0, RECORDS_SHOWN).map(e => recordRowHtml(e));
+  const rows = r.byWicket ? r.entries.map(e => recordRowHtml(e, ordinalText(e.wicket))) : r.entries.slice(0, RECORDS_SHOWN).map(recordEntryRowHtml);
   return `<div class="record-card">
     ${recordLabelHtml(r)}
     <ol class="record-rows">${rows.join("")}</ol>
@@ -94,12 +89,12 @@ function recordFactsHtml(facts){
   return `<div class="record-facts">${facts.map(f => `
     <div class="record-fact"><span class="record-fact-val">${escapeHtml(f.value)}</span><span class="record-fact-label">${escapeHtml(f.label)}</span><span class="record-detail">${escapeHtml(f.detail)}</span></div>`).join("")}</div>`;
 }
+// One full-width card per record (two to a row cut long names short): career tallies first, then one-match records.
 function renderRecordGroup(g){
-  const tiles = g.records.filter(r => r.tile), rows = g.records.filter(r => !r.tile);
+  const cards = g.records.filter(r => r.tile).concat(g.records.filter(r => !r.tile));
   return `<section class="records-group" data-anim-key="records:${g.key}">
     ${recordFactsHtml(g.facts)}
-    ${tiles.length ? `<div class="records-tiles">${tiles.map(recordTileHtml).join("")}</div>` : ""}
-    ${rows.length ? `<div class="records-cards">${rows.map(recordCardHtml).join("")}</div>` : ""}
+    ${cards.length ? `<div class="records-cards">${cards.map(recordCardHtml).join("")}</div>` : ""}
   </section>`;
 }
 // Every record of `matches` (statsMemo'd), records nobody has yet left out.
@@ -108,6 +103,29 @@ function recordGroupsFor(matches){
   return statsMemo("records", matches, "", () => computeRecords(matches, opts))
     .map(g => Object.assign({}, g, { records: g.records.filter(r => r.entries.length) }))
     .filter(g => g.records.length || (g.facts && g.facts.length));
+}
+/* A record in full: every place it keeps (RECORDS_TOP places, with everyone
+   level on them -- what a card leaves out past its first three). ui.recordSheet
+   = { view, key }; its rows open the player's sheet (a career tally) or the
+   match's scorecard (one match), over it. */
+function renderRecordSheetModal(){
+  const rs = ui.recordSheet;
+  let rec = null;
+  recordGroupsFor((statsScope && statsScope.matches) || []).forEach(g => g.records.forEach(r => { if (r.key === rs.key) rec = r; }));
+  const row = recordEntryRowHtml;
+  return `
+    <div class="modal-backdrop">
+      <div class="modal record-sheet" data-keep-scroll="record-sheet" role="dialog" aria-modal="true" aria-label="${escapeHtml(rec ? rec.label : "Record")}">
+        <div class="wicket-modal-head">
+          <h2>${escapeHtml(rec ? rec.label : "Record")}</h2>
+          <button type="button" data-action="close-record-sheet" class="sheet-close" aria-label="Close">✕</button>
+        </div>
+        ${rec ? `${rec.note ? `<p class="muted record-sheet-note">${escapeHtml(rec.note)}</p>` : ""}
+          <p class="muted record-sheet-note">${escapeHtml(statsScope ? statsScope.title : "")} · top ${RECORDS_TOP} places, everyone level included</p>
+          <ol class="record-rows">${rec.entries.map(row).join("")}</ol>` : `<p class="hint">This record isn't here any more.</p>`}
+        <div class="sheet-actions"><button type="button" data-action="close-record-sheet" class="ghost">Close</button></div>
+      </div>
+    </div>`;
 }
 function renderRecords(matches){
   const groups = recordGroupsFor(matches);

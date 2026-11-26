@@ -1,5 +1,5 @@
 const fs = require("fs");
-const { JSDOM, ResourceLoader } = require("jsdom");
+const { JSDOM, ResourceLoader, VirtualConsole } = require("jsdom");
 
 // index.html loads its code as ordered classic scripts (js/...) and a
 // stylesheet; inline them so jsdom runs the same code, in the same order,
@@ -15,7 +15,10 @@ const html = fs.readFileSync(__dirname + "/index.html", "utf8")
 class OfflineLoader extends ResourceLoader {
   fetch(url, options){ return /^https?:\/\/(?!localhost)/.test(url) ? Promise.reject(new Error("offline: " + url)) : super.fetch(url, options); }
 }
-const dom = new JSDOM(html, { runScripts: "dangerously", resources: new OfflineLoader(), url: "http://localhost/" });
+const quiet = new VirtualConsole();
+quiet.sendTo(console, { omitJSDOMErrors: true });
+quiet.on("jsdomError", e => { if (!/Could not load script|offline: /.test(e.message)) console.error(e); });
+const dom = new JSDOM(html, { runScripts: "dangerously", resources: new OfflineLoader(), url: "http://localhost/", virtualConsole: quiet });
 const win = dom.window;
 
 // sw.js must precache exactly the code index.html loads, or the app breaks
@@ -1699,6 +1702,8 @@ async function main(){
     assert(top("fielderBowler") === "1.c A2 b A1:1" && top("catchesMatch") === "1.A2:1" && top("dismInnings") === "1.A2:1 1.A3:1", "fielding: bowler and fielder, catches in a match, dismissals in an innings");
     assert(top("openerHigh") === "1.A1:17* 2.A2:2" && top("openRuns") === "1.A1:17 2.A2:2", "openers: highest score and most runs");
     assert(rec("fastest25").length === 0 && rec("bestSR").length === 0 && rec("srOpen").length === 0, "fastest 25, best strike rate (10+ balls) and phases (no overs limit under 3) have nobody yet");
+    assert(top("bestEcon") === "1.B2:0.00 2.A1:4.00 3.B1:21.00" && rec("bestEcon")[0].detail === "1.0-1-0-0 · v Lions",
+      "best economy in an innings: one full over is enough: " + top("bestEcon"));
     const teams = recs.find(g => g.key === "team");
     assert(teams.facts.map(f => `${f.key}:${f.value}`).join() === "batFirst:100%,chase:0%" && top("bigWinRuns") === "1.Lions:18 runs" && top("lowDefended") === "1.Lions:22-1"
       && top("aggregate") === "1.Lions v Tigers:26" && top("extras") === "1.Tigers:3" && rec("bigWinWickets").length === 0,
@@ -1739,8 +1744,11 @@ async function main(){
     const chips = () => [...doc.querySelectorAll('#app [data-action="records-tab"]')].map(b => b.dataset.tab).join();
     assert(chips() === "bat,bowl,field,partner,matchups,team,awards,honours" && doc.querySelector('#app [data-action="records-tab"][data-tab="bat"]').classList.contains("active"),
       "Records shows one section at a time behind its chips, Batting first: " + chips());
-    const ducks = [...doc.querySelectorAll("#app .record-tile")].find(t => /Most ducks/.test(t.textContent));
-    assert(ducks && ducks.querySelectorAll(".record-rest li").length === 2 && /\+1 more level/.test(ducks.textContent), "four players level on ducks: the first three and \"+1 more\"");
+    const ducks = [...doc.querySelectorAll("#app .record-card")].find(t => /Most ducks/.test(t.textContent));
+    assert(ducks && ducks.querySelectorAll(".record-rows > li").length === 3 && /\+1 more level/.test(ducks.textContent), "four players level on ducks: the first three and \"+1 more\"");
+    ducks.querySelector('[data-action="open-record"]').click();
+    assert(doc.querySelectorAll("#modal-root .record-sheet .record-rows > li").length === 4, "\"see all\" opens every player level on ducks");
+    win.eval("closeTopOverlay()");
     assert(![...doc.querySelectorAll("#app .record-label")].some(l => /fifties|stumpings/i.test(l.textContent)), "records nobody has yet are left out");
     assert(!/Best bowling/.test(doc.querySelector("#app .records").textContent), "...another section's records aren't on screen");
     const overCard = [...doc.querySelectorAll("#app .record-card")].find(c => /hit in an over/.test(c.textContent));
@@ -1811,6 +1819,21 @@ async function main(){
       "records set: a new highest score: " + set.map(x => x.label).join());
     assert(!win.newRecordsIn(mk("h7", at(7, 2), { Eve: [120, 80, 1] }, {}), five).some(x => x.label === "Highest score"), "...a score level with the best isn't a new record");
     assert(win.liveRecordMarks(five).highScore === 120 && win.liveRecordMarks(ms) === null, "the live board's marks: the best so far, once there are five matches");
+    // A milestone carries what led to it: the career up to then, and that match.
+    const m250 = win.playerMilestones("Ann", ms)[0];
+    assert(m250.text === "250 runs" && m250.sofar.runs === 255 && m250.sofar.innings === 4 && m250.sofar.matches === 4 && m250.sofar.hundreds === 1 && m250.sofar.fifties === 1
+      && Math.round(m250.sofar.average) === 85 && m250.match.line === "30 (20)" && m250.match.opp === "Tigers",
+      "250 runs: reached in 4 innings, average 85, with 30 (20) v Tigers: " + JSON.stringify(m250.sofar));
+    const w10 = win.playerMilestones("Bob", ms)[0];
+    assert(w10.text === "10 wickets" && w10.sofar.wickets === 10 && w10.sofar.bowlInnings === 2 && w10.sofar.best.wickets === 6 && w10.sofar.hauls === 2 && w10.match.line === "6/10 (4.0)",
+      "10 wickets: in 2 innings, best 6/10, two 3+ hauls: " + JSON.stringify(w10.sofar));
+    // Match-ups both ways.
+    const pairs = [{ bowlerName: "A", runs: 30, balls: 20, outs: 0 }, { bowlerName: "B", runs: 10, balls: 12, outs: 2 }, { bowlerName: "C", runs: 30, balls: 15, outs: 1 }, { bowlerName: "D", runs: 0, balls: 0, outs: 2 }];
+    assert(win.sortMatchups(pairs, "faced", "best").map(p => p.bowlerName).join("") === "CABD", "batting, best: most runs, then the faster scoring");
+    assert(win.sortMatchups(pairs, "faced", "tough").map(p => p.bowlerName).join("") === "BDCA", "batting, toughest: out most, then the slowest scoring (unknown last)");
+    const bw = [{ batterName: "P", runs: 40, balls: 20, outs: 1 }, { batterName: "Q", runs: 5, balls: 10, outs: 2 }, { batterName: "R", runs: 12, balls: 6, outs: 2 }];
+    assert(win.sortMatchups(bw, "bowledAt", "best").map(p => p.batterName).join("") === "QRP" && win.sortMatchups(bw, "bowledAt", "tough").map(p => p.batterName).join("") === "PRQ",
+      "bowling: best = most wickets then cheapest, toughest = most runs given away");
   }
 
   // --- 7 or more runs off one ball (overthrows) ---
