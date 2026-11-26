@@ -186,7 +186,7 @@ function matchupsHtml(mu, show){
     return `
       <div class="mu-head"><h4 class="stat-sub">${title}</h4><div class="tab-row mu-sort">${chip("best", "Best")}${chip("tough", "Toughest")}</div></div>
       <p class="mu-order">${MATCHUP_SORT_TEXT[side][mode]}</p>
-      <ol class="matchup-list">${shown.map(p => `<li><span class="mu-name">${escapeHtml(name(p))}</span><span class="mu-figs n">${escapeHtml(line(p))}</span></li>`).join("")}</ol>`;
+      <ol class="matchup-list">${shown.map(p => `<li><span class="mu-name">${roleTagHtml(side === "faced" ? "bowl" : "bat")}${escapeHtml(name(p))}</span><span class="mu-figs n">${escapeHtml(line(p))}</span></li>`).join("")}</ol>`;
   };
   const more = mu.faced.length > MATCHUPS_SHOWN || mu.bowledAt.length > MATCHUPS_SHOWN;
   return `
@@ -283,9 +283,8 @@ function renderPlayerCompareBody(ps){
     const win = dir && typeof mine === "number" && typeof theirs === "number" && (dir === "hi" ? mine > theirs : mine < theirs);
     return `<td class="n${win ? " better" : ""}">${escapeHtml(String(side === "a" ? a : b))}</td>`;
   };
-  const h2h = (bat, bowl, x) => x.balls || x.outs
-    ? `<b>${escapeHtml(bat)}</b> v ${escapeHtml(bowl)}: <span class="n">${x.runs} (${x.balls})</span>${x.outs ? ` · out ${x.outs === 1 ? "once" : `${x.outs} times`}` : " · never out"}`
-    : `${escapeHtml(bat)} hasn't faced ${escapeHtml(bowl)}`;
+  const h2h = (bat, bowl, x) => `<span class="pair-line">${roleTagHtml("bat")}<b>${escapeHtml(bat)}</b></span><span class="pair-line">${roleTagHtml("bowl")}${escapeHtml(bowl)}</span>`
+    + `<span class="h2h-figs">${x.balls || x.outs ? `<span class="n">${x.runs} (${x.balls})</span>${x.outs ? ` · out ${x.outs === 1 ? "once" : `${x.outs} times`}` : " · never out"}` : "Hasn't faced them"}</span>`;
   return `
     <table class="compare-table">
       <thead><tr><th></th><th>${escapeHtml(ps.name)}</th><th>${escapeHtml(other.name)}</th></tr></thead>

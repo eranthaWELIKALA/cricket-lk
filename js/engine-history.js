@@ -473,9 +473,11 @@ function computeRecords(matches, opts){
       detail: [c.caught ? plural(c.caught, "catch", "catches") : "", c.stumped ? plural(c.stumped, "stumping") : ""].filter(Boolean).join(", ") };
   }));
   const ups = computeMatchups(matches, Object.assign({}, opts, { names }));
-  const runsOff = recordPlaces(ups.filter(p => p.runs > 0).map(p => ({ name: `${p.batterName} v ${p.bowlerName}`, value: p.runs, sub: -p.balls,
+  // Both name the pair batter first, and carry who is who (`pair`) for the BAT / BOWL tags.
+  const pairOf = p => ({ batter: { name: p.batterName, key: p.batter }, bowler: { name: p.bowlerName, key: p.bowler } });
+  const runsOff = recordPlaces(ups.filter(p => p.runs > 0).map(p => ({ name: `${p.batterName} v ${p.bowlerName}`, pair: pairOf(p), value: p.runs, sub: -p.balls,
     detail: `${plural(p.balls, "ball")} · ${p.outs ? `out ${p.outs === 1 ? "once" : `${p.outs} times`}` : "never out"}` })));
-  const outsOf = recordPlaces(ups.filter(p => p.outs > 0).map(p => ({ name: `${p.bowlerName} v ${p.batterName}`, value: p.outs, sub: -p.runs,
+  const outsOf = recordPlaces(ups.filter(p => p.outs > 0).map(p => ({ name: `${p.batterName} v ${p.bowlerName}`, pair: pairOf(p), value: p.outs, sub: -p.runs,
     text: plural(p.outs, "time"), detail: p.balls ? `${p.runs} runs off ${plural(p.balls, "ball")}` : `in ${plural(p.matches, "match", "matches")}` })));
   const pct = (a, b) => b ? `${Math.round(a / b * 100)}%` : "—";
   return [

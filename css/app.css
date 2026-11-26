@@ -1958,3 +1958,18 @@ button.record-more{ display:block; margin:6px 0 0; padding:0; min-height:0; back
 .tab-row.mu-sort{ margin:0; gap:4px; flex-wrap:nowrap; }
 .tab-row.mu-sort .tab-btn{ padding:3px 9px; font-size:.68rem; }
 .mu-order{ margin:4px 0 2px; font-size:.7rem; color:var(--muted); }
+
+/* Match-ups: who batted and who bowled, tagged like the live board's markers (blue striker, red bowler), never colour alone. */
+.role-tag{ display:inline-block; flex-shrink:0; min-width:34px; margin-right:6px; padding:1px 4px; border-radius:5px; border:1.5px solid; font-size:.56rem; font-weight:900; letter-spacing:.06em; text-align:center; vertical-align:1px; line-height:1.4; }
+.role-tag.bat{ color:var(--accent-2); border-color:var(--accent-2); background:rgba(var(--accent-2-rgb),.1); }
+.role-tag.bowl{ color:var(--wicket); border-color:var(--wicket); background:rgba(255,77,99,.08); }
+.pair-line{ display:flex; align-items:baseline; min-width:0; }
+.pair-row .record-who{ gap:3px; }
+.h2h-list li{ display:flex; flex-direction:column; gap:3px; }
+.h2h-figs{ font-size:.8rem; color:var(--muted); }
+.matchup-list .mu-name{ display:flex; align-items:baseline; }
+/* Names in match-ups and Compare wrap rather than being cut off. */
+.matchup-list li{ align-items:flex-start; }
+.matchup-list .mu-name{ white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:break-word; }
+.matchup-list .mu-figs{ flex-shrink:0; }
+.compare-table thead th{ white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:break-word; vertical-align:bottom; }

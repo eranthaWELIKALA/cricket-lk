@@ -1696,6 +1696,8 @@ async function main(){
     assert(top("together") === "1.A1 & A2:21 2.B2 & B4:4 3.A1 & A3:1", "most runs together, per pair: " + top("together"));
     assert(top("runsOff") === "1.A1 v B1:17 2.B4 v A1:4 3.A2 v B1:2" && rec("runsOff")[0].detail === "4 balls · never out" && rec("runsOff")[2].detail === "3 balls · out once",
       "match-ups: most runs off one bowler (a wide isn't a ball faced; a no-ball is): " + top("runsOff"));
+    assert(rec("runsOff")[0].pair.batter.name === "A1" && rec("runsOff")[0].pair.bowler.name === "B1" && rec("outsOf").every(e => e.name === `${e.pair.batter.name} v ${e.pair.bowler.name}`),
+      "both match-up records say who batted and who bowled, the batter first");
     assert(rec("outsOf").length === 5 && rec("outsOf").every(e => e.place === 1 && e.value === 1) && !rec("outsOf").some(e => /B4/.test(e.name)),
       "match-ups: dismissals from the scorecard, a run-out is nobody's: " + top("outsOf"));
     assert(top("bowledW") === "1.A1:2 2.B1:1" && top("lbwW") === "1.A1:1" && top("caughtW") === "1.A1:1" && rec("stumpedW").length === 0, "wickets by how they came: " + top("bowledW"));
@@ -1734,7 +1736,7 @@ async function main(){
     assert(rec2("lowTotal").map(e => `${e.place}.${e.name}`).join(" ") === "1.Tigers 1.Tigers 3.Lions 3.Lions" && !rec2("lowTotal").some(e => e.name === "Hawks"),
       "a chase that got there isn't a lowest total: " + JSON.stringify(rec2("lowTotal").map(e => e.name)));
 
-    // The Records tab: tiles for the career tallies, rows for one-match records.
+    // The Records tab: a card per record; career names open the player, one-match rows the scorecard.
     const keptHistory = win.eval("JSON.stringify(state.matchHistory)");
     win.eval(`state.match = null; ui = defaultUi(); state.matchHistory = {}; state.view = "home";`);
     win.archiveMatch(m);
@@ -1755,6 +1757,10 @@ async function main(){
     assert(overCard && overCard.querySelectorAll(".record-row.lead .record-balls .chip").length === 8 && overCard.querySelector(".record-balls .chip.six"), "the over's balls show under its leader");
     overCard.querySelector('[data-action="open-match-detail"]').click();
     assert(doc.querySelector("#modal-root .scorecard-modal"), "tapping a one-match record opens that match's scorecard");
+    win.eval(`ui.matchDetail = null; ui.recordsTab = "matchups"; render();`);
+    const pairRow = doc.querySelector("#app .pair-row");
+    assert(pairRow && [...pairRow.querySelectorAll(".role-tag")].map(x => x.textContent).join() === "BAT,BOWL" && /A1/.test(pairRow.querySelector(".pair-line").textContent)
+      && pairRow.querySelector('.pair-line [data-action="open-player-stats"]'), "Match-ups rows tag the batter (first) and the bowler, each name opening that player");
     win.eval(`ui = defaultUi(); state.matchHistory = ${keptHistory}; state.view = "home"; save(); render();`);
   }
 

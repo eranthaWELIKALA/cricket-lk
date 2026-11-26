@@ -75,7 +75,16 @@ function recordPlayerRowHtml(e){
     <span class="record-who">${recordNameHtml(e)}<span class="record-detail">${escapeHtml(e.detail || "")}</span></span>
     <span class="record-val">${recordValue(e)}</span></li>`;
 }
-function recordEntryRowHtml(e){ return e.matchId ? recordRowHtml(e) : recordPlayerRowHtml(e); }
+/* A batter v bowler pair (Match-ups): one line each, tagged BAT / BOWL (the
+   live board's striker and bowler colours), each name opening that player. */
+function roleTagHtml(role){ return `<span class="role-tag ${role}">${role === "bat" ? "BAT" : "BOWL"}</span>`; }
+function recordPairRowHtml(e){
+  const who = (role, x) => `<span class="pair-line">${roleTagHtml(role)}${recordNameHtml({ key: isNameKey(x.key) ? null : x.key, name: x.name })}</span>`;
+  return `<li class="record-row pair-row${e.place === 1 ? " lead" : ""}"><span class="record-place">${e.place}</span>
+    <span class="record-who">${who("bat", e.pair.batter)}${who("bowl", e.pair.bowler)}<span class="record-detail">${escapeHtml(e.detail || "")}</span></span>
+    <span class="record-val">${recordValue(e)}</span></li>`;
+}
+function recordEntryRowHtml(e){ return e.matchId ? recordRowHtml(e) : e.pair ? recordPairRowHtml(e) : recordPlayerRowHtml(e); }
 function recordCardHtml(r){
   const rows = r.byWicket ? r.entries.map(e => recordRowHtml(e, ordinalText(e.wicket))) : r.entries.slice(0, RECORDS_SHOWN).map(recordEntryRowHtml);
   return `<div class="record-card">
