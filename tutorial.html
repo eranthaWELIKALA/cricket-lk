@@ -226,6 +226,7 @@
       <div>
         <h3>4 · Extras: wides, no-balls, byes, leg byes <span class="lvl easy">Beginner</span></h3>
         <p>Tap <span class="ui">Wide</span>, <span class="ui">No ball</span>, <span class="ui">Bye</span> or <span class="ui">Leg bye</span>. A sheet asks how many runs were <b>run or hit on top of the extra</b> — tap <span class="ui">0</span> for just the wide or no-ball, <span class="ui">4</span> if it went for four, and so on. Each tile also shows what the ball is worth in total, e.g. a wide that went for four is <i>Wd+4 · 5 total</i>.</p>
+        <p><b>Seven or more off one ball</b> (overthrows): tap <span class="ui">7+</span> at the end of the extras row, pick whether it was off the bat, byes, leg byes, a wide or a no-ball, then tap 7 to 12.</p>
         <ul>
           <li>Wides and no-balls don't count as a ball of the over; byes and leg byes do.</li>
           <li>Byes and leg byes go to the team, not against the bowler.</li>
@@ -299,7 +300,7 @@
           <li><b>Cancel match</b> — discard it with no result.</li>
           <li><b>Switch players</b> (when the sides come from saved teams) and <b>Show nicknames</b> (club matches).</li>
         </ul>
-        <p><span class="ui">Full scorecard</span> under the Wicket button opens every innings, with a <b>Ball by ball</b> tab listing each over.</p>
+        <p><span class="ui">Full scorecard</span> under the Wicket button opens every innings, with a <b>Ball by ball</b> tab listing each over, and a <b>Charts</b> tab: the worm, runs per over, the chase's run rate against the rate needed, partnerships, and runs and wickets in the opening, middle and death overs.</p>
         <p><b>Fixing a ball:</b> in Ball by ball, tap any ball to change what happened (runs, an extra, a wicket — including a wicket off a wide or no-ball) or remove it. Everything after it is worked out again: if the change adds a wicket, the next batter simply came in earlier (the app asks for a name if it needs one); if it removes one, that batter carries on. You see the old and new score before saving, and Undo takes it back. It works during the match, at the innings break and on the Result screen (a finished match must stay finished).</p>
         <p><b>Wrong batter on strike, or wrong bowler?</b> The same sheet asks <span class="ui">Who faced it?</span> and who bowled the over. If the batters went to the wrong ends (say the one who should have faced the new over was at the other end), tap the other batter on the first ball it happened: from that ball on, the two swap, so the runs, the balls and a wicket go to whoever really faced them. It stops where you had already swapped them back with ⇅ Swap. Picking another bowler moves that whole over to them. The review shows each player's figures before and after.</p>
         <p><b>A ball missed, or one too many?</b> On the same sheet, <span class="ui">+ Ball before</span> or <span class="ui">+ Ball after</span> adds a ball the scorer missed, and <span class="ui">Remove ball</span> takes one out. Later balls move along, and the review before you save says which overs shift. Taking out a ball asks <i>Was a ball missed instead?</i> — you can add the missing one at the end of that over (or of the innings) in the same change, so the overs and bowlers still line up. An over that was left short shows a dashed <span class="ui">+</span> at its end in Ball by ball.</p>
@@ -399,8 +400,22 @@
         <p>The built-in T20, T10 and Tape-ball presets can be edited or deleted like your own. Tap <span class="ui">+ New match preset</span> for your Sunday rules.</p>
         <h3 style="margin-top:18px;">Stats and MVP <span class="lvl mid">Intermediate</span></h3>
         <p><b>Stats</b> leads with the <b>MVP</b> table, then Batting, Bowling and Fielding tabs. Each starts with a <b>podium</b> of the top three (with the leader's profile photo when they have one), then every player: tap a column heading to sort by it (tap again to flip) and the podium follows it, and swipe a wide table sideways for more columns. Tap a player, on the podium or in the table, to see their batting, bowling and fielding, where they rank, month by month, and each match they played. It reads every completed match on your device.</p>
+        <p>The Batting and Bowling tables end with <b>Last 5</b> (their last five innings, newest first; sort by it to see who's in form) and <b>Rtg</b>, a rating where 500 is an average player in these matches and recent innings count most.</p>
+        <p><b>A player's sheet</b> also shows their <b>form</b> (last five innings), <b>badges</b> (250 runs, a five-for, a hat-trick, player of the match…), their <b>milestones</b> (first match, first fifty, 500 runs, 50 wickets…, each opening its scorecard), <b>Over time</b> charts of their runs, average and wickets, and <b>Match-ups</b>: how they've done against each bowler, and against each batter. <span class="ui">⇄ Compare</span> puts them side by side with anyone else in the same matches, with how they've done against each other; <span class="ui">★ 2026 in review</span> makes a picture of their year to share.</p>
         <p><b>By month or year.</b> Once your matches span more than one month, pick <span class="ui">All time</span>, <span class="ui">Yearly</span> or <span class="ui">Monthly</span> and step back and forth with ‹ ›: the headline numbers (matches, runs, wickets, sixes), the podium (<i>Player of the month</i>, <i>Player of the year</i>), the tables and Records all follow. A tournament's matches count in the month the tournament started, even one played past midnight or weeks later, and a match that finished before 5am counts on the day before.</p>
-        <p>The <b>Records</b> tab shows the top three for each record: most runs, fours, sixes and ducks; most wickets, maidens, dot balls, wides and no-balls; most catches, run-outs and stumpings; the highest score, best bowling, most sixes in an innings and the most runs hit or conceded in one over (with that over's balls); and the highest and lowest team totals. Tap a one-match record to open that match's scorecard.</p>
+        <p>The <b>Records</b> tab shows the top three for each record, a section at a time:</p>
+        <ul>
+          <li><b>Batting</b>: most runs, fours, sixes, fifties, hundreds, ducks and runs as an opener, most chases finished, the best strike rate in the opening and death overs, the highest score, the fastest 25, fifty and hundred, the best strike rate in an innings, the best finish, and the most sixes or runs hit in one innings or over.</li>
+          <li><b>Bowling</b>: most wickets, maidens, dot balls and hat-tricks, wickets by how they came (bowled, LBW, caught, stumped), wides and no-balls, best bowling and economy, and the most runs conceded in an over.</li>
+          <li><b>Fielding</b>: catches, run-outs and stumpings, the most in a match or innings, and the bowler and fielder who've combined most.</li>
+          <li><b>Partnerships</b>: the highest, the best for each wicket, and the pairs with the most runs together.</li>
+          <li><b>Match-ups</b>: the most runs a batter has taken off one bowler, and the bowler who's got the same batter out most often.</li>
+          <li><b>Teams</b>: how often batting first or chasing won, and the toss winner; the highest and lowest totals, the biggest and narrowest wins, the highest chase, the lowest total defended, the most runs in a match and the most extras.</li>
+          <li><b>Awards</b>: most player of the match awards and matches, and the <i>Lucky charm</i> and <i>Tough luck</i>: the best and worst win rate over at least five matches.</li>
+          <li><b>Honours</b>: the honours board, with every 50 and 100, every 3-wicket haul and every hat-trick, newest first.</li>
+        </ul>
+        <p>Tap a one-match record to open that match's scorecard. <span class="ui">CSV</span> on a table downloads it (or every match) for a spreadsheet.</p>
+        <p>When a match finishes, its Result lists any <b>records set</b> in it. While scoring, a new record (the highest score, the most wickets or sixes in an innings, the highest total) or a career milestone (500 runs, 50 wickets…) plays its own moment on the board, and the new batter and bowler sheets say when someone is close to one (<i>8 to 500 runs</i>).</p>
         <p><b>Your own MVP points.</b> How many points a run, a four, a wicket, a catch or a stumping is worth is a preset too: <span class="ui">Presets → MVP points</span>. Pick one of the built-ins (<i>Club</i>, the default; <i>Classic</i>; <i>Fantasy T20</i>; <i>IPL MVP</i>) with <span class="ui">Use</span>, or make your own — bonuses for the milestones you choose (20, 30, 50, 100…), wicket hauls, hat-tricks, maidens, dot balls, and points up or down for economy and strike rate. The stats recount straight away. A club sets its own under the club's Presets. Premier shows stats only, no MVP points.</p>
         <p><b>What Club gives.</b> 1 a run, +2 a four and +4 a six on top of their runs, +2 not out, and the highest milestone reached: 20 runs +2, 30 +4, 50 +8, 100 +16. 15 a wicket, 10 a maiden, 20 a hat-trick (+10 for each wicket in a row after it), and after a full over +6, +4 or +2 for an economy under 5, 10 or 15. In the field, 10 a catch, 10 a stumping and 15 a run-out (as much as a wicket), when the scorer records who took it.</p>
       </div>
@@ -486,7 +501,7 @@
       <div>
         <h3>Club roster and player profiles <span class="lvl adv">Advanced</span></h3>
         <p>Club <b>Players</b> is the roster. Tap <span class="ui">+</span> to add someone: name, plus optional contact number, NIC, nickname, jersey number, city, batting/bowling style, keeper and a photo. If they're already on the platform, the sheet suggests them so you don't create a duplicate.</p>
-        <p>Tap a player for their <b>profile</b>: details, a <b>Stats</b> tab with separate Club and Premier batting, bowling and fielding records, and a <b>Matches</b> tab listing every match they played, with their score in each (tap one for the scorecard). <span class="ui">Share profile link</span> sends the profile to anyone, for example to the player so they can claim it.</p>
+        <p>Tap a player for their <b>profile</b>: details, a <b>Stats</b> tab with separate Club and Premier batting, bowling and fielding records, a <b>Matches</b> tab listing every match they played, with their score in each (tap one for the scorecard), and a <b>Career</b> tab with their form, badges, milestones, charts over time and match-ups. <span class="ui">Share profile link</span> sends the profile to anyone, for example to the player so they can claim it.</p>
         <div class="tip"><b>Privacy</b>Contact number and NIC are only visible to people who may manage that profile.</div>
       </div>
       <div class="shots">
@@ -615,7 +630,7 @@
     <div class="step">
       <div>
         <h3>Settings <span class="lvl easy">Beginner</span></h3>
-        <p>☰ → <span class="ui">Settings</span>: turn the scoring <b>sounds</b> on or off, and pick a <b>theme</b> — Sri Lanka (the default), Midnight, Slate, Daylight or Sunset.</p>
+        <p>☰ → <span class="ui">Settings</span>: turn the scoring <b>sounds</b> on or off, <b>back up</b> your guest matches, players, teams, presets and tournaments to one file (and <b>restore</b> it, on this phone or a new one: it only adds what the phone doesn't have), and pick a <b>theme</b> — Sri Lanka (the default), Midnight, Slate, Daylight or Sunset.</p>
       </div>
       <div class="shots"><figure><a class="phone" href="tutorial/img/39-settings.jpg"><img src="tutorial/img/39-settings.jpg" alt="Settings" width="390" height="844" loading="lazy"></a><figcaption>Settings</figcaption></figure></div>
     </div>

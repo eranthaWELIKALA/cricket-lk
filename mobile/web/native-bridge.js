@@ -8,8 +8,10 @@
    on the web:
    - navigator.share / navigator.canShare, with image files → the Android
      share sheet (the share preview's "Share": WhatsApp, Drive, …);
-   - <a download> of a blob or data URL → saved to Pictures/Cricket.lk (the
-     share preview's "Save image");
+   - <a download> of a blob or data URL → an image is saved to
+     Pictures/Cricket.lk (the share preview's "Save image"); any other file
+     (Settings' backup, a leaderboard's CSV) goes to the share sheet, where
+     Drive, Files or WhatsApp can keep it;
    - window.print() → Android's print dialog, which has "Save as PDF"
      (Export PDF: it prints the page as it is, with the @media print rules);
    - the status and navigation bar icons follow the theme: light on a dark
@@ -63,7 +65,7 @@
     }
   });
 
-  // --- <a download> → save the image -------------------------------------
+  // --- <a download> → save the image (or share any other file) -----------
   var anchorClick = HTMLAnchorElement.prototype.click;
   HTMLAnchorElement.prototype.click = function(){
     var href = this.href || "";
@@ -73,10 +75,12 @@
         .then(function(res){ return res.blob(); })
         .then(function(blob){
           return blobToBase64(blob).then(function(b64){
+            // Only an image belongs in Pictures; a backup or a CSV is handed to the share sheet.
+            if (blob.type && !isImage(blob)) return callNative("share", { data: b64, fileName: name, mimeType: blob.type, text: "", title: name });
             return callNative("saveImage", { data: b64, fileName: name, mimeType: blob.type || "image/png" });
           });
         })
-        .catch(function(err){ console.error("Cricket.lk: saving the image failed", err); });
+        .catch(function(err){ console.error("Cricket.lk: saving the file failed", err); });
       return;
     }
     return anchorClick.call(this);

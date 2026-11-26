@@ -8,6 +8,8 @@
   --accent:#FFC20E; --accent-rgb:255,194,14; --accent-light:#FFD762; --accent-dim:#A67E09; --accent-ink:#1F1702;
   --accent-2:#4A9BFF; --accent-2-rgb:74,155,255; --accent-2-light:#89BEFF; --accent-2-dim:#3065A6; --accent-2-ink:#09131F;
   --danger:#FF5D70; --wicket:#FF4D63; --info:#6CCBFF;
+  /* The charts' two team colours (applyTheme sets them per light / dark theme). */
+  --chart-a:#338ced; --chart-b:#e76624;
   --radius-lg:14px; --radius-md:10px; --radius-sm:7px;
   --shadow-card:3px 3px 0 rgba(0,0,0,.35);
   --shadow-btn:3px 3px 0 rgba(0,0,0,.4);
@@ -1801,3 +1803,129 @@ button.chip.chip-add:hover, button.chip.chip-add:focus-visible{ outline:2px soli
   .so-balls .chip.four, .so-balls .chip.six{ border:2px solid #0E9F6E !important; font-weight:800; }
   .so-balls .chip.wicket{ border:2px solid #D6304A !important; color:#D6304A !important; font-weight:800; }
 }
+
+/* ============================================================
+   Records & history (records.js, player-history.js, charts.js, backup.js)
+   ============================================================ */
+/* The Records tab: a row of section chips under the Stats tabs, smaller so it reads as part of Records. */
+.tab-row.records-tabs{ margin:-4px 0 12px; }
+/* The scorecard's Scorecard / Ball by ball / Commentary / Charts: one row, sideways if a phone is too narrow. */
+.tab-row.sc-mode-tabs{ flex-wrap:nowrap; gap:6px; overflow-x:auto; scrollbar-width:none; }
+.tab-row.sc-mode-tabs::-webkit-scrollbar{ display:none; }
+.tab-row.sc-mode-tabs .tab-btn{ flex:1 0 auto; padding:6px 5px; font-size:.72rem; letter-spacing:0; white-space:nowrap; }
+.tab-row.records-tabs .tab-btn{ padding:5px 11px; font-size:.74rem; }
+.record-note{ font-size:.64rem; color:var(--muted); margin:-4px 0 6px; line-height:1.3; }
+.record-tile .name-btn.record-name{ font-weight:700; font-size:.92rem; line-height:1.2; margin-top:5px; white-space:normal; overflow-wrap:anywhere; }
+.record-rest .name-btn.record-name{ flex:1; min-width:0; }
+.record-place.wkt{ width:auto; min-width:30px; padding:0 5px; border-radius:10px; font-size:.6rem; }
+.record-facts{ display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px; margin-bottom:8px; }
+.record-fact{ min-width:0; display:flex; flex-direction:column; gap:2px; padding:10px 10px 9px; background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-md); box-shadow:var(--shadow-card); }
+.record-fact-val{ font-size:1.35rem; font-weight:800; line-height:1; color:var(--accent); }
+.record-fact-label{ font-size:.62rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+.records-group + .records-cards, .records-tiles + .records-cards{ margin-top:8px; }
+.records-group .records-cards{ margin-top:8px; }
+.record-count{ margin-left:4px; font-weight:700; letter-spacing:0; }
+.honours .records-cards, .honours-card + .honours-card{ margin-top:8px; }
+.honour-val{ flex-shrink:0; min-width:48px; text-align:center; padding:3px 6px; border-radius:8px; border:2px solid var(--line-strong); font-weight:800; font-size:.82rem; font-variant-numeric:tabular-nums; }
+.honour-val.big{ border-color:var(--accent); color:var(--accent); background:rgba(var(--accent-rgb),.1); }
+.honours-card .link-btn{ margin-top:4px; }
+
+/* Live: a record broken, a career milestone reached (the stinger's colours). */
+.moment.stinger.record{ --ink:#FFD23F; --ink-2:#E0A400; --ink-3:#FFF3B8; --s1:#FFD23F; --s2:#1E2C82; --s3:#fff; --s4:#FFD23F; }
+.moment.stinger.career{ --ink:#7CC4FF; --ink-2:#2D7FE0; --ink-3:#D4ECFF; --s1:#fff; --s2:#2D7FE0; --s3:#FFD23F; --s4:#7CC4FF; }
+.score-tile.moment-record, .score-tile.moment-career{ animation:scorePulse .3s ease, ringGold .8s ease-out; }
+/* 7+ in the extras row, a narrower button; its sheet picks the kind first. */
+.extra-pad button{ white-space:nowrap; }
+.extra-pad button.more-runs{ padding-left:0; padding-right:0; }
+.tab-row.more-runs-kinds{ gap:6px; margin:2px 0 6px; }
+.tab-row.more-runs-kinds .tab-btn{ padding:6px 11px; font-size:.76rem; }
+.more-runs-modal .run-btn .chip-label{ margin-top:2px; }
+/* A pick sheet row's career milestone note ("8 to 500 runs"). */
+.pick-milestone{ display:block; font-size:.66rem; font-weight:700; color:var(--accent); margin-top:1px; letter-spacing:0; text-transform:none; }
+
+/* Charts (scorecard Charts tab, a player's Over time). */
+.match-charts{ display:grid; gap:10px; }
+.chart-card{ background:var(--panel-2); border:2px solid var(--line-strong); border-radius:var(--radius-md); box-shadow:var(--shadow-card); padding:10px 10px 6px; min-width:0; }
+.chart-head{ display:flex; align-items:baseline; gap:8px; margin-bottom:4px; }
+.chart-head h4{ margin:0; font-size:.7rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.chart-sub{ font-size:.68rem; color:var(--muted); }
+.chart-legend{ display:flex; flex-wrap:wrap; gap:4px 14px; font-size:.74rem; font-weight:700; margin:2px 0 4px; }
+.chart-legend span{ display:inline-flex; align-items:center; gap:6px; }
+.chart-legend i{ display:inline-block; width:14px; height:4px; border-radius:2px; }
+.chart-svg{ display:block; width:100%; height:auto; overflow:visible; }
+.chart-grid{ stroke:var(--line); stroke-width:1; }
+.chart-tick{ fill:var(--muted); font-size:9px; font-weight:600; font-variant-numeric:tabular-nums; }
+.chart-line{ fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
+.chart-line.ref{ stroke:var(--muted); }
+.chart-wkt{ fill:var(--wicket); stroke:var(--panel-solid); stroke-width:2; }
+.chart-end{ stroke:var(--panel-solid); stroke-width:2; }
+.chart-end-label{ fill:var(--text); font-size:10px; font-weight:800; font-variant-numeric:tabular-nums; }
+.partnership-bars{ list-style:none; margin:0; padding:0; }
+.partnership-bars li{ display:grid; grid-template-columns:30px minmax(0, 1fr) auto; align-items:center; gap:8px; padding:6px 0; }
+.partnership-bars li + li{ border-top:1px solid var(--line); }
+.pb-wkt{ font-size:.66rem; font-weight:800; color:var(--muted); }
+.pb-main{ min-width:0; display:flex; flex-direction:column; gap:4px; }
+.pb-who{ font-size:.78rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pb-track{ height:8px; border-radius:4px; background:var(--line); overflow:hidden; }
+.pb-fill{ display:block; height:100%; border-radius:4px; }
+.pb-val{ font-size:.86rem; font-weight:800; text-align:right; white-space:nowrap; }
+.pb-val small{ font-weight:600; color:var(--muted); }
+.phase-table{ width:100%; font-size:.8rem; }
+.phase-table th, .phase-table td{ padding:6px 5px; text-align:right; }
+.phase-table th:first-child, .phase-table td:first-child{ text-align:left; }
+.phase-table tr.muted td{ color:var(--muted); }
+
+/* A player's history: form, badges, ratings, tools, milestones, over time, match-ups. */
+.player-form{ display:flex; flex-direction:column; gap:5px; margin:2px 0 10px; }
+.form-title{ font-size:.64rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.form-title small{ font-weight:600; letter-spacing:0; text-transform:none; margin-left:4px; }
+.form-row{ display:flex; align-items:center; gap:8px; }
+.form-label{ width:32px; flex-shrink:0; font-size:.7rem; font-weight:700; color:var(--muted); }
+.form-chips{ display:flex; flex-wrap:wrap; gap:5px; }
+.form-chip{ min-width:32px; text-align:center; padding:3px 7px; border-radius:8px; border:2px solid var(--line-strong); font-size:.78rem; font-weight:800; font-variant-numeric:tabular-nums; }
+.form-chip.big{ border-color:var(--accent); color:var(--accent); background:rgba(var(--accent-rgb),.1); }
+.form-chip.duck{ color:var(--muted); }
+.badge-row{ display:flex; flex-wrap:wrap; gap:6px; margin:0 0 10px; }
+.player-badge{ display:inline-flex; align-items:center; gap:5px; padding:4px 9px; border-radius:999px; border:2px solid rgba(var(--accent-rgb),.45); background:rgba(var(--accent-rgb),.08); font-size:.72rem; font-weight:700; }
+.player-tools{ display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 2px; }
+.milestones{ list-style:none; margin:0; padding:0; }
+.milestones > li + li{ border-top:1px solid var(--line); }
+.ms-row{ display:flex; align-items:center; gap:10px; width:100%; padding:8px 0; color:var(--text); }
+button.ms-row{ margin:0; background:none; border:0; border-radius:0; box-shadow:none; text-align:left; font-weight:400; text-transform:none; letter-spacing:0; }
+.ms-icon{ flex-shrink:0; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; background:var(--panel-2); border:2px solid var(--line-strong); font-size:.9rem; }
+.ms-text{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; font-size:.85rem; }
+.ms-text .muted{ font-size:.7rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.over-time{ display:grid; gap:8px; }
+.chart-card.mini{ padding:8px 8px 4px; }
+.matchup-list{ list-style:none; margin:0; padding:0; }
+.matchup-list li{ display:flex; align-items:baseline; gap:10px; padding:6px 0; font-size:.84rem; }
+.matchup-list li + li{ border-top:1px solid var(--line); }
+.mu-name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mu-figs{ font-weight:700; white-space:nowrap; }
+.compare-table{ width:100%; margin:6px 0 4px; font-size:.84rem; table-layout:fixed; }
+.compare-table th, .compare-table td{ padding:7px 6px; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.compare-table th[scope="row"]{ text-align:left; font-weight:600; color:var(--muted); width:34%; }
+.compare-table thead th{ font-size:.78rem; }
+.compare-table td.better{ color:var(--accent); font-weight:800; }
+.h2h-list{ list-style:none; margin:0 0 6px; padding:0; font-size:.84rem; }
+.h2h-list li{ padding:7px 0; }
+.h2h-list li + li{ border-top:1px solid var(--line); }
+
+/* Result: the records this match set. */
+.records-set-card{ border:2px solid var(--accent); background:rgba(var(--accent-rgb),.08); border-radius:var(--radius-lg); box-shadow:var(--shadow-card); padding:10px 12px; margin-bottom:10px; }
+.records-set-head{ display:flex; align-items:baseline; gap:8px; }
+.records-set-head .section-label{ margin:0; color:var(--accent); }
+.records-set-head .muted{ margin-left:auto; font-size:.7rem; }
+.records-set{ list-style:none; margin:6px 0 0; padding:0; }
+.records-set li{ display:grid; grid-template-columns:minmax(0, 1fr) auto; grid-template-areas:"label val" "who val"; column-gap:10px; padding:6px 0; }
+.records-set li + li{ border-top:1px solid var(--line); }
+.rs-label{ grid-area:label; font-size:.66rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+.rs-who{ grid-area:who; font-weight:700; font-size:.88rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rs-val{ grid-area:val; align-self:center; font-size:1.1rem; font-weight:800; color:var(--accent); }
+
+/* Leaderboards: Last 5 and the CSV download. */
+.lb-form{ letter-spacing:.02em; }
+.lb-head .lb-csv{ margin:0 0 0 6px; padding:2px 8px; min-height:0; font-size:.62rem; font-weight:800; letter-spacing:.06em; border-radius:8px; border:2px solid var(--line-strong); background:none; color:var(--muted); box-shadow:none; }
+.lb-head .lb-count{ margin-left:auto; }
+.tab-row.career-scope-tabs{ margin:-2px 0 10px; }
+@media print{ .match-charts, .player-tools, .lb-csv{ display:none !important; } }

@@ -11,11 +11,11 @@ function tabsHtml(action, tabs, active, cls){
   return `<div class="tab-row${cls ? " " + cls : ""}" role="tablist">${tabs.map(([id, label]) =>
     `<button type="button" data-action="${action}" data-tab="${id}" role="tab" aria-selected="${id === active}" class="tab-btn ${id === active ? "active" : ""}">${label}</button>`).join("")}</div>`;
 }
-/* A row of tabs that scrolls sideways (.main-tabs.many) starts at its left
-   edge after every render; scroll it just enough to show the tab that's on
+/* A row of tabs that scrolls sideways (.main-tabs.many, and a scorecard's
+   modes on a narrow phone) starts at its left edge after every render; scroll it just enough to show the tab that's on
    (a tournament's My stats is last). Called at the end of render(). */
 function showActiveTabs(){
-  document.querySelectorAll("#app .tab-row.main-tabs.many").forEach(row => {
+  document.querySelectorAll("#app .tab-row.main-tabs.many, .tab-row.sc-mode-tabs").forEach(row => {
     const on = row.querySelector(".tab-btn.active");
     if (!on) return;
     const r = on.getBoundingClientRect(), box = row.getBoundingClientRect();
@@ -75,6 +75,13 @@ function applyTheme(){
   // A pre-existing custom branding accent (legacy state.branding data) always overrides the theme's own.
   applyAccentVars(root, "accent", b.accent || preset.accent);
   applyAccentVars(root, "accent-2", b.accent2 || preset.accent2);
+  // The charts' two team colours (charts.js): blue and orange, a step each for
+  // a light or a dark theme -- not the accents, which some themes make too
+  // alike to tell apart (checked for colour-blind separation on every surface).
+  const [r, g, bl] = hexToRgb(preset.vars["--bg"] || "#000000");
+  const light = (0.2126 * r + 0.7152 * g + 0.0722 * bl) / 255 > 0.5;
+  root.setProperty("--chart-a", light ? "#257de0" : "#338ced");
+  root.setProperty("--chart-b", light ? "#f47230" : "#e76624");
 }
 
 /* --- SFX: tiny synthesized sound effects via Web Audio API, no audio

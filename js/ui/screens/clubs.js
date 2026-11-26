@@ -370,9 +370,10 @@ function renderPlayerProfile(){
           </div>
         </div>
       </div>
-      ${tabsHtml("profile-tab", [["profile", "Profile"], ["stats", "Stats"], ["matches", "Matches"]], ["stats", "matches"].includes(pr.tab) ? pr.tab : "profile", "main-tabs")}
+      ${tabsHtml("profile-tab", [["profile", "Profile"], ["stats", "Stats"], ["matches", "Matches"], ["career", "Career"]], ["stats", "matches", "career"].includes(pr.tab) ? pr.tab : "profile", "main-tabs")}
       ${pr.tab === "stats" ? sections.join("")
         : pr.tab === "matches" ? renderProfileMatches(pr, names, isClub ? clubMatches : pr.clubMatches, premierMatches)
+        : pr.tab === "career" ? renderProfileCareer(pr, names, isClub ? clubMatches : pr.clubMatches, premierMatches, isClub)
         : `
         ${body}
         ${!pr.loading && !pr.error && d ? renderOwnershipBlock(pr, d, canEdit) : ""}`}
@@ -447,6 +448,23 @@ function renderProfileMatches(pr, who, clubMatches, premierMatches){
     const premier = premierMatches.includes(m);
     return playerMatchRowHtml(l, [premier ? "Premier" : clubName(m), matchDateText(m)].filter(Boolean).join(" · "));
   }).join("")}</div>`;
+}
+
+/* A profile's Career tab: form, badges, milestones, over time and
+   match-ups (player-history.js) -- over club matches or Premier matches,
+   never the two mixed (like the Stats tab's tiers), with a switch when they
+   have both. A club-opened profile starts on the club's. */
+function renderProfileCareer(pr, who, clubMatches, premierMatches, isClub){
+  if (clubMatches === undefined || !ui.premier) return loadingHtml();
+  const has = { club: playerMatchLines(who, clubMatches).length > 0, premier: playerMatchLines(who, premierMatches).length > 0 };
+  const scopes = [["club", "Club matches"], ["premier", "Premier matches"]].filter(([k]) => has[k]);
+  if (!scopes.length) return `<p class="hint">No matches for this player yet.</p>`;
+  const scope = scopes.some(([k]) => k === pr.careerScope) ? pr.careerScope : isClub && has.club ? "club" : has.premier ? "premier" : "club";
+  const matches = scope === "club" ? clubMatches : premierMatches;
+  return `
+    ${scopes.length > 1 ? tabsHtml("profile-career-scope", scopes, scope, "career-scope-tabs") : ""}
+    ${playerHistoryTop(who, matches)}
+    ${playerHistoryRest(who, matches, matches, pr.more || {})}`;
 }
 
 /* Share a player's profile: the Premier URL (#/premier/players/<id>), which

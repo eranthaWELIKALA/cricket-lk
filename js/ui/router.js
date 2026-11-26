@@ -359,6 +359,7 @@ function closeTopOverlay(){
   if (ui.tournamentTeamEdit && document.querySelector(".team-modal")){ closeTeamEdit(); return true; }
   if (ui.sharePreview){ closeSharePreview(); return true; }
   if (ui.matchDetail){ ui.matchDetail = null; render(); return true; }
+  if (ui.playerStats && ui.playerStats.compare){ closePlayerCompare(); return true; }
   if (ui.playerStats){ closePlayerStats(); return true; }
   if (ui.resultEntry && document.querySelector("#result-entry-form")){
     const close = () => { ui.resultEntry = null; render(); };

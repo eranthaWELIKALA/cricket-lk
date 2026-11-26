@@ -6,23 +6,30 @@ function handleBallClick(runs){
   if (pendingPickKey(state.match)) return;
   const inn = currentInnings(state.match);
   const kindMap = { wide: "wide", noball: "noball", bye: "bye", legbye: "legbye" };
-  const kind = ui.pendingExtra ? kindMap[ui.pendingExtra] : "run";
+  // "7+" (ui.pendingExtra "more") records whichever kind its sheet has picked.
+  const kind = ui.pendingExtra === "more" ? kindMap[ui.moreRunsKind] || "run" : ui.pendingExtra ? kindMap[ui.pendingExtra] : "run";
   const batter = inn.striker;
   const runsBefore = inn.batting.stats[batter] ? inn.batting.stats[batter].runs : 0;
+  const sixesBefore = inn.batting.stats[batter] ? inn.batting.stats[batter].sixes : 0;
+  const totalBefore = inn.runs;
   pushSnapshot();
   recordBall(inn, { kind, runs });
   afterBall(state.match);
   maybeArchiveCompletedMatch(state.match);
   if (kind === "run") SFX.runs(runs); else SFX.extra();
-  liveMoment = ballMoment(kind, runs, batter, runsBefore, inn.batting.stats[batter] ? inn.batting.stats[batter].runs : 0);
-  ui.pendingExtra = null;
+  const s = inn.batting.stats[batter];
+  liveMoment = historyMoment(state.match, inn, { batter, runsBefore, runsAfter: s ? s.runs : 0, sixesBefore, sixesAfter: s ? s.sixes : 0, totalBefore })
+    || ballMoment(kind, runs, batter, runsBefore, s ? s.runs : 0);
+  ui.pendingExtra = null; ui.moreRunsKind = null;
   save(); render();
 }
 
 /* --- live "moments": a one-shot badge + ring on the score tile for a four,
-   a six, a wicket or a batter's fifty/hundred. Set where the ball is
-   recorded (next to its sound) and played by render() on the new board, so
-   a re-render, an undo or a reload never replays one. --- */
+   a six, a wicket, a batter's fifty/hundred -- and, from the matches this one
+   counts with (a club's, this phone's guest matches: liveHistory), a record
+   broken or a career milestone reached. Set where the ball is recorded (next
+   to its sound) and played by render() on the new board, so a re-render, an
+   undo or a reload never replays one. --- */
 let liveMoment = null;
 // Runs off the bat only (a run or a no-ball's runs); a milestone beats the boundary that brought it.
 function ballMoment(kind, runs, batter, before, after){
@@ -33,11 +40,42 @@ function ballMoment(kind, runs, batter, before, after){
   if (runs === 4) return { kind: "four", label: "FOUR" };
   return null;
 }
+/* A record or a career milestone this ball brought, the rarest first: the
+   highest score, the most sixes in an innings, the highest total; then a
+   hundred (ballMoment's own) and a batter's career runs. The records are
+   the bests of the matches this one counts with (liveRecordMarks: nothing
+   until there are a few), so "NEW RECORD" is that club's, or this phone's. */
+function historyMoment(match, inn, b){
+  const h = liveHistory(match);
+  if (!h || !b.batter || isUnnamedPlayer(b.batter)) return null;
+  const mk = h.marks || {};
+  const passed = (mark, before, after) => mark != null && before <= mark && after > mark;
+  const record = what => ({ kind: "record", glyph: "★", caption: `${what}` });
+  if (passed(mk.highScore, b.runsBefore, b.runsAfter)) return record(`NEW RECORD · ${liveName(b.batter)} ${b.runsAfter}`);
+  if (passed(mk.inningsSixes, b.sixesBefore, b.sixesAfter)) return record(`RECORD SIXES · ${liveName(b.batter)} ${b.sixesAfter}`);
+  if (passed(mk.highTotal, b.totalBefore, inn.runs)) return record(`RECORD TOTAL · ${teamName(match, inn.battingTeam)} ${inn.runs}`);
+  if (b.runsBefore < 100 && b.runsAfter >= 100) return null;   // the hundred's own moment
+  const c = h.careers[h.keyOf(match, b.batter)];
+  const done = crossed((c ? c.runs : 0) + b.runsBefore, (c ? c.runs : 0) + b.runsAfter, RUN_MILESTONES).pop();
+  return done && c ? { kind: "career", glyph: String(done), caption: `CAREER RUNS · ${liveName(b.batter)}` } : null;
+}
+// A wicket: a record haul or a career milestone for the bowler, else the wicket.
 function wicketMoment(inn){
   const fow = inn.fallOfWickets[inn.fallOfWickets.length - 1];
-  return { kind: "wicket", label: "WICKET", sub: fow ? fow.batsman : null };
+  const plain = { kind: "wicket", label: "WICKET", sub: fow ? fow.batsman : null };
+  const over = inn.currentOverEvents.length ? { bowler: inn.bowler, events: inn.currentOverEvents } : inn.overs[inn.overs.length - 1];
+  const ev = over && over.events[over.events.length - 1];
+  const bowler = over && over.bowler;
+  const h = liveHistory(state.match);
+  if (!h || !ev || !ev.isWicket || ev.wicketType === "runout" || !bowler || isUnnamedPlayer(bowler) || !inn.bowling.stats[bowler]) return plain;
+  const now = inn.bowling.stats[bowler].wickets;
+  const mark = h.marks && h.marks.mostWickets;
+  if (mark != null && now - 1 <= mark && now > mark) return { kind: "record", glyph: "★", caption: `NEW RECORD · ${liveName(bowler)} ${now}/${inn.bowling.stats[bowler].runs}` };
+  const c = h.careers[h.keyOf(state.match, bowler)];
+  const done = c ? crossed(c.wickets + now - 1, c.wickets + now, WICKET_MILESTONES).pop() : null;
+  return done ? { kind: "career", glyph: String(done), caption: `CAREER WICKETS · ${liveName(bowler)}` } : plain;
 }
-// The glyph each moment punches in with (the stinger, css "Live moments").
+// The glyph each moment punches in with (the stinger, css "Live moments"); a record's or milestone's comes with it.
 const MOMENT_GLYPHS = { four: "4", six: "6", wicket: "W", fifty: "50", hundred: "100" };
 function playLiveMoment(){
   const mo = liveMoment;
@@ -62,17 +100,17 @@ function playLiveMoment(){
   if (bottom - top < 90){ top = board.top; bottom = Math.min(board.bottom, sheetTop - 6); }
   const h = Math.round(Math.max(bottom - top, 72));
   const w = Math.round(board.width) || 320;
-  const glyph = MOMENT_GLYPHS[mo.kind];
+  const glyph = mo.glyph || MOMENT_GLYPHS[mo.kind];
   const compact = h < 150;
   const g = Math.round(Math.min(h * (compact ? 0.9 : 0.72), (w * (compact ? 0.42 : 0.8)) / (0.62 * glyph.length)));
-  const caption = mo.sub ? `${mo.label} · ${liveName(mo.sub)}` : mo.label;
+  const caption = mo.caption || (mo.sub ? `${mo.label} · ${liveName(mo.sub)}` : mo.label);
   // Fixed spread (not random), so every four looks the same.
   const stripes = Array.from({ length: 9 }, (_, i) =>
     `<i style="--w:${12 + (i * 17) % 38}px;--d:${(i * 0.027).toFixed(3)}s;--t:${(0.78 + (i % 4) * 0.08).toFixed(2)}s"></i>`).join("");
   app.insertAdjacentHTML("beforeend", `<div class="moment stinger ${mo.kind}${compact ? " compact" : ""}" aria-hidden="true"
     style="top:${Math.round(top)}px;left:${Math.round(board.left)}px;width:${w}px;height:${h}px;--bw:${w}px;--g:${g}px">
     <div class="stinger-bg"></div><div class="stinger-stripes">${stripes}</div>
-    <div class="stinger-glyph">${glyph}</div><div class="stinger-caption"><span>${escapeHtml(caption)}</span></div></div>`);
+    <div class="stinger-glyph">${escapeHtml(glyph)}</div><div class="stinger-caption"><span>${escapeHtml(caption)}</span></div></div>`);
   const el = app.lastElementChild;
   el.addEventListener("animationend", e => { if (e.target === el) el.remove(); });
 }
@@ -86,6 +124,7 @@ function playLiveMoment(){
    total and the chip it leaves in the over row. Byes/leg byes start at 1. */
 function renderExtraRunsModal(inn){
   const kind = ui.pendingExtra;
+  if (kind === "more") return renderMoreRunsModal(inn);
   const plural = n => `${n} run${n === 1 ? "" : "s"}`;
   const cfg = {
     wide:   { title: "Wide", base: inn.wideBaseRuns, from: 0, chip: n => n ? `Wd+${n}` : "Wd",
@@ -123,6 +162,38 @@ function renderExtraRunsModal(inn){
             <span class="main">Out on this ${kind === "wide" ? "wide" : "no-ball"}?</span>
             <span class="sub">${kind === "wide" && !inn.freeHit ? "Stumped, hit wicket or run out" : "Run out"}</span>
           </button>` : ""}
+        <div class="sheet-actions"><button type="button" data-action="close-extra" class="ghost">Cancel</button></div>
+      </div>
+    </div>
+  `;
+}
+
+/* "7+": seven or more runs off one ball (overthrows), which the run pad and
+   the extras' sheets (0-6) can't take. Off the bat by default; byes, leg
+   byes, or the runs on top of a wide / no-ball (only those the match has)
+   are one tap away (ui.moreRunsKind). Each tile records through
+   handleBallClick, so it's an ordinary ball: Undo, ball edits and the
+   commentary need nothing new. */
+const MORE_RUNS = [7, 8, 9, 10, 11, 12];
+function renderMoreRunsModal(inn){
+  const m = state.match;
+  const kinds = [["run", "Off the bat"], ["bye", "Byes"], ["legbye", "Leg byes"],
+    ...(m.wideEnabled ? [["wide", "Wide"]] : []), ...(m.noBallEnabled ? [["noball", "No ball"]] : [])];
+  const kind = kinds.some(([k]) => k === ui.moreRunsKind) ? ui.moreRunsKind : "run";
+  const base = kind === "wide" ? inn.wideBaseRuns : kind === "noball" ? inn.noBallBaseRuns : 0;
+  const chip = n => ({ run: "runs", bye: `B${n}`, legbye: `Lb${n}`, wide: `Wd+${n}`, noball: `Nb+${n}` }[kind]);
+  return `
+    <div class="modal-backdrop">
+      <div class="modal extra-runs-modal more-runs-modal" data-keep-scroll="extra-runs" role="dialog" aria-modal="true" aria-label="Seven or more runs">
+        <div class="wicket-modal-head"><h2>7 or more runs</h2></div>
+        ${tabsHtml("more-runs-kind", kinds, kind, "more-runs-kinds")}
+        <p class="extra-ask">${kind === "wide" || kind === "noball" ? `Runs on top of the ${kind === "wide" ? "wide" : "no-ball"}, overthrows included` : "Overthrows included"}</p>
+        <div class="run-pad small extra-runs-pad">
+          ${MORE_RUNS.map(n => `<button type="button" data-action="ball" data-runs="${n}" class="run-btn" aria-label="${kind === "run" ? `${n} runs off the bat` : `${chip(n)}, ${base + n} runs in total`}">
+            <span class="total">${n}</span>
+            <span class="chip-label">${chip(n)}${base ? ` · ${base + n} total` : ""}</span>
+          </button>`).join("")}
+        </div>
         <div class="sheet-actions"><button type="button" data-action="close-extra" class="ghost">Cancel</button></div>
       </div>
     </div>
@@ -428,7 +499,8 @@ function renderLive(match){
     match.wideEnabled ? { extra: "wide", label: "Wide" } : null,
     match.noBallEnabled ? { extra: "noball", label: "No ball" } : null,
     { extra: "bye", label: "Bye" },
-    { extra: "legbye", label: "Leg bye" }
+    { extra: "legbye", label: "Leg bye" },
+    { extra: "more", label: "7+", aria: "Seven or more runs (overthrows)" }
   ].filter(Boolean);
 
   return `
@@ -482,8 +554,8 @@ function renderLive(match){
         <button data-action="undo" class="run-btn undo" ${state.snapshots.length ? "" : "disabled"}>UNDO</button>
       </div>
 
-      <div class="extra-pad" style="grid-template-columns:repeat(${enabledExtras.length}, 1fr);">
-        ${enabledExtras.map(e => `<button data-action="toggle-extra" data-extra="${e.extra}" class="${ui.pendingExtra === e.extra ? "active" : ""}">${e.label.toUpperCase()}</button>`).join("")}
+      <div class="extra-pad" style="grid-template-columns:repeat(${enabledExtras.length - 1}, 1fr) .62fr;">
+        ${enabledExtras.map(e => `<button data-action="toggle-extra" data-extra="${e.extra}" class="${ui.pendingExtra === e.extra ? "active" : ""}${e.extra === "more" ? " more-runs" : ""}"${e.aria ? ` aria-label="${e.aria}"` : ""}>${e.label.toUpperCase()}</button>`).join("")}
       </div>
 
       <button data-action="open-wicket" class="wicket-btn">

@@ -66,27 +66,29 @@ function renderCatchUpNote(inn){
   return `<div class="catch-up-note">${how} at ${at} ov${parts.length ? ` · ${parts.join(" · ")}` : ""}.</div>`;
 }
 
-/* The tabbed scorecard: one tab per innings, then Scorecard / Ball by ball.
+/* The tabbed scorecard: one tab per innings, then Scorecard / Ball by ball /
+   Commentary / Charts (renderMatchCharts, charts.js).
    Shared by the live scorecard sheet, Result's full scorecard and the
    completed-match sheet (ui.matchDetail). Which tab is showing lives in
    ui.scorecard ({ inn: index | null = the latest innings, mode: "card" |
-   "balls" }), reset whenever one of those opens -- only one is ever on
+   "balls" | "comms" | "charts" }), reset whenever one of those opens -- only one is ever on
    screen. Every innings' card is rendered (inactive ones `hidden`) so
    Export PDF can print them all (see the print rules). */
 function renderScorecard(match){
   const sc = ui.scorecard || {};
   const last = match.innings.length - 1;
   const idx = match.innings[sc.inn] ? sc.inn : last;
-  const mode = sc.mode === "balls" || sc.mode === "comms" ? sc.mode : "card";
+  const mode = ["balls", "comms", "charts"].includes(sc.mode) ? sc.mode : "card";
   if (last < 0) return `<p class="hint">Nothing scored.</p>`;
   return `
     <div class="scorecard-tabs">
       ${match.innings.length > 1 ? tabsHtml("scorecard-inn", match.innings.map((i, n) =>
         [n, `${escapeHtml(teamName(match, i.battingTeam))} <span class="n">${i.runs}-${i.wickets}</span>`]), idx, "sc-inn-tabs") : ""}
-      ${tabsHtml("scorecard-mode", [["card", "Scorecard"], ["balls", "Ball by ball"], ["comms", "Commentary"]], mode, "sc-mode-tabs")}
+      ${tabsHtml("scorecard-mode", [["card", "Scorecard"], ["balls", "Ball by ball"], ["comms", "Commentary"], ["charts", "Charts"]], mode, "sc-mode-tabs")}
       ${match.innings.map((inn, n) => `<div class="sc-pane" ${n === idx && mode === "card" ? "" : "hidden"}>${renderInningsSummary(match, inn)}</div>`).join("")}
       ${mode === "balls" ? renderBallByBall(match, match.innings[idx]) : ""}
       ${mode === "comms" ? renderCommentary(match, match.innings[idx]) : ""}
+      ${mode === "charts" ? renderMatchCharts(match, idx) : ""}
     </div>`;
 }
 
@@ -506,6 +508,7 @@ function renderResult(match){
           </form>
         ` : ""}
       </div>`}
+      ${renderRecordsSetCard(match)}
       ${unnamed.length ? `
         <div class="unnamed-card">
           <div class="section-label">Still unnamed</div>
@@ -815,6 +818,7 @@ async function buildSharePreview(){
   const match = sp.match || state.match;
   if (sp.kind === "scorecard" && match) canvas = renderScorecardCanvas(match, sp.theme, logo);
   else if (sp.kind === "tournament"){ const c = tournamentContext(); if (c) canvas = renderTournamentCanvas(c, sp.theme, logo); }
+  else if (sp.kind === "year") canvas = renderYearCanvas(sp, sp.theme, logo);
   if (!canvas || ui.sharePreview !== sp) return;
   canvas.toBlob(blob => {
     if (ui.sharePreview !== sp || !blob) return;
@@ -831,11 +835,13 @@ function closeSharePreview(){
 }
 function sharePreviewFile(){
   const sp = ui.sharePreview;
-  return new File([sharePreviewBlob], sp.kind === "tournament" ? "cricket-lk-tournament.png" : "cricket-lk-scorecard.png", { type: "image/png" });
+  const name = sp.kind === "tournament" ? "cricket-lk-tournament.png" : sp.kind === "year" ? `cricket-lk-${fileSlug(sp.name)}-${sp.year}.png` : "cricket-lk-scorecard.png";
+  return new File([sharePreviewBlob], name, { type: "image/png" });
 }
 function sharePreviewText(){
   const sp = ui.sharePreview;
   if (sp.kind === "scorecard"){ const m = sp.match || state.match; return `${m.teamA} v ${m.teamB}: ${m.result || ""}`; }
+  if (sp.kind === "year") return `${sp.name}: ${sp.year} in review`;
   const c = tournamentContext(), s = c && tournamentSummary(c.matches, c.preset, undefined, statsOpts());
   return c ? `${c.name}${s && s.champion ? ` — champions: ${s.champion.name}` : ""}` : "";
 }
@@ -864,7 +870,7 @@ function renderSharePreviewModal(){
     <div class="modal-backdrop">
       <div class="modal share-modal" data-keep-scroll="share-preview" role="dialog" aria-modal="true" aria-label="Share image">
         <div class="wicket-modal-head">
-          <h2>${sp.kind === "tournament" ? "Share results" : "Share scorecard"}</h2>
+          <h2>${sp.kind === "tournament" ? "Share results" : sp.kind === "year" ? `${escapeHtml(sp.year)} in review` : "Share scorecard"}</h2>
           <button type="button" data-action="close-share-preview" class="sheet-close" aria-label="Close">✕</button>
         </div>
         ${tabsHtml("share-theme", Object.entries(SHARE_THEMES).map(([k, t]) => [k, t.label]), sp.theme, "share-theme-tabs")}

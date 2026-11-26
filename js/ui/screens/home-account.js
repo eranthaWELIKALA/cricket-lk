@@ -354,6 +354,8 @@ function renderSettingsScreen(){
         <button data-action="toggle-sound" class="ghost small">${state.soundEnabled ? "Mute" : "Unmute"}</button>
       </div>
 
+      ${renderBackupSection()}
+
       <h3 class="section-label">Theme</h3>
       <div class="theme-gallery">
         ${THEME_PRESETS.map(t => `
